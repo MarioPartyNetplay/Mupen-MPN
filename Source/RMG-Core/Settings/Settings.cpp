@@ -1645,19 +1645,7 @@ bool CoreSettingsUpgrade(void)
     if (settingsVersion.empty())
     { // settings version was introduced in >v0.1.5
 
-#ifndef PORTABLE_INSTALL // only applies to non-portable installs (i.e flatpak)
-        // sadly v0.1.5 introduced an issue,
-        // in v0.1.4 the screenshot directory was set to 'Screenshots',
-        // in v0.1.5 it was changed to '$HOME/Pictures/RMG'
-        // and it was included in CoreCreateDirectories(),
-        // which, when someone upgraded to v0.1.5 would fail
-        // because we lacked permissions to create the 'Screenshots' directory
-        settingsString = CoreGetScreenshotDirectory();
-        if (settingsString == "Screenshots")
-        {
-            CoreSettingsSetValue(SettingsID::Core_ScreenshotPath, CoreGetDefaultScreenshotDirectory());
-        }
-#endif
+
     }
 
     if (settingsVersion == "v0.2.1" ||

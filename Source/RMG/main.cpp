@@ -137,16 +137,9 @@ int main(int argc, char **argv)
 
     UserInterface::MainWindow window;
 
-#ifdef PORTABLE_INSTALL
-    // only change current directory
-    // when we're in portable directory mode
-    if (CoreGetPortableDirectoryMode())
-    {
-        QDir::setCurrent(app.applicationDirPath());
-    }
-#endif
+    QDir::setCurrent(app.applicationDirPath());
 
-    QCoreApplication::setApplicationName("Rosalie's Mupen GUI");
+    QCoreApplication::setApplicationName("RMG-MPN");
     QCoreApplication::setApplicationVersion(QString::fromStdString(CoreGetVersion()));
 
     // setup commandline parser
@@ -155,28 +148,14 @@ int main(int argc, char **argv)
     parser.addHelpOption();
     parser.addVersionOption();
     // custom options
-#ifndef PORTABLE_INSTALL
-    QCommandLineOption libPathOption("lib-path", "Changes the path where the libraries are stored", "path");
-    QCommandLineOption corePathOption("core-path", "Changes the path where the core library is stored", "path");
-    QCommandLineOption pluginPathOption("plugin-path", "Changes the path where the plugins are stored", "path");
-    QCommandLineOption sharedDataPathOption("shared-data-path", "Changes the path where the shared data is stored", "path");
-    libPathOption.setFlags(QCommandLineOption::HiddenFromHelp);
-    corePathOption.setFlags(QCommandLineOption::HiddenFromHelp);
-    pluginPathOption.setFlags(QCommandLineOption::HiddenFromHelp);
-    sharedDataPathOption.setFlags(QCommandLineOption::HiddenFromHelp);
-#endif // PORTABLE_INSTALL
+
     QCommandLineOption debugMessagesOption({"d", "debug-messages"}, "Prints debug callback messages to stdout");
     QCommandLineOption fullscreenOption({"f", "fullscreen"}, "Launches ROM in fullscreen mode");
     QCommandLineOption noGuiOption({"n", "nogui"}, "Hides GUI elements (menubar, toolbar, statusbar)");
     QCommandLineOption quitAfterEmulationOption({"q", "quit-after-emulation"}, "Quits RMG when emulation has finished");
     QCommandLineOption diskOption("disk", "64DD Disk to open ROM in combination with", "64DD Disk");
 
-#ifndef PORTABLE_INSTALL
-    parser.addOption(libPathOption);
-    parser.addOption(corePathOption);
-    parser.addOption(pluginPathOption);
-    parser.addOption(sharedDataPathOption);
-#endif // PORTABLE_INSTALL
+
     parser.addOption(debugMessagesOption);
     parser.addOption(fullscreenOption);
     parser.addOption(noGuiOption);
@@ -186,30 +165,6 @@ int main(int argc, char **argv)
 
     // parse arguments
     parser.process(app);
-
-#ifndef PORTABLE_INSTALL
-    // set path overrides before initializing
-    QString libPathOverride        = parser.value(libPathOption);
-    QString corePathOveride        = parser.value(corePathOption);
-    QString pluginPathOverride     = parser.value(pluginPathOption);
-    QString sharedDataPathOverride = parser.value(sharedDataPathOption);
-    if (!libPathOverride.isEmpty())
-    {
-        CoreSetLibraryPathOverride(libPathOverride.toStdString());
-    }
-    if (!corePathOveride.isEmpty())
-    {
-        CoreSetCorePathOverride(corePathOveride.toStdString());
-    }
-    if (!pluginPathOverride.isEmpty())
-    {
-        CoreSetPluginPathOverride(pluginPathOverride.toStdString());
-    }
-    if (!sharedDataPathOverride.isEmpty())
-    {
-        CoreSetSharedDataPathOverride(sharedDataPathOverride.toStdString());
-    }
-#endif // PORTABLE_INSTALL
 
     // print debug callbacks to stdout if needed
     CoreSetPrintDebugCallback(parser.isSet(debugMessagesOption));
