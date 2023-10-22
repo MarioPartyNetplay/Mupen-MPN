@@ -5,7 +5,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 COMPONENTS Gui Widgets Core OpenGL REQUIRED)
+find_package(Qt6 COMPONENTS Gui Widgets WebSockets Core OpenGL REQUIRED)
 
 if (PORTABLE_INSTALL)
     add_definitions(-DPORTABLE_INSTALL)
@@ -30,6 +30,8 @@ endif(DRAG_DROP)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
+
+add_definitions(-DNETPLAY_VER=15)
 
 set(RMG_SOURCES
     UserInterface/MainWindow.cpp
@@ -57,6 +59,10 @@ set(RMG_SOURCES
     UserInterface/Dialog/AboutDialog.ui
     UserInterface/Dialog/LogDialog.cpp
     UserInterface/Dialog/LogDialog.ui
+    UserInterface/Netplay/netplay_common.cpp
+    UserInterface/Netplay/createroom.cpp
+    UserInterface/Netplay/joinroom.cpp
+    UserInterface/Netplay/waitroom.cpp
     UserInterface/NoFocusDelegate.cpp
     UserInterface/EventFilter.cpp
     UserInterface/UIResources.rc
@@ -113,7 +119,7 @@ target_include_directories(RMG PRIVATE
     ${IMGUI_DIR}
 )
 
-target_link_libraries(RMG Qt6::Gui Qt6::Widgets Qt6::OpenGL)
+target_link_libraries(RMG Qt6::Gui Qt6::Widgets Qt6::WebSockets Qt6::OpenGL)
 
 if (UPDATER)
     target_link_libraries(RMG Qt6::Network)

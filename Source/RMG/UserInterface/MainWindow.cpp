@@ -21,6 +21,9 @@
 #include "Callbacks.hpp"
 #include "VidExt.hpp"
 
+#include "UserInterface/Netplay/createroom.h"
+#include "UserInterface/Netplay/joinroom.h"
+
 #include <RMG-Core/Core.hpp>
 
 #include <QCoreApplication>
@@ -120,6 +123,18 @@ void MainWindow::OpenROM(QString file, QString disk, bool fullscreen, bool quitA
 
     this->launchEmulationThread(file, disk, true);
 }
+
+void MainWindow::OpenROMNetplay(QString file, QString netplay_ip, int netplay_port, int netplay_player)
+{
+    // ensure we don't switch to the ROM browser
+    // because it can cause a slight flicker,
+    // if we just ensure the UI is in an emulation
+    // state, then the transition will be smoother
+    this->updateUI(true, false);
+
+    this->launchEmulationThread(file, "", false, netplay_ip, netplay_port, netplay_player);
+}
+
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
@@ -555,7 +570,7 @@ void MainWindow::connectEmulationThreadSignals(void)
             Qt::BlockingQueuedConnection);
 }
 
-void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool refreshRomListAfterEmulation)
+void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool refreshRomListAfterEmulation, QString netplay_ip, int netplay_port, int netplay_player)
 {
     CoreSettingsSave();
 
@@ -605,6 +620,11 @@ void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool re
 
     this->emulationThread->SetRomFile(cartRom);
     this->emulationThread->SetDiskFile(diskRom);
+
+    if (netplay_ip != "")
+    {
+        this->emulationThread->SetNetplay(netplay_ip, netplay_port, netplay_player);
+    }
     this->emulationThread->start();
 }
 
@@ -1765,6 +1785,18 @@ void MainWindow::on_Action_Help_Update(void)
 #ifdef UPDATER
     this->checkForUpdates(false, true);
 #endif // UPDATER
+}
+
+void MainWindow::on_actionCreate_Room_triggered()
+{
+    CreateRoom *createRoom = new CreateRoom(this);
+    createRoom->show();
+}
+
+void MainWindow::on_actionJoin_Room_triggered()
+{
+    JoinRoom *joinRoom = new JoinRoom(this);
+    joinRoom->show();
 }
 
 void MainWindow::on_Action_Audio_IncreaseVolume(void)

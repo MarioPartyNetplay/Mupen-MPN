@@ -30,11 +30,18 @@ void EmulationThread::SetDiskFile(QString file)
     this->disk = file;
 }
 
+void EmulationThread::SetNetplay(QString ip, int port, int player)
+{
+    this->netplay_ip = ip;
+    this->netplay_port = port;
+    this->netplay_player = player;
+}
+
 void EmulationThread::run(void)
 {
     emit this->on_Emulation_Started();
 
-    bool ret = CoreStartEmulation(this->rom.toStdU32String(), this->disk.toStdU32String());
+    bool ret = CoreStartEmulation(this->rom.toStdU32String(), this->disk.toStdU32String(), this->netplay_ip.toStdString(), this->netplay_port, this->netplay_player);
     if (!ret)
     {
         this->errorMessage = QString::fromStdString(CoreGetError());

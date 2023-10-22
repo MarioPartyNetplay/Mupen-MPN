@@ -51,6 +51,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 
     bool Init(QApplication* app, bool showUI, bool launchROM);
     void OpenROM(QString file, QString disk, bool fullscreen, bool quitAfterEmulation);
+    void OpenROMNetplay(QString file, QString netplay_ip, int netplay_port, int netplay_player);
 
   private:
     Thread::EmulationThread *emulationThread = nullptr;
@@ -131,7 +132,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 
     void initializeEmulationThread(void);
     void connectEmulationThreadSignals(void);
-    void launchEmulationThread(QString cartRom, QString diskRom = "", bool refreshRomListAfterEmulation = false);
+    void launchEmulationThread(QString cartRom, QString diskRom = "", bool refreshRomListAfterEmulation = false, QString netplay_ip = "", int netplay_port = 0, int netplay_player = 0);
 
     QString getSaveStateSlotDateTimeText(QAction* action);
     QString getSaveStateSlotText(QAction* action, int slot);
@@ -203,6 +204,9 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     void on_Action_Help_Github(void);
     void on_Action_Help_About(void);
     void on_Action_Help_Update(void);
+
+    void on_actionCreate_Room_triggered();
+    void on_actionJoin_Room_triggered();
 
     void on_Action_Audio_IncreaseVolume(void);
     void on_Action_Audio_DecreaseVolume(void);

@@ -151,10 +151,18 @@
     <addaction name="separator"/>
     <addaction name="action_Help_About"/>
    </widget>
+   <widget class="QMenu" name="menuNetplay">
+    <property name="title">
+     <string>Netplay</string>
+    </property>
+    <addaction name="actionCreate_Room"/>
+    <addaction name="actionJoin_Room"/>
+   </widget>
    <addaction name="menuSystem"/>
    <addaction name="menuSettings"/>
    <addaction name="menuView"/>
    <addaction name="menuHelp"/>
+   <addaction name="menuNetplay"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <widget class="QToolBar" name="toolBar">
@@ -632,6 +640,16 @@
    </property>
    <property name="text">
     <string>Check For Updates</string>
+   </property>
+  </action>
+  <action name="actionCreate_Room">
+   <property name="text">
+    <string>Create Room</string>
+   </property>
+  </action>
+  <action name="actionJoin_Room">
+   <property name="text">
+    <string>Join Room</string>
    </property>
   </action>
  </widget>

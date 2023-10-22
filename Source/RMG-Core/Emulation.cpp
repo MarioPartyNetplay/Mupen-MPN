@@ -88,7 +88,7 @@ static void apply_game_coresettings_overlay(void)
 // Exported Functions
 //
 
-bool CoreStartEmulation(std::filesystem::path n64rom, std::filesystem::path n64ddrom)
+bool CoreStartEmulation(std::filesystem::path n64rom, std::filesystem::path n64ddrom, std::string netplay_ip, int netplay_port, int netplay_player)
 {
     std::string error;
     m64p_error  ret;
@@ -153,12 +153,32 @@ bool CoreStartEmulation(std::filesystem::path n64rom, std::filesystem::path n64d
     CoreDiscordRpcUpdate(true);
 #endif // DISCORD_RPC
 
+    if (netplay_ip != "")
+    {
+        uint32_t version;
+        if (m64p::Core.DoCommand(M64CMD_NETPLAY_GET_VERSION, 0x010001, &version) == M64ERR_SUCCESS)
+        {
+            printf( "Netplay: using core version %u\n", version);
+
+            if (m64p::Core.DoCommand(M64CMD_NETPLAY_INIT, netplay_port, (char*)netplay_ip.c_str()) == M64ERR_SUCCESS)
+                printf("Netplay: init success\n");
+
+            uint32_t reg_id = netplay_player;
+
+            if (m64p::Core.DoCommand(M64CMD_NETPLAY_CONTROL_PLAYER, netplay_player, &reg_id) == M64ERR_SUCCESS)
+                printf("Netplay: registered for player %d\n", netplay_player);
+        }
+    }
+
     ret = m64p::Core.DoCommand(M64CMD_EXECUTE, 0, nullptr);
     if (ret != M64ERR_SUCCESS)
     {
         error = "CoreStartEmulation m64p::Core.DoCommand(M64CMD_EXECUTE) Failed: ";
         error += m64p::Core.ErrorMessage(ret);
     }
+
+    if (netplay_ip != "")
+        m64p::Core.DoCommand(M64CMD_NETPLAY_CLOSE, 0, NULL);
 
     CoreClearCheats();
     CoreDetachPlugins();
