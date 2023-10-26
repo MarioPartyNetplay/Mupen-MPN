@@ -1036,6 +1036,8 @@ void MainWindow::configureActions(void)
 void MainWindow::connectActionSignals(void)
 {
     connect(this->action_System_StartRom, &QAction::triggered, this, &MainWindow::on_Action_System_OpenRom);
+    connect(this->action_System_StartRom2, &QAction::triggered, this, &MainWindow::on_Action_System_OpenRom);
+    connect(this->action_System_StartRom3, &QAction::triggered, this, &MainWindow::on_Action_System_OpenRom);
     connect(this->action_System_OpenCombo, &QAction::triggered, this, &MainWindow::on_Action_System_OpenCombo);
     connect(this->action_System_Exit, &QAction::triggered, this, &MainWindow::on_Action_System_Exit);
 
@@ -1044,6 +1046,8 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_System_HardReset, &QAction::triggered, this, &MainWindow::on_Action_System_HardReset);
     connect(this->action_System_Pause, &QAction::triggered, this, &MainWindow::on_Action_System_Pause);
     connect(this->action_System_Screenshot, &QAction::triggered, this,
+            &MainWindow::on_Action_System_Screenshot);
+    connect(this->action_System_Screenshot2, &QAction::triggered, this,
             &MainWindow::on_Action_System_Screenshot);
     connect(this->action_System_LimitFPS, &QAction::triggered, this, &MainWindow::on_Action_System_LimitFPS);
     connect(this->action_System_SaveState, &QAction::triggered, this, &MainWindow::on_Action_System_SaveState);
@@ -1054,11 +1058,17 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_System_GSButton, &QAction::triggered, this, &MainWindow::on_Action_System_GSButton);
 
     connect(this->action_Settings_Graphics, &QAction::triggered, this, &MainWindow::on_Action_Settings_Graphics);
+    connect(this->action_Settings_Graphics2, &QAction::triggered, this, &MainWindow::on_Action_Settings_Graphics);
+
     connect(this->action_Settings_Audio, &QAction::triggered, this, &MainWindow::on_Action_Settings_Audio);
     connect(this->action_Settings_Rsp, &QAction::triggered, this, &MainWindow::on_Action_Settings_Rsp);
     connect(this->action_Settings_Input, &QAction::triggered, this,
             &MainWindow::on_Action_Settings_Input);
+    connect(this->action_Settings_Input2, &QAction::triggered, this,
+            &MainWindow::on_Action_Settings_Input);
+
     connect(this->action_Settings_Settings, &QAction::triggered, this, &MainWindow::on_Action_Settings_Settings);
+    connect(this->action_Settings_Settings2, &QAction::triggered, this, &MainWindow::on_Action_Settings_Settings);
 
     connect(this->action_View_Toolbar, &QAction::toggled, this, &MainWindow::on_Action_View_Toolbar);
     connect(this->action_View_StatusBar, &QAction::toggled, this, &MainWindow::on_Action_View_StatusBar);
@@ -1066,7 +1076,9 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_View_GameGrid, &QAction::toggled, this, &MainWindow::on_Action_View_GameGrid);
     connect(this->action_View_UniformSize, &QAction::toggled, this, &MainWindow::on_Action_View_UniformSize);
     connect(this->action_View_Fullscreen, &QAction::triggered, this, &MainWindow::on_Action_View_Fullscreen);
+    connect(this->action_View_Fullscreen2, &QAction::triggered, this, &MainWindow::on_Action_View_Fullscreen);
     connect(this->action_View_RefreshRoms, &QAction::triggered, this, &MainWindow::on_Action_View_RefreshRoms);
+    connect(this->action_View_RefreshRoms2, &QAction::triggered, this, &MainWindow::on_Action_View_RefreshRoms);
     connect(this->action_View_ClearRomCache, &QAction::triggered, this, &MainWindow::on_Action_View_ClearRomCache);
     connect(this->action_View_Log, &QAction::triggered, this, &MainWindow::on_Action_View_Log);
 
@@ -1787,13 +1799,13 @@ void MainWindow::on_Action_Help_Update(void)
 #endif // UPDATER
 }
 
-void MainWindow::on_actionCreate_Room_triggered()
+void MainWindow::on_action_Create_Room_triggered()
 {
     CreateRoom *createRoom = new CreateRoom(this);
     createRoom->show();
 }
 
-void MainWindow::on_actionJoin_Room_triggered()
+void MainWindow::on_action_Join_Room_triggered()
 {
     JoinRoom *joinRoom = new JoinRoom(this);
     joinRoom->show();

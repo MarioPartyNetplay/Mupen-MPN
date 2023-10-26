@@ -147,16 +147,14 @@
     </property>
     <addaction name="action_Help_Github"/>
     <addaction name="separator"/>
-    <addaction name="action_Help_Update"/>
-    <addaction name="separator"/>
     <addaction name="action_Help_About"/>
    </widget>
    <widget class="QMenu" name="menuNetplay">
     <property name="title">
      <string>Netplay</string>
     </property>
-    <addaction name="actionCreate_Room"/>
-    <addaction name="actionJoin_Room"/>
+    <addaction name="action_Create_Room"/>
+    <addaction name="action_Join_Room"/>
    </widget>
    <addaction name="menuSystem"/>
    <addaction name="menuSettings"/>
@@ -166,11 +164,20 @@
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <widget class="QToolBar" name="toolBar">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
    <property name="windowTitle">
     <string>toolBar</string>
    </property>
    <property name="movable">
-    <bool>true</bool>
+    <bool>false</bool>
+   </property>
+   <property name="iconSize">
+    <size>
+     <width>32</width>
+     <height>32</height>
+    </size>
    </property>
    <property name="toolButtonStyle">
     <enum>Qt::ToolButtonTextUnderIcon</enum>
@@ -184,17 +191,19 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="action_System_StartRom"/>
-   <addaction name="action_System_OpenCombo"/>
+   <addaction name="action_System_StartRom2"/>
+   <addaction name="action_View_RefreshRoms2"/>
    <addaction name="separator"/>
-   <addaction name="action_System_Shutdown"/>
-   <addaction name="action_System_SoftReset"/>
-   <addaction name="action_System_Pause"/>
-   <addaction name="action_System_Screenshot"/>
+   <addaction name="action_System_StartRom3"/>
+   <addaction name="action_Create_Room"/>
+   <addaction name="action_Join_Room"/>
    <addaction name="separator"/>
-   <addaction name="action_View_Fullscreen"/>
+   <addaction name="action_View_Fullscreen2"/>
+   <addaction name="action_System_Screenshot2"/>
    <addaction name="separator"/>
-   <addaction name="action_Settings_Settings"/>
+   <addaction name="action_Settings_Settings2"/>
+   <addaction name="action_Settings_Graphics2"/>
+   <addaction name="action_Settings_Input2"/>
   </widget>
   <action name="action_System_StartRom">
    <property name="icon">
@@ -203,6 +212,69 @@
    </property>
    <property name="text">
     <string>Start ROM</string>
+   </property>
+  </action>
+  <action name="action_View_Fullscreen2">
+   <property name="icon">
+    <iconset theme="fullscreen-mpn">
+     <normaloff>.</normaloff>.</iconset>
+   </property>
+   <property name="text">
+    <string>Fullscreen</string>
+   </property>
+  </action>
+  <action name="action_Settings_Settings2">
+   <property name="icon">
+    <iconset theme="settings-mpn">
+     <normaloff>.</normaloff>.</iconset>
+   </property>
+   <property name="text">
+    <string>Config</string>
+   </property>
+  </action>
+  <action name="action_Settings_Graphics2">
+   <property name="icon">
+    <iconset theme="graphics-mpn">
+     <normaloff>.</normaloff>.</iconset>
+   </property>
+   <property name="text">
+    <string>Graphics</string>
+   </property>
+  </action>
+  <action name="action_Settings_Input2">
+   <property name="icon">
+    <iconset theme="controller-mpn">
+     <normaloff>.</normaloff>.</iconset>
+   </property>
+   <property name="text">
+    <string>Controllers</string>
+   </property>
+  </action>
+  <action name="action_System_Screenshot2">
+   <property name="icon">
+    <iconset theme="screenshot-mpn">
+     <normaloff>.</normaloff>.</iconset>
+   </property>
+   <property name="text">
+    <string>Screenshot</string>
+   </property>
+  </action>
+  <action name="action_System_StartRom2">
+   <property name="icon">
+    <iconset theme="open-mpn">
+     <normaloff>.</normaloff>.</iconset>
+   </property>
+   <property name="text">
+    <string>Open</string>
+   </property>
+  </action>
+  <action name="action_View_RefreshRoms2">
+   <property name="icon">
+    <iconset theme="refresh-mpn">
+     <normaloff>.</normaloff>.</iconset>
+   </property>
+   <property name="text">
+    <string>Refresh</string>
    </property>
   </action>
   <action name="action_System_OpenCombo">
@@ -214,6 +286,15 @@
     <string>Start Combo</string>
    </property>
   </action>
+  <action name="action_System_StartRom3">
+   <property name="icon">
+    <iconset theme="local-play-mpn">
+     <normaloff>.</normaloff>.</iconset>
+   </property>
+   <property name="text">
+    <string>Play</string>
+   </property>
+  </action>
   <action name="action_System_Shutdown">
    <property name="icon">
     <iconset theme="shut-down-line">
@@ -223,6 +304,15 @@
     <string>Shutdown</string>
    </property>
   </action>
+  <action name="action_System_Pause">
+    <property name="icon">
+      <iconset theme="pause-line">
+      <normaloff>.</normaloff>.</iconset>
+    </property>
+    <property name="text">
+      <string>Pause</string>
+    </property>
+  </action>
   <action name="action_System_SoftReset">
    <property name="icon">
     <iconset theme="restart-line">
@@ -230,6 +320,15 @@
    </property>
    <property name="text">
     <string>Soft Reset</string>
+   </property>
+  </action>
+  <action name="action_Create_Room">
+   <property name="icon">
+    <iconset theme="online-play-mpn">
+     <normaloff>.</normaloff>.</iconset>
+   </property>
+   <property name="text">
+    <string>Host</string>
    </property>
   </action>
   <action name="action_System_HardReset">
@@ -241,16 +340,13 @@
     <string>Hard Reset</string>
    </property>
   </action>
-  <action name="action_System_Pause">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
+  <action name="action_Join_Room">
    <property name="icon">
-    <iconset theme="pause-line">
+    <iconset theme="online-play-mpn">
      <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>Pause</string>
+    <string>Connect</string>
    </property>
   </action>
   <action name="action_System_Screenshot">
@@ -640,16 +736,6 @@
    </property>
    <property name="text">
     <string>Check For Updates</string>
-   </property>
-  </action>
-  <action name="actionCreate_Room">
-   <property name="text">
-    <string>Create Room</string>
-   </property>
-  </action>
-  <action name="actionJoin_Room">
-   <property name="text">
-    <string>Join Room</string>
    </property>
   </action>
  </widget>

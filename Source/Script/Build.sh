@@ -28,5 +28,5 @@ fi
 
 if [[ $(uname -s) = *MINGW64* ]]
 then
-    cmake --build "$build_dir" --target=bundle_dependencies
+    cmake --build "$build_dir" --target=bundle_dependencies -j11
 fi

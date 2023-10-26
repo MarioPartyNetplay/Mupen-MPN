@@ -28,7 +28,7 @@ void CoreDiscordRpcInit(void)
         return;
     }
 
-    Discord_Initialize("801450412280119356", nullptr, 0, "");
+    Discord_Initialize("888655408623943731", nullptr, 0, "");
 }
 
 void CoreDiscordRpcShutdown(void)
@@ -59,7 +59,7 @@ void CoreDiscordRpcUpdate(bool inGame)
             return;
         }
 
-        smallImageKey = "rmg-icon";
+        smallImageKey = "project64";
         largeImageKey = romHeader.Name;
         details = romSettings.GoodName;
 
@@ -71,7 +71,7 @@ void CoreDiscordRpcUpdate(bool inGame)
     }
     else
     {
-        largeImageKey = "rmg-icon";
+        largeImageKey = "project64";
         details = "Not in-game";
     }
 
@@ -79,7 +79,7 @@ void CoreDiscordRpcUpdate(bool inGame)
     memset(&discordPresence, 0, sizeof(discordPresence));
     discordPresence.smallImageKey = smallImageKey.c_str();
     discordPresence.largeImageKey = largeImageKey.c_str();
-    discordPresence.largeImageText = "Rosalie's Mupen GUI";
+    discordPresence.largeImageText = "Mario Party Netplay";
     discordPresence.details = details.c_str();
     discordPresence.startTimestamp = time(nullptr);
 

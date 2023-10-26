@@ -66,7 +66,7 @@ JoinRoom::JoinRoom(QWidget *parent)
 
     connect(this, SIGNAL (finished(int)), this, SLOT (onFinished(int)));
 
-    QNetworkRequest request(QUrl(QStringLiteral("https://m64p.s3.amazonaws.com/servers.json")));
+    QNetworkRequest request(QUrl(QStringLiteral("https://pastebin.com/raw/WUKUzeCu")));
     manager.get(request);
 
     broadcastSocket.bind(QHostAddress(QHostAddress::AnyIPv4), 0);
@@ -255,7 +255,7 @@ void JoinRoom::onConnected()
     QJsonObject json;
     json.insert("type", "request_get_rooms");
     json.insert("netplay_version", NETPLAY_VER);
-    json.insert("emulator", "RMG");
+    json.insert("emulator", "MPN");
     QJsonDocument json_doc(json);
     webSocket->sendTextMessage(json_doc.toJson());
 }
