@@ -1,0 +1,16 @@
+[FilePacker]
+Version=1.2
+ProjectName=Mupen64-MPN
+SourceFolder=C:\msys64\home\Nayla\RMG-MPN\Bin\Release\
+Password=
+ExtractionFolder=*Documents*\M64Plus-MPN
+IconFile=C:\msys64\home\Nayla\RMG-MPN\Source\RMG\UserInterface\Resource\RMG_32.ico
+OutputFile=C:\msys64\home\Nayla\RMG-MPN\M64Plus-MPN.exe
+Checkbox1=0
+Checkbox2=0
+Checkbox3=0
+CompressLevel=9
+OverwriteMode=2
+ExecFile0=RMG.exe
+CmdLine0=*Command*
+WinState0=*ShowWin*
