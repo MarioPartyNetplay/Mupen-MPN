@@ -16,6 +16,8 @@
 JoinRoom::JoinRoom(QWidget *parent)
     : QDialog(parent)
 {
+
+    setWindowTitle("NetPlay Setup");
     setMinimumWidth(1000);
     setMinimumHeight(500);
     QGridLayout *layout = new QGridLayout(this);
@@ -49,10 +51,6 @@ JoinRoom::JoinRoom(QWidget *parent)
     resetList();
 
     layout->addWidget(listWidget, 1, 0, 1, 5);
-
-    passwordEdit = new QLineEdit(this);
-    passwordEdit->setPlaceholderText("Password (if required)");
-    layout->addWidget(passwordEdit, 2, 0);
 
     joinButton = new QPushButton(this);
     connect(joinButton, &QPushButton::released, this, &JoinRoom::joinGame);
@@ -108,13 +106,13 @@ void JoinRoom::resetList()
     row = 0;
     rooms.clear();
     listWidget->clear();
-    listWidget->setColumnCount(4);
+    listWidget->setColumnCount(2);
     listWidget->setRowCount(row);
     QStringList headers;
-    headers.append("Room Name");
+    headers.append("Hosts Name");
     headers.append("Game Name");
-    headers.append("Game MD5");
-    headers.append("Password Protected");
+    //headers.append("Game MD5");
+    //headers.append("Password Protected");
     //headers.append("Fixed Input Delay");
     listWidget->setHorizontalHeaderLabels(headers);
     listWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -170,7 +168,7 @@ void JoinRoom::joinGame()
             QJsonObject json;
             json.insert("type", "request_join_room");
             json.insert("player_name", playerNameEdit->text());
-            json.insert("password", passwordEdit->text());
+            json.insert("password", "MPN");
             json.insert("client_sha", "demo");
             json.insert("MD5", QString(rom_settings.MD5));
             json.insert("port", room_port);

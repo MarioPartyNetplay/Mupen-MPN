@@ -190,7 +190,7 @@ static char *get_mempaks_path(void)
     size_t size = 0;
 
     /* check if old file path exists, if it does then use that */
-    path = formatstr("%s%s.mpk", get_savesrampath(), ROM_SETTINGS.goodname);
+    path = formatstr("%s%s.mpk", get_savesrampath(), get_save_filename());
     if (get_file_size(path, &size) == file_ok && size > 0)
     {
         return path;
@@ -198,7 +198,7 @@ static char *get_mempaks_path(void)
     free(path);
 
     /* else use new path */
-    return formatstr("%s%s.mpk", get_savesrampath(), get_save_filename());
+    return formatstr("%s%s.mpk", get_savesrampath(), ROM_SETTINGS.goodname);
 }
 
 static char *get_eeprom_path(void)
@@ -207,7 +207,7 @@ static char *get_eeprom_path(void)
     size_t size = 0;
 
     /* check if old file path exists, if it does then use that */
-    path = formatstr("%s%s.eep", get_savesrampath(), ROM_SETTINGS.goodname);
+    path = formatstr("%s%s.eep", get_savesrampath(), get_save_filename());
     if (get_file_size(path, &size) == file_ok && size > 0)
     {
         return path;
@@ -215,7 +215,7 @@ static char *get_eeprom_path(void)
     free(path);
 
     /* else use new path */
-    return formatstr("%s%s.eep", get_savesrampath(), get_save_filename());
+    return formatstr("%s%s.eep", get_savesrampath(), ROM_SETTINGS.goodname);
 }
 
 static char *get_sram_path(void)
@@ -224,7 +224,7 @@ static char *get_sram_path(void)
     size_t size = 0;
 
     /* check if old file path exists, if it does then use that */
-    path = formatstr("%s%s.sra", get_savesrampath(), ROM_SETTINGS.goodname);
+    path = formatstr("%s%s.sra", get_savesrampath(), get_save_filename());
     if (get_file_size(path, &size) == file_ok && size > 0)
     {
         return path;
@@ -232,7 +232,7 @@ static char *get_sram_path(void)
     free(path);
 
     /* else use new path */
-    return formatstr("%s%s.sra", get_savesrampath(), get_save_filename());
+    return formatstr("%s%s.sra", get_savesrampath(), ROM_SETTINGS.goodname);
 }
 
 static char *get_flashram_path(void)
@@ -241,7 +241,7 @@ static char *get_flashram_path(void)
     size_t size = 0;
 
     /* check if old file path exists, if it does then use that */
-    path = formatstr("%s%s.fla", get_savesrampath(), ROM_SETTINGS.goodname);
+    path = formatstr("%s%s.fla", get_savesrampath(), get_save_filename());
     if (get_file_size(path, &size) == file_ok && size > 0)
     {
         return path;
@@ -249,7 +249,7 @@ static char *get_flashram_path(void)
     free(path);
 
     /* else use new path */
-    return formatstr("%s%s.fla", get_savesrampath(), get_save_filename());
+    return formatstr("%s%s.fla", get_savesrampath(), ROM_SETTINGS.goodname);
 }
 
 static char *get_gb_ram_path(const char* gbrom, unsigned int control_id)

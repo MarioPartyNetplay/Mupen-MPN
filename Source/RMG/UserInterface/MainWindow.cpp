@@ -277,7 +277,7 @@ void MainWindow::configureUI(QApplication* app, bool showUI)
     this->ui_Widget_OpenGL->installEventFilter(this->ui_EventFilter);
     this->ui_Widget_Vulkan->installEventFilter(this->ui_EventFilter);
 
-    this->ui_WindowTitle = "Rosalie's Mupen GUI (";
+    this->ui_WindowTitle = "Rosalie's Mupen GUI MPN (";
     this->ui_WindowTitle += QString::fromStdString(CoreGetVersion());
     this->ui_WindowTitle += ")";
 
@@ -654,6 +654,9 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     this->action_System_Pause->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Screenshot));
     this->action_System_Screenshot->setEnabled(inEmulation);
+    this->action_Create_Room->setEnabled(!inEmulation);
+    this->action_Join_Room->setEnabled(!inEmulation);
+
     this->action_System_Screenshot->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_LimitFPS));
     this->action_System_LimitFPS->setEnabled(inEmulation);
@@ -750,6 +753,8 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Keybinding_ViewLog));
     this->action_View_Log->setShortcut(QKeySequence(keyBinding));
     this->action_View_ClearRomCache->setEnabled(!inEmulation);
+    this->action_System_Screenshot2->setEnabled(inEmulation);
+    this->action_View_Fullscreen2->setEnabled(inEmulation);
 
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_IncreaseVolume));
     this->action_Audio_IncreaseVolume->setShortcut(QKeySequence(keyBinding));

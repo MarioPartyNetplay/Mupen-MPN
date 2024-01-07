@@ -7,6 +7,8 @@ WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidg
     : QDialog(parent)
 {
 
+
+    setWindowTitle("RMG NetPlay");
     w = (UserInterface::MainWindow*)parent;
 
     this->resize(640,480);
@@ -24,32 +26,28 @@ WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidg
     connect(webSocket, &QWebSocket::pong, this, &WaitRoom::updatePing);
 
     QGridLayout *layout = new QGridLayout(this);
-    QLabel *nameLabel = new QLabel("Room Name:", this);
-    layout->addWidget(nameLabel, 0, 0);
-    QLabel *roomName = new QLabel(room_name, this);
-    layout->addWidget(roomName, 0, 1);
 
     QLabel *gameLabel = new QLabel("Game Name:", this);
-    layout->addWidget(gameLabel, 1, 0);
+    layout->addWidget(gameLabel, 0, 0);
     QLabel *gameName = new QLabel(room.value("game_name").toString(), this);
-    layout->addWidget(gameName, 1, 1);
+    layout->addWidget(gameName, 0, 1);
 
-    QLabel *pingLabel = new QLabel("Your ping:", this);
-    layout->addWidget(pingLabel, 2, 0);
+    QLabel *pingLabel = new QLabel("Your Ping:", this);
+    layout->addWidget(pingLabel, 1, 0);
     pingValue = new QLabel(this);
-    layout->addWidget(pingValue, 2, 1);
+    layout->addWidget(pingValue, 1, 1);
 
     QLabel *p1Label = new QLabel("Player 1:", this);
-    layout->addWidget(p1Label, 3, 0);
+    layout->addWidget(p1Label, 2, 0);
 
     QLabel *p2Label = new QLabel("Player 2:", this);
-    layout->addWidget(p2Label, 4, 0);
+    layout->addWidget(p2Label, 3, 0);
 
     QLabel *p3Label = new QLabel("Player 3:", this);
-    layout->addWidget(p3Label, 5, 0);
+    layout->addWidget(p3Label, 4, 0);
 
     QLabel *p4Label = new QLabel("Player 4:", this);
-    layout->addWidget(p4Label, 6, 0);
+    layout->addWidget(p4Label, 5, 0);
 
     for (int i = 0; i < 4; ++i)
     {
@@ -126,7 +124,7 @@ void WaitRoom::startGame()
     else
     {
         QMessageBox msgBox;
-        msgBox.setText("Only player 1 can start the game");
+        msgBox.setText("Only Player 1 can start the game");
         msgBox.exec();
     }
 }

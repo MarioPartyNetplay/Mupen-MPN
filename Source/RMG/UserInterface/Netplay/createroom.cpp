@@ -15,26 +15,16 @@
 CreateRoom::CreateRoom(QWidget *parent)
     : QDialog(parent)
 {
+    setWindowTitle("NetPlay Setup");
+
     QGridLayout *layout = new QGridLayout(this);
 
     QRegularExpression rx("[a-zA-Z0-9]+");
     QValidator *validator = new QRegularExpressionValidator(rx, this);
 
-    QLabel *nameLabel = new QLabel("Room Name", this);
-    layout->addWidget(nameLabel, 0, 0);
-    nameEdit = new QLineEdit(this);
-    nameEdit->setValidator(validator);
-    nameEdit->setMaxLength(30);
-    layout->addWidget(nameEdit, 0, 1);
-
-    QLabel *passwordLabel = new QLabel("Password (Optional)", this);
-    layout->addWidget(passwordLabel, 1, 0);
-    passwordEdit = new QLineEdit(this);
-    layout->addWidget(passwordEdit, 1, 1);
-
     QLabel *romLabel = new QLabel("ROM", this);
     layout->addWidget(romLabel, 2, 0);
-    romButton = new QPushButton("ROM Path", this);
+    romButton = new QPushButton("Select ROM", this);
     connect(romButton, SIGNAL (released()), this, SLOT (handleRomButton()));
     layout->addWidget(romButton, 2, 1);
 
@@ -163,9 +153,9 @@ void CreateRoom::createRoom()
     connectionTimer->stop();
     QJsonObject json;
     json.insert("type", "request_create_room");
-    json.insert("room_name", nameEdit->text());
+    json.insert("room_name", playerNameEdit->text());
     json.insert("player_name", playerNameEdit->text());
-    json.insert("password", passwordEdit->text());
+    json.insert("password", "MPN");
     json.insert("MD5", QString(rom_settings.MD5));
     json.insert("game_name", QString(rom_settings.goodname));
     json.insert("client_sha", "demo");
