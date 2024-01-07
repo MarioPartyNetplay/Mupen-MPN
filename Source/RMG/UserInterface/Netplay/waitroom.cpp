@@ -52,7 +52,7 @@ WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidg
     for (int i = 0; i < 4; ++i)
     {
         pName[i] = new QLabel(this);
-        layout->addWidget(pName[i], i+3, 1);
+        layout->addWidget(pName[i], i+2, 1);
     }
 
     chatWindow = new QPlainTextEdit(this);
