@@ -33,8 +33,6 @@ const char* _hotkeyDescription(u32 _idx)
 		return "Hotkey: toggle texcoords bounds";
 	case Config::HotKey::hkNativeResTexrects:
 		return "Hotkey: toggle 2D texrects in native resolution";
-	case Config::HotKey::hkVsync:
-		return "Hotkey: toggle VSync";
 	case Config::HotKey::hkFBEmulation:
 		return "Hotkey: toggle frame buffer emulation";
 	case Config::HotKey::hkN64DepthCompare:
@@ -114,8 +112,6 @@ bool Config_SetDefault()
 	res = ConfigSetDefaultInt(g_configVideoGeneral, "ScreenWidth", config.video.windowedWidth, "Width of output window or fullscreen width.");
 	assert(res == M64ERR_SUCCESS);
 	res = ConfigSetDefaultInt(g_configVideoGeneral, "ScreenHeight", config.video.windowedHeight, "Height of output window or fullscreen height.");
-	assert(res == M64ERR_SUCCESS);
-	res = ConfigSetDefaultBool(g_configVideoGeneral, "VerticalSync", config.video.verticalSync, "If true, activate the SDL_GL_SWAP_CONTROL attribute.");
 	assert(res == M64ERR_SUCCESS);
 
 	res = ConfigSetDefaultInt(g_configVideoGliden64, "configVersion", CONFIG_VERSION_CURRENT, "Settings version. Don't touch it.");
@@ -492,7 +488,7 @@ void Config_LoadConfig()
 	config.video.fullscreen = ConfigGetParamBool(g_configVideoGeneral, "Fullscreen");
 	config.video.windowedWidth = ConfigGetParamInt(g_configVideoGeneral, "ScreenWidth");
 	config.video.windowedHeight = ConfigGetParamInt(g_configVideoGeneral, "ScreenHeight");
-	config.video.verticalSync = ConfigGetParamBool(g_configVideoGeneral, "VerticalSync");
+	config.video.verticalSync = false;
 	config.video.threadedVideo = ConfigGetParamBool(g_configVideoGliden64, "ThreadedVideo");
 	const u32 multisampling = ConfigGetParamInt(g_configVideoGliden64, "MultiSampling");
 	config.video.multisampling = multisampling == 0 ? 0 : pow2(multisampling);

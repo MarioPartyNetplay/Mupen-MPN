@@ -27,7 +27,6 @@ void Config::resetToDefaults()
 	video.fxaa = 0;
 	video.multisampling = 0;
 	video.maxMultiSampling = 0;
-	video.verticalSync = 0;
 	video.deviceName[0] = L'\0';
 
 #if defined(OS_ANDROID)
@@ -187,8 +186,6 @@ const char* Config::hotkeyIniName(u32 _idx)
 		return "hkTexCoordBounds";
 	case Config::HotKey::hkNativeResTexrects:
 		return "hkNativeResTexrects";
-	case Config::HotKey::hkVsync:
-		return "hkVsync";
 	case Config::HotKey::hkFBEmulation:
 		return "hkFBEmulation";
 	case Config::HotKey::hkN64DepthCompare:
@@ -225,8 +222,6 @@ const char* Config::enabledHotkeyIniName(u32 _idx)
 		return "hkTexCoordBoundsEnabled";
 	case Config::HotKey::hkNativeResTexrects:
 		return "hkNativeResTexrectsEnabled";
-	case Config::HotKey::hkVsync:
-		return "hkVsyncEnabled";
 	case Config::HotKey::hkFBEmulation:
 		return "hkFBEmulationEnabled";
 	case Config::HotKey::hkN64DepthCompare:

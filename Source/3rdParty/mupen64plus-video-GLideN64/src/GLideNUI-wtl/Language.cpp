@@ -38,7 +38,6 @@ void LoadDefaultStrings(void)
 	g_defaultStrings.insert(LANG_STRINGS::value_type(VIDEO_ASPECT_16_19, "16:9"));
 	g_defaultStrings.insert(LANG_STRINGS::value_type(VIDEO_ASPECT_STRETCH, "Stretch"));
 	g_defaultStrings.insert(LANG_STRINGS::value_type(VIDEO_ASPECT_ADJUST, "Try to adjust game to fit"));
-	g_defaultStrings.insert(LANG_STRINGS::value_type(VIDEO_VSYNC, "Enable VSync"));
 	g_defaultStrings.insert(LANG_STRINGS::value_type(VIDEO_VSYNC_TOOLTIP, "Vertical sync, or VSync, can improve the image by syncing the game's frame rate to your monitor's refresh rate. This prevents image tearing, but may cause performance problems.\n\n[Recommended: Usually off, on if you have image tearing problems]"));
 	g_defaultStrings.insert(LANG_STRINGS::value_type(VIDEO_THREADED_VIDEO, "Enable threaded video"));
 	g_defaultStrings.insert(LANG_STRINGS::value_type(VIDEO_THREADED_VIDEO_TOOLTIP, "Threaded video can improve performance with poor OpenGL drivers at the cost of very marginal input lag, usually less than half a frame.\n\n[Recommended: Usually off, unless there are performance issues]"));

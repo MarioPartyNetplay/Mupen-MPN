@@ -117,8 +117,6 @@ struct InputProfile
     InputMapping Hotkey_Resume;
     bool Hotkey_Screenshot_Pressed = false;
     InputMapping Hotkey_Screenshot;
-    bool Hotkey_LimitFPS_Pressed = false;
-    InputMapping Hotkey_LimitFPS;
     bool Hotkey_SpeedFactor_Pressed = false;
     InputMapping Hotkey_SpeedFactor25;
     InputMapping Hotkey_SpeedFactor50;
@@ -332,7 +330,6 @@ static void load_settings(void)
         load_inputmapping_settings(&profile->Hotkey_HardReset, section, SettingsID::Input_Hotkey_HardReset_Name, SettingsID::Input_Hotkey_HardReset_InputType, SettingsID::Input_Hotkey_HardReset_Data, SettingsID::Input_Hotkey_HardReset_ExtraData);
         load_inputmapping_settings(&profile->Hotkey_Resume, section, SettingsID::Input_Hotkey_Resume_Name, SettingsID::Input_Hotkey_Resume_InputType, SettingsID::Input_Hotkey_Resume_Data, SettingsID::Input_Hotkey_Resume_ExtraData);
         load_inputmapping_settings(&profile->Hotkey_Screenshot, section, SettingsID::Input_Hotkey_Screenshot_Name, SettingsID::Input_Hotkey_Screenshot_InputType, SettingsID::Input_Hotkey_Screenshot_Data, SettingsID::Input_Hotkey_Screenshot_ExtraData);
-        load_inputmapping_settings(&profile->Hotkey_LimitFPS, section, SettingsID::Input_Hotkey_LimitFPS_Name, SettingsID::Input_Hotkey_LimitFPS_InputType, SettingsID::Input_Hotkey_LimitFPS_Data, SettingsID::Input_Hotkey_LimitFPS_ExtraData);
         load_inputmapping_settings(&profile->Hotkey_SpeedFactor25, section, SettingsID::Input_Hotkey_SpeedFactor25_Name, SettingsID::Input_Hotkey_SpeedFactor25_InputType, SettingsID::Input_Hotkey_SpeedFactor25_Data, SettingsID::Input_Hotkey_SpeedFactor25_ExtraData);
         load_inputmapping_settings(&profile->Hotkey_SpeedFactor50, section, SettingsID::Input_Hotkey_SpeedFactor50_Name, SettingsID::Input_Hotkey_SpeedFactor50_InputType, SettingsID::Input_Hotkey_SpeedFactor50_Data, SettingsID::Input_Hotkey_SpeedFactor50_ExtraData);
         load_inputmapping_settings(&profile->Hotkey_SpeedFactor75, section, SettingsID::Input_Hotkey_SpeedFactor75_Name, SettingsID::Input_Hotkey_SpeedFactor75_InputType, SettingsID::Input_Hotkey_SpeedFactor75_Data, SettingsID::Input_Hotkey_SpeedFactor75_ExtraData);
@@ -866,7 +863,6 @@ static bool check_hotkeys(int Control)
     DEFINE_HOTKEY(Hotkey_SoftReset,             Hotkey_SoftReset_Pressed,     CoreResetEmulation(false), );
     DEFINE_HOTKEY(Hotkey_Resume,                Hotkey_Resume_Pressed,        CoreIsEmulationPaused() ? CoreResumeEmulation() : CorePauseEmulation(), );
     DEFINE_HOTKEY(Hotkey_Screenshot,            Hotkey_Screenshot_Pressed,    CoreTakeScreenshot(), );
-    DEFINE_HOTKEY(Hotkey_LimitFPS,              Hotkey_LimitFPS_Pressed,      CoreSetSpeedLimiterState(!CoreIsSpeedLimiterEnabled()), );
     DEFINE_HOTKEY(Hotkey_SpeedFactor25,         Hotkey_SpeedFactor_Pressed,   CoreSetSpeedFactor(25), );
     DEFINE_HOTKEY(Hotkey_SpeedFactor50,         Hotkey_SpeedFactor_Pressed,   CoreSetSpeedFactor(50), );
     DEFINE_HOTKEY(Hotkey_SpeedFactor75,         Hotkey_SpeedFactor_Pressed,   CoreSetSpeedFactor(75), );

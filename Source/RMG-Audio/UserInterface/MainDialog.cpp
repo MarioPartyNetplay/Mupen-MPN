@@ -28,7 +28,6 @@ MainDialog::MainDialog(QWidget* parent) : QDialog(parent)
     this->secondaryBufferSizeSpinBox->setValue(CoreSettingsGetIntValue(SettingsID::Audio_SecondaryBufferSize));
     this->resamplerComboBox->setCurrentText(QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Audio_Resampler)));
     this->swapChannelsCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::Audio_SwapChannels));
-    this->synchronizeAudioCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::Audio_Synchronize));
 
     if (!CoreIsEmulationRunning() && !CoreIsEmulationPaused())
     {
@@ -91,7 +90,6 @@ void MainDialog::on_buttonBox_clicked(QAbstractButton* button)
         CoreSettingsSetValue(SettingsID::Audio_SecondaryBufferSize, this->secondaryBufferSizeSpinBox->value());
         CoreSettingsSetValue(SettingsID::Audio_Resampler, this->resamplerComboBox->currentText().toStdString());
         CoreSettingsSetValue(SettingsID::Audio_SwapChannels, this->swapChannelsCheckBox->isChecked());
-        CoreSettingsSetValue(SettingsID::Audio_Synchronize, this->synchronizeAudioCheckBox->isChecked());
         CoreSettingsSave();
     }
     else if (pushButton == defaultButton)
@@ -109,7 +107,6 @@ void MainDialog::on_buttonBox_clicked(QAbstractButton* button)
             this->secondaryBufferSizeSpinBox->setValue(CoreSettingsGetDefaultIntValue(SettingsID::Audio_SecondaryBufferSize));
             this->resamplerComboBox->setCurrentText(QString::fromStdString(CoreSettingsGetDefaultStringValue(SettingsID::Audio_Resampler)));
             this->swapChannelsCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::Audio_SwapChannels));
-            this->synchronizeAudioCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::Audio_Synchronize));
         }
     }
 }

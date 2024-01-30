@@ -28,7 +28,6 @@ struct Config
 		u32 fullscreenWidth, fullscreenHeight, fullscreenRefresh;
 		u32 fxaa;
 		u32 multisampling, maxMultiSampling;
-		u32 verticalSync;
 		u32 threadedVideo;
 		wchar_t deviceName[32];
 	} video;
@@ -228,7 +227,6 @@ struct Config
 		hkHdTexToggle,
 		hkTexCoordBounds,
 		hkNativeResTexrects,
-		hkVsync,
 		hkFBEmulation,
 		hkN64DepthCompare,
 		hkOsdVis,

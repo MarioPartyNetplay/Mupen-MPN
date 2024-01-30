@@ -96,7 +96,6 @@
     <addaction name="separator"/>
     <addaction name="action_System_Screenshot"/>
     <addaction name="separator"/>
-    <addaction name="action_System_LimitFPS"/>
     <addaction name="menuSpeedFactor"/>
     <addaction name="separator"/>
     <addaction name="action_System_SaveState"/>
@@ -356,18 +355,6 @@
    </property>
    <property name="text">
     <string>Screenshot</string>
-   </property>
-  </action>
-  <action name="action_System_LimitFPS">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="icon">
-    <iconset theme="speed-line">
-     <normaloff>.</normaloff>.</iconset>
-   </property>
-   <property name="text">
-    <string>Limit FPS</string>
    </property>
   </action>
   <action name="action_System_SaveState">

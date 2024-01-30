@@ -85,8 +85,6 @@ QString ConfigDialog::_hotkeyDescription(quint32 _idx) const
 		return tr("Toggle texcoords bounds");
 	case Config::HotKey::hkNativeResTexrects:
 		return tr("Toggle 2D texrects in native resolution");
-	case Config::HotKey::hkVsync:
-		return tr("Toggle VSync");
 	case Config::HotKey::hkFBEmulation:
 		return tr("Toggle frame buffer emulation");
 	case Config::HotKey::hkN64DepthCompare:
@@ -238,7 +236,6 @@ void ConfigDialog::_init(bool reInit, bool blockCustomSettings)
 	ui->aliasingLabelVal->setText(QString::number(multisampling));
 	ui->anisotropicSlider->setMaximum(m_maxAnisotropy);
 	ui->anisotropicSlider->setValue(anisotropy);
-	ui->vSyncCheckBox->setChecked(config.video.verticalSync != 0);
 	ui->threadedVideoCheckBox->setChecked(config.video.threadedVideo != 0);
 
 	switch (config.texture.bilinearMode) {
@@ -601,7 +598,6 @@ void ConfigDialog::accept(bool justSave) {
 		config.translationFile = translationFiles[lanuageIndex-1].toLocal8Bit().constData();
 	}
 
-	config.video.verticalSync = ui->vSyncCheckBox->isChecked() ? 1 : 0;
 	config.video.threadedVideo = ui->threadedVideoCheckBox->isChecked() ? 1 : 0;
 
 	// Emulation settings

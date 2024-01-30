@@ -466,7 +466,6 @@ void CVideoTab::LoadSettings(bool /*blockCustomSettings*/) {
 	m_AnisotropicSlider.SetPos(anisotropy);
 	CWindow(GetDlgItem(IDC_ANISOTROPIC_LABEL)).SetWindowTextW(FormatStrW(L"%dx", m_AnisotropicSlider.GetPos()).c_str());
 
-	CButton(GetDlgItem(IDC_CHK_VERTICAL_SYNC)).SetCheck(config.video.verticalSync != 0 ? BST_CHECKED : BST_UNCHECKED);
 	CButton(GetDlgItem(IDC_CHK_THREADED_VIDEO)).SetCheck(config.video.threadedVideo != 0 ? BST_CHECKED : BST_UNCHECKED);
 
 	CButton(GetDlgItem(IDC_BILINEAR_3POINT)).SetCheck(config.texture.bilinearMode == BILINEAR_3POINT ? BST_CHECKED : BST_UNCHECKED);
@@ -524,7 +523,6 @@ void CVideoTab::SaveSettings()
 	else if (AspectIndx == 1) { config.frameBufferEmulation.aspect = Config::a169; }
 	else if (AspectIndx == 3) { config.frameBufferEmulation.aspect = Config::aAdjust; }
 
-	config.video.verticalSync = CButton(GetDlgItem(IDC_CHK_VERTICAL_SYNC)).GetCheck() == BST_CHECKED;
 	config.video.threadedVideo = CButton(GetDlgItem(IDC_CHK_THREADED_VIDEO)).GetCheck() == BST_CHECKED;
 	config.frameBufferEmulation.enableOverscan = CButton(GetDlgItem(IDC_CHK_OVERSCAN)).GetCheck() == BST_CHECKED;
 

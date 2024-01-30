@@ -2,7 +2,7 @@
 set -ex
 script_dir="$(dirname "$0")"
 toplvl_dir="$(realpath "$script_dir/../../")"
-build_config="${1:-Debug}"
+build_config="${1:-Release}"
 build_dir="$toplvl_dir/Build/$build_config"
 threads="${2:-$(nproc)}"
 

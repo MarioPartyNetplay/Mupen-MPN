@@ -102,15 +102,6 @@ bool WindowsWGL::start()
 
 		if (strstr(wglextensions, "WGL_EXT_swap_control") != nullptr) {
 			PFNWGLSWAPINTERVALEXTPROC wglSwapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
-
-			// use adaptive vsync when supported and
-			// when vsync is enabled
-			if (strstr(wglextensions, "WGL_EXT_swap_control_tear") != nullptr &&
-				config.video.verticalSync > 0) {
-				wglSwapIntervalEXT(-1);
-			} else {
-				wglSwapIntervalEXT(config.video.verticalSync);
-			}
 		}
 	}
 

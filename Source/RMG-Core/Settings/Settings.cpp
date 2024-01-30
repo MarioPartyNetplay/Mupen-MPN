@@ -90,12 +90,6 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::GUI_StatusbarMessageDuration:
         setting = {SETTING_SECTION_GUI, "StatusbarMessageDuration", 3};
         break;
-    case SettingsID::GUI_PauseEmulationOnFocusLoss:
-        setting = {SETTING_SECTION_GUI, "PauseEmulationOnFocusLoss", true};
-        break;
-    case SettingsID::GUI_ResumeEmulationOnFocus:
-        setting = {SETTING_SECTION_GUI, "ResumeEmulationOnFocus", true};
-        break;
     case SettingsID::GUI_AutomaticFullscreen:
         setting = {SETTING_SECTION_GUI, "AutomaticFullscreen", false};
         break;
@@ -372,9 +366,6 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::KeyBinding_Screenshot:
         setting = {SETTING_SECTION_KEYBIND, "Screenshot", std::string("F3")};
         break;
-    case SettingsID::KeyBinding_LimitFPS:
-        setting = {SETTING_SECTION_KEYBIND, "LimitFPS", std::string("F4")};
-        break;
     case SettingsID::KeyBinding_SpeedFactor25:
         setting = {SETTING_SECTION_KEYBIND, "SpeedFactor25", std::string("Alt+0")};
         break;
@@ -563,9 +554,6 @@ static l_Setting get_setting(SettingsID settingId)
         break;
     case SettingsID::Audio_Muted:
         setting = {SETTING_SECTION_AUDIO, "Muted", false};
-        break;
-    case SettingsID::Audio_Synchronize:
-        setting = {SETTING_SECTION_AUDIO, "Synchronize", false};
         break;
     case SettingsID::Audio_SimpleBackend:
         setting = {SETTING_SECTION_AUDIO, "SimpleBackend", false};
@@ -924,18 +912,6 @@ static l_Setting get_setting(SettingsID settingId)
         break;
     case SettingsID::Input_Hotkey_Screenshot_ExtraData:
         setting = {"", "Hotkey_Screenshot_ExtraData" };
-        break;
-    case SettingsID::Input_Hotkey_LimitFPS_InputType:
-        setting = {"", "Hotkey_LimitFPS_InputType" };
-        break;
-    case SettingsID::Input_Hotkey_LimitFPS_Name:
-        setting = {"", "Hotkey_LimitFPS_Name" };
-        break;
-    case SettingsID::Input_Hotkey_LimitFPS_Data:
-        setting = {"", "Hotkey_LimitFPS_Data" };
-        break;
-    case SettingsID::Input_Hotkey_LimitFPS_ExtraData:
-        setting = {"", "Hotkey_LimitFPS_ExtraData" };
         break;
     case SettingsID::Input_Hotkey_SpeedFactor25_InputType:
         setting = {"", "Hotkey_SpeedFactor25_InputType" };
@@ -1646,21 +1622,6 @@ bool CoreSettingsUpgrade(void)
     { // settings version was introduced in >v0.1.5
 
 
-    }
-
-    if (settingsVersion == "v0.2.1" ||
-        settingsVersion == "v0.2.2" ||
-        settingsVersion == "v0.2.3")
-    {
-        // sadly when introducing the new RMG-Audio based on mupen64plus-audio-sdl
-        // 1) sync audio seems to cause crackling for some users
-        // 2) sync audio breaks the 'Limit FPS' option
-        // so to fix those issues, we'll disable the sync audio option
-        // if it's enabled
-        if (CoreSettingsGetBoolValue(SettingsID::Audio_Synchronize))
-        {
-            CoreSettingsSetValue(SettingsID::Audio_Synchronize, false);
-        }
     }
 
     // save core version

@@ -155,17 +155,6 @@ static void checkHotkeys()
 			dwnd().getDrawer().showMessage("Enable 2D texrects in native resolution\n", Milliseconds(1000));
 	}
 
-	if (osal_is_key_pressed(config.hotkeys.enabledKeys[Config::hkVsync], 0x0001)) {
-		config.video.verticalSync = !config.video.verticalSync;
-		dwnd().stop();
-		dwnd().start();
-		if (config.video.verticalSync == 0)
-			dwnd().getDrawer().showMessage("Disable vertical sync\n", Milliseconds(1000));
-		else
-			dwnd().getDrawer().showMessage("Enable vertical sync\n", Milliseconds(1000));
-	}
-
-
 	if (osal_is_key_pressed(config.hotkeys.enabledKeys[Config::hkFBEmulation], 0x0001)) {
 		config.frameBufferEmulation.enable = !config.frameBufferEmulation.enable;
 		dwnd().stop();

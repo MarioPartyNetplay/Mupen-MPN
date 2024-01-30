@@ -374,8 +374,6 @@ void SettingsDialog::loadHotkeySettings(void)
 
 void SettingsDialog::loadInterfaceEmulationSettings(void)
 {
-    this->pauseEmulationOnFocusCheckbox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_PauseEmulationOnFocusLoss));
-    this->resumeEmulationOnFocusCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_ResumeEmulationOnFocus));
     this->hideCursorCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_HideCursorInEmulation));
     this->hideCursorFullscreenCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_HideCursorInFullscreenEmulation));
     this->automaticFullscreenCheckbox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_AutomaticFullscreen));
@@ -535,8 +533,6 @@ void SettingsDialog::loadDefaultHotkeySettings(void)
 
 void SettingsDialog::loadDefaultInterfaceEmulationSettings(void)
 {
-    this->pauseEmulationOnFocusCheckbox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_PauseEmulationOnFocusLoss));
-    this->resumeEmulationOnFocusCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_ResumeEmulationOnFocus));
     this->hideCursorCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_HideCursorInEmulation));
     this->hideCursorFullscreenCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_HideCursorInFullscreenEmulation));
     this->automaticFullscreenCheckbox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_AutomaticFullscreen));
@@ -745,8 +741,6 @@ void SettingsDialog::saveInterfaceEmulationSettings(void)
 {
     CoreSettingsSetValue(SettingsID::GUI_HideCursorInEmulation, this->hideCursorCheckBox->isChecked());
     CoreSettingsSetValue(SettingsID::GUI_HideCursorInFullscreenEmulation, this->hideCursorFullscreenCheckBox->isChecked());
-    CoreSettingsSetValue(SettingsID::GUI_PauseEmulationOnFocusLoss, this->pauseEmulationOnFocusCheckbox->isChecked());
-    CoreSettingsSetValue(SettingsID::GUI_ResumeEmulationOnFocus, this->resumeEmulationOnFocusCheckBox->isChecked());
     CoreSettingsSetValue(SettingsID::GUI_AutomaticFullscreen, this->automaticFullscreenCheckbox->isChecked());
     CoreSettingsSetValue(SettingsID::GUI_ConfirmDragDrop, this->confirmDragDropCheckBox->isChecked());
     CoreSettingsSetValue(SettingsID::GUI_StatusbarMessageDuration, this->statusBarMessageDurationSpinBox->value());
@@ -807,7 +801,6 @@ void SettingsDialog::commonHotkeySettings(SettingsDialogAction action)
         { this->hardResetKeyButton, SettingsID::KeyBinding_HardReset },
         { this->pauseKeyButton, SettingsID::KeyBinding_Resume },
         { this->generateBitmapKeyButton, SettingsID::KeyBinding_Screenshot },
-        { this->limitFPSKeyButton, SettingsID::KeyBinding_LimitFPS },
         { this->saveStateKeyButton, SettingsID::KeyBinding_SaveState },
         { this->saveAsKeyButton, SettingsID::KeyBinding_SaveAs },
         { this->loadStateKeyButton, SettingsID::KeyBinding_LoadState },
@@ -1229,7 +1222,6 @@ void SettingsDialog::on_KeybindButton_KeybindingChanged(KeybindButton* button)
         this->hardResetKeyButton,
         this->pauseKeyButton,
         this->generateBitmapKeyButton,
-        this->limitFPSKeyButton,
         this->speedFactor25KeyButton,
         this->speedFactor50KeyButton,
         this->speedFactor75KeyButton,

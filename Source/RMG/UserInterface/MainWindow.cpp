@@ -658,10 +658,6 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     this->action_Join_Room->setEnabled(!inEmulation);
 
     this->action_System_Screenshot->setShortcut(QKeySequence(keyBinding));
-    keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_LimitFPS));
-    this->action_System_LimitFPS->setEnabled(inEmulation);
-    this->action_System_LimitFPS->setShortcut(QKeySequence(keyBinding));
-    this->action_System_LimitFPS->setChecked(CoreIsSpeedLimiterEnabled());
     this->menuSpeedFactor->setEnabled(inEmulation);
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_SaveState));
     this->action_System_SaveState->setEnabled(inEmulation);
@@ -923,7 +919,7 @@ void MainWindow::configureActions(void)
         this->action_System_StartRom, this->action_System_OpenCombo,
         this->action_System_Shutdown, this->action_System_SoftReset,
         this->action_System_HardReset, this->action_System_Pause,
-        this->action_System_Screenshot, this->action_System_LimitFPS,
+        this->action_System_Screenshot,
         this->actionSpeed25, this->actionSpeed50, this->actionSpeed75,
         this->actionSpeed100, this->actionSpeed125, this->actionSpeed150,
         this->actionSpeed175, this->actionSpeed200, this->actionSpeed225,
@@ -1054,7 +1050,6 @@ void MainWindow::connectActionSignals(void)
             &MainWindow::on_Action_System_Screenshot);
     connect(this->action_System_Screenshot2, &QAction::triggered, this,
             &MainWindow::on_Action_System_Screenshot);
-    connect(this->action_System_LimitFPS, &QAction::triggered, this, &MainWindow::on_Action_System_LimitFPS);
     connect(this->action_System_SaveState, &QAction::triggered, this, &MainWindow::on_Action_System_SaveState);
     connect(this->action_System_SaveAs, &QAction::triggered, this, &MainWindow::on_Action_System_SaveAs);
     connect(this->action_System_LoadState, &QAction::triggered, this, &MainWindow::on_Action_System_LoadState);
@@ -1261,8 +1256,8 @@ void MainWindow::on_QGuiApplication_applicationStateChanged(Qt::ApplicationState
     bool isRunning = CoreIsEmulationRunning();
     bool isPaused = CoreIsEmulationPaused();
 
-    bool pauseOnFocusLoss = CoreSettingsGetBoolValue(SettingsID::GUI_PauseEmulationOnFocusLoss);
-    bool resumeOnFocus = CoreSettingsGetBoolValue(SettingsID::GUI_ResumeEmulationOnFocus);
+    bool pauseOnFocusLoss = false;
+    bool resumeOnFocus = false;
 
     switch (state)
     {
@@ -1493,20 +1488,6 @@ void MainWindow::on_Action_System_Screenshot(void)
     if (!CoreTakeScreenshot())
     {
         this->showErrorMessage("CoreTakeScreenshot() Failed!", QString::fromStdString(CoreGetError()));
-    }
-}
-
-void MainWindow::on_Action_System_LimitFPS(void)
-{
-    bool enabled, ret;
-
-    enabled = this->action_System_LimitFPS->isChecked();
-
-    ret = CoreSetSpeedLimiterState(enabled);
-
-    if (!ret)
-    {
-        this->showErrorMessage("CoreSetSpeedLimiterState() Failed!", QString::fromStdString(CoreGetError()));
     }
 }
 

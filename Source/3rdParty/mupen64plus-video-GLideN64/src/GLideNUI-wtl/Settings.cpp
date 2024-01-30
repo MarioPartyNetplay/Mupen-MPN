@@ -30,7 +30,6 @@ void _loadSettings(GlSettings & settings)
 	config.video.multisampling = settings.value("multisampling", config.video.multisampling).toInt();
 	config.video.maxMultiSampling = settings.value("maxMultiSampling", config.video.maxMultiSampling).toInt();
 	config.video.fxaa= settings.value("fxaa", config.video.fxaa).toInt();
-	config.video.verticalSync = settings.value("verticalSync", config.video.verticalSync).toInt();
 	config.video.threadedVideo = settings.value("threadedVideo", config.video.threadedVideo).toInt();
 	settings.endGroup();
 
@@ -215,7 +214,6 @@ void writeSettings(const char * _strIniFolder)
 		settings.setValue("multisampling", config.video.multisampling);
 		settings.setValue("maxMultiSampling", config.video.maxMultiSampling);
 		settings.setValue("fxaa", config.video.fxaa);
-		settings.setValue("verticalSync", config.video.verticalSync);
 		settings.setValue("threadedVideo", config.video.threadedVideo);
 		settings.endGroup();
 
@@ -419,7 +417,6 @@ void saveCustomRomSettings(const char * _strIniFolder, const char * _strRomName)
 	WriteCustomSetting(video, fullscreenRefresh);
 	WriteCustomSetting(video, multisampling);
 	WriteCustomSetting(video, fxaa);
-	WriteCustomSetting(video, verticalSync);
 	settings.endGroup();
 
 	settings.beginGroup("texture");

@@ -115,24 +115,6 @@
         </layout>
        </item>
        <item>
-        <layout class="QHBoxLayout" name="horizontalLayout_78">
-         <item>
-          <widget class="QLabel" name="label_75">
-           <property name="text">
-            <string>Limit FPS</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="UserInterface::Widget::HotkeyButton" name="limitFPSKeyButton">
-           <property name="text">
-            <string/>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-       <item>
         <layout class="QHBoxLayout" name="horizontalLayout_80">
          <item>
           <widget class="QLabel" name="label_77">
