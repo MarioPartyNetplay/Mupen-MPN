@@ -511,7 +511,7 @@ Note=By: gamemasterplc.
 0A 10 Turns
 0F 15 Turns
 19 25 Turns
-1E 30 Turn
+1E 30 Turns
 28 40 Turns
 2D 45 Turns
 32 50 Turns
@@ -577,8 +577,25 @@ Note=By: Rain.
 00 1 Coin
 05 5 Coins
 0A 10 Coins
+0F 15 Coins
 14 20 Coins
+19 25 Coins
+1E 30 Coins
+23 35 Coins
 28 40 Coins
+2D 45 Coins
+32 50 Coins
+37 55 Coins
+3C 60 Coins
+41 65 Coins
+46 70 Coins
+4B 75 Coins
+50 80 Coins
+55 85 Coins
+5A 90 Coins
+5F 95 Coins
+63 99 Coins
+
 
 $Mechanics: Gain X Coins on Blue Spaces (Respects Last 5)
 Note=By: Rain.
@@ -595,8 +612,25 @@ Note=By: Rain.
 00 1 Coin
 05 5 Coins
 0A 10 Coins
+0F 15 Coins
 14 20 Coins
+19 25 Coins
+1E 30 Coins
+23 35 Coins
 28 40 Coins
+2D 45 Coins
+32 50 Coins
+37 55 Coins
+3C 60 Coins
+41 65 Coins
+46 70 Coins
+4B 75 Coins
+50 80 Coins
+55 85 Coins
+5A 90 Coins
+5F 95 Coins
+63 99 Coins
+
 
 $Mechanics: Hidden Blocks Easy To Spot
 Note=By: gamemasterplc
@@ -631,8 +665,25 @@ Note=By: Rain.
 00 1 Coin
 05 5 Coins
 0A 10 Coins
+0F 15 Coins
 14 20 Coins
+19 25 Coins
+1E 30 Coins
+23 35 Coins
 28 40 Coins
+2D 45 Coins
+32 50 Coins
+37 55 Coins
+3C 60 Coins
+41 65 Coins
+46 70 Coins
+4B 75 Coins
+50 80 Coins
+55 85 Coins
+5A 90 Coins
+5F 95 Coins
+63 99 Coins
+
 
 
 $Mechanics: Lose X Coins on Red Spaces (Respects Last 5)
@@ -650,8 +701,25 @@ Note=By: Rain.
 00 1 Coin
 05 5 Coins
 0A 10 Coins
+0F 15 Coins
 14 20 Coins
+19 25 Coins
+1E 30 Coins
+23 35 Coins
 28 40 Coins
+2D 45 Coins
+32 50 Coins
+37 55 Coins
+3C 60 Coins
+41 65 Coins
+46 70 Coins
+4B 75 Coins
+50 80 Coins
+55 85 Coins
+5A 90 Coins
+5F 95 Coins
+63 99 Coins
+
 
 $Mechanics: No Star Hidden Blocks
 Note=By: Airsola.
