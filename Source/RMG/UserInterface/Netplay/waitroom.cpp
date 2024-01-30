@@ -38,21 +38,21 @@ WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidg
     layout->addWidget(pingValue, 1, 1);
 
     QLabel *p1Label = new QLabel("Player 1:", this);
-    layout->addWidget(p1Label, 2, 0);
+    layout->addWidget(p1Label, 3, 0);
 
     QLabel *p2Label = new QLabel("Player 2:", this);
-    layout->addWidget(p2Label, 3, 0);
+    layout->addWidget(p2Label, 4, 0);
 
     QLabel *p3Label = new QLabel("Player 3:", this);
-    layout->addWidget(p3Label, 4, 0);
+    layout->addWidget(p3Label, 5, 0);
 
     QLabel *p4Label = new QLabel("Player 4:", this);
-    layout->addWidget(p4Label, 5, 0);
+    layout->addWidget(p4Label, 6, 0);
 
     for (int i = 0; i < 4; ++i)
     {
         pName[i] = new QLabel(this);
-        layout->addWidget(pName[i], i+2, 1);
+        layout->addWidget(pName[i], i+3, 1);
     }
 
     chatWindow = new QPlainTextEdit(this);
