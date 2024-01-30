@@ -28,7 +28,6 @@
 #include "plugin/plugin.h"
 #include "backends/plugins_compat/plugins_compat.h"
 #include "netplay.h"
-#include "OnScreenDisplay.hpp"
 
 #include <SDL_net.h>
 #if !defined(WIN32)
@@ -260,11 +259,11 @@ static void netplay_process()
                 if (current_status != l_status)
                 {
                     if (((current_status & 0x1) ^ (l_status & 0x1)) != 0)
-                        OnScreenDisplaySetMessage("Possibly desync detected at VI %u", l_vi_counter);
+                        DebugMessage(M64MSG_ERROR, "Netplay: players have de-synced at VI %u", l_vi_counter);
                     for (int dis = 1; dis < 5; ++dis)
                     {
                         if (((current_status & (0x1 << dis)) ^ (l_status & (0x1 << dis))) != 0)
-                            OnScreenDisplaySetMessage("Player %u has disconnected", dis);
+                            DebugMessage(M64MSG_ERROR, "Netplay: player %u has disconnected", dis);
                     }
                     l_status = current_status;
                 }
