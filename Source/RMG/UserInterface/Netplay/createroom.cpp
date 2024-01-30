@@ -64,7 +64,7 @@ CreateRoom::CreateRoom(QWidget *parent)
 
     connect(this, SIGNAL (finished(int)), this, SLOT (onFinished(int)));
 
-    QNetworkRequest request(QUrl(QStringLiteral("https://pastebin.com/raw/WUKUzeCu")));
+    QNetworkRequest request(QUrl(QStringLiteral("https://gist.githubusercontent.com/EndangeredNayla/509752dc059d5b868e9403fb30218315/raw/c10dafddb99f89854e00c223f0687485a5e9009c/")));
     manager.get(request);
 
     broadcastSocket.bind(QHostAddress(QHostAddress::AnyIPv4), 0);
