@@ -647,6 +647,13 @@ Note= By: gamemasterplc.
 D11026DA E9C0
 811026DA EEBC
 
+$Mechanics: Item Hidden Blocks only contain Magic Lamps and Boo Bells
+Note= By: WolfGC64. Boo Bell get text will say "Skeleton Key", but will display the correct image and give out the correct item.
+D1101E70 0148
+81101E70 0B31
+D1101E72 0E50
+81101E72 0E64
+
 $Mechanics: Lose X Coins on Red Spaces (Doesn't Respect Last 5)
 Note= By: gamemasterplc.
 810FE2C0 3408
