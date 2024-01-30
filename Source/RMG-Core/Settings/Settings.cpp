@@ -147,38 +147,46 @@ static l_Setting get_setting(SettingsID settingId)
 
     case SettingsID::Core_GFX_Plugin:
         setting = {SETTING_SECTION_CORE, "GFX_Plugin", 
-#ifdef _WIN32
+    #ifdef _WIN32
                     std::string("mupen64plus-video-GLideN64.dll"),
-#else
+    #elif defined(__APPLE__)
+                    std::string("mupen64plus-video-GLideN64.dylib"),
+    #else
                     std::string("mupen64plus-video-GLideN64.so"),
-#endif // _WIN32
+    #endif
                   };
         break;
     case SettingsID::Core_AUDIO_Plugin:
         setting = {SETTING_SECTION_CORE, "AUDIO_Plugin", 
-#ifdef _WIN32
+    #ifdef _WIN32
                     std::string("RMG-Audio.dll"),
-#else
-                    std::string("RMG-Audio.so"),
-#endif // _WIN32
+    #elif defined(__APPLE__)
+                    std::string("libRMG-Audio.dylib"),
+    #else
+                    std::string("libRMG-Audio.so"),
+    #endif
                   };
         break;
     case SettingsID::Core_INPUT_Plugin:
         setting = {SETTING_SECTION_CORE, "INPUT_Plugin", 
-#ifdef _WIN32
+    #ifdef _WIN32
                     std::string("RMG-Input.dll"),
-#else
-                    std::string("RMG-Input.so"),
-#endif // _WIN32
+    #elif defined(__APPLE__)
+                    std::string("libRMG-Input.dylib"),
+    #else
+                    std::string("libRMG-Input.so"),
+    #endif
                   };
         break;
     case SettingsID::Core_RSP_Plugin:
         setting = {SETTING_SECTION_CORE, "RSP_Plugin", 
-#ifdef _WIN32
+    #ifdef _WIN32
                     std::string("mupen64plus-rsp-hle.dll"),
-#else
+    #elif defined(__APPLE__)
+                    std::string("mupen64plus-rsp-hle.dylib"),
+    #else
                     std::string("mupen64plus-rsp-hle.so"),
-#endif // _WIN32
+    #endif
                   };
         break;
 

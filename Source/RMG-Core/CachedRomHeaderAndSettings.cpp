@@ -22,7 +22,9 @@
 
 #ifdef _WIN32
 #include <Windows.h>
-#else // Linux
+#elif __APPLE__
+#include <limits.h>
+#else
 #include <linux/limits.h>
 #endif // _WIN32
 

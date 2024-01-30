@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+
+
+# Check if the system is macOS
+if [[ "$(uname)" == "Darwin" ]]; then
+    alias nproc="sysctl -n hw.logicalcpu"
+fi
+
 set -ex
 script_dir="$(dirname "$0")"
 toplvl_dir="$(realpath "$script_dir/../../")"

@@ -18,6 +18,10 @@ if (WIN32)
     pkg_check_modules(ICONV REQUIRED iconv)
 endif(WIN32)
 
+if (APPLE)
+    find_library(MINIZIP_LIBRARY NAMES minizip)
+endif()
+
 configure_file(Config.hpp.in Config.hpp)
 
 set(RMG_CORE_SOURCES
