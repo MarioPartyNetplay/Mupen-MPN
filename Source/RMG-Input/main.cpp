@@ -1275,7 +1275,7 @@ EXPORT void CALL RomClosed(void)
     l_HotkeysThread->SetState(HotkeysThreadState::RomClosed);
     l_HasControlInfo = false;
     close_controllers();
-
+}
 
 EXPORT void CALL SDL_KeyDown(int keymod, int keysym)
 {
