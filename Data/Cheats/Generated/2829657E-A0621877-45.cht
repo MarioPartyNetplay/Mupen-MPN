@@ -14,14 +14,14 @@ $Board Select
 08 Explaination Map
 09 Mini Game Stadium
 
-$Lower Left Character\Coin Options
+$Player 3\Coin Options
 800F3318 00??
 00 0 Coins
 0A 10 Coins
 64 100 Coins
 FF 255 Coins
 
-$Lower Left Character\Dice Always
+$Player 3\Dice Always
 Note=With this option you can calculate exactly how many you need to get on the position of your choice.
 800D635B 00??
 00 Rolls In Random
@@ -36,19 +36,19 @@ Note=With this option you can calculate exactly how many you need to get on the 
 09 Rolls In 9
 0A Rolls In 10
 
-$Lower Left Character\Star Options
+$Player 3\Star Options
 800F331C 00??
 00 0 Stars
 64 99 Stars
 
-$Lower Right Character\Coin Options
+$Player 4\Coin Options
 800F3348 00??
 00 0 Coins
 0A 10 Coins
 64 100 Coins
 FF 255 Coins
 
-$Lower Right Character\Dice Always
+$Player 4\Dice Always
 Note=With this option you can calculate exactly how many you need to get on the position of your choice.
 800D639F 00??
 00 Rolls In Random
@@ -63,7 +63,7 @@ Note=With this option you can calculate exactly how many you need to get on the 
 09 Rolls In 9
 0A Rolls In 10
 
-$Lower Right Character\Star Options
+$Player 4\Star Options
 800F334C 00??
 00 0 Stars
 64 99 Stars
@@ -116,7 +116,7 @@ $Mini Game\Max 99 Coins
 $Mini Game\Unlimited 99 lives
 800F3767 0063
 
-$Top Left Character\Coin Options
+$Player 1\Coin Options
 Note=If you want to have full 255 Coins,1st use the 100 Option then put on 255. this will stop the numbers from changing  & spoiling the result.
 800F32B8 00??
 00 0 Coins
@@ -124,7 +124,7 @@ Note=If you want to have full 255 Coins,1st use the 100 Option then put on 255. 
 64 100 Coins
 FF 255 Coins
 
-$Top Left Character\Dice Always
+$Player 1\Dice Always
 Note=With this option you can calculate exactly how many you need to get on the position of your choice.
 800D62D3 00??
 00 Rolls In Random
@@ -139,19 +139,19 @@ Note=With this option you can calculate exactly how many you need to get on the 
 09 Rolls In 9
 0A Rolls In 10
 
-$Top Left Character\Star Options
+$Player 1\Star Options
 800F32BC 00??
 00 0 Stars
 64 99 Stars
 
-$Top Right Character\Coin Options
+$Player 2\Coin Options
 800F32E8 00??
 00 0 Coins
 0A 10 Coins
 64 100 Coins
 FF 255 Coins
 
-$Top Right Character\Dice Always
+$Player 2\Dice Always
 Note=With this option you can calculate exactly how many you need to get on the position of your choice.
 800D6317 00??
 00 Rolls In Random
@@ -166,7 +166,7 @@ Note=With this option you can calculate exactly how many you need to get on the 
 09 Rolls In 9
 0A Rolls In 10
 
-$Top Right Character\Star Options
+$Player 2\Star Options
 800F32EC 00??
 00 0 Stars
 64 99 Stars
