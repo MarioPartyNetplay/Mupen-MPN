@@ -33,10 +33,9 @@ enum class N64ControllerButton
 
 enum class InputDeviceType
 {
-    EmulateVRU = -4,
-    None       = -3,
-    Automatic  = -2,
-    Keyboard   = -1,
+    None      = -3,
+    Automatic = -2,
+    Keyboard  = -1
 };
 
 enum class InputType

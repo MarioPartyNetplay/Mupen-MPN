@@ -17,9 +17,6 @@
 #include "Utilities/InputDevice.hpp"
 #include "common.hpp"
 #include "main.hpp"
-#ifdef VRU
-#include "VRU.hpp"
-#endif // VRU
 
 #include <RMG-Core/Core.hpp>
 
@@ -377,7 +374,6 @@ static void apply_controller_profiles(void)
     {
         InputProfile* profile = &l_InputProfiles[i];
         int plugin = PLUGIN_NONE;
-        bool emulateVRU = (profile->DeviceNum == (int)InputDeviceType::EmulateVRU);
 
         switch (profile->ControllerPak)
         {
@@ -387,7 +383,7 @@ static void apply_controller_profiles(void)
             case N64ControllerPak::RumblePak:
                 plugin = PLUGIN_RAW;
                 break;
-            case N64ControllerPak::TransferPak:
+             case N64ControllerPak::TransferPak:
                 plugin = PLUGIN_TRANSFER_PAK;
                 break;
             default:
@@ -395,26 +391,10 @@ static void apply_controller_profiles(void)
                 break;
         }
 
-#ifdef VRU
-        // attempt to try initializing VRU when needed,
-        // if it fails, unplug the VRU
-        if (emulateVRU && !IsVRUInit() && !InitVRU())
-        {
-            profile->PluggedIn = false;
-        }
-#else
-        // always unplug VRU when RMG-Input was built
-        // without VRU support
-        if (emulateVRU)
-        {
-            profile->PluggedIn = false;
-        }
-#endif // VRU
-
         l_ControlInfo.Controls[i].Present = profile->PluggedIn ? 1 : 0;
-        l_ControlInfo.Controls[i].Plugin  = emulateVRU ? PLUGIN_NONE : plugin;
+        l_ControlInfo.Controls[i].Plugin  = plugin;
         l_ControlInfo.Controls[i].RawData = 0;
-        l_ControlInfo.Controls[i].Type    = emulateVRU ? CONT_TYPE_VRU : CONT_TYPE_STANDARD;
+        l_ControlInfo.Controls[i].Type    = CONT_TYPE_STANDARD;
     }
 }
 
@@ -905,7 +885,7 @@ static void sdl_init()
     std::string debugMessage;
     int ret = -1;
 
-    for (const int subsystem : {SDL_INIT_GAMECONTROLLER, SDL_INIT_AUDIO, SDL_INIT_VIDEO, SDL_INIT_HAPTIC})
+    for (const int subsystem : {SDL_INIT_GAMECONTROLLER, SDL_INIT_VIDEO, SDL_INIT_HAPTIC})
     {
         if (!SDL_WasInit(subsystem))
         {
@@ -1182,23 +1162,6 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
         return;
     }
 
-#ifdef VRU
-    // when we're emulating the VRU,
-    // we need to check the mic state
-    if (profile->DeviceNum == (int)InputDeviceType::EmulateVRU)
-    {
-        if (GetVRUMicState())
-        {
-            Keys->Value = 0x0020;
-        }
-        else
-        {
-            Keys->Value = 0x0000;
-        }
-        return;
-    }
-#endif // VRU
-
     // check if device has been disconnected,
     // if it has, try to open it again,
     // only do this every 2 seconds to prevent lag
@@ -1312,10 +1275,7 @@ EXPORT void CALL RomClosed(void)
     l_HotkeysThread->SetState(HotkeysThreadState::RomClosed);
     l_HasControlInfo = false;
     close_controllers();
-#ifdef VRU
-    QuitVRU();
-#endif // VRU
-}
+
 
 EXPORT void CALL SDL_KeyDown(int keymod, int keysym)
 {
