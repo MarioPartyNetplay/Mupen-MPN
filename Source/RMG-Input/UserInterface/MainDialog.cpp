@@ -102,8 +102,7 @@ void MainDialog::openInputDevice(QString deviceName, int deviceNum)
 
     // we don't need to open a keyboard or VRU
     if (deviceNum == (int)InputDeviceType::None ||
-        deviceNum == (int)InputDeviceType::Keyboard ||
-        deviceNum == (int)InputDeviceType::EmulateVRU)
+        deviceNum == (int)InputDeviceType::Keyboard)
     {
         this->currentDeviceName = "";
         this->currentDeviceNum  = deviceNum;
@@ -223,8 +222,7 @@ void MainDialog::on_ControllerWidget_CurrentInputDeviceChanged(ControllerWidget*
 
     // only open device when needed
     if (deviceNum != (int)InputDeviceType::None &&
-        deviceNum != (int)InputDeviceType::Keyboard &&
-        deviceNum != (int)InputDeviceType::EmulateVRU)
+        deviceNum != (int)InputDeviceType::Keyboard)
     {
         this->openInputDevice(deviceName, deviceNum);
     }
@@ -289,8 +287,7 @@ void MainDialog::on_tabWidget_currentChanged(int index)
 
     // only open device when needed
     if (deviceNum != (int)InputDeviceType::None &&
-        deviceNum != (int)InputDeviceType::Keyboard &&
-        deviceNum != (int)InputDeviceType::EmulateVRU)
+        deviceNum != (int)InputDeviceType::Keyboard)
     {
         this->openInputDevice(deviceName, deviceNum);
     }
