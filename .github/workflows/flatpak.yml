@@ -31,16 +31,16 @@ jobs:
         # The relative path of the manifest file.
         manifest-path: Package/flatpak.yml
         # The bundle name, by default it's app.flatpak
-        bundle: DolphinMPN-linux.flatpak
+        bundle: MupenMPN-linux.flatpak
     # Upload Artifact
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v2
       with:
-        name: DolphinMPN-Linux-flatpak
-        path: /home/runner/work/Dolphin-MPN-src/Dolphin-MPN-src/.flatpak/OUT
+        name: MupenMPN-Linux-flatpak
+        path: /home/runner/work/Mupen-MPN-src/Mupen-MPN-src/.flatpak/OUT
     # New Release
     - name: New Release
       if: ${{ startsWith(github.ref, 'refs/tags/') }}
       uses: ncipollo/release-action@v1.12.0
       with:
-        artifacts: /home/runner/work/Dolphin-MPN-src/Dolphin-MPN-src/.flatpak/OUT/DolphinMPN-linux.flatpak
+        artifacts: /home/runner/work/Mupen-MPN-src/Mupen-MPN-src/.flatpak/OUT/MupenMPN-linux.flatpak
