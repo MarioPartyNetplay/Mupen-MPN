@@ -33,6 +33,7 @@ enum class SettingsID
     Core_AUDIO_Plugin,
     Core_INPUT_Plugin,
     Core_RSP_Plugin,
+    Core_EXECUTION_Plugin,
 
     // Core User Directory Settings
     Core_OverrideUserDirs,
@@ -99,6 +100,7 @@ enum class SettingsID
     Game_AUDIO_Plugin,
     Game_INPUT_Plugin,
     Game_RSP_Plugin,
+    Game_EXECUTION_Plugin,
 
     // GUI KeyBindings
     KeyBinding_RemoveDuplicates,
