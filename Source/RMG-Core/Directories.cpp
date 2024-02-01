@@ -45,7 +45,7 @@ static std::filesystem::path get_exe_directory(void)
 
     if (!directory.empty())
     {
-        return directory;
+        return directory.make_preferred();
     }
 
 #ifdef _WIN32
@@ -66,7 +66,7 @@ static std::filesystem::path get_exe_directory(void)
         std::terminate();
     }
 #endif // _WIN32
-    return directory;
+    return directory.make_preferred();
 }
 #endif // PORTABLE_INSTALL
 
@@ -121,7 +121,7 @@ static std::filesystem::path get_var_directory(std::string var, std::string appe
         directory += append;
     }
 
-    return directory;
+    return directory.make_preferred();
 }
 
 static std::filesystem::path get_command_output(std::string command)

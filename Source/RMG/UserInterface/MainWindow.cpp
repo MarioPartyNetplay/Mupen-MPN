@@ -91,6 +91,12 @@ bool MainWindow::Init(QApplication* app, bool showUI, bool launchROM)
     }
 
     this->coreCallBacks = new CoreCallbacks(this);
+
+    // connect signals early due to pending debug callbacks
+    connect(coreCallBacks, &CoreCallbacks::OnCoreDebugCallback, this, &MainWindow::on_Core_DebugCallback);
+    connect(coreCallBacks, &CoreCallbacks::OnCoreStateCallback, this, &MainWindow::on_Core_StateCallback);
+    connect(app, &QGuiApplication::applicationStateChanged, this, &MainWindow::on_QGuiApplication_applicationStateChanged);
+
     if (!this->coreCallBacks->Init())
     {
         this->showErrorMessage("CoreCallbacks::Init() Failed", QString::fromStdString(CoreGetError()));
@@ -102,10 +108,6 @@ bool MainWindow::Init(QApplication* app, bool showUI, bool launchROM)
     {
         this->addActions();
     }
-
-    connect(coreCallBacks, &CoreCallbacks::OnCoreDebugCallback, this, &MainWindow::on_Core_DebugCallback);
-    connect(coreCallBacks, &CoreCallbacks::OnCoreStateCallback, this, &MainWindow::on_Core_StateCallback);
-    connect(app, &QGuiApplication::applicationStateChanged, this, &MainWindow::on_QGuiApplication_applicationStateChanged);
 
     return true;
 }
@@ -590,12 +592,6 @@ void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool re
         this->ui_Widget_RomBrowser->StopRefreshRomList();
     }
 
-    if (this->ui_LaunchInFullscreen || CoreSettingsGetBoolValue(SettingsID::GUI_AutomaticFullscreen))
-    {
-        this->ui_FullscreenTimerId = this->startTimer(100);
-        this->ui_LaunchInFullscreen = false;
-    }
-
     if (!CoreArePluginsReady())
     {
         // always go back to ROM Browser
@@ -605,6 +601,14 @@ void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool re
         this->showErrorMessage("CoreArePluginsReady() Failed", QString::fromStdString(CoreGetError()));
         return;
     }
+
+    if (this->ui_LaunchInFullscreen || CoreSettingsGetBoolValue(SettingsID::GUI_AutomaticFullscreen))
+    {
+        this->ui_FullscreenTimerId = this->startTimer(100);
+        this->ui_LaunchInFullscreen = false;
+    }
+
+    this->ui_CheckVideoSizeTimerId = this->startTimer(2000);
 
     this->ui_HideCursorInEmulation = CoreSettingsGetBoolValue(SettingsID::GUI_HideCursorInEmulation);
     this->ui_HideCursorInFullscreenEmulation = CoreSettingsGetBoolValue(SettingsID::GUI_HideCursorInFullscreenEmulation);
@@ -1175,6 +1179,39 @@ void MainWindow::timerEvent(QTimerEvent *event)
         this->updateSaveStateSlotActions(CoreIsEmulationRunning(), false);
         this->killTimer(timerId);
         this->ui_UpdateSaveStateSlotTimerId = 0;
+    }
+    else if (timerId == this->ui_CheckVideoSizeTimerId)
+    {
+        if (!CoreIsEmulationRunning())
+        {
+            return;
+        }
+
+        int width  = 0;
+        int height = 0;
+        if (!CoreGetVideoSize(width, height))
+        {
+            return;
+        }
+
+        int expectedWidth  = 0;
+        int expectedHeight = 0;
+        if (this->ui_VidExtRenderMode == VidExtRenderMode::OpenGL)
+        {
+            expectedWidth  = this->ui_Widget_OpenGL->GetWidget()->width()  * this->devicePixelRatio();
+            expectedHeight = this->ui_Widget_OpenGL->GetWidget()->height() * this->devicePixelRatio();
+        }
+        else
+        {
+            expectedWidth  = this->ui_Widget_Vulkan->GetWidget()->width()  * this->devicePixelRatio();
+            expectedHeight = this->ui_Widget_Vulkan->GetWidget()->height() * this->devicePixelRatio();
+        }
+
+        if (width  != expectedWidth ||
+            height != expectedHeight)
+        {
+            CoreSetVideoSize(expectedWidth, expectedHeight);
+        }
     }
 }
 
@@ -1829,7 +1866,12 @@ void MainWindow::on_Action_Audio_ToggleVolumeMute(void)
 
 void MainWindow::on_Emulation_Started(void)
 {
-    this->logDialog.Clear();
+    // only clear log dialog when we've gone over the limit
+    if (this->logDialog.GetLineCount() >= 500000)
+    {
+        this->logDialog.Clear();
+    }
+
     this->ui_MessageBoxList.clear();
     this->ui_DebugCallbackErrors.clear();
 }
@@ -1855,6 +1897,12 @@ void MainWindow::on_Emulation_Finished(bool ret)
     {
         this->killTimer(this->ui_FullscreenTimerId);
         this->ui_FullscreenTimerId = 0;
+    }
+
+    if (this->ui_CheckVideoSizeTimerId != 0)
+    {
+        this->killTimer(this->ui_CheckVideoSizeTimerId);
+        this->ui_CheckVideoSizeTimerId = 0;
     }
 
     if (this->ui_QuitAfterEmulation)

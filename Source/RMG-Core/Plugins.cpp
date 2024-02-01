@@ -284,6 +284,9 @@ bool apply_plugin_settings(std::string pluginSettings[4])
             }
 
             l_PluginFiles[i] = settingValue;
+
+            CoreAddCallbackMessage(CoreDebugMessageType::Info, 
+                "Loaded plugin " + std::filesystem::path(settingValue).filename().string());
         }
     }
 

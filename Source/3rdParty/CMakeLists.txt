@@ -24,7 +24,9 @@ else()
     set(CORE_FILE "libmupen64plus.so")
 endif()
 
-set(BASE_CMAKE_CONFIGURE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER})
+set(BASE_CMAKE_CONFIGURE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} 
+    -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+    -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS} -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS})
 if (USE_CCACHE)
     set(CMAKE_CONFIGURE_ARGS ${BASE_CMAKE_CONFIGURE_ARGS} -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache)
     set(MAKE_CC_COMPILER "ccache ${CMAKE_C_COMPILER}")
@@ -35,17 +37,44 @@ else(USE_CCACHE)
     set(MAKE_CXX_COMPILER "${CMAKE_CXX_COMPILER}")
 endif(USE_CCACHE)
 
+# use sub-make when available
+if ("${CMAKE_GENERATOR}" STREQUAL "Unix Makefiles" OR
+    "${CMAKE_GENERATOR}" STREQUAL "MSYS Makefiles")
+    set(MAKE_CMD "$(MAKE)")
+else()
+    set(MAKE_CMD "make")
+endif()
+
+if ("${CMAKE_C_FLAGS}" STREQUAL "")
+    if (USE_LTO)
+        set(MAKE_OPTFLAGS "-O3 -flto")
+    else(USE_LTO)
+        set(MAKE_OPTFLAGS "-O3")
+    endif(USE_LTO)
+else()
+    set(MAKE_OPTFLAGS "${CMAKE_C_FLAGS}")
+endif()
+
+if ("${CMAKE_BUILD_TYPE}" STREQUAL "RelWithDebInfo" OR
+    "${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+    set(MAKE_DEBUG "1")
+else()
+    set(MAKE_DEBUG "0")
+endif()
+
 ExternalProject_Add(mupen64plus-core
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-core/
 
     CONFIGURE_COMMAND ""
     INSTALL_COMMAND ""
 
-    BUILD_COMMAND make all -f ${M64P_CORE_DIR}/projects/unix/Makefile 
+    BUILD_COMMAND ${MAKE_CMD} all -f ${M64P_CORE_DIR}/projects/unix/Makefile 
         SRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-core/src 
         SUBDIR=${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-core/subprojects 
-        OSD=0 NEW_DYNAREC=1 KEYBINDINGS=0 ACCURATE_FPU=1 NETPLAY=1
-        TARGET=${CORE_FILE} DEBUG=$<CONFIG:Debug> CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
+        OSD=0 NEW_DYNAREC=1 NO_ASM=$<BOOL:${NO_ASM}> KEYBINDINGS=0 ACCURATE_FPU=1
+        TARGET=${CORE_FILE} DEBUG=${MAKE_DEBUG}
+        CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
+        OPTFLAGS=${MAKE_OPTFLAGS}
     BUILD_IN_SOURCE False
     BUILD_ALWAYS True
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-core
@@ -61,15 +90,16 @@ ExternalProject_Add(mupen64plus-rsp-cxd4
     CONFIGURE_COMMAND ""
     INSTALL_COMMAND ""
 
-    BUILD_COMMAND make all -f ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-cxd4/projects/unix/Makefile
+    BUILD_COMMAND ${MAKE_CMD} all -f ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-cxd4/projects/unix/Makefile
         SRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-cxd4
-        APIDIR=${APIDIR} DEBUG=$<CONFIG:Debug> POSTFIX= CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
+        APIDIR=${APIDIR} DEBUG=${MAKE_DEBUG} POSTFIX= 
+        CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
+        OPTFLAGS=${MAKE_OPTFLAGS}
     BUILD_IN_SOURCE False
     BUILD_ALWAYS True
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-cxd4
 
     BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-cxd4/mupen64plus-rsp-cxd4.${SO_EXT}
-    DEPENDS mupen64plus-core
 )
 
 ExternalProject_Add(mupen64plus-rsp-hle
@@ -78,15 +108,16 @@ ExternalProject_Add(mupen64plus-rsp-hle
     CONFIGURE_COMMAND ""
     INSTALL_COMMAND ""
 
-    BUILD_COMMAND make all -f ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-hle/projects/unix/Makefile
+    BUILD_COMMAND ${MAKE_CMD} all -f ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-hle/projects/unix/Makefile
         SRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-hle/src
-        APIDIR=${APIDIR} DEBUG=$<CONFIG:Debug> CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
+        APIDIR=${APIDIR} DEBUG=${MAKE_DEBUG}
+        CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
+        OPTFLAGS=${MAKE_OPTFLAGS}
     BUILD_IN_SOURCE False
     BUILD_ALWAYS True
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-hle
 
     BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-hle/mupen64plus-rsp-hle.${SO_EXT}
-    DEPENDS mupen64plus-core
 )
 
 ExternalProject_Add(mupen64plus-rsp-parallel
@@ -100,7 +131,6 @@ ExternalProject_Add(mupen64plus-rsp-parallel
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-parallel
 
     BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-parallel/mupen64plus-rsp-parallel.${SO_EXT}
-    DEPENDS mupen64plus-core
 )
 
 ExternalProject_Add(mupen64plus-input-raphnetraw
@@ -109,15 +139,16 @@ ExternalProject_Add(mupen64plus-input-raphnetraw
     CONFIGURE_COMMAND ""
     INSTALL_COMMAND ""
 
-    BUILD_COMMAND make all -f ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-input-raphnetraw/projects/unix/Makefile
+    BUILD_COMMAND ${MAKE_CMD} all -f ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-input-raphnetraw/projects/unix/Makefile
         SRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-input-raphnetraw/src
-        APIDIR=${APIDIR} DEBUG=$<CONFIG:Debug> CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
+        APIDIR=${APIDIR} DEBUG=${MAKE_DEBUG}
+        CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
+        OPTFLAGS=${MAKE_OPTFLAGS}
     BUILD_IN_SOURCE False
     BUILD_ALWAYS True
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-input-raphnetraw
 
     BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-input-raphnetraw/mupen64plus-input-raphnetraw.${SO_EXT}
-    DEPENDS mupen64plus-core
 )
 
 if (BUILD_INPUT_GCA)
@@ -131,7 +162,6 @@ if (BUILD_INPUT_GCA)
         BUILD_IN_SOURCE True
 
         BUILD_BYPRODUCTS ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-input-gca/target/release/${GCA_LIB}
-        DEPENDS mupen64plus-core
     )
 endif(BUILD_INPUT_GCA)
 
@@ -141,7 +171,15 @@ set(GLIDEN64_CUSTOM_INI "${GLIDEN64_DIR}/ini/GLideN64.custom.ini")
 if (WIN32)
     set(GLIDEN64_LIB "${GLIDEN64_BUILD_DIR}/mupen64plus-video-GLideN64.${SO_EXT}")
 else(WIN32)
-    set(GLIDEN64_LIB "${GLIDEN64_BUILD_DIR}/plugin/${CMAKE_BUILD_TYPE}/mupen64plus-video-GLideN64.${SO_EXT}")
+    # taken from GLideN64's CMakeLists.txt
+    if("${CMAKE_BUILD_TYPE}" STREQUAL "Release" OR
+        "${CMAKE_BUILD_TYPE}" STREQUAL "MinSizeRel" OR
+        "${CMAKE_BUILD_TYPE}" STREQUAL "RelWithDebInfo")
+        set(GLIDEN64_BUILD_TYPE Release)
+    elseif("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+        set(GLIDEN64_BUILD_TYPE Debug)
+    endif()
+    set(GLIDEN64_LIB "${GLIDEN64_BUILD_DIR}/plugin/${GLIDEN64_BUILD_TYPE}/mupen64plus-video-GLideN64.${SO_EXT}")
 endif(WIN32)
 
 set(GLIDENUI_TRANSLATIONS_LANGS "de;es;fr;it;ja;pl;pt_BR")
@@ -149,19 +187,20 @@ foreach(LANG ${GLIDENUI_TRANSLATIONS_LANGS})
     list(APPEND GLIDENUI_TRANSLATIONS "${GLIDEN64_DIR}/translations/release/gliden64_${LANG}.qm")
 endforeach()
 
-ExternalProject_Add(mupen64plus-video-angrylion-plus
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-video-angrylion-plus
+if (USE_ANGRYLION)
+    ExternalProject_Add(mupen64plus-video-angrylion-plus
+        SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-video-angrylion-plus
 
-    INSTALL_COMMAND ""
+        INSTALL_COMMAND ""
 
-    BUILD_IN_SOURCE False
-    BUILD_ALWAYS True
-    CMAKE_ARGS -DBUILD_MUPEN64PLUS=ON -DBUILD_PROJECT64=OFF -DUSE_QT5=OFF ${CMAKE_CONFIGURE_ARGS}
-    BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-video-angrylion-plus
+        BUILD_IN_SOURCE False
+        BUILD_ALWAYS True
+        CMAKE_ARGS -DBUILD_MUPEN64PLUS=ON -DBUILD_PROJECT64=OFF -DUSE_QT5=OFF ${CMAKE_CONFIGURE_ARGS}
+        BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-video-angrylion-plus
 
-    BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-video-angrylion-plus/mupen64plus-video-angrylion-plus.${SO_EXT}
-    DEPENDS mupen64plus-core
-)
+        BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-video-angrylion-plus/mupen64plus-video-angrylion-plus.${SO_EXT}
+    )
+endif(USE_ANGRYLION)
 
 ExternalProject_Add(mupen64plus-video-GLideN64
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-video-GLideN64
@@ -189,7 +228,6 @@ ExternalProject_Add(mupen64plus-video-parallel
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-video-parallel
 
     BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-video-parallel/mupen64plus-video-parallel.${SO_EXT}
-    DEPENDS mupen64plus-core
 )
 
 if (DISCORD_RPC)
@@ -276,8 +314,10 @@ if (BUILD_INPUT_GCA)
     set(MUPEN64PLUS_PLUGIN_INPUT_GCA ${BUILD_BYPRODUCTS} PARENT_SCOPE)
 endif(BUILD_INPUT_GCA)
 
-ExternalProject_Get_property(mupen64plus-video-angrylion-plus BUILD_BYPRODUCTS)
-set(MUPEN64PLUS_PLUGIN_GFX_ANGRYLION ${BUILD_BYPRODUCTS} PARENT_SCOPE)
+if (USE_ANGRYLION)
+    ExternalProject_Get_property(mupen64plus-video-angrylion-plus BUILD_BYPRODUCTS)
+    set(MUPEN64PLUS_PLUGIN_GFX_ANGRYLION ${BUILD_BYPRODUCTS} PARENT_SCOPE)
+endif(USE_ANGRYLION)
 
 ExternalProject_Get_property(mupen64plus-video-GLideN64 BUILD_BYPRODUCTS)
 set(MUPEN64PLUS_PLUGIN_GFX_GLIDEN64 ${BUILD_BYPRODUCTS} ${GLIDENUI_TRANSLATIONS} ${GLIDEN64_CUSTOM_INI} PARENT_SCOPE)

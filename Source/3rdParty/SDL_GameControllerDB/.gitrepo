@@ -6,7 +6,7 @@
 [subrepo]
 	remote = git@github.com:/gabomdq/SDL_GameControllerDB.git
 	branch = master
-	commit = dbcf31a6709ec8354b5963b1bb411721e07bd846
-	parent = 37754e5cbac67beb19b382d563080e974b328d47
+	commit = 006dd4c4ca51f57299a39ba9c2080a2ea7bfd2cc
+	parent = 0ba2e370ff684e3cc37c1e8d656e9f4e54d7b635
 	method = merge
 	cmdver = 0.4.6
