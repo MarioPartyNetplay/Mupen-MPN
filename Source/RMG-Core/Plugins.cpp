@@ -136,7 +136,7 @@ std::string get_plugin_context_name(CorePluginType type)
             name = "[INPUT] ";
             break;
         case CorePluginType::Execution:
-            name = "[EXECUTION] ";
+            name = "[EXEC]  ";
             break;
     }
 
