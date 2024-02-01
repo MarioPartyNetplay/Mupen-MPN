@@ -1178,6 +1178,9 @@ void MainWindow::timerEvent(QTimerEvent *event)
             expectedHeight = this->ui_Widget_Vulkan->GetWidget()->height() * this->devicePixelRatio();
         }
 
+        expectedWidth  &= ~0x1;
+        expectedHeight &= ~0x1;
+
         if (width  != expectedWidth ||
             height != expectedHeight)
         {
