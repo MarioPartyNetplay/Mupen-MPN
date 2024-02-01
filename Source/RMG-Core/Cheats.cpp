@@ -34,7 +34,6 @@
 #include <sstream>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 
 //
 // Local Structs
@@ -179,7 +178,7 @@ static std::vector<std::string> split_string(std::string str, char delim)
     return splitString;
 }
 
-static std::string join_split_string(std::vector<std::string> splitStr, char seperator, int skip = 0)
+static std::string join_split_string(const std::vector<std::string>& splitStr, char seperator, int skip = 0)
 {
     std::string joinedString;
     std::string element;
@@ -206,7 +205,7 @@ static std::string join_split_string(std::vector<std::string> splitStr, char sep
     return joinedString;
 }
 
-static bool parse_cheat(std::vector<std::string>& lines, int startIndex, CoreCheat& cheat, int& endIndex)
+static bool parse_cheat(const std::vector<std::string>& lines, int startIndex, CoreCheat& cheat, int& endIndex)
 {
     std::string error;
     std::string line;
@@ -341,7 +340,7 @@ static bool parse_cheat(std::vector<std::string>& lines, int startIndex, CoreChe
     return !cheat.Name.empty() && !cheat.CheatCodes.empty();
 }
 
-static bool parse_cheat_file(std::vector<std::string>& lines, CoreCheatFile& cheatFile)
+static bool parse_cheat_file(const std::vector<std::string>& lines, CoreCheatFile& cheatFile)
 {
     int endIndex = -1;
     std::string line;
@@ -406,7 +405,8 @@ static bool parse_cheat_file(std::vector<std::string>& lines, CoreCheatFile& che
 
             cheatFile.Cheats.push_back(cheat);
             index = endIndex;
-        } else if (!line.empty())
+        }
+        else if (!line.empty())
         {
             error = "parse_cheat_file Failed: ";
             error += "unknown line: \"";
@@ -626,7 +626,7 @@ bool CoreGetCurrentCheats(std::vector<CoreCheat>& cheats)
     return true;
 }
 
-bool CoreParseCheat(std::vector<std::string> lines, CoreCheat& cheat)
+bool CoreParseCheat(const std::vector<std::string>& lines, CoreCheat& cheat)
 {
     int endIndex = 0;
     return parse_cheat(lines, 0, cheat, endIndex);

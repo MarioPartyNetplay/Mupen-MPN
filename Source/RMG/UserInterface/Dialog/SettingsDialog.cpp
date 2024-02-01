@@ -266,7 +266,7 @@ void SettingsDialog::loadGameCoreSettings(void)
 
     gameOverrideCoreSettingsGroupBox->setChecked(overrideEnabled);
     gameCoreCpuEmulatorComboBox->setCurrentIndex(cpuEmulator);
-    gameOverclockingFactorComboBox->setCurrentIndex(overclockingFactor);
+    gameOverclockingFactorSpinBox->setValue(overclockingFactor);
     gameRandomizeTimingCheckBox->setChecked(randomizeInterrupt);
 }
 
@@ -488,7 +488,7 @@ void SettingsDialog::loadDefaultGameCoreSettings(void)
 
     gameOverrideCoreSettingsGroupBox->setChecked(overrideEnabled);
     gameCoreCpuEmulatorComboBox->setCurrentIndex(cpuEmulator);
-    gameOverclockingFactorComboBox->setCurrentIndex(overclockingFactor);
+    gameOverclockingFactorSpinBox->setValue(overclockingFactor);
     gameRandomizeTimingCheckBox->setChecked(randomizeInterrupt);
 }
 
@@ -654,7 +654,7 @@ void SettingsDialog::saveGameCoreSettings(void)
 
     overrideEnabled = gameOverrideCoreSettingsGroupBox->isChecked();
     cpuEmulator = gameCoreCpuEmulatorComboBox->currentIndex();
-    overclockingFactor = gameOverclockingFactorComboBox->currentIndex();
+    overclockingFactor = gameOverclockingFactorSpinBox->value();
     randomizeInterrupt = gameRandomizeTimingCheckBox->isChecked();
 
     defaultOverrideEnabled = CoreSettingsGetDefaultBoolValue(SettingsID::Game_OverrideCoreSettings);
@@ -1030,7 +1030,7 @@ void SettingsDialog::chooseDirectory(QLineEdit *lineEdit)
         return;
     }
 
-    lineEdit->setText(dir);
+    lineEdit->setText(QDir::toNativeSeparators(dir));
 }
 
 void SettingsDialog::chooseIPLRom(QLineEdit *lineEdit)
@@ -1043,7 +1043,7 @@ void SettingsDialog::chooseIPLRom(QLineEdit *lineEdit)
         return;
     }
 
-    lineEdit->setText(file);
+    lineEdit->setText(QDir::toNativeSeparators(file));
 }
 
 bool SettingsDialog::applyPluginSettings(void)

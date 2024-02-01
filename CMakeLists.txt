@@ -11,8 +11,10 @@ option(DRAG_DROP        "Enables drag and drop" ON)
 option(VRU              "Enables VRU support in RMG-Input" ON)
 option(USE_CCACHE       "Enables usage of ccache when ccache has been found" ON)
 option(USE_LTO          "Enables building with LTO/IPO when compiler supports it" ON)
+option(NO_ASM           "Disables the usage of assembly in the mupen64plus-core" OFF)
 option(NO_RUST          "Disables the building of rust subprojects" OFF)
 option(USE_LIBFMT       "Enables usage of libfmt instead of detecting whether std::format is supported" OFF)
+option(USE_ANGRYLION    "Enables building angrylion-rdp-plus which uses a non-GPL compliant license" OFF)
 
 project(RMG)
 
@@ -112,20 +114,21 @@ if (PORTABLE_INSTALL)
     set(DATA_INSTALL_PATH "${INSTALL_PATH}/Data")
     set(INSTALL_DESKTOP_FILE OFF)
 else()
-    set(RMG_INSTALL_PATH "bin")
-    set(SYSTEM_LIB_INSTALL_PATH "lib")
-    set(LIB_INSTALL_PATH "lib/RMG")
-    set(CORE_INSTALL_PATH "lib/RMG/Core")
-    set(PLUGIN_INSTALL_PATH "lib/RMG/Plugin")
-    set(DATA_INSTALL_PATH "share/RMG")
+    include(GNUInstallDirs)
+    set(RMG_INSTALL_PATH "${CMAKE_INSTALL_BINDIR}")
+    set(SYSTEM_LIB_INSTALL_PATH "${CMAKE_INSTALL_LIBDIR}")
+    set(LIB_INSTALL_PATH "${SYSTEM_LIB_INSTALL_PATH}/RMG")
+    set(CORE_INSTALL_PATH "${SYSTEM_LIB_INSTALL_PATH}/RMG/Core")
+    set(PLUGIN_INSTALL_PATH "${SYSTEM_LIB_INSTALL_PATH}/RMG/Plugin")
+    set(DATA_INSTALL_PATH "${CMAKE_INSTALL_DATADIR}/RMG")
     set(INSTALL_DESKTOP_FILE ON)
-    set(APPDATA_INSTALL_PATH "share/metainfo/")
-    set(DESKTOP_INSTALL_PATH "share/applications")
-    set(ICON_INSTALL_PATH "share/icons/hicolor/scalable/apps/")
+    set(APPDATA_INSTALL_PATH "${CMAKE_INSTALL_DATADIR}/metainfo/")
+    set(DESKTOP_INSTALL_PATH "${CMAKE_INSTALL_DATADIR}/applications")
+    set(ICON_INSTALL_PATH "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps/")
 endif()
 
 add_subdirectory(Source/3rdParty)
-add_subdirectory(Source/3rdParty/7-Zip)
+add_subdirectory(Source/3rdParty/lzma)
 if (VRU)
     add_subdirectory(Source/3rdParty/vosk-api)
 endif(VRU)
@@ -191,9 +194,11 @@ install(FILES ${MUPEN64PLUS_PLUGIN_INPUT_RAPHNET}
 install(FILES ${MUPEN64PLUS_PLUGIN_INPUT_GCA}
     DESTINATION ${PLUGIN_INSTALL_PATH}/Input
 )
-install(FILES ${MUPEN64PLUS_PLUGIN_GFX_ANGRYLION}
-    DESTINATION ${PLUGIN_INSTALL_PATH}/GFX
-)
+if (USE_ANGRYLION)
+    install(FILES ${MUPEN64PLUS_PLUGIN_GFX_ANGRYLION}
+        DESTINATION ${PLUGIN_INSTALL_PATH}/GFX
+    )
+endif(USE_ANGRYLION)
 install(FILES ${MUPEN64PLUS_PLUGIN_GFX_GLIDEN64}
     DESTINATION ${PLUGIN_INSTALL_PATH}/GFX
 )

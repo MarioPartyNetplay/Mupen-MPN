@@ -18,6 +18,10 @@ if (WIN32)
     pkg_check_modules(ICONV REQUIRED iconv)
 endif(WIN32)
 
+if (NOT PORTABLE_INSTALL)
+    include(GNUInstallDirs)
+endif(NOT PORTABLE_INSTALL)
+
 configure_file(Config.hpp.in Config.hpp)
 
 set(RMG_CORE_SOURCES
@@ -90,7 +94,7 @@ endif(WIN32)
 
 target_link_libraries(RMG-Core
     ${MINIZIP_LIBRARIES}
-    7Zip
+    lzma
 )
 
 if (DISCORD_RPC)
