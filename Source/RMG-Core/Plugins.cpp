@@ -136,7 +136,7 @@ std::string get_plugin_context_name(CorePluginType type)
             name = "[INPUT] ";
             break;
         case CorePluginType::Execution:
-            name = "[EXECUTION] ";
+            name = "[EXEC]  ";
             break;
     }
 
@@ -153,6 +153,11 @@ std::string get_plugin_path(CorePluginType type, std::string settingsValue)
     if (settingsValue.empty())
     {
         return std::string();
+    }
+
+    if (settingsValue == "(None)")
+    {
+        return settingsValue;
     }
 
     pluginPath = CoreGetPluginDirectory().string();
@@ -207,11 +212,6 @@ bool apply_plugin_settings(std::string pluginSettings[5])
     {
         pluginType = (CorePluginType)(i + 1);
         settingValue = get_plugin_path(pluginType, pluginSettings[i]);
-        if (settingValue.empty() ||
-            !std::filesystem::is_regular_file(settingValue))
-        { // skip invalid setting value
-            continue;
-        }
 
         // copy context string to a c string using strcpy
         std::strcpy(l_PluginContext[i], get_plugin_context_name(pluginType).c_str());
@@ -219,6 +219,12 @@ bool apply_plugin_settings(std::string pluginSettings[5])
         if (settingValue != l_PluginFiles[i])
         {
             plugin = &l_Plugins[i];
+
+            if (settingValue != "(None)" && (settingValue.empty() ||
+                !std::filesystem::is_regular_file(settingValue)))
+            { // skip invalid setting value
+                continue;
+            }
 
             // shutdown plugin when hooked
             if (plugin->IsHooked())
@@ -236,6 +242,12 @@ bool apply_plugin_settings(std::string pluginSettings[5])
 
                 // reset plugin
                 plugin->Unhook();
+            }
+
+            if (settingValue == "(None)")
+            {
+                l_PluginFiles[i] = settingValue;
+                continue;
             }
 
             // attempt to open the library
