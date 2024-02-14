@@ -71,7 +71,7 @@ JoinRoom::JoinRoom(QWidget *parent)
     connect(&broadcastSocket, &QUdpSocket::readyRead, this, &JoinRoom::processBroadcast);
     QByteArray multirequest;
     multirequest.append(1);
-    broadcastSocket.writeDatagram(multirequest, QHostAddress::Broadcast, 45000);
+    broadcastSocket.writeDatagram(multirequest, QHostAddress::Broadcast, 27886);
 
     launched = 0;
 }
@@ -240,7 +240,7 @@ void JoinRoom::serverChanged(int index)
     QUrl serverUrl = QUrl(serverUrlStr);
     if (!customServerAddress.isEmpty() && serverUrl.port() < 0)
         // Be forgiving of custom server addresses that forget the port
-        serverUrl.setPort(45000);
+        serverUrl.setPort(27886);
 
     webSocket->open(serverUrl);
 }

@@ -71,7 +71,7 @@ CreateRoom::CreateRoom(QWidget *parent)
     connect(&broadcastSocket, &QUdpSocket::readyRead, this, &CreateRoom::processBroadcast);
     QByteArray multirequest;
     multirequest.append(1);
-    broadcastSocket.writeDatagram(multirequest, QHostAddress::Broadcast, 45000);
+    broadcastSocket.writeDatagram(multirequest, QHostAddress::Broadcast, 27886);
 
     launched = 0;
 }
