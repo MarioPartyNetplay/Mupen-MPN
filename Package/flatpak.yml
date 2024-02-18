@@ -59,7 +59,7 @@ modules:
     buildsystem: cmake-ninja
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
-      - -DPORTABLE_INSTALL=ON
+      - -DPORTABLE_INSTALL=OFF
       - -DDRAG_DROP=OFF
       - -DDISCORD_RPC=OFF
       - -DUSE_ANGRYLION=ON
