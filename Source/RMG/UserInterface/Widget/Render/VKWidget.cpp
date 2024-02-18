@@ -51,8 +51,11 @@ void VKWidget::resizeEvent(QResizeEvent *event)
 
     // account for HiDPI scaling
     // see https://github.com/Rosalie241/RMG/issues/2
-    this->width = event->size().width() * this->devicePixelRatio();
+    this->width  = event->size().width() * this->devicePixelRatio();
     this->height = event->size().height() * this->devicePixelRatio();
+
+    this->width  &= ~0x1;
+    this->height &= ~0x1;
 }
 
 void VKWidget::timerEvent(QTimerEvent *event)

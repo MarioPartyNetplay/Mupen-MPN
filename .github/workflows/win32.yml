@@ -1,0 +1,44 @@
+name: Windows CI
+
+on: [push, pull_request]
+
+jobs:
+  Windows:
+    runs-on: windows-2019
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: Windows
+      - uses: msys2/setup-msys2@v2
+        with:
+          path-type: inherit
+          update: true
+          install: >-
+            make
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-hidapi
+            mingw-w64-x86_64-freetype
+            mingw-w64-x86_64-libpng
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-qt6
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-SDL2_net
+            mingw-w64-x86_64-hidapi
+            mingw-w64-x86_64-speexdsp
+            mingw-w64-x86_64-libsamplerate
+            mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-minizip
+            git
+      - name: Build RMG
+        run: ./Source/Script/Build.sh Release
+        shell: msys2 {0}
+      - name: Upload RMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: MupenMPN-win32
+          path: Bin/Release/*

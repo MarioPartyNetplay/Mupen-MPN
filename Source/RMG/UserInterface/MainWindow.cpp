@@ -91,6 +91,12 @@ bool MainWindow::Init(QApplication* app, bool showUI, bool launchROM)
     }
 
     this->coreCallBacks = new CoreCallbacks(this);
+
+    // connect signals early due to pending debug callbacks
+    connect(coreCallBacks, &CoreCallbacks::OnCoreDebugCallback, this, &MainWindow::on_Core_DebugCallback);
+    connect(coreCallBacks, &CoreCallbacks::OnCoreStateCallback, this, &MainWindow::on_Core_StateCallback);
+    connect(app, &QGuiApplication::applicationStateChanged, this, &MainWindow::on_QGuiApplication_applicationStateChanged);
+
     if (!this->coreCallBacks->Init())
     {
         this->showErrorMessage("CoreCallbacks::Init() Failed", QString::fromStdString(CoreGetError()));
@@ -102,10 +108,6 @@ bool MainWindow::Init(QApplication* app, bool showUI, bool launchROM)
     {
         this->addActions();
     }
-
-    connect(coreCallBacks, &CoreCallbacks::OnCoreDebugCallback, this, &MainWindow::on_Core_DebugCallback);
-    connect(coreCallBacks, &CoreCallbacks::OnCoreStateCallback, this, &MainWindow::on_Core_StateCallback);
-    connect(app, &QGuiApplication::applicationStateChanged, this, &MainWindow::on_QGuiApplication_applicationStateChanged);
 
     return true;
 }
@@ -181,7 +183,8 @@ void MainWindow::initializeUI(bool launchROM)
     this->ui_Widget_Vulkan = new Widget::VKWidget(this);
     this->ui_EventFilter = new EventFilter(this);
     this->ui_StatusBar_Label = new QLabel(this);
-    this->ui_StatusBar_RenderModeLabel = new QLabel(this);
+    //this->ui_StatusBar_RenderModeLabel = new QLabel(this);
+    this->ui_StatusBar_SpeedLabel = new QLabel(this);
 
     // only start refreshing the ROM browser
     // when RMG isn't launched with a ROM 
@@ -253,7 +256,8 @@ void MainWindow::configureUI(QApplication* app, bool showUI)
     this->toolBar->setVisible(this->ui_ShowToolbar);
     this->statusBar()->setVisible(this->ui_ShowStatusbar);
     this->statusBar()->addPermanentWidget(this->ui_StatusBar_Label, 99);
-    this->statusBar()->addPermanentWidget(this->ui_StatusBar_RenderModeLabel, 1);
+    //this->statusBar()->addPermanentWidget(this->ui_StatusBar_RenderModeLabel, 1);
+    this->statusBar()->addPermanentWidget(this->ui_StatusBar_SpeedLabel, 1);
 
     // set toolbar position according to setting
     int toolbarAreaSetting = CoreSettingsGetIntValue(SettingsID::GUI_ToolbarArea);
@@ -277,9 +281,7 @@ void MainWindow::configureUI(QApplication* app, bool showUI)
     this->ui_Widget_OpenGL->installEventFilter(this->ui_EventFilter);
     this->ui_Widget_Vulkan->installEventFilter(this->ui_EventFilter);
 
-    this->ui_WindowTitle = "Rosalie's Mupen GUI MPN (";
-    this->ui_WindowTitle += QString::fromStdString(CoreGetVersion());
-    this->ui_WindowTitle += ")";
+    this->ui_WindowTitle = "Rosalie's Mupen GUI MPN";
 
     this->setWindowTitle(this->ui_WindowTitle);
 }
@@ -450,12 +452,12 @@ void MainWindow::updateUI(bool inEmulation, bool isPaused)
 
         if (this->ui_VidExtRenderMode == VidExtRenderMode::OpenGL)
         {
-            this->ui_StatusBar_RenderModeLabel->setText("OpenGL");
+            //this->ui_StatusBar_RenderModeLabel->setText("OpenGL");
             this->ui_Widgets->setCurrentWidget(this->ui_Widget_OpenGL->GetWidget());
         }
         else
         {
-            this->ui_StatusBar_RenderModeLabel->setText("Vulkan");
+            //this->ui_StatusBar_RenderModeLabel->setText("Vulkan");
             this->ui_Widgets->setCurrentWidget(this->ui_Widget_Vulkan->GetWidget());
         }
 
@@ -465,7 +467,8 @@ void MainWindow::updateUI(bool inEmulation, bool isPaused)
     {
         this->setWindowTitle(this->ui_WindowTitle);
         this->ui_Widgets->setCurrentWidget(this->ui_Widget_RomBrowser);
-        this->ui_StatusBar_RenderModeLabel->clear();
+        //this->ui_StatusBar_RenderModeLabel->clear();
+        this->ui_StatusBar_SpeedLabel->clear();
         this->loadGeometry();
     }
     else
@@ -590,12 +593,6 @@ void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool re
         this->ui_Widget_RomBrowser->StopRefreshRomList();
     }
 
-    if (this->ui_LaunchInFullscreen || CoreSettingsGetBoolValue(SettingsID::GUI_AutomaticFullscreen))
-    {
-        this->ui_FullscreenTimerId = this->startTimer(100);
-        this->ui_LaunchInFullscreen = false;
-    }
-
     if (!CoreArePluginsReady())
     {
         // always go back to ROM Browser
@@ -605,6 +602,14 @@ void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool re
         this->showErrorMessage("CoreArePluginsReady() Failed", QString::fromStdString(CoreGetError()));
         return;
     }
+
+    if (this->ui_LaunchInFullscreen || CoreSettingsGetBoolValue(SettingsID::GUI_AutomaticFullscreen))
+    {
+        this->ui_FullscreenTimerId = this->startTimer(100);
+        this->ui_LaunchInFullscreen = false;
+    }
+
+    this->ui_CheckVideoSizeTimerId = this->startTimer(2000);
 
     this->ui_HideCursorInEmulation = CoreSettingsGetBoolValue(SettingsID::GUI_HideCursorInEmulation);
     this->ui_HideCursorInFullscreenEmulation = CoreSettingsGetBoolValue(SettingsID::GUI_HideCursorInFullscreenEmulation);
@@ -1175,6 +1180,42 @@ void MainWindow::timerEvent(QTimerEvent *event)
         this->updateSaveStateSlotActions(CoreIsEmulationRunning(), false);
         this->killTimer(timerId);
         this->ui_UpdateSaveStateSlotTimerId = 0;
+    }
+    else if (timerId == this->ui_CheckVideoSizeTimerId)
+    {
+        if (!CoreIsEmulationRunning())
+        {
+            return;
+        }
+
+        int width  = 0;
+        int height = 0;
+        if (!CoreGetVideoSize(width, height))
+        {
+            return;
+        }
+
+        int expectedWidth  = 0;
+        int expectedHeight = 0;
+        if (this->ui_VidExtRenderMode == VidExtRenderMode::OpenGL)
+        {
+            expectedWidth  = this->ui_Widget_OpenGL->GetWidget()->width()  * this->devicePixelRatio();
+            expectedHeight = this->ui_Widget_OpenGL->GetWidget()->height() * this->devicePixelRatio();
+        }
+        else
+        {
+            expectedWidth  = this->ui_Widget_Vulkan->GetWidget()->width()  * this->devicePixelRatio();
+            expectedHeight = this->ui_Widget_Vulkan->GetWidget()->height() * this->devicePixelRatio();
+        }
+
+        expectedWidth  &= ~0x1;
+        expectedHeight &= ~0x1;
+
+        if (width  != expectedWidth ||
+            height != expectedHeight)
+        {
+            CoreSetVideoSize(expectedWidth, expectedHeight);
+        }
     }
 }
 
@@ -1829,7 +1870,12 @@ void MainWindow::on_Action_Audio_ToggleVolumeMute(void)
 
 void MainWindow::on_Emulation_Started(void)
 {
-    this->logDialog.Clear();
+    // only clear log dialog when we've gone over the limit
+    if (this->logDialog.GetLineCount() >= 500000)
+    {
+        this->logDialog.Clear();
+    }
+
     this->ui_MessageBoxList.clear();
     this->ui_DebugCallbackErrors.clear();
 }
@@ -1855,6 +1901,12 @@ void MainWindow::on_Emulation_Finished(bool ret)
     {
         this->killTimer(this->ui_FullscreenTimerId);
         this->ui_FullscreenTimerId = 0;
+    }
+
+    if (this->ui_CheckVideoSizeTimerId != 0)
+    {
+        this->killTimer(this->ui_CheckVideoSizeTimerId);
+        this->ui_CheckVideoSizeTimerId = 0;
     }
 
     if (this->ui_QuitAfterEmulation)
@@ -2471,6 +2523,16 @@ void MainWindow::on_Core_StateCallback(CoreStateCallbackType type, int value)
             else
             {
                 OnScreenDisplaySetMessage("Captured screenshot.");
+            }
+        } break;
+        case CoreStateCallbackType::SpeedUpdate:
+        {
+            if (value > 0)
+            {
+                std::ostringstream stream;
+                stream << std::fixed << std::setprecision(0) << (30000.0 / value) << " VI/s";
+                std::string result = stream.str();
+                this->ui_StatusBar_SpeedLabel->setText(result.c_str());
             }
         } break;
     }

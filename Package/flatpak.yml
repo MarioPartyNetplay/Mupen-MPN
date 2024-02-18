@@ -1,0 +1,69 @@
+app-id: com.github.Rosalie241.RMG-MPN
+runtime: org.kde.Platform
+runtime-version: 6.6
+sdk: org.kde.Sdk
+command: RMG
+finish-args:
+  - --socket=x11
+  - --socket=pulseaudio
+  - --share=ipc
+  - --device=all
+  - --filesystem=xdg-pictures/RMG-MPN:create
+
+modules:
+  - name: minizip
+    subdir: contrib/minizip
+    config-opts:
+      - --disable-static
+    sources:
+      - type: archive
+        url: https://zlib.net/zlib-1.3.1.tar.gz
+        sha256: 9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
+        x-checker-data:
+          type: anitya
+          project-id: 5303
+          stable-only: true
+          url-template: https://zlib.net/zlib-$version.tar.gz
+      - type: shell
+        commands:
+          - GLOBIGNORE=contrib && rm -rf *
+          - GLOBIGNORE=contrib/minizip && rm -rf contrib/*
+          - rm -f contrib/minizip/Makefile
+          - autoreconf -fiv contrib/minizip
+    cleanup:
+      - '*.la'
+
+  - name: hidapi
+    sources:
+      - type: archive
+        url: https://github.com/libusb/hidapi/archive/refs/tags/hidapi-0.14.0.tar.gz
+        sha256: a5714234abe6e1f53647dd8cba7d69f65f71c558b7896ed218864ffcf405bcbd
+        x-checker-data:
+          type: anitya
+          project-id: 5594
+          stable-only: true
+          url-template: https://github.com/libusb/hidapi/archive/refs/tags/hidapi-$version.tar.gz
+    modules:
+      - name: libusb
+        sources:
+          - type: archive
+            url: https://github.com/libusb/libusb/archive/refs/tags/v1.0.27.tar.gz
+            sha256: e8f18a7a36ecbb11fb820bd71540350d8f61bcd9db0d2e8c18a6fb80b214a3de
+            x-checker-data:
+              type: anitya
+              project-id: 1749
+              stable-only: true
+              url-template: https://github.com/libusb/libusb/archive/refs/tags/v$version.tar.gz
+
+  - name: RMG
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DPORTABLE_INSTALL=OFF
+      - -DDRAG_DROP=OFF
+      - -DDISCORD_RPC=OFF
+      - -DUSE_ANGRYLION=ON
+      - -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+    sources:
+      - type: git
+        url: https://github.com/MarioPartyNetplay/RMG-MPN.git

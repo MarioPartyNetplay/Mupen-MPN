@@ -1,0 +1,6 @@
+[submodule "Source/MPN-Game-Plugins"]
+	path = Source/MPN-Game-Plugins
+	url = https://github.com/CoderTimZ/N64-Game-Plugins
+[submodule "Source/Server"]
+	path = Source/Server
+	url = https://github.com/MarioPartyNetplay/RMG-MPN-Server

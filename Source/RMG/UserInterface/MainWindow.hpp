@@ -64,7 +64,8 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     Widget::RomBrowserWidget *ui_Widget_RomBrowser = nullptr;
     EventFilter *ui_EventFilter                    = nullptr;
     QLabel *ui_StatusBar_Label                     = nullptr;
-    QLabel *ui_StatusBar_RenderModeLabel           = nullptr;
+    //QLabel *ui_StatusBar_RenderModeLabel         = nullptr;
+    QLabel *ui_StatusBar_SpeedLabel                = nullptr;
 
     QByteArray ui_Geometry;
     bool ui_Geometry_Maximized = false;
@@ -111,6 +112,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     int ui_FullscreenTimerId = 0;
     int ui_GamesharkButtonTimerId = 0;
     int ui_UpdateSaveStateSlotTimerId = 0;
+    int ui_CheckVideoSizeTimerId = 0;
 
     QString ui_WindowTitle;
 

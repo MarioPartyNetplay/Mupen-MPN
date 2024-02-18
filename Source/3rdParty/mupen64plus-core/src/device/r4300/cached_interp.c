@@ -36,6 +36,7 @@
 #include "device/r4300/idec.h"
 #include "main/main.h"
 #include "osal/preproc.h"
+#include "plugin/plugin.h"
 
 #ifdef DBG
 #include "debugger/dbg_debugger.h"
@@ -83,7 +84,7 @@ void cached_interp_##name(void) \
         (*r4300_pc_struct(r4300))++; \
         r4300->delay_slot=1; \
         UPDATE_DEBUGGER(); \
-        (*r4300_pc_struct(r4300))->ops(); \
+        exec_cached_ops(r4300); \
         cp0_update_count(r4300); \
         r4300->delay_slot=0; \
         if (take_jump && !r4300->skip_jump) \
@@ -116,7 +117,7 @@ void cached_interp_##name##_OUT(void) \
         (*r4300_pc_struct(r4300))++; \
         r4300->delay_slot=1; \
         UPDATE_DEBUGGER(); \
-        (*r4300_pc_struct(r4300))->ops(); \
+        exec_cached_ops(r4300); \
         cp0_update_count(r4300); \
         r4300->delay_slot=0; \
         if (take_jump && !r4300->skip_jump) \
@@ -203,7 +204,7 @@ void cached_interp_FIN_BLOCK(void)
 #endif
 Used by dynarec only, check should be unnecessary
 */
-        (*r4300_pc_struct(r4300))->ops();
+        exec_cached_ops(r4300);
     }
     else
     {
@@ -219,12 +220,12 @@ Used by dynarec only, check should be unnecessary
 */
         if (!r4300->skip_jump)
         {
-            (*r4300_pc_struct(r4300))->ops();
+            exec_cached_ops(r4300);
             r4300->cached_interp.actual = blk;
             (*r4300_pc_struct(r4300)) = inst+1;
         }
         else
-            (*r4300_pc_struct(r4300))->ops();
+            exec_cached_ops(r4300);
     }
 }
 
@@ -250,7 +251,7 @@ void cached_interp_NOTCOMPILED(void)
 The preceeding update_debugger SHOULD be unnecessary since it should have been
 called before NOTCOMPILED would have been executed
 */
-    (*r4300_pc_struct(r4300))->ops();
+    exec_cached_ops(r4300);
 }
 
 void cached_interp_NOTCOMPILED2(void)
@@ -996,6 +997,6 @@ void run_cached_interpreter(struct r4300_core* r4300)
 #ifdef DBG
         if (g_DebuggerActive) update_debugger((*r4300_pc_struct(r4300))->addr);
 #endif
-        (*r4300_pc_struct(r4300))->ops();
+        exec_cached_ops(r4300);
     }
 }

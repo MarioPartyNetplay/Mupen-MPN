@@ -189,6 +189,9 @@ static l_Setting get_setting(SettingsID settingId)
     #endif
                   };
         break;
+    case SettingsID::Core_EXECUTION_Plugin:
+        setting = {SETTING_SECTION_CORE, "EXECUTION_Plugin", std::string("(None)")};
+        break;
 
     case SettingsID::Core_OverrideUserDirs:
         setting = {SETTING_SECTION_CORE, "OverrideUserDirectories", true};
@@ -343,6 +346,9 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::Game_RSP_Plugin:
         setting = {"", "RSP_Plugin", std::string("")};
         break;
+    case SettingsID::Game_EXECUTION_Plugin:
+        setting = {"", "EXECUTION_Plugin", std::string("")};
+        break;
 
     case SettingsID::KeyBinding_RemoveDuplicates:
         setting = {SETTING_SECTION_KEYBIND, "RemoveDuplicates", true};
@@ -462,7 +468,7 @@ static l_Setting get_setting(SettingsID settingId)
         setting = {SETTING_SECTION_KEYBIND, "Fullscreen", std::string("Alt+Return")};
         break;
     case SettingsID::Keybinding_ViewLog:
-        setting = {SETTING_SECTION_KEYBIND, "ViewLog", std::string("Ctrl+L")};
+        setting = {SETTING_SECTION_KEYBIND, "ViewLog", std::string("Ctrl+Alt+L")};
         break;
     case SettingsID::KeyBinding_GraphicsSettings:
         setting = {SETTING_SECTION_KEYBIND, "GraphicsSettings", std::string("Ctrl+G")};

@@ -34,7 +34,6 @@
 #include <sstream>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 
 //
 // Local Structs
@@ -129,6 +128,7 @@ static std::filesystem::path get_user_cheat_file_path(CoreRomHeader romHeader, C
 {
     std::filesystem::path oldCheatFilePath;
     std::filesystem::path cheatFilePath;
+    std::filesystem::path namedCheatFilePath;
 
     oldCheatFilePath = CoreGetUserDataDirectory();
     oldCheatFilePath += OSAL_FILES_DIR_SEPERATOR_STR;
@@ -141,6 +141,12 @@ static std::filesystem::path get_user_cheat_file_path(CoreRomHeader romHeader, C
     cheatFilePath += "Cheats-User";
     cheatFilePath += OSAL_FILES_DIR_SEPERATOR_STR;
     cheatFilePath += get_cheat_file_name(romHeader, romSettings);
+
+    namedCheatFilePath = CoreGetUserConfigDirectory();
+    namedCheatFilePath += OSAL_FILES_DIR_SEPERATOR_STR;
+    namedCheatFilePath += "Cheats-User";
+    namedCheatFilePath += OSAL_FILES_DIR_SEPERATOR_STR;
+    namedCheatFilePath += fmt_string("{}.cht", romHeader.Name);
 
     // try to make the user cheats directory
     // if it doesn't exist yet
@@ -162,6 +168,13 @@ static std::filesystem::path get_user_cheat_file_path(CoreRomHeader romHeader, C
         return oldCheatFilePath;
     }
 
+    // use ROM name if it exists instead of CRC
+    if (!std::filesystem::is_regular_file(cheatFilePath)
+      && std::filesystem::is_regular_file(namedCheatFilePath))
+    {
+        return namedCheatFilePath;
+    }
+
     return cheatFilePath;
 }
 
@@ -179,7 +192,7 @@ static std::vector<std::string> split_string(std::string str, char delim)
     return splitString;
 }
 
-static std::string join_split_string(std::vector<std::string> splitStr, char seperator, int skip = 0)
+static std::string join_split_string(const std::vector<std::string>& splitStr, char seperator, int skip = 0)
 {
     std::string joinedString;
     std::string element;
@@ -206,7 +219,7 @@ static std::string join_split_string(std::vector<std::string> splitStr, char sep
     return joinedString;
 }
 
-static bool parse_cheat(std::vector<std::string>& lines, int startIndex, CoreCheat& cheat, int& endIndex)
+static bool parse_cheat(const std::vector<std::string>& lines, int startIndex, CoreCheat& cheat, int& endIndex)
 {
     std::string error;
     std::string line;
@@ -341,7 +354,7 @@ static bool parse_cheat(std::vector<std::string>& lines, int startIndex, CoreChe
     return !cheat.Name.empty() && !cheat.CheatCodes.empty();
 }
 
-static bool parse_cheat_file(std::vector<std::string>& lines, CoreCheatFile& cheatFile)
+static bool parse_cheat_file(const std::vector<std::string>& lines, CoreCheatFile& cheatFile)
 {
     int endIndex = -1;
     std::string line;
@@ -406,7 +419,8 @@ static bool parse_cheat_file(std::vector<std::string>& lines, CoreCheatFile& che
 
             cheatFile.Cheats.push_back(cheat);
             index = endIndex;
-        } else if (!line.empty())
+        }
+        else if (!line.empty())
         {
             error = "parse_cheat_file Failed: ";
             error += "unknown line: \"";
@@ -626,7 +640,7 @@ bool CoreGetCurrentCheats(std::vector<CoreCheat>& cheats)
     return true;
 }
 
-bool CoreParseCheat(std::vector<std::string> lines, CoreCheat& cheat)
+bool CoreParseCheat(const std::vector<std::string>& lines, CoreCheat& cheat)
 {
     int endIndex = 0;
     return parse_cheat(lines, 0, cheat, endIndex);

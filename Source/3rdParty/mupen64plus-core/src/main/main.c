@@ -123,6 +123,8 @@ static int   l_TakeScreenshot = 0;       // Tell OSD Rendering callback to take 
 static int   l_SpeedFactor = 100;        // percentage of nominal game speed at which emulator is running
 static int   l_FrameAdvance = 0;         // variable to check if we pause on next frame
 static int   l_MainSpeedLimit = 1;       // insert delay during vi_interrupt to keep speed at real-time
+static int   l_CurrentVI = 0;
+static int   l_LastVITime = -1;
 
 static osd_message_t *l_msgVol = NULL;
 static osd_message_t *l_msgFF = NULL;
@@ -600,6 +602,7 @@ void main_toggle_pause(void)
 
     g_rom_pause = !g_rom_pause;
     l_FrameAdvance = 0;
+    l_LastVITime = -1;
 }
 
 void main_advance_one(void)
@@ -733,6 +736,7 @@ m64p_error main_core_state_query(m64p_core_param param, int *rval)
         case M64CORE_SCREENSHOT_CAPTURED:
         case M64CORE_STATE_LOADCOMPLETE:
         case M64CORE_STATE_SAVECOMPLETE:
+        case M64CORE_SPEED_UDPATE:
             return M64ERR_INPUT_INVALID;
         default:
             return M64ERR_INPUT_INVALID;
@@ -1068,6 +1072,16 @@ void new_vi(void)
 #if defined(PROFILE)
     timed_sections_refresh();
 #endif
+
+    execution.frame(l_CurrentVI);
+
+    if (l_CurrentVI % 30 == 0) {
+        if (l_LastVITime != -1) {
+            StateChanged(M64CORE_SPEED_UDPATE, SDL_GetTicks() - l_LastVITime);
+        }
+        l_LastVITime = SDL_GetTicks();
+    }
+    l_CurrentVI++;
 
     gs_apply_cheats(&g_cheat_ctx);
 
@@ -1640,8 +1654,8 @@ m64p_error main_run(void)
     if (count_per_op <= 0)
         count_per_op = ROM_SETTINGS.countperop;
 
-    if (count_per_op_denom_pot > 11)
-        count_per_op_denom_pot = 11;
+    if (count_per_op_denom_pot > 20)
+        count_per_op_denom_pot = 20;
 
     si_dma_duration = ConfigGetParamInt(g_CoreConfig, "SiDmaDuration");
     if (si_dma_duration < 0)
@@ -1920,6 +1934,8 @@ m64p_error main_run(void)
                 dd_rom_size,
                 &dd_disk, dd_idisk);
 
+    initiate_execution_plugin();
+
     // Attach rom to plugins
     failure_rval = M64ERR_PLUGIN_FAIL;
     if (!gfx.romOpen())
@@ -1933,6 +1949,10 @@ m64p_error main_run(void)
     if (!input.romOpen())
     {
         goto on_input_open_failure;
+    }
+    if (!execution.romOpen())
+    {
+        goto on_execution_open_failure;
     }
 
     /* set up the SDL key repeat and event filter to catch keyboard/joystick commands for the core */
@@ -2004,6 +2024,7 @@ m64p_error main_run(void)
     }
 
     rsp.romClosed();
+    execution.romClosed();
     input.romClosed();
     audio.romClosed();
     gfx.romClosed();
@@ -2017,6 +2038,8 @@ m64p_error main_run(void)
 on_disk_failure:
     failure_rval = M64ERR_INVALID_STATE;
     rsp.romClosed();
+    execution.romClosed();
+on_execution_open_failure:
     input.romClosed();
 on_input_open_failure:
     audio.romClosed();

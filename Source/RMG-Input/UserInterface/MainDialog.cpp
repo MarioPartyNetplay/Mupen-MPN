@@ -59,18 +59,9 @@ MainDialog::MainDialog(QWidget* parent, Thread::SDLThread* sdlThread, bool romCo
     // always add keyboard device
     for (auto& controllerWidget : this->controllerWidgets)
     {
-#ifdef VRU
-        // both games which support the VRU,
-        // require the VRU to be in port #4,
-        // so we only have to expose it there
-        if (controllerWidget == this->controllerWidgets.last())
-        {
-            controllerWidget->AddInputDevice("Voice Recognition Unit", (int)InputDeviceType::EmulateVRU);
-        }
-#endif // VRU
-        controllerWidget->AddInputDevice("None",        (int)InputDeviceType::None);
-        controllerWidget->AddInputDevice("Automatic",   (int)InputDeviceType::Automatic);
-        controllerWidget->AddInputDevice("Keyboard",    (int)InputDeviceType::Keyboard);
+        controllerWidget->AddInputDevice("None",      (int)InputDeviceType::None);
+        controllerWidget->AddInputDevice("Automatic", (int)InputDeviceType::Automatic);
+        controllerWidget->AddInputDevice("Keyboard",  (int)InputDeviceType::Keyboard);
         controllerWidget->SetInitialized(true);
     }
 
@@ -111,8 +102,7 @@ void MainDialog::openInputDevice(QString deviceName, int deviceNum)
 
     // we don't need to open a keyboard or VRU
     if (deviceNum == (int)InputDeviceType::None ||
-        deviceNum == (int)InputDeviceType::Keyboard ||
-        deviceNum == (int)InputDeviceType::EmulateVRU)
+        deviceNum == (int)InputDeviceType::Keyboard)
     {
         this->currentDeviceName = "";
         this->currentDeviceNum  = deviceNum;
@@ -232,8 +222,7 @@ void MainDialog::on_ControllerWidget_CurrentInputDeviceChanged(ControllerWidget*
 
     // only open device when needed
     if (deviceNum != (int)InputDeviceType::None &&
-        deviceNum != (int)InputDeviceType::Keyboard &&
-        deviceNum != (int)InputDeviceType::EmulateVRU)
+        deviceNum != (int)InputDeviceType::Keyboard)
     {
         this->openInputDevice(deviceName, deviceNum);
     }
@@ -298,8 +287,7 @@ void MainDialog::on_tabWidget_currentChanged(int index)
 
     // only open device when needed
     if (deviceNum != (int)InputDeviceType::None &&
-        deviceNum != (int)InputDeviceType::Keyboard &&
-        deviceNum != (int)InputDeviceType::EmulateVRU)
+        deviceNum != (int)InputDeviceType::Keyboard)
     {
         this->openInputDevice(deviceName, deviceNum);
     }

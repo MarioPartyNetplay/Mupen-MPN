@@ -599,14 +599,16 @@ void ControllerWidget::CheckInputDeviceSettings(QString sectionQString)
             this->on_inputDeviceComboBox_currentIndexChanged(deviceNumIndex);
         }
     }
-    else if (deviceNameIndex != -1)
-    { // name only match
-        this->inputDeviceComboBox->setCurrentIndex(deviceNameIndex);
-    }
+    //else if (deviceNameIndex != -1)
+    //{ // name only match
+    //    this->inputDeviceComboBox->setCurrentIndex(deviceNameIndex);
+    //}
     else
     { // no match
         QString title = QString::fromStdString(deviceName);
-        title += " (not found)";
+        title += " (";
+        title += QString::number(deviceNum);
+        title += ") (not found)";
         this->inputDeviceNameList.append(QString::fromStdString(deviceName));
         this->inputDeviceComboBox->addItem(title, deviceNum);
         this->inputDeviceComboBox->setCurrentIndex(this->inputDeviceNameList.count() - 1);
@@ -702,8 +704,7 @@ void ControllerWidget::on_inputDeviceComboBox_currentIndexChanged(int value)
     }
 
     // set plugged in state
-    this->setPluggedIn(deviceNum != (int)InputDeviceType::None &&
-                       deviceNum != (int)InputDeviceType::EmulateVRU);
+    this->setPluggedIn(deviceNum != (int)InputDeviceType::None);
 
     emit this->CurrentInputDeviceChanged(this, deviceName, deviceNum);
 }

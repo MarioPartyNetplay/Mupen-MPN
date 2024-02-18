@@ -266,17 +266,19 @@ void SettingsDialog::loadGameCoreSettings(void)
 
     gameOverrideCoreSettingsGroupBox->setChecked(overrideEnabled);
     gameCoreCpuEmulatorComboBox->setCurrentIndex(cpuEmulator);
-    gameOverclockingFactorComboBox->setCurrentIndex(overclockingFactor);
+    gameOverclockingFactorSpinBox->setValue(overclockingFactor);
     gameRandomizeTimingCheckBox->setChecked(randomizeInterrupt);
 }
 
 void SettingsDialog::loadGamePluginSettings(void)
 {
     QComboBox *comboBoxArray[] = {this->gameRspPluginsComboBox, this->gameVideoPluginsComboBox,
-                                   this->gameAudioPluginsComboBox, this->gameInputPluginsComboBox};
+                                   this->gameAudioPluginsComboBox, this->gameInputPluginsComboBox,
+                                   this->gameExecutionPluginsComboBox};
     SettingsID settingsId[] = {SettingsID::Game_RSP_Plugin, SettingsID::Game_GFX_Plugin, 
-                                    SettingsID::Game_AUDIO_Plugin, SettingsID::Game_INPUT_Plugin};
-    bool pluginFound[] = {false, false, false, false};
+                                    SettingsID::Game_AUDIO_Plugin, SettingsID::Game_INPUT_Plugin,
+                                    SettingsID::Game_EXECUTION_Plugin};
+    bool pluginFound[] = {false, false, false, false, false};
 
     QComboBox *comboBox;
     int index = 0;
@@ -301,7 +303,7 @@ void SettingsDialog::loadGamePluginSettings(void)
         }
     }
 
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 5; i++)
     {
         comboBox = comboBoxArray[i];
 
@@ -488,14 +490,15 @@ void SettingsDialog::loadDefaultGameCoreSettings(void)
 
     gameOverrideCoreSettingsGroupBox->setChecked(overrideEnabled);
     gameCoreCpuEmulatorComboBox->setCurrentIndex(cpuEmulator);
-    gameOverclockingFactorComboBox->setCurrentIndex(overclockingFactor);
+    gameOverclockingFactorSpinBox->setValue(overclockingFactor);
     gameRandomizeTimingCheckBox->setChecked(randomizeInterrupt);
 }
 
 void SettingsDialog::loadDefaultGamePluginSettings(void)
 {
     QComboBox *comboBoxArray[] = {this->gameVideoPluginsComboBox, this->gameAudioPluginsComboBox,
-                                   this->gameInputPluginsComboBox, this->gameRspPluginsComboBox};
+                                   this->gameInputPluginsComboBox, this->gameRspPluginsComboBox,
+                                   this->gameExecutionPluginsComboBox};
 
     for (QComboBox *comboBox : comboBoxArray)
     {
@@ -654,7 +657,7 @@ void SettingsDialog::saveGameCoreSettings(void)
 
     overrideEnabled = gameOverrideCoreSettingsGroupBox->isChecked();
     cpuEmulator = gameCoreCpuEmulatorComboBox->currentIndex();
-    overclockingFactor = gameOverclockingFactorComboBox->currentIndex();
+    overclockingFactor = gameOverclockingFactorSpinBox->value();
     randomizeInterrupt = gameRandomizeTimingCheckBox->isChecked();
 
     defaultOverrideEnabled = CoreSettingsGetDefaultBoolValue(SettingsID::Game_OverrideCoreSettings);
@@ -677,13 +680,15 @@ void SettingsDialog::saveGameCoreSettings(void)
 void SettingsDialog::saveGamePluginSettings(void)
 {
     QComboBox *comboBoxArray[] = {this->gameVideoPluginsComboBox, this->gameAudioPluginsComboBox,
-                                   this->gameInputPluginsComboBox, this->gameRspPluginsComboBox};
+                                   this->gameInputPluginsComboBox, this->gameRspPluginsComboBox,
+                                   this->gameExecutionPluginsComboBox};
     SettingsID settingsIdArray[] = {SettingsID::Game_GFX_Plugin, SettingsID::Game_AUDIO_Plugin,
-                                     SettingsID::Game_INPUT_Plugin, SettingsID::Game_RSP_Plugin};
+                                     SettingsID::Game_INPUT_Plugin, SettingsID::Game_RSP_Plugin,
+                                     SettingsID::Game_EXECUTION_Plugin};
     QComboBox *comboBox;
     SettingsID id;
 
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 5; i++)
     {
         comboBox = comboBoxArray[i];
         id = settingsIdArray[i];
@@ -698,13 +703,14 @@ void SettingsDialog::saveGamePluginSettings(void)
 void SettingsDialog::savePluginSettings(void)
 {
     QComboBox *comboBoxArray[] = {this->videoPluginsComboBox, this->audioPluginsComboBox, this->inputPluginsComboBox,
-                                   this->rspPluginsComboBox};
+                                   this->rspPluginsComboBox, this->executionPluginsComboBox};
     SettingsID settings[] = {SettingsID::Core_GFX_Plugin, SettingsID::Core_AUDIO_Plugin, 
-                                SettingsID::Core_INPUT_Plugin, SettingsID::Core_RSP_Plugin};
+                                SettingsID::Core_INPUT_Plugin, SettingsID::Core_RSP_Plugin,
+                                SettingsID::Core_EXECUTION_Plugin};
     QComboBox *comboBox;
     SettingsID settingId;
 
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 5; i++)
     {
         comboBox = comboBoxArray[i];
         settingId = settings[i];
@@ -939,10 +945,12 @@ void SettingsDialog::commonHotkeySettings(SettingsDialogAction action)
 void SettingsDialog::commonPluginSettings(SettingsDialogAction action)
 {
     QComboBox *comboBoxArray[] = {this->rspPluginsComboBox, this->videoPluginsComboBox, 
-                                    this->audioPluginsComboBox, this->inputPluginsComboBox};
+                                    this->audioPluginsComboBox, this->inputPluginsComboBox,
+                                    this->executionPluginsComboBox};
     SettingsID settingsIdArray[] = {SettingsID::Core_RSP_Plugin, SettingsID::Core_GFX_Plugin, 
-                                    SettingsID::Core_AUDIO_Plugin, SettingsID::Core_INPUT_Plugin};
-    bool pluginFound[] = {false, false, false, false};
+                                    SettingsID::Core_AUDIO_Plugin, SettingsID::Core_INPUT_Plugin,
+                                    SettingsID::Core_EXECUTION_Plugin};
+    bool pluginFound[] = {false, false, false, false, false};
 
     QComboBox *comboBox;
     QString pluginFileName;
@@ -975,7 +983,7 @@ void SettingsDialog::commonPluginSettings(SettingsDialogAction action)
         }
     }
 
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 5; i++)
     {
         comboBox = comboBoxArray[i];
         if (!pluginFound[i])
@@ -1030,7 +1038,7 @@ void SettingsDialog::chooseDirectory(QLineEdit *lineEdit)
         return;
     }
 
-    lineEdit->setText(dir);
+    lineEdit->setText(QDir::toNativeSeparators(dir));
 }
 
 void SettingsDialog::chooseIPLRom(QLineEdit *lineEdit)
@@ -1043,7 +1051,7 @@ void SettingsDialog::chooseIPLRom(QLineEdit *lineEdit)
         return;
     }
 
-    lineEdit->setText(file);
+    lineEdit->setText(QDir::toNativeSeparators(file));
 }
 
 bool SettingsDialog::applyPluginSettings(void)
