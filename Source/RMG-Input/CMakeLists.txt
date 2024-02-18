@@ -8,7 +8,11 @@ set(CMAKE_AUTOUIC ON)
 # disable lib prefix
 set(CMAKE_SHARED_LIBRARY_PREFIX "")
 
-find_package(Qt6 COMPONENTS Gui Widgets Core Svg REQUIRED)
+if (NOT APPLE)
+    find_package(Qt6 COMPONENTS Gui Widgets Core Svg REQUIRED)
+else()
+    find_package(Qt5 COMPONENTS Gui Widgets Core REQUIRED)
+endif()
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
@@ -47,4 +51,8 @@ target_include_directories(RMG-Input PRIVATE
     ${SDL2_INCLUDE_DIRS}
 )
 
-target_link_libraries(RMG-Input Qt6::Gui Qt6::Widgets Qt6::Svg)
+if (NOT APPLE)
+    target_link_libraries(RMG Qt6::Gui Qt6::Widgets Qt6::Svg)
+else()
+    target_link_libraries(RMG Qt5::Gui Qt5::Widgets)
+endif()

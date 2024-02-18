@@ -5,8 +5,9 @@
 if [[ "$(uname)" == "Darwin" ]]; then
     alias nproc="sysctl -n hw.logicalcpu"
     export CXXFLAGS='-stdlib=libc++'
-    export LDFLAGS='-mmacosx-version-min=11.0'
+    export LDFLAGS='-mmacosx-version-min=14.0'
     export CMAKE_SYSROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/"
+    export PATH="/usr/local/opt/qt@5/bin:$PATH"
 fi
 
 set -ex

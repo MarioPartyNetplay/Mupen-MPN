@@ -7,7 +7,11 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 COMPONENTS Gui Widgets Core REQUIRED)
+if (NOT APPLE)
+    find_package(Qt6 COMPONENTS Gui Widgets Core REQUIRED)
+else()
+    find_package(Qt5 COMPONENTS Gui Widgets Core REQUIRED)
+endif()
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
@@ -31,13 +35,23 @@ add_library(RMG-Audio SHARED ${RMG_AUDIO_SOURCES})
 
 set_target_properties(RMG-Audio PROPERTIES PREFIX "")
 
-target_link_libraries(RMG-Audio
+if (NOT APPLE)
+    target_link_libraries(RMG-Audio
     RMG-Core
     ${SDL2_LIBRARIES}
     ${SPEEX_LIBRARIES}
     ${SAMPLERATE_LIBRARIES}
     Qt6::Gui Qt6::Widgets
-)
+    )
+else()
+    target_link_libraries(RMG-Audio
+    RMG-Core
+    ${SDL2_LIBRARIES}
+    ${SPEEX_LIBRARIES}
+    ${SAMPLERATE_LIBRARIES}
+    Qt5::Gui Qt5::Widgets
+    )
+endif()
 
 target_include_directories(RMG-Audio PRIVATE 
     ${CMAKE_CURRENT_BINARY_DIR}

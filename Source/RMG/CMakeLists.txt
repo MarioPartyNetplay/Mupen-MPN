@@ -5,7 +5,11 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 COMPONENTS Gui Widgets WebSockets Core OpenGL REQUIRED)
+if (NOT APPLE)
+    find_package(Qt6 COMPONENTS Gui Widgets WebSockets Core OpenGL REQUIRED)
+else()
+    find_package(Qt5 COMPONENTS Gui Widgets WebSockets Core OpenGL REQUIRED)
+endif()
 
 if (PORTABLE_INSTALL)
     add_definitions(-DPORTABLE_INSTALL)
@@ -119,7 +123,11 @@ target_include_directories(RMG PRIVATE
     ${IMGUI_DIR}
 )
 
-target_link_libraries(RMG Qt6::Gui Qt6::Widgets Qt6::WebSockets Qt6::OpenGL)
+if (NOT APPLE)
+    target_link_libraries(RMG Qt6::Gui Qt6::Widgets Qt6::WebSockets Qt6::OpenGL)
+else()
+    target_link_libraries(RMG Qt5::Gui Qt5::Widgets Qt5::WebSockets Qt5::OpenGL)
+endif()
 
 if (UPDATER)
     target_link_libraries(RMG Qt6::Network)
