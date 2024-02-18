@@ -84,7 +84,8 @@ ExternalProject_Add(mupen64plus-core
 
 set(APIDIR "${CMAKE_SOURCE_DIR}/Source/3rdParty/mupen64plus-core/src/api")
 
-ExternalProject_Add(mupen64plus-rsp-cxd4
+if (APPLE)
+    ExternalProject_Add(mupen64plus-rsp-cxd4
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-cxd4/
 
     CONFIGURE_COMMAND ""
@@ -100,9 +101,10 @@ ExternalProject_Add(mupen64plus-rsp-cxd4
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-cxd4
 
     BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-cxd4/mupen64plus-rsp-cxd4.${SO_EXT}
-)
+    DEPENDS mupen64plus-core
+    )
 
-ExternalProject_Add(mupen64plus-rsp-hle
+    ExternalProject_Add(mupen64plus-rsp-hle
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-hle/
 
     CONFIGURE_COMMAND ""
@@ -118,7 +120,9 @@ ExternalProject_Add(mupen64plus-rsp-hle
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-hle
 
     BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-hle/mupen64plus-rsp-hle.${SO_EXT}
-)
+    DEPENDS mupen64plus-core
+    )
+endif()
 
 ExternalProject_Add(mupen64plus-rsp-parallel
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-parallel/
@@ -211,7 +215,6 @@ if (not APPLE)
         BUILD_IN_SOURCE False
         BUILD_ALWAYS True
         CMAKE_ARGS -DMUPENPLUSAPI=ON -DMUPENPLUSAPI_GLIDENUI=ON -DGLIDENUI_QT6=ON -DUSE_SYSTEM_LIBS=ON ${CMAKE_CONFIGURE_ARGS}
-
         SOURCE_SUBDIR ./src/
         BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-video-GLideN64
 
@@ -299,11 +302,13 @@ ExternalProject_Get_property(mupen64plus-core BUILD_BYPRODUCTS)
 set(MUPEN64PLUSCORE_LIB ${BUILD_BYPRODUCTS} PARENT_SCOPE)
 set(MUPEN64PLUSCORE_INI ${M64P_CORE_DIR}/data/mupen64plus.ini PARENT_SCOPE)
 
-ExternalProject_Get_property(mupen64plus-rsp-cxd4 BUILD_BYPRODUCTS)
-set(MUPEN64PLUS_PLUGIN_RSP_CXD4 ${BUILD_BYPRODUCTS} PARENT_SCOPE)
+if (APPLE)
+    ExternalProject_Get_property(mupen64plus-rsp-cxd4 BUILD_BYPRODUCTS)
+    set(MUPEN64PLUS_PLUGIN_RSP_CXD4 ${BUILD_BYPRODUCTS} PARENT_SCOPE)
 
-ExternalProject_Get_property(mupen64plus-rsp-hle BUILD_BYPRODUCTS)
-set(MUPEN64PLUS_PLUGIN_RSP_HLE ${BUILD_BYPRODUCTS} PARENT_SCOPE)
+    ExternalProject_Get_property(mupen64plus-rsp-hle BUILD_BYPRODUCTS)
+    set(MUPEN64PLUS_PLUGIN_RSP_HLE ${BUILD_BYPRODUCTS} PARENT_SCOPE)
+endif()
 
 ExternalProject_Get_property(mupen64plus-rsp-parallel BUILD_BYPRODUCTS)
 set(MUPEN64PLUS_PLUGIN_RSP_PARALLEL ${BUILD_BYPRODUCTS} PARENT_SCOPE)

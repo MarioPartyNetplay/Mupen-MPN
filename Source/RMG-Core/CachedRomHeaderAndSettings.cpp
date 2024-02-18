@@ -24,7 +24,7 @@
 #include <Windows.h>
 #elif __APPLE__
 #include <limits.h>
-#else // Linux
+#else
 #include <linux/limits.h>
 #endif // _WIN32
 
