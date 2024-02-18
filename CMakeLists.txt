@@ -18,6 +18,10 @@ option(USE_ANGRYLION    "Enables building angrylion-rdp-plus which uses a non-GP
 
 project(RMG)
 
+if (not APPLE)
+    set(NO_ASM ON)
+endif()
+
 find_package(Git)
 if (GIT_FOUND)
     execute_process(
@@ -199,9 +203,11 @@ if (USE_ANGRYLION)
         DESTINATION ${PLUGIN_INSTALL_PATH}/GFX
     )
 endif(USE_ANGRYLION)
-install(FILES ${MUPEN64PLUS_PLUGIN_GFX_GLIDEN64}
-    DESTINATION ${PLUGIN_INSTALL_PATH}/GFX
-)
+if (not APPLE)
+    install(FILES ${MUPEN64PLUS_PLUGIN_GFX_GLIDEN64}
+        DESTINATION ${PLUGIN_INSTALL_PATH}/GFX
+    )
+endif()
 install(FILES ${MUPEN64PLUS_PLUGIN_GFX_PARALLEL}
     DESTINATION ${PLUGIN_INSTALL_PATH}/GFX
 )
