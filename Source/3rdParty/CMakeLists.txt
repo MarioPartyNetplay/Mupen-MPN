@@ -18,11 +18,18 @@ if(WIN32)
     set(SO_EXT "dll")
     set(GCA_LIB "mupen64plus_input_gca.${SO_EXT}")
     set(CORE_FILE "mupen64plus.dll")
-else()
+endif()
+if(APPLE)
+    set(SO_EXT "dylib")
+    set(GCA_LIB "libmupen64plus_input_gca.${SO_EXT}")
+    set(CORE_FILE "libmupen64plus.dylib")
+endif()
+if(UNIX AND NOT APPLE)
     set(SO_EXT "so")
     set(GCA_LIB "libmupen64plus_input_gca.${SO_EXT}")
     set(CORE_FILE "libmupen64plus.so")
 endif()
+
 
 set(BASE_CMAKE_CONFIGURE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} 
     -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
@@ -136,24 +143,25 @@ ExternalProject_Add(mupen64plus-rsp-parallel
 
     BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-parallel/mupen64plus-rsp-parallel.${SO_EXT}
 )
+if (NOT APPLE)
+    ExternalProject_Add(mupen64plus-input-raphnetraw
+        SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-input-raphnetraw/
 
-ExternalProject_Add(mupen64plus-input-raphnetraw
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-input-raphnetraw/
+        CONFIGURE_COMMAND ""
+        INSTALL_COMMAND ""
 
-    CONFIGURE_COMMAND ""
-    INSTALL_COMMAND ""
+        BUILD_COMMAND ${MAKE_CMD} all -f ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-input-raphnetraw/projects/unix/Makefile
+            SRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-input-raphnetraw/src
+            APIDIR=${APIDIR} DEBUG=${MAKE_DEBUG}
+            CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
+            OPTFLAGS=${MAKE_OPTFLAGS}
+        BUILD_IN_SOURCE False
+        BUILD_ALWAYS True
+        BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-input-raphnetraw
 
-    BUILD_COMMAND ${MAKE_CMD} all -f ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-input-raphnetraw/projects/unix/Makefile
-        SRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-input-raphnetraw/src
-        APIDIR=${APIDIR} DEBUG=${MAKE_DEBUG}
-        CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
-        OPTFLAGS=${MAKE_OPTFLAGS}
-    BUILD_IN_SOURCE False
-    BUILD_ALWAYS True
-    BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-input-raphnetraw
-
-    BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-input-raphnetraw/mupen64plus-input-raphnetraw.${SO_EXT}
-)
+        BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-input-raphnetraw/mupen64plus-input-raphnetraw.${SO_EXT}
+    )
+endif()
 
 if (BUILD_INPUT_GCA)
     ExternalProject_Add(mupen64plus-input-gca
@@ -206,18 +214,15 @@ if (USE_ANGRYLION)
     )
 endif(USE_ANGRYLION)
 
-if (not APPLE)
+if (NOT APPLE)
     ExternalProject_Add(mupen64plus-video-GLideN64
         SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-video-GLideN64
-
         INSTALL_COMMAND ""
-
         BUILD_IN_SOURCE False
         BUILD_ALWAYS True
-        CMAKE_ARGS -DMUPENPLUSAPI=ON -DMUPENPLUSAPI_GLIDENUI=ON -DGLIDENUI_QT6=ON -DUSE_SYSTEM_LIBS=ON ${CMAKE_CONFIGURE_ARGS}
+        CMAKE_ARGS -DMUPENPLUSAPI=ON -DMUPENPLUSAPI_GLIDENUI=ON -DCMAKE_CXX_FLAGS="-std=c++11" -DGLIDENUI_QT6=ON -DUSE_SYSTEM_LIBS=ON ${CMAKE_CONFIGURE_ARGS}
         SOURCE_SUBDIR ./src/
         BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-video-GLideN64
-
         BUILD_BYPRODUCTS ${GLIDEN64_LIB}
     )
 endif()
@@ -313,8 +318,10 @@ endif()
 ExternalProject_Get_property(mupen64plus-rsp-parallel BUILD_BYPRODUCTS)
 set(MUPEN64PLUS_PLUGIN_RSP_PARALLEL ${BUILD_BYPRODUCTS} PARENT_SCOPE)
 
+if (NOT APPLE)
 ExternalProject_Get_property(mupen64plus-input-raphnetraw BUILD_BYPRODUCTS)
 set(MUPEN64PLUS_PLUGIN_INPUT_RAPHNET ${BUILD_BYPRODUCTS} PARENT_SCOPE)
+endif()
 
 if (BUILD_INPUT_GCA)
     ExternalProject_Get_property(mupen64plus-input-gca BUILD_BYPRODUCTS)
@@ -326,7 +333,7 @@ if (USE_ANGRYLION)
     set(MUPEN64PLUS_PLUGIN_GFX_ANGRYLION ${BUILD_BYPRODUCTS} PARENT_SCOPE)
 endif(USE_ANGRYLION)
 
-if (not APPLE)
+if (NOT APPLE)
     ExternalProject_Get_property(mupen64plus-video-GLideN64 BUILD_BYPRODUCTS)
     set(MUPEN64PLUS_PLUGIN_GFX_GLIDEN64 ${BUILD_BYPRODUCTS} ${GLIDENUI_TRANSLATIONS} ${GLIDEN64_CUSTOM_INI} PARENT_SCOPE)
 endif()

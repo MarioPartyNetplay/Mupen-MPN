@@ -4,6 +4,9 @@
 # Check if the system is macOS
 if [[ "$(uname)" == "Darwin" ]]; then
     alias nproc="sysctl -n hw.logicalcpu"
+    export CXXFLAGS='-stdlib=libc++'
+    export LDFLAGS='-mmacosx-version-min=11.0'
+    export CMAKE_SYSROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/"
 fi
 
 set -ex

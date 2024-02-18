@@ -11,15 +11,15 @@ option(DRAG_DROP        "Enables drag and drop" ON)
 option(VRU              "Enables VRU support in RMG-Input" ON)
 option(USE_CCACHE       "Enables usage of ccache when ccache has been found" ON)
 option(USE_LTO          "Enables building with LTO/IPO when compiler supports it" ON)
-option(NO_ASM           "Disables the usage of assembly in the mupen64plus-core" OFF)
+option(NO_ASM           "Disables the usage of assembly in the mupen64plus-core" ON)
 option(NO_RUST          "Disables the building of rust subprojects" OFF)
 option(USE_LIBFMT       "Enables usage of libfmt instead of detecting whether std::format is supported" OFF)
 option(USE_ANGRYLION    "Enables building angrylion-rdp-plus which uses a non-GPL compliant license" OFF)
 
 project(RMG)
 
-if (not APPLE)
-    set(NO_ASM ON)
+if (APPLE)
+    set(NO_ASM OFF)
 endif()
 
 find_package(Git)
@@ -192,9 +192,11 @@ install(FILES ${MUPEN64PLUS_PLUGIN_RSP_HLE}
 install(FILES ${MUPEN64PLUS_PLUGIN_RSP_PARALLEL}
     DESTINATION ${PLUGIN_INSTALL_PATH}/RSP
 )
-install(FILES ${MUPEN64PLUS_PLUGIN_INPUT_RAPHNET}
-    DESTINATION ${PLUGIN_INSTALL_PATH}/Input
-)
+if (NOT APPLE)
+    install(FILES ${MUPEN64PLUS_PLUGIN_INPUT_RAPHNET}
+        DESTINATION ${PLUGIN_INSTALL_PATH}/Input
+    )
+endif()
 install(FILES ${MUPEN64PLUS_PLUGIN_INPUT_GCA}
     DESTINATION ${PLUGIN_INSTALL_PATH}/Input
 )
@@ -203,7 +205,7 @@ if (USE_ANGRYLION)
         DESTINATION ${PLUGIN_INSTALL_PATH}/GFX
     )
 endif(USE_ANGRYLION)
-if (not APPLE)
+if (APPLE)
     install(FILES ${MUPEN64PLUS_PLUGIN_GFX_GLIDEN64}
         DESTINATION ${PLUGIN_INSTALL_PATH}/GFX
     )
