@@ -97,6 +97,13 @@ target_link_libraries(RMG-Core
     lzma
 )
 
+if (APPLE)
+    target_link_libraries(RMG-Core "-framework Foundation")
+    target_link_libraries(RMG-Core "-framework CoreFoundation")
+    target_link_libraries(RMG-Core "-framework CoreServices")
+endif()
+
+
 if (DISCORD_RPC)
     target_link_libraries(RMG-Core
         ${DISCORD_RPC_LIB}
