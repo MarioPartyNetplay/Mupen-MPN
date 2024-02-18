@@ -1,14 +1,14 @@
-app-id: com.github.Rosalie241.RMG
+app-id: com.github.Rosalie241.RMG-MPN
 runtime: org.kde.Platform
 runtime-version: 6.6
 sdk: org.kde.Sdk
-command: RMG
+command: RMG-MPN
 finish-args:
   - --socket=x11
   - --socket=pulseaudio
   - --share=ipc
   - --device=all
-  - --filesystem=xdg-pictures/RMG:create
+  - --filesystem=xdg-pictures/RMG-MPN:create
 
 modules:
   - name: minizip
@@ -55,7 +55,7 @@ modules:
               stable-only: true
               url-template: https://github.com/libusb/libusb/archive/refs/tags/v$version.tar.gz
 
-  - name: RMG
+  - name: RMG-MPN
     buildsystem: cmake-ninja
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
