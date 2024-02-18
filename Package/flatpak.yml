@@ -2,7 +2,7 @@ app-id: com.github.Rosalie241.RMG-MPN
 runtime: org.kde.Platform
 runtime-version: 6.6
 sdk: org.kde.Sdk
-command: RMG-MPN
+command: RMG
 finish-args:
   - --socket=x11
   - --socket=pulseaudio
@@ -55,7 +55,7 @@ modules:
               stable-only: true
               url-template: https://github.com/libusb/libusb/archive/refs/tags/v$version.tar.gz
 
-  - name: RMG-MPN
+  - name: RMG
     buildsystem: cmake-ninja
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
