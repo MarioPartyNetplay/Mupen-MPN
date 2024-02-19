@@ -13,7 +13,7 @@
 #ifdef __APPLE__
 #include <QtWidgets/QWidget>
 #else
-#inlcude <QWidget>
+#include <QWidget>
 #endif
 
 #include "common.hpp"
