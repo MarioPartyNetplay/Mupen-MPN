@@ -7,8 +7,11 @@ finish-args:
   - --socket=x11
   - --socket=pulseaudio
   - --share=ipc
-  - --device=all
+  - --share=bluetooth
+  - --share=network # needed for netplay
+  - --device=all # needed for controllers
   - --filesystem=xdg-pictures/RMG-MPN:create
+  - --filesystem=xdg-run/gamescope-0:ro # needed for steam deck
 
 modules:
   - name: minizip
