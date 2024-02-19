@@ -5,6 +5,11 @@ project(RMG-Core)
 
 set(CMAKE_CXX_STANDARD 20)
 
+if (APPLE)
+    LINK_DIRECTORIES(/usr/local/lib)
+    find_package(iconv REQUIRED)
+endif()
+
 # RMG-Core needs LTO disabled for windows
 # else linking fails
 if (WIN32)
