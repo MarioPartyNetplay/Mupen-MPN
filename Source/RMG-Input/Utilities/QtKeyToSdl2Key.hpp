@@ -1,7 +1,11 @@
 #ifndef QTKEYTOSDL2KEY_HPP
 #define QTKEYTOSDL2KEY_HPP
 
+#ifdef __APPLE__
+#include <QtCore/QObject>
+#else
 #include <QObject>
+#endif
 
 namespace Utilities
 {

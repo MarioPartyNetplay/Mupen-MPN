@@ -10,7 +10,12 @@
 #ifndef OPTIONSDIALOG_HPP
 #define OPTIONSDIALOG_HPP
 
+#ifdef __APPLE__
+#include <QtWidgets/QDialog>
+#else
 #include <QDialog>
+#endif
+
 #include <string>
 
 #include "ui_OptionsDialog.h"

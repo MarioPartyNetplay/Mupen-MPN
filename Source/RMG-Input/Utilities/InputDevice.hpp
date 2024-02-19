@@ -12,7 +12,12 @@
 
 #include "common.hpp"
 
+#ifdef __APPLE__
+#include <QtCore/QObject>
+#else
 #include <QObject>
+#endif
+
 #include <string>
 #include <SDL.h>
 

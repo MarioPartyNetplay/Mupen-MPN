@@ -14,12 +14,22 @@
 
 #include <RMG-Core/Core.hpp>
 
+#ifdef __APPLE__
+#include <QtGui/QPixmap>
+#include <QtGui/QPainter>
+#include <QtGui/QResizeEvent>
+#include <QtSvg/QSvgRenderer>
+#include <QtWidgets/QMessageBox>
+#include <QtWidgets/QInputDialog>
+#else
 #include <QPixmap>
 #include <QPainter>
 #include <QResizeEvent>
 #include <QSvgRenderer>
 #include <QMessageBox>
 #include <QInputDialog>
+#endif
+
 #include <SDL.h>
 #include <iostream>
 

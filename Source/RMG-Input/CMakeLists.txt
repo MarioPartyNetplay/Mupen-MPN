@@ -47,4 +47,4 @@ target_include_directories(RMG-Input PRIVATE
     ${SDL2_INCLUDE_DIRS}
 )
 
-target_link_libraries(RMG Qt6::Gui Qt6::Widgets Qt6::Svg)
+target_link_libraries(RMG-Input Qt6::Gui Qt6::Widgets Qt6::Svg)

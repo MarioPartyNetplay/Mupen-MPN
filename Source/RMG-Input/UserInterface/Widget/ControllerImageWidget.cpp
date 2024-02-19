@@ -9,11 +9,18 @@
  */
 #include "ControllerImageWidget.hpp"
 
+#ifdef __APPLE__
+#include <QtGui/QResizeEvent>
+#include <QtGui/QPainter>
+#include <QtSvg/QSvgRenderer>
+#else
 #include <QSvgRenderer>
-#include <algorithm>
-#include <cmath>
 #include <QPainter>
 #include <QResizeEvent>
+#endif
+
+#include <algorithm>
+#include <cmath>
 
 using namespace UserInterface::Widget;
 

@@ -10,7 +10,12 @@
 #ifndef MAINWINDOW_HPP
 #define MAINWINDOW_HPP
 
+#ifdef __APPLE__
+#include <QtWidgets/QDialog>
+#else
 #include <QDialog>
+#endif
+
 #include <QAbstractButton>
 
 #include "ui_MainDialog.h"

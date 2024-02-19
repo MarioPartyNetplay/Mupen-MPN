@@ -29,7 +29,8 @@
 #include "backends/plugins_compat/plugins_compat.h"
 #include "netplay.h"
 
-#include <SDL_net.h>
+#include "../../../sdl2_net/include/SDL_net.h"
+
 #if !defined(WIN32)
 #include <netinet/ip.h>
 #endif

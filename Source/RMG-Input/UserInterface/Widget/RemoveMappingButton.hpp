@@ -10,7 +10,11 @@
 #ifndef REMOVEMAPPINGBUTTON_HPP
 #define REMOVEMAPPINGBUTTON_HPP
 
+#ifdef __APPLE__
+#include <QtWidgets/QPushButton>
+#else
 #include <QPushButton>
+#endif
 
 #include "common.hpp"
 

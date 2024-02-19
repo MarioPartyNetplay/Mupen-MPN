@@ -10,7 +10,12 @@
 #ifndef HOTKEYSTHREAD_HPP
 #define HOTKEYSTHREAD_HPP
 
+
+#ifdef __APPLE__
+#include <QtCore/QThread>
+#else
 #include <QThread>
+#endif
 
 enum class HotkeysThreadState
 {

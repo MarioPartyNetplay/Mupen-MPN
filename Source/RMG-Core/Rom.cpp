@@ -28,7 +28,13 @@
 #include "../3rdParty/lzma/7zVersion.h"
 
 #include <string>
+
+#ifdef __APPLE__
+#include "../3rdParty/mupen64plus-core/subprojects/minizip/unzip.h"
+#else
 #include <unzip.h>
+#endif
+
 #include <fstream>
 #include <cstdlib>
 #include <cstring>

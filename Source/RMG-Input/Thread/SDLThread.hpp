@@ -10,7 +10,11 @@
 #ifndef SDLTHREAD_HPP
 #define SDLTHREAD_HPP
 
+#ifdef __APPLE__
+#include <QtCore/QThread>
+#else
 #include <QThread>
+#endif
 
 enum class SDLThreadAction
 {

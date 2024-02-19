@@ -41,6 +41,7 @@
 #include <QActionGroup> 
 #include <QTimer>
 #include <cmath>
+#include <sstream>
 
 using namespace UserInterface;
 

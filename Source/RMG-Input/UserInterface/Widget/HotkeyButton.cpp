@@ -10,7 +10,11 @@
 #include "HotkeyButton.hpp"
 #include "UserInterface/HotkeysDialog.hpp"
 
+#ifdef __APPLE__
+#include <QtGui/QMouseEvent>
+#else
 #include <QMouseEvent>
+#endif
 
 using namespace UserInterface::Widget;
 

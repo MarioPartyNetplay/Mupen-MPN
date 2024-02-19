@@ -14,7 +14,12 @@
 #include <filesystem>
 #include <fstream>
 #include <vector>
+
+#ifdef __APPLE__
+#include "../3rdParty/mupen64plus-core/subprojects/minizip/unzip.h"
+#else
 #include <unzip.h>
+#endif
 
 //
 // Local Defines

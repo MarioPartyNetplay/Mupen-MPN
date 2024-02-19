@@ -9,7 +9,12 @@
  */
 #include "OptionsDialog.hpp"
 
+#ifdef __APPLE__
+#include <QtWidgets/QFileDialog>
+#else
 #include <QFileDialog>
+#endif
+
 #include <RMG-Core/Core.hpp>
 
 using namespace UserInterface;

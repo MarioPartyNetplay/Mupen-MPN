@@ -20,8 +20,15 @@
 
 #include <RMG-Core/Core.hpp>
 
+#ifdef __APPLE__
+#include <QtGui/QGuiApplication>
+#include <QtWidgets/QApplication>
+#else
 #include <QGuiApplication>
 #include <QApplication>
+
+#endif
+
 #include <SDL.h>
 
 #include <algorithm>

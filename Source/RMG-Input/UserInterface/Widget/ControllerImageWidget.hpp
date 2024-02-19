@@ -10,7 +10,11 @@
 #ifndef CONTROLLERIMAGEWIDGET_HPP
 #define CONTROLLERIMAGEWIDGET_HPP
 
-#include <QWidget>
+#ifdef __APPLE__
+#include <QtWidgets/QWidget>
+#else
+#inlcude <QWidget>
+#endif
 
 #include "common.hpp"
 

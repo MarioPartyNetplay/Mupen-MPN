@@ -10,10 +10,16 @@
 #ifndef MAPPINGBUTTON_HPP
 #define MAPPINGBUTTON_HPP
 
-#include <QPushButton>
-#include <QTimer>
 
 #include "common.hpp"
+
+#ifdef __APPLE__
+#include <QtWidgets/QPushButton>
+#include <QtCore/QTimer>
+#else
+#include <QPushButton>
+#include <QTimer>
+#endif
 
 namespace UserInterface
 {

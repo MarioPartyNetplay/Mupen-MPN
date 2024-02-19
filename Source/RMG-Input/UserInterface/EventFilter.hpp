@@ -10,10 +10,17 @@
 #ifndef EVENTFILTER_HPP
 #define EVENTFILTER_HPP
 
+#ifdef __APPLE__
+#include <QtGui/QFocusEvent>
+#include <QtGui/QKeyEvent>
+#include <QtCore/QList>
+#include <QtCore/QObject>
+#else
 #include <QFocusEvent>
 #include <QKeyEvent>
 #include <QList>
 #include <QObject>
+#endif
 
 namespace UserInterface
 {

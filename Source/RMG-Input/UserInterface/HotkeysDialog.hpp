@@ -10,7 +10,12 @@
 #ifndef HOTKEYSDIALOG_HPP
 #define HOTKEYSDIALOG_HPP
 
+#ifdef __APPLE__
+#include <QtWidgets/QDialog>
+#else
 #include <QDialog>
+#endif
+
 #include <string>
 
 #include <SDL.h>

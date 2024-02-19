@@ -14,7 +14,12 @@
 #include <RMG-Core/Core.hpp>
 
 #include <SDL.h>
+
+#ifdef __APPLE__
+#include <QtCore/QTimer>
+#else
 #include <QTimer>
+#endif
 
 using namespace UserInterface;
 

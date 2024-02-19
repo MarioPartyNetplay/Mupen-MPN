@@ -10,7 +10,11 @@
 #ifndef MAINDIALOG_HPP
 #define MAINDIALOG_HPP
 
+#ifdef __APPLE__
+#include <QtWidgets/QDialog>
+#else
 #include <QDialog>
+#endif
 
 #include "ui_MainDialog.h"
 #include "Widget/ControllerWidget.hpp"

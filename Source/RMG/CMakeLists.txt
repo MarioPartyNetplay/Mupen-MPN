@@ -120,6 +120,7 @@ target_include_directories(RMG PRIVATE
     ${IMGUI_DIR}
 )
 
+target_include_directories(RMG PRIVATE ${SDL2_INCLUDE_DIRS} )
 
 target_link_libraries(RMG Qt6::Gui Qt6::Widgets Qt6::WebSockets Qt6::OpenGL Qt6::Svg)
 

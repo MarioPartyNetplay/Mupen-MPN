@@ -10,8 +10,13 @@
 #ifndef HOTKEYBUTTON_HPP
 #define HOTKEYBUTTON_HPP
 
+#ifdef __APPLE__
+#include <QtWidgets/QPushButton>
+#include <QtCore/QTimer>
+#else
 #include <QPushButton>
 #include <QTimer>
+#endif
 
 #include "common.hpp"
 
