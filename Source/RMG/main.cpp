@@ -133,6 +133,12 @@ int main(int argc, char **argv)
     QGuiApplication::setDesktopFileName("com.github.Rosalie241.RMG");
 #endif
 
+#ifdef __APPLE__
+    {
+        setenv("QT_QPA_PLATFORM", "cocoa", 1);
+    }
+#endif
+
     QApplication app(argc, argv);
 
     UserInterface::MainWindow window;
