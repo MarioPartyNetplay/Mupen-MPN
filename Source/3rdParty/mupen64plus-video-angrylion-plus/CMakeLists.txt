@@ -35,10 +35,6 @@ else(USE_QT5)
     set(QT_VERSION Qt6)
 endif(USE_QT5)
 
-if (APPLE)
-    set(QT_VERSION Qt5)
-endif()
-
 # set policy CMP0042 for MacOS X
 set(CMAKE_MACOSX_RPATH 1)
 

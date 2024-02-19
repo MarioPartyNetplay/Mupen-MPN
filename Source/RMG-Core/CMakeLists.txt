@@ -7,7 +7,6 @@ set(CMAKE_CXX_STANDARD 20)
 
 if (APPLE)
     LINK_DIRECTORIES(/usr/local/lib)
-    find_package(iconv REQUIRED)
 endif()
 
 # RMG-Core needs LTO disabled for windows
@@ -96,6 +95,10 @@ endif(UNIX)
 if(WIN32)
     target_link_libraries(RMG-Core wsock32 ws2_32 ${ICONV_LIBRARIES})
 endif(WIN32)
+
+if(APPLE)
+    target_link_libraries(RMG-Core iconv)
+endif()
 
 target_link_libraries(RMG-Core
     ${MINIZIP_LIBRARIES}

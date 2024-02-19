@@ -8,6 +8,7 @@ if [[ "$(uname)" == "Darwin" ]]; then
     export LDFLAGS='-mmacosx-version-min=14.0'
     export CMAKE_SYSROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/"
     export PATH="/usr/local/opt/qt@5/bin:$PATH"
+    export PATH="/usr/local/opt/libiconv/bin:$PATH"
 fi
 
 set -ex
