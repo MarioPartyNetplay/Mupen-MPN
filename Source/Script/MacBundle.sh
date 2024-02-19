@@ -48,4 +48,4 @@ otool -L "${contents}/MacOS/Core/libmupen64plus.dylib"
 install_name_tool -change '@rpath/libRMG-Core.dylib' @loader_path/libRMG-Core.dylib "${contents}/MacOS/RMG-MPN"
 install_name_tool -change '@rpath/libmupen64plus.dylib' @loader_path/libmupen64plus.dylib "${contents}/MacOS/RMG-MPN"
 
-macdeployqt "${contents}/.." -verbose=3
+macdeployqt "${contents}/.."

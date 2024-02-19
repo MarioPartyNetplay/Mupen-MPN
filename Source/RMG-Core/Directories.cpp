@@ -21,6 +21,9 @@
 #include <Windows.h>
 #include <shlobj.h>
 #endif // _WIN32
+#ifdef __APPLE__
+#include <mach-o/dyld.h> // Include the header for _NSGetExecutablePath
+#endif
 
 //
 // Local Variables
@@ -55,7 +58,16 @@ static std::filesystem::path get_exe_directory(void)
         std::terminate();
     }
     directory = std::filesystem::path(buffer).parent_path();
-#else // _WIN32
+#elif defined(__APPLE__)
+    char buffer[1024];
+    uint32_t size = sizeof(buffer);
+    if (_NSGetExecutablePath(buffer, &size) != 0)
+    {
+        std::cerr << "get_exe_directory: _NSGetExecutablePath failed!" << std::endl;
+        std::terminate();
+    }
+    directory = std::filesystem::path(buffer).parent_path();
+#else // Linux
     try
     {
         directory =  std::filesystem::canonical("/proc/self/exe").parent_path();
@@ -65,8 +77,8 @@ static std::filesystem::path get_exe_directory(void)
         std::cerr << "get_exe_directory: std::filesystem::canonical(\"/proc/self/exe\") threw an exception!" << std::endl;
         std::terminate();
     }
-#endif // _WIN32
-    return directory.make_preferred();
+#endif
+return directory.make_preferred();
 }
 #endif // PORTABLE_INSTALL
 

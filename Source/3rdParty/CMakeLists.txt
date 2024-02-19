@@ -104,7 +104,7 @@ BUILD_IN_SOURCE False
 BUILD_ALWAYS True
 BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-cxd4
 BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-cxd4/mupen64plus-rsp-cxd4.${SO_EXT}
-DEPENDS mupen64plus-core
+DEPENDS mupen64plus-core)
 
 
 ExternalProject_Add(mupen64plus-rsp-hle
