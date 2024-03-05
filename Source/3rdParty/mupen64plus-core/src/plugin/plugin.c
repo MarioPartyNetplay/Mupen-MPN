@@ -123,7 +123,6 @@ static const execution_plugin_functions dummy_execution = {
     dummyexecution_Input,
     dummyexecution_Frame,
     dummyexecution_Execute,
-    dummyexecution_ExecuteDone,
     dummyexecution_Read8,
     dummyexecution_Read16,
     dummyexecution_Read32,
