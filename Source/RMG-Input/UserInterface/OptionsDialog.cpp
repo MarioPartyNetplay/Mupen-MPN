@@ -13,13 +13,15 @@
 #include <QtWidgets/QFileDialog>
 #else
 #include <QFileDialog>
-#endif
-
+#include <QMessageBox>
 #include <RMG-Core/Core.hpp>
+
+#include <SDL.h>
 
 using namespace UserInterface;
 
-OptionsDialog::OptionsDialog(QWidget* parent, OptionsDialogSettings settings) : QDialog(parent, Qt::WindowSystemMenuHint | Qt::WindowTitleHint)
+OptionsDialog::OptionsDialog(QWidget* parent, OptionsDialogSettings settings,
+                             SDL_Joystick* joystick, SDL_GameController* controller) : QDialog(parent, Qt::WindowSystemMenuHint | Qt::WindowTitleHint)
 {
     this->setupUi(this);
 
@@ -36,6 +38,12 @@ OptionsDialog::OptionsDialog(QWidget* parent, OptionsDialogSettings settings) : 
     {
         this->hideEmulationInfoText();
     }
+
+    this->currentJoystick   = joystick;
+    this->currentController = controller;
+
+    this->testRumbleButton->setVisible(settings.ControllerPak == 1);
+    this->testRumbleButton->setEnabled(this->currentJoystick != nullptr || this->currentController != nullptr);
 }
 
 OptionsDialogSettings OptionsDialog::GetSettings()
@@ -84,6 +92,11 @@ void OptionsDialog::accept()
     QDialog::accept();
 }
 
+void OptionsDialog::on_controllerPakComboBox_currentIndexChanged(int index)
+{
+    this->testRumbleButton->setVisible(index == 1);
+}
+
 void OptionsDialog::on_changeGameboyRomButton_clicked()
 {
     QString gameBoyRom;
@@ -103,5 +116,31 @@ void OptionsDialog::on_changeGameboySaveButton_clicked()
     if (!gameBoySave.isEmpty())
     {
         this->gameboySaveLineEdit->setText(QDir::toNativeSeparators(gameBoySave));
+    }
+}
+
+void OptionsDialog::on_testRumbleButton_clicked()
+{
+#if SDL_VERSION_ATLEAST(2,0,18)
+    if ((this->currentJoystick != nullptr   && SDL_JoystickHasRumble(this->currentJoystick) != SDL_TRUE) ||
+        (this->currentController != nullptr && SDL_GameControllerHasRumble(this->currentController) != SDL_TRUE))
+    {
+        QMessageBox msgBox(this);
+        msgBox.setIcon(QMessageBox::Icon::Critical);
+        msgBox.setWindowTitle("Error");
+        msgBox.setText("Controller doesn't support rumble");
+        msgBox.addButton(QMessageBox::Ok);
+        msgBox.exec();
+        return;
+    }
+#endif
+
+    if (this->currentJoystick != nullptr)
+    {
+        SDL_JoystickRumble(this->currentJoystick, 0xFFFF, 0xFFFF, 1500);
+    }
+    else
+    {
+        SDL_GameControllerRumble(this->currentController, 0xFFFF, 0xFFFF, 1500);
     }
 }

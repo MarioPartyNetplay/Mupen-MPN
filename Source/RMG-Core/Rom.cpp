@@ -33,8 +33,7 @@
 #include "../3rdParty/mupen64plus-core/subprojects/minizip/unzip.h"
 #else
 #include <unzip.h>
-#endif
-
+#include <zlib.h>
 #include <fstream>
 #include <cstdlib>
 #include <cstring>
@@ -96,7 +95,7 @@ static uLong zlib_filefunc_read(voidpf opaque, voidpf stream, void* buf, uLong s
 {
     std::ifstream* fileStream = (std::ifstream*)stream;
     fileStream->read((char*)buf, size);
-    return fileStream->fail() ? 0 : size;
+    return fileStream->fail() ? fileStream->gcount() : size;
 }
 
 static ZPOS64_T zlib_filefunc_tell(voidpf opaque, voidpf stream)
