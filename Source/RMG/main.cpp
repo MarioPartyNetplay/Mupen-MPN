@@ -159,6 +159,7 @@ int main(int argc, char **argv)
     QCommandLineOption fullscreenOption({"f", "fullscreen"}, "Launches ROM in fullscreen mode");
     QCommandLineOption noGuiOption({"n", "nogui"}, "Hides GUI elements (menubar, toolbar, statusbar)");
     QCommandLineOption quitAfterEmulationOption({"q", "quit-after-emulation"}, "Quits RMG when emulation has finished");
+    QCommandLineOption loadStateSlot("load-state-slot", "Loads save state slot when launching the ROM", "Slot Number");
     QCommandLineOption diskOption("disk", "64DD Disk to open ROM in combination with", "64DD Disk");
 
 
@@ -166,6 +167,7 @@ int main(int argc, char **argv)
     parser.addOption(fullscreenOption);
     parser.addOption(noGuiOption);
     parser.addOption(quitAfterEmulationOption);
+    parser.addOption(loadStateSlot);
     parser.addOption(diskOption);
     parser.addPositionalArgument("ROM", "ROM to open");
 
@@ -189,7 +191,15 @@ int main(int argc, char **argv)
 
     if (!args.empty())
     {
-        window.OpenROM(args.at(0), parser.value(diskOption), parser.isSet(fullscreenOption), parser.isSet(quitAfterEmulationOption));
+        bool parsedNumber = false;
+        int saveStateSlot = parser.value(loadStateSlot).toInt(&parsedNumber);
+        if (parser.value(loadStateSlot).isEmpty() || !parsedNumber ||
+            saveStateSlot < 0 || saveStateSlot > 9)
+        {
+            saveStateSlot = -1;
+        }
+
+        window.OpenROM(args.at(0), parser.value(diskOption), parser.isSet(fullscreenOption), parser.isSet(quitAfterEmulationOption), saveStateSlot);
     }
 
     // show window
