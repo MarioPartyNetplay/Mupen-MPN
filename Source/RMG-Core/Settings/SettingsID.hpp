@@ -55,6 +55,9 @@ enum class SettingsID
     Core_Gameboy_P3_Save,
     Core_Gameboy_P4_Rom,
     Core_Gameboy_P4_Save,
+    
+    // Core NetPlay settings
+    Core_Netplay_Name,
 
     // (mupen64plus) Core Settings
     Core_OverrideGameSpecificSettings,

@@ -11,6 +11,11 @@
 #include <QJsonDocument>
 #include <QInputDialog>
 #include <QLabel>
+#include <QString>
+#include <QLineEdit>
+
+#include <RMG-Core/m64p/Api.hpp>
+#include <RMG-Core/Settings/Settings.hpp>
 
 CreateRoom::CreateRoom(QWidget *parent)
     : QDialog(parent)
@@ -32,7 +37,12 @@ CreateRoom::CreateRoom(QWidget *parent)
     layout->addWidget(playerNameLabel, 3, 0);
     playerNameEdit = new QLineEdit(this);
     playerNameEdit->setValidator(validator);
-    playerNameEdit->setMaxLength(30);
+    playerNameEdit->setMaxLength(30);    
+    std::string netplayName;
+    netplayName = CoreSettingsGetStringValue(SettingsID::Core_Netplay_Name);    
+    if (!netplayName.empty()) {
+        playerNameEdit->setText(QString::fromStdString(netplayName));
+    }
     layout->addWidget(playerNameEdit, 3, 1);
 
     QLabel *serverLabel = new QLabel("Server", this);

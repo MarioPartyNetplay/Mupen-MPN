@@ -59,6 +59,8 @@ static std::vector<std::string> l_keyList;
 #define SETTING_SECTION_SETTINGS    SETTING_SECTION_CORE " Settings"
 #define SETTING_SECTION_64DD        SETTING_SECTION_CORE " 64DD"
 #define SETTING_SECTION_GB          SETTING_SECTION_CORE " Gameboy"
+#define SETTING_SECTION_NETPLAY     SETTING_SECTION_CORE " NetPlay"
+
 #define SETTING_SECTION_M64P        "Core"
 #define SETTING_SECTION_AUDIO       SETTING_SECTION_GUI  " - Audio Plugin"
 #define SETTING_SECTION_INPUT       SETTING_SECTION_GUI  " - Input Plugin"
@@ -303,6 +305,10 @@ static l_Setting get_setting(SettingsID settingId)
         break;
     case SettingsID::Core_Gameboy_P4_Save:
         setting = {SETTING_SECTION_GB, "Gameboy_P4_Save", std::string("")};
+        break;
+
+    case SettingsID::Core_Netplay_Name:
+        setting = {SETTING_SECTION_NETPLAY, "Netplay_Name", std::string("")};
         break;
 
     case SettingsID::Game_OverrideSettings:

@@ -3,6 +3,9 @@
 #include <QMessageBox>
 #include <QJsonArray>
 
+#include <RMG-Core/m64p/Api.hpp>
+#include <RMG-Core/Settings/Settings.hpp>
+
 WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidget *parent)
     : QDialog(parent)
 {
@@ -18,6 +21,8 @@ WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidg
     room_name = room.value("room_name").toString();
     file_name = filename;
     started = 0;
+
+    CoreSettingsSetValue(SettingsID::Core_Netplay_Name, player_name);
 
     webSocket = socket;
     connect(webSocket, &QWebSocket::textMessageReceived,

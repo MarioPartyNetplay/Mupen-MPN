@@ -10,8 +10,11 @@
 #include <QFileDialog>
 #include <QInputDialog>
 #include <QLabel>
+#include <QString>
+#include <QLineEdit>
 
 #include <RMG-Core/m64p/Api.hpp>
+#include <RMG-Core/Settings/Settings.hpp>
 
 JoinRoom::JoinRoom(QWidget *parent)
     : QDialog(parent)
@@ -29,6 +32,13 @@ JoinRoom::JoinRoom(QWidget *parent)
     playerNameEdit = new QLineEdit(this);
     playerNameEdit->setValidator(validator);
     playerNameEdit->setMaxLength(30);
+    
+    std::string netplayName;
+    netplayName = CoreSettingsGetStringValue(SettingsID::Core_Netplay_Name);    
+    if (!netplayName.empty()) {
+        playerNameEdit->setText(QString::fromStdString(netplayName));
+    }
+
     playerNameEdit->setPlaceholderText("Player Name");
     layout->addWidget(playerNameEdit, 0, 0);
 
