@@ -135,7 +135,7 @@ void MainWindow::OpenROMNetplay(QString file, QString netplay_ip, int netplay_po
     // state, then the transition will be smoother
     this->updateUI(true, false);
 
-    this->launchEmulationThread(file, "", false, netplay_ip, netplay_port, netplay_player);
+    this->launchEmulationThread(file, "", false, 1, netplay_ip, netplay_port, netplay_player);
 }
 
 

@@ -22,7 +22,7 @@ WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidg
     file_name = filename;
     started = 0;
 
-    CoreSettingsSetValue(SettingsID::Core_Netplay_Name, player_name);
+    //CoreSettingsSetValue(SettingsID::Core_Netplay_Name, player_name, true);
 
     webSocket = socket;
     connect(webSocket, &QWebSocket::textMessageReceived,

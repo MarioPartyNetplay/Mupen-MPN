@@ -20,15 +20,8 @@
 
 #include <RMG-Core/Core.hpp>
 
-#ifdef __APPLE__
-#include <QtGui/QGuiApplication>
-#include <QtWidgets/QApplication>
-#else
 #include <QGuiApplication>
 #include <QApplication>
-
-#endif
-
 #include <SDL.h>
 
 #include <algorithm>
@@ -121,6 +114,8 @@ struct InputProfile
     InputMapping Hotkey_Resume;
     bool Hotkey_Screenshot_Pressed = false;
     InputMapping Hotkey_Screenshot;
+    bool Hotkey_LimitFPS_Pressed = false;
+    InputMapping Hotkey_LimitFPS;
     bool Hotkey_SpeedFactor_Pressed = false;
     InputMapping Hotkey_SpeedFactor25;
     InputMapping Hotkey_SpeedFactor50;
@@ -307,7 +302,7 @@ static void load_settings(void)
             profile->SensitivityValue = 100;
         }
 
-#define LOAD_INPUT_MAPPING(mapping, setting) \
+        #define LOAD_INPUT_MAPPING(mapping, setting) \
         load_inputmapping_settings(&profile->mapping, section, SettingsID::setting##_Name, SettingsID::setting##_InputType, SettingsID::setting##_Data, SettingsID::setting##_ExtraData)
 
         // load inputmapping settings
@@ -396,14 +391,13 @@ static void apply_controller_profiles(void)
             case N64ControllerPak::RumblePak:
                 plugin = PLUGIN_RAW;
                 break;
-             case N64ControllerPak::TransferPak:
+            case N64ControllerPak::TransferPak:
                 plugin = PLUGIN_TRANSFER_PAK;
                 break;
             default:
                 plugin = PLUGIN_NONE;
                 break;
         }
-
         l_ControlInfo.Controls[i].Present = profile->PluggedIn ? 1 : 0;
         l_ControlInfo.Controls[i].Plugin  = plugin;
         l_ControlInfo.Controls[i].RawData = 0;
@@ -856,6 +850,7 @@ static bool check_hotkeys(int Control)
     DEFINE_HOTKEY(Hotkey_SoftReset,             Hotkey_SoftReset_Pressed,     CoreResetEmulation(false), );
     DEFINE_HOTKEY(Hotkey_Resume,                Hotkey_Resume_Pressed,        CoreIsEmulationPaused() ? CoreResumeEmulation() : CorePauseEmulation(), );
     DEFINE_HOTKEY(Hotkey_Screenshot,            Hotkey_Screenshot_Pressed,    CoreTakeScreenshot(), );
+    DEFINE_HOTKEY(Hotkey_LimitFPS,              Hotkey_LimitFPS_Pressed,      CoreSetSpeedLimiterState(!CoreIsSpeedLimiterEnabled()), );
     DEFINE_HOTKEY(Hotkey_SpeedFactor25,         Hotkey_SpeedFactor_Pressed,   CoreSetSpeedFactor(25), );
     DEFINE_HOTKEY(Hotkey_SpeedFactor50,         Hotkey_SpeedFactor_Pressed,   CoreSetSpeedFactor(50), );
     DEFINE_HOTKEY(Hotkey_SpeedFactor75,         Hotkey_SpeedFactor_Pressed,   CoreSetSpeedFactor(75), );
@@ -898,9 +893,7 @@ static void sdl_init()
     std::string debugMessage;
     int ret = -1;
 
-    SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT, "0");
-
-    for (const int subsystem : {SDL_INIT_GAMECONTROLLER, SDL_INIT_AUDIO, SDL_INIT_VIDEO, SDL_INIT_HAPTIC})
+    for (const int subsystem : {SDL_INIT_GAMECONTROLLER, SDL_INIT_VIDEO, SDL_INIT_HAPTIC})
     {
         if (!SDL_WasInit(subsystem))
         {

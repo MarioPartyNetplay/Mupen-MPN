@@ -33,6 +33,8 @@
 #include "../3rdParty/mupen64plus-core/subprojects/minizip/unzip.h"
 #else
 #include <unzip.h>
+#endif
+
 #include <zlib.h>
 #include <fstream>
 #include <cstdlib>

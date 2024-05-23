@@ -13,6 +13,8 @@
 #include <QtWidgets/QFileDialog>
 #else
 #include <QFileDialog>
+#endif
+
 #include <QMessageBox>
 #include <RMG-Core/Core.hpp>
 

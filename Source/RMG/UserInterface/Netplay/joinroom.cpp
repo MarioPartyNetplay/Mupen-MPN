@@ -163,9 +163,11 @@ void JoinRoom::joinGame()
         msgBox.exec();
         return;
     }
-
+    
+    std::string romPATH;
+    romPATH = CoreSettingsGetStringValue(SettingsID::RomBrowser_Directory);  
     filename = QFileDialog::getOpenFileName(this,
-    tr("Open ROM"), "", tr("ROM Files (*.n64 *.N64 *.z64 *.Z64 *.v64 *.V64 *.rom *.ROM *.zip *.ZIP *.7z)"));
+    tr("Open ROM"), QString::fromStdString(romPATH), tr("ROM Files (*.n64 *.N64 *.z64 *.Z64 *.v64 *.V64 *.rom *.ROM *.zip *.ZIP *.7z)"));
     if (!filename.isNull())
     {
         if (loadROM(filename) == M64ERR_SUCCESS)

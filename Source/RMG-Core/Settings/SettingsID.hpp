@@ -117,6 +117,7 @@ enum class SettingsID
     KeyBinding_HardReset,
     KeyBinding_Resume,
     KeyBinding_Screenshot,
+    KeyBinding_LimitFPS,
     KeyBinding_SpeedFactor25,
     KeyBinding_SpeedFactor50,
     KeyBinding_SpeedFactor75,
@@ -155,7 +156,7 @@ enum class SettingsID
     KeyBinding_IncreaseVolume,
     KeyBinding_DecreaseVolume,
     KeyBinding_ToggleMuteVolume,
-
+    
     // RomBrowser Settings
     RomBrowser_Directory,
     RomBrowser_Geometry,
@@ -289,6 +290,10 @@ enum class SettingsID
     Input_Hotkey_Exit_Name,
     Input_Hotkey_Exit_Data,
     Input_Hotkey_Exit_ExtraData,
+    Input_Hotkey_LimitFPS_InputType,
+    Input_Hotkey_LimitFPS_Name,
+    Input_Hotkey_LimitFPS_Data,
+    Input_Hotkey_LimitFPS_ExtraData,
     Input_Hotkey_SoftReset_InputType,
     Input_Hotkey_SoftReset_Name,
     Input_Hotkey_SoftReset_Data,
