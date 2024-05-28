@@ -1,30 +1,4 @@
-/*
- * Rosalie's Mupen GUI - https://github.com/Rosalie241/RMG
- *  Copyright (C) 2020 Rosalie Wanders <rosalie@mailbox.org>
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 3.
- *  You should have received a copy of the GNU General Public License
- *  along with this program. If not, see <https://www.gnu.org/licenses/>.
- */
 #include "MainWindow.hpp"
-
-#include "UserInterface/Dialog/AboutDialog.hpp"
-#ifdef UPDATER
-#include "UserInterface/Dialog/Update/UpdateDialog.hpp"
-#include "UserInterface/Dialog/Update/DownloadUpdateDialog.hpp"
-#include "UserInterface/Dialog/Update/InstallUpdateDialog.hpp"
-#endif // UPDATER
-#include "UserInterface/EventFilter.hpp"
-#include "Utilities/QtKeyToSdl2Key.hpp"
-#include "OnScreenDisplay.hpp"
-#include "Callbacks.hpp"
-#include "VidExt.hpp"
-
-#include "UserInterface/Netplay/createroom.h"
-#include "UserInterface/Netplay/joinroom.h"
-
-#include <RMG-Core/Core.hpp>
 
 #include <QCoreApplication>
 #include <QDesktopServices>
@@ -41,6 +15,27 @@
 #include <QActionGroup> 
 #include <QTimer>
 #include <cmath>
+#include <sstream>
+
+#include "UserInterface/Dialog/AboutDialog.hpp"
+#include "UserInterface/EventFilter.hpp"
+#include "Utilities/QtKeyToSdl2Key.hpp"
+#include "OnScreenDisplay.hpp"
+#include "Callbacks.hpp"
+#include "VidExt.hpp"
+
+#include "UserInterface/Netplay/createroom.h"
+#include "UserInterface/Netplay/joinroom.h"
+
+#include <RMG-Core/Core.hpp>
+#include <RMG-Core/Cheats.hpp>
+
+#ifdef UPDATER
+#include "UserInterface/Dialog/Update/UpdateDialog.hpp"
+#include "UserInterface/Dialog/Update/DownloadUpdateDialog.hpp"
+#include "UserInterface/Dialog/Update/InstallUpdateDialog.hpp"
+#endif // UPDATER
+
 #include <sstream>
 
 using namespace UserInterface;
@@ -127,12 +122,43 @@ void MainWindow::OpenROM(QString file, QString disk, bool fullscreen, bool quitA
     this->launchEmulationThread(file, disk, true, stateSlot);
 }
 
-void MainWindow::OpenROMNetplay(QString file, QString netplay_ip, int netplay_port, int netplay_player)
+void MainWindow::ApplyCheats(QJsonObject cheats)
+{
+    // Construct the message string to log the contents of the cheats object
+    std::stringstream messageStream;
+    messageStream << "Printing cheats object:" << std::endl;
+    for (auto it = cheats.begin(); it != cheats.end(); ++it) {
+        messageStream << it.key().toStdString() << ": " << it.value().toString().toStdString() << std::endl;
+    }
+    std::string message = messageStream.str();
+
+    // Log the message using CoreAddCallbackMessage with CoreDebugMessageType::Info
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, message.c_str());
+
+    // Example of parsing and applying cheats
+    for (auto key : cheats.keys()) {
+        bool enabled = cheats.value(key).toBool();
+
+        if (enabled) {
+            CoreCheat cheat;
+            cheat.Name = key.toStdString();
+            CoreAddCheat(cheat);
+            CoreEnableCheat(cheat, true);
+        }
+    }
+
+    // Apply the changes to the core
+    CoreApplyCheats();
+}
+
+void MainWindow::OpenROMNetplay(QString file, QString netplay_ip, int netplay_port, int netplay_player, QJsonObject cheats)
 {
     // ensure we don't switch to the ROM browser
     // because it can cause a slight flicker,
     // if we just ensure the UI is in an emulation
     // state, then the transition will be smoother
+    ApplyCheats(cheats);
+
     this->updateUI(true, false);
 
     this->launchEmulationThread(file, "", false, 1, netplay_ip, netplay_port, netplay_player);

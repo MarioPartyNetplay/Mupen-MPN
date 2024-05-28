@@ -23,8 +23,6 @@ private slots:
     void processTextMessage(QString message);
     void onFinished(int);
     void sendChat();
-    void clearCheats();
-    void applyCheats();
     void startGame();
     void updatePing(quint64 elapsedTime, const QByteArray &payload);
     void sendPing();
