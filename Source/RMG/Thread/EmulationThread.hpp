@@ -28,32 +28,20 @@ class EmulationThread : public QThread
     Q_OBJECT
 
   public:
+    EmulationThread(QObject *parent = nullptr);
+    ~EmulationThread();
 
-
-    EmulationThread(QObject *);
-    ~EmulationThread(void);
-
-    void SetRomFile(QString);
-    void SetDiskFile(QString);
-    void SetNetplay(QString, int, int);
-
-    void run(void) override;
-    
+    void SetRomFile(QString file);
+    void SetDiskFile(QString file);
+    void SetNetplay(QString ip, int port, int player);
+    void SetCheats(QJsonObject cheats);
     void ApplyCheats(QJsonObject cheats);
 
     QString GetLastError(void);
 
-  private:
-    QString rom;
-    QString disk;
-    QString errorMessage;
-    QString netplay_ip;
-    int netplay_port;
-    int netplay_player;
-
   signals:
     void on_Emulation_Started(void);
-    void on_Emulation_Finished(bool);
+    void on_Emulation_Finished(bool success);
 
     void on_VidExt_SetupOGL(QSurfaceFormat, QThread *);
     void on_VidExt_ResizeWindow(int, int);
@@ -67,6 +55,18 @@ class EmulationThread : public QThread
 
     void createOGLWindow(QSurfaceFormat *format, QThread *thread);
     void resizeMainWindow(int Width, int Height);
+
+  protected:
+    void run(void) override;
+
+  private:
+    QString rom;
+    QString disk;
+    QString errorMessage;
+    QString netplay_ip;
+    int netplay_port;
+    int netplay_player;
+    QJsonObject cheatsObject;
 };
 } // namespace Thread
 

@@ -643,11 +643,11 @@ void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool re
         this->emulationThread->SetNetplay(netplay_ip, netplay_port, netplay_player);
     }
 
-    this->emulationThread->ApplyCheats(cheats);
+    // Set cheats using SetCheats method
+    this->emulationThread->SetCheats(cheats);
 
     this->emulationThread->start();
 }
-
 void MainWindow::updateActions(bool inEmulation, bool isPaused)
 {
     QString keyBinding;

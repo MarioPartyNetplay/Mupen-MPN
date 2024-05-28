@@ -1029,97 +1029,55 @@ bool CoreApplyCheats(void)
     return true;
 }
 
-bool CoreApplyCheatsRuntime(const std::vector<CoreCheat>& cheats)
-{
+bool CoreApplyCheatsRuntime(const std::vector<CoreCheat>& cheats) {
     std::string error;
+    m64p_error ret;
 
-    if (!m64p::Core.IsHooked())
-    {
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, "Core is not hooked");
+    if (!m64p::Core.IsHooked()) {
+        CoreAddCallbackMessage(M64MSG_INFO, "Core is not hooked");
         return false;
     }
 
     // Fail when clearing cheats fails
-    if (!CoreClearCheats())
-    {
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, "Failed to clear cheats");
+    if (!CoreClearCheats()) {
+        CoreAddCallbackMessage(M64MSG_INFO, "Failed to clear cheats");
         return false;
     }
 
-    for (const CoreCheat& cheat : cheats)
-    {
+    for (const CoreCheat& cheat : cheats) {
         if (cheat.CheatCodes.empty()) {
-            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Cheat " + cheat.Name + " has no codes to apply").c_str());
+            CoreAddCallbackMessage(M64MSG_INFO, ("Cheat " + cheat.Name + " has no codes to apply").c_str());
             continue;
         }
 
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Processing cheat: " + cheat.Name).c_str());
+        CoreAddCallbackMessage(M64MSG_INFO, ("Processing cheat: " + cheat.Name).c_str());
 
         bool skipCheat = false;
         std::vector<m64p_cheat_code> m64p_cheatCodes;
 
-        for (const CoreCheatCode& code : cheat.CheatCodes)
-        {
-            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Processing cheat code: address = 0x" + std::to_string(code.Address) + ", value = 0x" + std::to_string(code.Value)).c_str());
-
-            if (code.UseOptions)
-            {
-                // Make sure an option has been set
-                if (!CoreHasCheatOptionSet(cheat))
-                {
-                    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Cheat " + cheat.Name + " has no option set").c_str());
-                    skipCheat = true;
-                    break;
-                }
-
-                // Get the cheat option
-                CoreCheatOption cheatOption;
-                if (!CoreGetCheatOption(cheat, cheatOption))
-                {
-                    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Failed to get option for cheat " + cheat.Name).c_str());
-                    skipCheat = true;
-                    break;
-                }
-
-                // Combine the cheat code & option
-                int32_t combinedValue;
-                if (!combine_cheat_code_and_option(code, cheatOption, combinedValue))
-                {
-                    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Failed to combine cheat code and option for cheat " + cheat.Name).c_str());
-                    skipCheat = true;
-                    break;
-                }
-
-                m64p_cheatCodes.push_back({code.Address, combinedValue});
-            }
-            else
-            {
-                m64p_cheatCodes.push_back({code.Address, code.Value});
-            }
+        for (const CoreCheatCode& code : cheat.CheatCodes) {
+            m64p_cheatCodes.push_back({code.Address, code.Value});
         }
 
-        if (skipCheat)
-        {
-            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Skipping cheat " + cheat.Name).c_str());
+        if (skipCheat) {
             continue;
         }
 
-        // Load the cheats using the provided function pointer
-        if (!ptr_CoreAddCheat(cheat.Name.c_str()))
-        {
-            error = "CoreApplyCheatsRuntime ptr_CoreAddCheat(" + cheat.Name + ") Failed";
+        ret = m64p::Core.AddCheat(cheat.Name.c_str(), m64p_cheatCodes.data(), m64p_cheatCodes.size());
+        if (ret != M64ERR_SUCCESS) {
+            error = "CoreApplyCheatsRuntime m64p::Core.AddCheat(";
+            error += cheat.Name.c_str();
+            error += ") Failed: ";
+            error += m64p::Core.ErrorMessage(ret);
             CoreSetError(error);
-            CoreAddCallbackMessage(CoreDebugMessageType::Info, error.c_str());
+            CoreAddCallbackMessage(M64MSG_ERROR, error.c_str());
             return false;
         }
-
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Cheat " + cheat.Name + " added successfully").c_str());
     }
 
-    CoreAddCallbackMessage(CoreDebugMessageType::Info, "All cheats processed successfully");
+    CoreAddCallbackMessage(M64MSG_INFO, "All cheats processed successfully");
     return true;
 }
-
 bool CoreClearCheats(void)
 {
     std::string error;

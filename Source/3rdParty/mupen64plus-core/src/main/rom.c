@@ -251,6 +251,7 @@ m64p_error open_rom(const unsigned char* romimage, unsigned int size)
 
 m64p_error close_rom(void)
 {
+    DebugMessage(M64MSG_INFO, "close_rom() called");
     /* Clear Byte-swapped flag, since ROM is now deleted. */
     g_RomWordsLittleEndian = 0;
     DebugMessage(M64MSG_STATUS, "Rom closed.");
