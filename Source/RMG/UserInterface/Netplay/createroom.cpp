@@ -174,8 +174,38 @@ void CreateRoom::createRoom()
     json.insert("netplay_version", NETPLAY_VER);
     json.insert("emulator", "MPN");
 
-    QJsonDocument json_doc(json);
-    webSocket->sendTextMessage(json_doc.toJson());
+    // Step 1: Retrieve cheats
+    std::vector<CoreCheat> cheats;
+    if (CoreGetCurrentCheats(cheats)) {
+        // Step 2: Format cheats into JSON
+        QJsonObject cheatsObject;
+        QJsonArray customCheatsArray;
+        for (const auto& cheat : cheats) {
+            for (const auto& code : cheat.CheatCodes) {
+                QString codeStr = QString("%1 %2").arg(code.Address, 8, 16, QChar('0')).arg(code.Value, 4, 16, QChar('0'));
+                customCheatsArray.append(codeStr);
+            }
+        }
+        cheatsObject.insert("custom", customCheatsArray);
+
+        // Step 3: Convert cheats JSON to QJsonValue
+        QJsonValue cheatsJsonValue(cheatsObject);
+
+        // Step 4: Add cheats JSON to the main JSON object
+        QJsonObject featuresObject;
+        featuresObject.insert("cheats", cheatsJsonValue);
+        json.insert("features", featuresObject);
+
+        // RMG interpretation debug logging
+        std::string cheatsJsonString = QJsonDocument(cheatsObject).toJson(QJsonDocument::Compact).toStdString();
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, cheatsJsonString);
+    } else {
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, "No cheats available.");
+    }
+
+    // Step 5: Send JSON message through WebSocket
+    QJsonDocument jsonDoc(json);
+    webSocket->sendTextMessage(jsonDoc.toJson());
 }
 
 void CreateRoom::processTextMessage(QString message)
