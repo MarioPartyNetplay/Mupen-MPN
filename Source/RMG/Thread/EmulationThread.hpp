@@ -34,9 +34,7 @@ class EmulationThread : public QThread
     void SetRomFile(QString file);
     void SetDiskFile(QString file);
     void SetNetplay(QString ip, int port, int player);
-    void SetCheats(QJsonObject cheats);
     void ApplyCheats(QJsonObject cheats);
-
     QString GetLastError(void);
 
   signals:

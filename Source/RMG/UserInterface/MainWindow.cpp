@@ -644,7 +644,7 @@ void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool re
     }
 
     // Set cheats using SetCheats method
-    this->emulationThread->SetCheats(cheats);
+    this->emulationThread->ApplyCheats(cheats);
 
     this->emulationThread->start();
 }

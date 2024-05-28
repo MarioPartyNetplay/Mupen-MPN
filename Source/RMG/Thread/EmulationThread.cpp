@@ -40,12 +40,6 @@ void EmulationThread::SetNetplay(QString ip, int port, int player)
     this->netplay_player = player;
 }
 
-void EmulationThread::SetCheats(QJsonObject cheats)
-{
-    this->cheatsObject = cheats;
-    CoreAddCallbackMessage(CoreDebugMessageType::Info, "Cheats set in SetCheats method");
-}
-
 void EmulationThread::run(void) {
     emit this->on_Emulation_Started();
 
@@ -55,7 +49,7 @@ void EmulationThread::run(void) {
     } else {
         // Apply cheats after starting emulation
         CoreAddCallbackMessage(CoreDebugMessageType::Info, "Applying cheats after emulation start");
-        ApplyCheats(this->cheatsObject);
+        ApplyCheats(cheatsObject);
     }
 
     emit this->on_Emulation_Finished(ret);
@@ -66,59 +60,56 @@ QString EmulationThread::GetLastError(void)
     return this->errorMessage;
 }
 
-void EmulationThread::ApplyCheats(QJsonObject cheatsObject) {
+void EmulationThread::ApplyCheats(QJsonObject cheatsObject)
+{
     CoreAddCallbackMessage(CoreDebugMessageType::Info, "Starting ApplyCheats");
+    
+    // Log the entire JSON object to verify its structure
+    QJsonDocument cheatsDoc(cheatsObject);
+    QString cheatsObjectString = cheatsDoc.toJson(QJsonDocument::Compact);
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Received cheatsObject: " + cheatsObjectString).toStdString().c_str());
 
-    QJsonArray cheatsArray = cheatsObject["cheats"].toArray();
-    std::vector<CoreCheat> cheats;
+    if (cheatsObject.contains("custom") && cheatsObject.value("custom").isArray()) {
+        QJsonArray customCheatsArray = cheatsObject.value("custom").toArray();
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, "Parsed custom cheats JSON array");
 
-    for (const QJsonValue& value : cheatsArray) {
-        QJsonObject cheatObject = value.toObject();
-        CoreCheat cheat;
-        cheat.Name = cheatObject["Name"].toString().toStdString();
+       CoreCheat cheat;
+       cheat.Name = "Netplay"; // Set header name
 
-        QJsonArray codesArray = cheatObject["Codes"].toArray();
-        for (const QJsonValue& codeValue : codesArray) {
-            QJsonObject codeObject = codeValue.toObject();
-            CoreCheatCode code;
+       
+        // Enable cheats before applying them
+        CoreEnableCheat(cheat, true);
 
-            // Debug messages to check the values being parsed
-            QString addressStr = codeObject["Address"].toString();
-            QString valueStr = codeObject["Value"].toString();
-            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Parsing Address: " + addressStr).toStdString().c_str());
-            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Parsing Value: " + valueStr).toStdString().c_str());
 
-            bool ok;
-            code.Address = addressStr.toUInt(&ok, 16);
-            if (!ok) {
-                CoreAddCallbackMessage(CoreDebugMessageType::Error, ("Failed to parse Address: " + addressStr).toStdString().c_str());
-                continue;
-            }
+       for (const QJsonValue &value : customCheatsArray) {
+           QString cheatString = value.toString();
 
-            code.Value = valueStr.toUInt(&ok, 16);
-            if (!ok) {
-                CoreAddCallbackMessage(CoreDebugMessageType::Error, ("Failed to parse Value: " + valueStr).toStdString().c_str());
-                continue;
-            }
-
-            cheat.CheatCodes.push_back(code);
+           // Parse the cheat code and value
+           QStringList codeParts = cheatString.split(' '); // Remove '$' and split by space
+           if (codeParts.size() == 2) {
+               CoreCheatCode code;
+               code.Address = codeParts[0].toUInt(nullptr, 16); // Convert address to unsigned int
+               code.Value = codeParts[1].toUInt(nullptr, 16); // Convert value to unsigned int
+               code.UseOptions = false; // No options for now
+               code.OptionIndex = 0;
+               code.OptionSize = 0;
+               cheat.CheatCodes.push_back(code);
+           } else {
+               CoreAddCallbackMessage(CoreDebugMessageType::Warning, ("Invalid cheat code: " + cheatString.toStdString()).c_str());  
+           }
         }
-
-        cheats.push_back(cheat);
-    }
-
-    CoreAddCallbackMessage(CoreDebugMessageType::Info, "Cheats to be applied:");
-    for (const auto& cheat : cheats) {
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Cheat: " + cheat.Name).c_str());
-        for (const auto& code : cheat.CheatCodes) {
-            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Address: " + std::to_string(code.Address) + " Value: " + std::to_string(code.Value)).c_str());
+        if (!cheat.CheatCodes.empty()) {
+            std::vector<CoreCheat> cheatsToApply;
+            cheatsToApply.push_back(cheat); // Add the constructed cheat to the vector
+            if (CoreApplyCheatsRuntime(cheatsToApply)) {
+                CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Netplay cheat added with " + QString::number(cheat.CheatCodes.size()) + " codes").toStdString().c_str());
+            } else {
+                CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to add Netplay cheat");
+            }
+        } else {
+            CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Netplay cheat not found or has no codes");
         }
-    }
-
-    CoreAddCallbackMessage(CoreDebugMessageType::Info, "Applying cheats...");
-    if (CoreApplyCheatsRuntime(cheats)) {
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, "Cheats applied successfully");
     } else {
-        CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to apply cheats");
+        CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Invalid custom cheats format: custom cheats array not found");
     }
 }
