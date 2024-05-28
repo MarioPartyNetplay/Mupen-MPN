@@ -7,10 +7,9 @@
 #include <RMG-Core/Settings/Settings.hpp>
 
 WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidget *parent)
-    : QDialog(parent)
+    : QDialog(parent), cheats(room.value("features").toObject().value("cheats").toObject())
+
 {
-
-
     setWindowTitle("RMG NetPlay");
     w = (UserInterface::MainWindow*)parent;
 
@@ -115,8 +114,46 @@ void WaitRoom::updatePing(quint64 elapsedTime, const QByteArray&)
     pingValue->setText(QString::number(elapsedTime) + " ms");
 }
 
+void WaitRoom::clearCheats()
+{
+    // Clear all existing cheats
+    CoreClearCheats();
+}
+
+void WaitRoom::applyCheats()
+{
+    // First, clear existing cheats
+    clearCheats();
+
+    // Iterate over each cheat in the cheats object
+    for (auto it = cheats.begin(); it != cheats.end(); ++it)
+    {
+        QString cheatStr = it.value().toString(); // Get the cheat string
+
+        // Create a CoreCheat object and populate it with the necessary information
+        CoreCheat cheat;
+        cheat.Name = "Cheat"; // Set a default name for the cheat (you can change this)
+        cheat.Note = "Applied from NetPlay"; // Set a default note for the cheat (you can change this)
+        cheat.HasOptions = false; // Assuming cheats from JSON do not have options. They should never
+
+        // Populate the cheat codes
+        CoreCheatCode code;
+        code.Address = cheatStr.split(" ").at(0).toUInt(nullptr, 16); // Extract the address
+        code.Value = cheatStr.split(" ").at(1).toInt(nullptr, 16); // Extract the value
+        cheat.CheatCodes.push_back(code);
+
+        // Apply the cheat using RMG Core
+        CoreAddCheat(cheat);
+    }
+}
+
+
 void WaitRoom::startGame()
 {
+    // Apply cheats before starting the game
+    WaitRoom::applyCheats();
+
+
     if (player_name == pName[0]->text())
     {
         startGameButton->setEnabled(false);

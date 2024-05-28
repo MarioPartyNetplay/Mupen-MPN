@@ -179,8 +179,7 @@ void CreateRoom::createRoom()
     std::vector<CoreCheat> cheats;
     if (CoreGetCurrentCheats(cheats)) {
         // Step 2: Format cheats into JSON
-        QJsonObject cheatsObject;
-        QJsonArray customCheatsArray;
+        QJsonArray cheatsArray;
         for (const auto& cheat : cheats) {
             if (CoreIsCheatEnabled(cheat)) { // Check if the cheat is enabled
                 for (const auto& code : cheat.CheatCodes) {
@@ -199,14 +198,7 @@ void CreateRoom::createRoom()
                                 continue;
                             }
 
-                            bool ok;
-                            int32_t combinedValue = codeValueString.toInt(&ok, 16);
-                            if (!ok) {
-                                CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Failed to convert combined value to integer.");
-                                continue;
-                            }
-
-                            codeStr = QString("%1 %2").arg(code.Address, 8, 16, QChar('0')).arg(combinedValue, 4, 16, QChar('0')).toUpper();
+                            codeStr = QString("%1 %2").arg(code.Address, 8, 16, QChar('0')).arg(codeValueString).toUpper();
                         } else {
                             CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Failed to get current cheat option.");
                             continue;
@@ -214,30 +206,25 @@ void CreateRoom::createRoom()
                     } else {
                         codeStr = QString("%1 %2").arg(code.Address, 8, 16, QChar('0')).arg(code.Value, 4, 16, QChar('0')).toUpper();
                     }
-                    customCheatsArray.append(codeStr);
+                    cheatsArray.append(codeStr);
                 }
             }
         }
-        cheatsObject.insert("custom", customCheatsArray);
-
-        // Step 3: Convert cheats JSON to QJsonValue
-        QJsonValue cheatsJsonValue(cheatsObject);
-
-        // Step 4: Add cheats JSON to the main JSON object
-        QJsonObject featuresObject;
-        featuresObject.insert("cheats", cheatsJsonValue);
-        json.insert("features", featuresObject);
-
-        // RMG interpretation debug logging
-        QString cheatsJsonString = QJsonDocument(cheatsObject).toJson(QJsonDocument::Compact);
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, cheatsJsonString.toStdString());
+        if (!cheatsArray.isEmpty()) {
+            QJsonObject featuresObject;
+            QJsonDocument cheatsDoc(cheatsArray);
+            featuresObject.insert("cheats", QString("{\"custom\":%1}").arg(QString(cheatsDoc.toJson())));
+            json.insert("features", featuresObject);
+        } else {
+            CoreAddCallbackMessage(CoreDebugMessageType::Info, "No cheats available.");
+        }
     } else {
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, "No cheats available.");
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, "Failed to retrieve cheats.");
     }
 
-    // Step 5: Send JSON message through WebSocket
+    // Step 3: Send JSON message through WebSocket
     QJsonDocument jsonDoc(json);
-    webSocket->sendTextMessage(jsonDoc.toJson());
+    webSocket->sendTextMessage(jsonDoc.toJson(QJsonDocument::Compact));
 }
 
 void CreateRoom::processTextMessage(QString message)
