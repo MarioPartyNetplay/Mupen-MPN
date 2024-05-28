@@ -45,7 +45,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 {
     Q_OBJECT
 
-  public:`
+  public:
     MainWindow(void);
     ~MainWindow(void);
 
