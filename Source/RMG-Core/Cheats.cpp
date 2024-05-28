@@ -1101,14 +1101,19 @@ bool CoreApplyCheatsRuntime(const std::vector<CoreCheat>& cheats) {
             CoreAddCallbackMessage(CoreDebugMessageType::Info, fmt_string("Cheat Codes Size: {}", m64p_cheatCodes.size()).c_str());
 
             ret = m64p::Core.AddCheat(cheat.Name.c_str(), m64p_cheatCodes.data(), m64p_cheatCodes.size());
-            if (ret != M64ERR_SUCCESS) {
-                error = fmt_string("CoreApplyCheatsRuntime m64p::Core.AddCheat({}) Failed: {}", cheat.Name, m64p::Core.ErrorMessage(ret));
-                CoreSetError(error);
-                CoreAddCallbackMessage(CoreDebugMessageType::Error, error.c_str());
-                return false;
+
+            // Debugging after adding the cheat
+            if (ret == M64ERR_SUCCESS) {
+               CoreAddCallbackMessage(CoreDebugMessageType::Info, fmt_string("Successfully added cheat: {}", cheat.Name).c_str());
             } else {
-                CoreAddCallbackMessage(CoreDebugMessageType::Info, fmt_string("Cheat {} added successfully", cheat.Name).c_str());
+               error = fmt_string("CoreApplyCheats m64p::Core.AddCheat({}) Failed: {}", cheat.Name, m64p::Core.ErrorMessage(ret));
+               CoreSetError(error);
+               CoreAddCallbackMessage(CoreDebugMessageType::Error, error.c_str());
+               return false;
             }
+
+           // add cheat to loaded cheats
+           l_LoadedCheats.push_back({cheat, cheatOption});
         }
     }
 
