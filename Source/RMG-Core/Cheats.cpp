@@ -1026,6 +1026,88 @@ bool CoreApplyCheats(void)
     return true;
 }
 
+bool CoreApplyCheatsRuntime(const std::vector<CoreCheat>& cheats)
+{
+    std::string error;
+    m64p_error ret;
+    std::vector<m64p_cheat_code> m64p_cheatCodes;
+    CoreCheatOption cheatOption;
+    bool skipCheat = false;
+    int32_t combinedValue;
+
+    if (!m64p::Core.IsHooked())
+    {
+        return false;
+    }
+
+    // fail when clearing cheats fails
+    if (!CoreClearCheats())
+    {
+        return false;
+    }
+
+    for (const CoreCheat& cheat : cheats)
+    {
+        skipCheat = false;
+
+        if (!CoreIsCheatEnabled(cheat))
+        {
+            continue;
+        }
+
+        for (const CoreCheatCode& code : cheat.CheatCodes)
+        {
+            if (code.UseOptions)
+            {
+                // make sure an option has been set
+                if (!CoreHasCheatOptionSet(cheat))
+                {
+                    skipCheat = true;
+                    break;
+                }
+
+                // make sure retrieving it succeeds
+                if (!CoreGetCheatOption(cheat, cheatOption))
+                {
+                    skipCheat = true;
+                    break;
+                }
+
+                // make sure combining the cheat code & option succeeds
+                if (!combine_cheat_code_and_option(code, cheatOption, combinedValue))
+                {
+                    skipCheat = true;
+                    break;
+                }
+
+                m64p_cheatCodes.push_back({code.Address, combinedValue});
+            }
+            else
+            {
+                m64p_cheatCodes.push_back({code.Address, code.Value});
+            }
+        }
+
+        if (skipCheat)
+        {
+            continue;
+        }
+
+        ret = m64p::Core.AddCheat(cheat.Name.c_str(), m64p_cheatCodes.data(), m64p_cheatCodes.size());
+        if (ret != M64ERR_SUCCESS)
+        {
+            error = "CoreApplyCheatsRuntime m64p::Core.AddCheat(";
+            error += cheat.Name.c_str();
+            error += ") Failed:";
+            error += m64p::Core.ErrorMessage(ret);
+            CoreSetError(error);
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool CoreClearCheats(void)
 {
     std::string error;

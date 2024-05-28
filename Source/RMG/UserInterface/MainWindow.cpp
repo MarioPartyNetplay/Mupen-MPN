@@ -130,88 +130,51 @@ bool validateCheat(const CoreCheat& cheat);
 
 void MainWindow::ApplyCheats(QJsonObject cheatsObject)
 {
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, "Starting ApplyCheats");
+
+    // Log the entire JSON object to verify its structure
+    QJsonDocument cheatsDoc(cheatsObject);
+    QString cheatsObjectString = cheatsDoc.toJson(QJsonDocument::Compact);
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Received cheatsObject: " + cheatsObjectString).toStdString().c_str());
+
     if (cheatsObject.contains("custom") && cheatsObject.value("custom").isArray()) {
         QJsonArray customCheatsArray = cheatsObject.value("custom").toArray();
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, "Parsed custom cheats JSON array");
 
-        for (const QJsonValue &value : customCheatsArray) {
-            QString cheatString = value.toString();
-
-            if (!cheatString.isEmpty()) {
-                CoreCheat cheat;
-
-                // Assuming cheatString contains lines separated by '\n'
-                QStringList lines = cheatString.split('\n');
-                
-                // First line should be the cheat name
-                if (!lines.isEmpty()) {
-                    cheat.Name = lines.takeFirst().toStdString();
-                } else {
-                    CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Empty cheat name");
-                    continue;
-                }
-
-                // Dummy data for author and note
-                cheat.Author = "NetPlay Sync";
-                cheat.Note = "NetPlay Sync";
-                cheat.HasOptions = false;
-                // Parse the remaining lines
-                for (const QString& line : lines) {
-                    QStringList splitLine = line.split('=');
-                    if (splitLine.size() != 2) {
-                        CoreAddCallbackMessage(CoreDebugMessageType::Warning, ("Invalid cheat line: " + line.toStdString()).c_str());
-                        continue;
-                    }
-                    QString key = splitLine[0].trimmed();
-                    QString value = splitLine[1].trimmed();
-
-                    // Check for known keys and populate cheat accordingly
-                    if (key == "Author") {
-                        cheat.Author = value.toStdString();
-                    } else if (key == "Note") {
-                        cheat.Note = value.toStdString();
-                    } else {
-                        // Assuming the rest are cheat codes
-                        QStringList codeParts = value.split(' ');
-                        if (codeParts.size() == 2) {
-                            CoreCheatCode code;
-                            code.Address = codeParts[0].toUInt(nullptr, 16);
-                            code.Value = codeParts[1].toUInt(nullptr, 16);
-                            code.UseOptions = false; // No options for now
-                            code.OptionIndex = 0;
-                            code.OptionSize = 0;
-                            cheat.CheatCodes.push_back(code);
-                        } else {
-                            CoreAddCallbackMessage(CoreDebugMessageType::Warning, ("Invalid cheat code: " + value.toStdString()).c_str());  
-                        }
-                    }
-                }
-
-                // Validate the cheat
-                if (!validateCheat(cheat)) {
-                    CoreAddCallbackMessage(CoreDebugMessageType::Warning, ("Invalid cheat: " + QString::fromStdString(cheat.Name)).toStdString().c_str());
-                    continue;
-                }
-
-                // Add the cheat to the core
-                if (CoreAddCheat(cheat)) {
-                    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Cheat added: " + QString::fromStdString(cheat.Name)).toStdString().c_str());
-                } else {
-                    std::string errorMessage = "Failed to add cheat: " + QString::fromStdString(cheat.Name).toStdString();
-                
-                    // Retrieve error message from the core if available
-                    std::string coreErrorMessage = CoreGetError();
-                    if (!coreErrorMessage.empty()) {
-                        errorMessage += " (" + coreErrorMessage + ")";
-                    }
-                
-                    CoreAddCallbackMessage(CoreDebugMessageType::Error, errorMessage.c_str());
-                }
+       CoreCheat cheat;
+       cheat.Name = "Netplay"; // Set header name
+       
+       for (const QJsonValue &value : customCheatsArray) {
+           QString cheatString = value.toString();
+           
+           // Parse the cheat code and value
+           QStringList codeParts = cheatString.split(' '); // Remove '$' and split by space
+           if (codeParts.size() == 2) {
+               CoreCheatCode code;
+               code.Address = codeParts[0].toUInt(nullptr, 16); // Convert address to unsigned int
+               code.Value = codeParts[1].toUInt(nullptr, 16); // Convert value to unsigned int
+               code.UseOptions = false; // No options for now
+               code.OptionIndex = 0;
+               code.OptionSize = 0;
+               cheat.CheatCodes.push_back(code);
+           } else {
+               CoreAddCallbackMessage(CoreDebugMessageType::Warning, ("Invalid cheat code: " + cheatString.toStdString()).c_str());  
+           }
+        }
+        // Validate and apply the cheats
+        if (!cheat.CheatCodes.empty()) {
+            std::vector<CoreCheat> cheatsToApply;
+            cheatsToApply.push_back(cheat); // Add the constructed cheat to the vector
+            if (CoreApplyCheatsRuntime(cheatsToApply)) {
+                CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Netplay cheat added with " + QString::number(cheat.CheatCodes.size()) + " codes").toStdString().c_str());
             } else {
-                CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Empty cheat string detected");
+                CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to add Netplay cheat");
             }
+        } else {
+            CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Netplay cheat not found or has no codes");
         }
     } else {
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, "No valid 'custom' key found in cheats object");
+        CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Invalid custom cheats format: custom cheats array not found");
     }
 }
 
