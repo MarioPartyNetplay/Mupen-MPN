@@ -13,6 +13,7 @@
 #include <QString>
 #include <QSurfaceFormat>
 #include <QThread>
+#include <QJsonObject>
 
 enum class VidExtRenderMode
 {
@@ -27,6 +28,8 @@ class EmulationThread : public QThread
     Q_OBJECT
 
   public:
+
+
     EmulationThread(QObject *);
     ~EmulationThread(void);
 
@@ -35,6 +38,8 @@ class EmulationThread : public QThread
     void SetNetplay(QString, int, int);
 
     void run(void) override;
+    
+    void ApplyCheats(QJsonObject cheats);
 
     QString GetLastError(void);
 

@@ -122,12 +122,15 @@ bool CoreStartEmulation(std::filesystem::path n64rom, std::filesystem::path n64d
 
     // Load and apply cheats if netplay_ip is not empty
     
-    if (!CoreApplyCheats())
+    if (netplay_ip == "")
     {
-        CoreDetachPlugins();
-        CoreApplyPluginSettings();
-        CoreCloseRom();
-        return false;
+        if (!CoreApplyCheats())
+        {
+            CoreDetachPlugins();
+            CoreApplyPluginSettings();
+            CoreCloseRom();
+            return false;
+        }
     }
 
     if (!CoreGetRomType(type))

@@ -45,14 +45,13 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 {
     Q_OBJECT
 
-  public:
+  public:`
     MainWindow(void);
     ~MainWindow(void);
 
     bool Init(QApplication* app, bool showUI, bool launchROM);
     void OpenROM(QString file, QString disk, bool fullscreen, bool quitAfterEmulation, int stateSlot);
     void OpenROMNetplay(QString file, QString netplay_ip, int netplay_port, int netplay_player, QJsonObject cheats);
-    void ApplyCheats(QJsonObject cheats);
   private:
     Thread::EmulationThread *emulationThread = nullptr;
 
