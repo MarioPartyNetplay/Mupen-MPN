@@ -8,21 +8,10 @@
 WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidget *parent)
     : QDialog(parent)
 {
-    // Log the room object
-    QString roomJsonString = QJsonDocument(room).toJson(QJsonDocument::Compact);
-    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Room object: " + roomJsonString).toStdString().c_str());
-
-    // Log the features object
     QJsonObject featuresObject = room.value("features").toObject();
-    QString featuresJsonString = QJsonDocument(featuresObject).toJson(QJsonDocument::Compact);
-    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Features object: " + featuresJsonString).toStdString().c_str());
-
-    // Extract and log the cheats object
     QString cheatsString = featuresObject.value("cheats").toString();
     QJsonDocument cheatsDoc = QJsonDocument::fromJson(cheatsString.toUtf8());
     QJsonObject cheatsObject = cheatsDoc.object();
-    QString cheatsJsonString = cheatsDoc.toJson(QJsonDocument::Compact);
-    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Cheats object: " + cheatsJsonString).toStdString().c_str());
 
     // Initialize cheats member
     cheats = cheatsObject;

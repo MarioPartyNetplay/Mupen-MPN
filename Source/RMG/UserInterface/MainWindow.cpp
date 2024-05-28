@@ -12,10 +12,12 @@
 #include <QStatusBar>
 #include <QString>
 #include <QUrl>
-#include <QActionGroup> 
+#include <QActionGroup>
 #include <QTimer>
 #include <cmath>
 #include <sstream>
+#include <vector>
+#include <string>
 
 #include "UserInterface/Dialog/AboutDialog.hpp"
 #include "UserInterface/EventFilter.hpp"
@@ -37,8 +39,6 @@
 #include "UserInterface/Dialog/Update/DownloadUpdateDialog.hpp"
 #include "UserInterface/Dialog/Update/InstallUpdateDialog.hpp"
 #endif // UPDATER
-
-#include <sstream>
 
 using namespace UserInterface;
 
@@ -124,45 +124,88 @@ void MainWindow::OpenROM(QString file, QString disk, bool fullscreen, bool quitA
     this->launchEmulationThread(file, disk, true, stateSlot);
 }
 
-void MainWindow::ApplyCheats(QJsonObject cheats)
+// Declare the validateCheat function before using it
+bool validateCheat(const CoreCheat& cheat);
+
+
+void MainWindow::ApplyCheats(QJsonObject cheatsObject)
 {
-    // Construct the message string to log the contents of the cheats object
-    std::stringstream messageStream;
-    messageStream << "Printing cheats object:" << std::endl;
-    for (auto it = cheats.begin(); it != cheats.end(); ++it) {
-        messageStream << it.key().toStdString() << ": ";
-        if (it.value().isArray()) {
-            QJsonArray jsonArray = it.value().toArray();
-            messageStream << "[";
-            for (int i = 0; i < jsonArray.size(); ++i) {
-                messageStream << jsonArray.at(i).toString().toStdString();
-                if (i < jsonArray.size() - 1) {
-                    messageStream << ", ";
-                }
-            }
-            messageStream << "]";
-        } else {
-            messageStream << it.value().toString().toStdString();
-        }
-        messageStream << std::endl;
-    }
-    std::string message = messageStream.str();
+    if (cheatsObject.contains("custom") && cheatsObject.value("custom").isArray()) {
+        QJsonArray customCheatsArray = cheatsObject.value("custom").toArray();
 
-    // Log the message using CoreAddCallbackMessage with CoreDebugMessageType::Info
-    CoreAddCallbackMessage(CoreDebugMessageType::Info, message.c_str());
-
-    // Parse the "custom" key as a QJsonArray
-    if (cheats.contains("custom") && cheats.value("custom").isArray()) {
-        QJsonArray customCheatsArray = cheats.value("custom").toArray();
         for (const QJsonValue &value : customCheatsArray) {
             QString cheatString = value.toString();
 
             if (!cheatString.isEmpty()) {
                 CoreCheat cheat;
-                cheat.Name = cheatString.toStdString();
-                CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Adding cheat: " + cheat.Name).c_str());
-                CoreAddCheat(cheat);
-                CoreEnableCheat(cheat, true);
+
+                // Assuming cheatString contains lines separated by '\n'
+                QStringList lines = cheatString.split('\n');
+                
+                // First line should be the cheat name
+                if (!lines.isEmpty()) {
+                    cheat.Name = lines.takeFirst().toStdString();
+                } else {
+                    CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Empty cheat name");
+                    continue;
+                }
+
+                // Dummy data for author and note
+                cheat.Author = "NetPlay Sync";
+                cheat.Note = "NetPlay Sync";
+                cheat.HasOptions = false;
+                // Parse the remaining lines
+                for (const QString& line : lines) {
+                    QStringList splitLine = line.split('=');
+                    if (splitLine.size() != 2) {
+                        CoreAddCallbackMessage(CoreDebugMessageType::Warning, ("Invalid cheat line: " + line.toStdString()).c_str());
+                        continue;
+                    }
+                    QString key = splitLine[0].trimmed();
+                    QString value = splitLine[1].trimmed();
+
+                    // Check for known keys and populate cheat accordingly
+                    if (key == "Author") {
+                        cheat.Author = value.toStdString();
+                    } else if (key == "Note") {
+                        cheat.Note = value.toStdString();
+                    } else {
+                        // Assuming the rest are cheat codes
+                        QStringList codeParts = value.split(' ');
+                        if (codeParts.size() == 2) {
+                            CoreCheatCode code;
+                            code.Address = codeParts[0].toUInt(nullptr, 16);
+                            code.Value = codeParts[1].toUInt(nullptr, 16);
+                            code.UseOptions = false; // No options for now
+                            code.OptionIndex = 0;
+                            code.OptionSize = 0;
+                            cheat.CheatCodes.push_back(code);
+                        } else {
+                            CoreAddCallbackMessage(CoreDebugMessageType::Warning, ("Invalid cheat code: " + value.toStdString()).c_str());  
+                        }
+                    }
+                }
+
+                // Validate the cheat
+                if (!validateCheat(cheat)) {
+                    CoreAddCallbackMessage(CoreDebugMessageType::Warning, ("Invalid cheat: " + QString::fromStdString(cheat.Name)).toStdString().c_str());
+                    continue;
+                }
+
+                // Add the cheat to the core
+                if (CoreAddCheat(cheat)) {
+                    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Cheat added: " + QString::fromStdString(cheat.Name)).toStdString().c_str());
+                } else {
+                    std::string errorMessage = "Failed to add cheat: " + QString::fromStdString(cheat.Name).toStdString();
+                
+                    // Retrieve error message from the core if available
+                    std::string coreErrorMessage = CoreGetError();
+                    if (!coreErrorMessage.empty()) {
+                        errorMessage += " (" + coreErrorMessage + ")";
+                    }
+                
+                    CoreAddCallbackMessage(CoreDebugMessageType::Error, errorMessage.c_str());
+                }
             } else {
                 CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Empty cheat string detected");
             }
@@ -170,9 +213,17 @@ void MainWindow::ApplyCheats(QJsonObject cheats)
     } else {
         CoreAddCallbackMessage(CoreDebugMessageType::Info, "No valid 'custom' key found in cheats object");
     }
+}
 
-    // Apply the changes to the core
-    CoreApplyCheats();
+// Define the validateCheat function
+bool validateCheat(const CoreCheat& cheat)
+{
+    // Basic validation, add more as needed
+    if (cheat.Name.empty()) {
+        return false;
+    }
+
+    return true;
 }
 
 
