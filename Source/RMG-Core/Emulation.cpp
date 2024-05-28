@@ -120,12 +120,16 @@ bool CoreStartEmulation(std::filesystem::path n64rom, std::filesystem::path n64d
         return false;
     }
 
-    if (!CoreApplyCheats())
+    // Load and apply cheats if netplay_ip is not empty
+    if (netplay_ip == "")
     {
-        CoreDetachPlugins();
-        CoreApplyPluginSettings();
-        CoreCloseRom();
-        return false;
+        if (!CoreApplyCheats())
+        {
+            CoreDetachPlugins();
+            CoreApplyPluginSettings();
+            CoreCloseRom();
+            return false;
+        }
     }
 
     if (!CoreGetRomType(type))
@@ -158,7 +162,7 @@ bool CoreStartEmulation(std::filesystem::path n64rom, std::filesystem::path n64d
         uint32_t version;
         if (m64p::Core.DoCommand(M64CMD_NETPLAY_GET_VERSION, 0x010001, &version) == M64ERR_SUCCESS)
         {
-            printf( "Netplay: using core version %u\n", version);
+            printf("Netplay: using core version %u\n", version);
 
             if (m64p::Core.DoCommand(M64CMD_NETPLAY_INIT, netplay_port, (char*)netplay_ip.c_str()) == M64ERR_SUCCESS)
                 printf("Netplay: init success\n");
