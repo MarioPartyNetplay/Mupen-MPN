@@ -16,6 +16,7 @@
 
 #include <RMG-Core/m64p/Api.hpp>
 #include <RMG-Core/Settings/Settings.hpp>
+#include <RMG-Core/Cheats.hpp>
 
 CreateRoom::CreateRoom(QWidget *parent)
     : QDialog(parent)
@@ -181,9 +182,40 @@ void CreateRoom::createRoom()
         QJsonObject cheatsObject;
         QJsonArray customCheatsArray;
         for (const auto& cheat : cheats) {
-            for (const auto& code : cheat.CheatCodes) {
-                QString codeStr = QString("%1 %2").arg(code.Address, 8, 16, QChar('0')).arg(code.Value, 4, 16, QChar('0'));
-                customCheatsArray.append(codeStr);
+            if (CoreIsCheatEnabled(cheat)) { // Check if the cheat is enabled
+                for (const auto& code : cheat.CheatCodes) {
+                    QString codeStr;
+                    if (code.UseOptions) {
+                        CoreCheatOption currentOption;
+                        if (CoreGetCheatOption(cheat, currentOption)) {
+                            QString codeValueString = QString("%1").arg(code.Value, 4, 16, QChar('0')).toUpper();
+                            QString optionValueString = QString("%1").arg(currentOption.Value, code.OptionSize * 2, 16, QChar('0')).toUpper();
+
+                            // Ensure the size matches
+                            if (optionValueString.size() == code.OptionSize * 2) {
+                                codeValueString.replace(code.OptionIndex * 2, code.OptionSize * 2, optionValueString);
+                            } else {
+                                CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Option size mismatch.");
+                                continue;
+                            }
+
+                            bool ok;
+                            int32_t combinedValue = codeValueString.toInt(&ok, 16);
+                            if (!ok) {
+                                CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Failed to convert combined value to integer.");
+                                continue;
+                            }
+
+                            codeStr = QString("%1 %2").arg(code.Address, 8, 16, QChar('0')).arg(combinedValue, 4, 16, QChar('0')).toUpper();
+                        } else {
+                            CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Failed to get current cheat option.");
+                            continue;
+                        }
+                    } else {
+                        codeStr = QString("%1 %2").arg(code.Address, 8, 16, QChar('0')).arg(code.Value, 4, 16, QChar('0')).toUpper();
+                    }
+                    customCheatsArray.append(codeStr);
+                }
             }
         }
         cheatsObject.insert("custom", customCheatsArray);
@@ -197,8 +229,8 @@ void CreateRoom::createRoom()
         json.insert("features", featuresObject);
 
         // RMG interpretation debug logging
-        std::string cheatsJsonString = QJsonDocument(cheatsObject).toJson(QJsonDocument::Compact).toStdString();
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, cheatsJsonString);
+        QString cheatsJsonString = QJsonDocument(cheatsObject).toJson(QJsonDocument::Compact);
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, cheatsJsonString.toStdString());
     } else {
         CoreAddCallbackMessage(CoreDebugMessageType::Info, "No cheats available.");
     }
