@@ -161,8 +161,7 @@ void CreateRoom::handleCreateButton()
     }
 }
 
-void CreateRoom::createRoom()
-{
+void CreateRoom::createRoom() {
     connectionTimer->stop();
     QJsonObject json;
     json.insert("type", "request_create_room");
@@ -176,11 +175,11 @@ void CreateRoom::createRoom()
     json.insert("emulator", "MPN");
 
     // Step 1: Retrieve cheats
-    std::vector<CoreCheat> cheats;
-    if (CoreGetCurrentCheats(cheats)) {
+    std::vector<CoreCheat> coreCheats;
+    if (CoreGetCurrentCheats(coreCheats)) {
         // Step 2: Format cheats into JSON
-        QJsonArray cheatsArray;
-        for (const auto& cheat : cheats) {
+        QJsonArray cheatsString;
+        for (const auto& cheat : coreCheats) {
             if (CoreIsCheatEnabled(cheat)) { // Check if the cheat is enabled
                 for (const auto& code : cheat.CheatCodes) {
                     QString codeStr;
@@ -194,26 +193,26 @@ void CreateRoom::createRoom()
                             if (optionValueString.size() == code.OptionSize * 2) {
                                 codeValueString.replace(code.OptionIndex * 2, code.OptionSize * 2, optionValueString);
                             } else {
-                                CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Option size mismatch.");
                                 continue;
                             }
 
                             codeStr = QString("%1 %2").arg(code.Address, 8, 16, QChar('0')).arg(codeValueString).toUpper();
                         } else {
-                            CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Failed to get current cheat option.");
                             continue;
                         }
                     } else {
                         codeStr = QString("%1 %2").arg(code.Address, 8, 16, QChar('0')).arg(code.Value, 4, 16, QChar('0')).toUpper();
                     }
-                    cheatsArray.append(codeStr);
+                    cheatsString.append(codeStr);
                 }
             }
         }
-        if (!cheatsArray.isEmpty()) {
+
+        if (!cheatsString.isEmpty()) {
+            QString customFront = "{\"custom\":"; // Custom front
+            QString customBack = "}"; // Custom back
             QJsonObject featuresObject;
-            QJsonDocument cheatsDoc(cheatsArray);
-            featuresObject.insert("cheats", QString("{\"custom\":%1}").arg(QString(cheatsDoc.toJson())));
+            featuresObject.insert("cheats", customFront + QString::fromUtf8(QJsonDocument(cheatsString).toJson(QJsonDocument::Compact)) + customBack);
             json.insert("features", featuresObject);
         } else {
             CoreAddCallbackMessage(CoreDebugMessageType::Info, "No cheats available.");

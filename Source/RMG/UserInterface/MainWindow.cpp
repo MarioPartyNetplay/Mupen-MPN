@@ -29,6 +29,8 @@
 
 #include <RMG-Core/Core.hpp>
 #include <RMG-Core/Cheats.hpp>
+#include <RMG-Core/m64p/Api.hpp>
+#include <RMG-Core/Settings/Settings.hpp>
 
 #ifdef UPDATER
 #include "UserInterface/Dialog/Update/UpdateDialog.hpp"
@@ -128,39 +130,68 @@ void MainWindow::ApplyCheats(QJsonObject cheats)
     std::stringstream messageStream;
     messageStream << "Printing cheats object:" << std::endl;
     for (auto it = cheats.begin(); it != cheats.end(); ++it) {
-        messageStream << it.key().toStdString() << ": " << it.value().toString().toStdString() << std::endl;
+        messageStream << it.key().toStdString() << ": ";
+        if (it.value().isArray()) {
+            QJsonArray jsonArray = it.value().toArray();
+            messageStream << "[";
+            for (int i = 0; i < jsonArray.size(); ++i) {
+                messageStream << jsonArray.at(i).toString().toStdString();
+                if (i < jsonArray.size() - 1) {
+                    messageStream << ", ";
+                }
+            }
+            messageStream << "]";
+        } else {
+            messageStream << it.value().toString().toStdString();
+        }
+        messageStream << std::endl;
     }
     std::string message = messageStream.str();
 
     // Log the message using CoreAddCallbackMessage with CoreDebugMessageType::Info
     CoreAddCallbackMessage(CoreDebugMessageType::Info, message.c_str());
 
-    // Example of parsing and applying cheats
-    for (auto key : cheats.keys()) {
-        bool enabled = cheats.value(key).toBool();
+    // Parse the "custom" key as a QJsonArray
+    if (cheats.contains("custom") && cheats.value("custom").isArray()) {
+        QJsonArray customCheatsArray = cheats.value("custom").toArray();
+        for (const QJsonValue &value : customCheatsArray) {
+            QString cheatString = value.toString();
 
-        if (enabled) {
-            CoreCheat cheat;
-            cheat.Name = key.toStdString();
-            CoreAddCheat(cheat);
-            CoreEnableCheat(cheat, true);
+            if (!cheatString.isEmpty()) {
+                CoreCheat cheat;
+                cheat.Name = cheatString.toStdString();
+                CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Adding cheat: " + cheat.Name).c_str());
+                CoreAddCheat(cheat);
+                CoreEnableCheat(cheat, true);
+            } else {
+                CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Empty cheat string detected");
+            }
         }
+    } else {
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, "No valid 'custom' key found in cheats object");
     }
 
     // Apply the changes to the core
     CoreApplyCheats();
 }
 
+
 void MainWindow::OpenROMNetplay(QString file, QString netplay_ip, int netplay_port, int netplay_player, QJsonObject cheats)
 {
-    // ensure we don't switch to the ROM browser
-    // because it can cause a slight flicker,
-    // if we just ensure the UI is in an emulation
-    // state, then the transition will be smoother
+    // Convert cheats object to a QByteArray
+    QJsonDocument cheatsDoc(cheats);
+    QByteArray cheatsByteArray = cheatsDoc.toJson();
+
+    // Convert QByteArray to QString
+    QString cheatsString = QString::fromUtf8(cheatsByteArray);
+
+    // Apply cheats
     ApplyCheats(cheats);
 
+    // Update the UI
     this->updateUI(true, false);
 
+    // Launch the emulation thread
     this->launchEmulationThread(file, "", false, 1, netplay_ip, netplay_port, netplay_player);
 }
 

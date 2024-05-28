@@ -2,30 +2,45 @@
 #include <QGridLayout>
 #include <QMessageBox>
 #include <QJsonArray>
-
 #include <RMG-Core/m64p/Api.hpp>
 #include <RMG-Core/Settings/Settings.hpp>
 
 WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidget *parent)
-  : QDialog(parent), cheats(room.value("features").toObject().value("cheats").toObject())
+    : QDialog(parent)
 {
+    // Log the room object
+    QString roomJsonString = QJsonDocument(room).toJson(QJsonDocument::Compact);
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Room object: " + roomJsonString).toStdString().c_str());
+
+    // Log the features object
+    QJsonObject featuresObject = room.value("features").toObject();
+    QString featuresJsonString = QJsonDocument(featuresObject).toJson(QJsonDocument::Compact);
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Features object: " + featuresJsonString).toStdString().c_str());
+
+    // Extract and log the cheats object
+    QString cheatsString = featuresObject.value("cheats").toString();
+    QJsonDocument cheatsDoc = QJsonDocument::fromJson(cheatsString.toUtf8());
+    QJsonObject cheatsObject = cheatsDoc.object();
+    QString cheatsJsonString = cheatsDoc.toJson(QJsonDocument::Compact);
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Cheats object: " + cheatsJsonString).toStdString().c_str());
+
+    // Initialize cheats member
+    cheats = cheatsObject;
+
     setWindowTitle("RMG NetPlay");
     w = dynamic_cast<UserInterface::MainWindow*>(parent);
-  
+
     this->resize(640, 480);
-  
+
     player_name = room.value("player_name").toString();
     room_port = room.value("port").toInt();
     room_name = room.value("room_name").toString();
     file_name = filename;
     started = 0;
-  
-    webSocket = socket;
-    connect(webSocket, &QWebSocket::textMessageReceived,
-            this, &WaitRoom::processTextMessage);
-  
-    connect(webSocket, &QWebSocket::pong, this, &WaitRoom::updatePing);
 
+    webSocket = socket;
+    connect(webSocket, &QWebSocket::textMessageReceived, this, [this](QString message){ processTextMessage(message, cheats); });
+    connect(webSocket, &QWebSocket::pong, this, &WaitRoom::updatePing);
 
     QGridLayout *layout = new QGridLayout(this);
 
@@ -46,7 +61,7 @@ WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidg
     layout->addWidget(p2Label, 4, 0);
 
     QLabel *p3Label = new QLabel("Player 3:", this);
-    layout->addWidget(p3Label, 5, 0);
+    layout->addWidget(p3Label, 5, 0);;
 
     QLabel *p4Label = new QLabel("Player 4:", this);
     layout->addWidget(p4Label, 6, 0);
@@ -92,25 +107,7 @@ WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidg
     connect(timer, &QTimer::timeout, this, &WaitRoom::sendPing);
     timer->start(5000);
 
-    QJsonObject featuresJson = room.value("features").toObject();  // Assuming features are nested here
     webSocket->sendTextMessage(json_doc.toJson());
-
-    // Debug prints for room object
-    QJsonObject roomObject = room;
-    QString roomJsonString = QJsonDocument(roomObject).toJson(QJsonDocument::Compact);
-    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Room object: " + roomJsonString).toStdString());
-    
-    // Debug prints for features object
-    QJsonObject featuresObject = room.value("features").toObject();
-    QString featuresJsonString = QJsonDocument(featuresObject).toJson(QJsonDocument::Compact);
-    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Features object: " + featuresJsonString).toStdString());
-    
-    // Debug prints for cheats object
-    QJsonObject cheatsObject = room.value("features").toObject().value("cheats").toObject();
-    QString cheatsJsonString = QJsonDocument(cheatsObject).toJson(QJsonDocument::Compact);
-    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Cheats object: " + cheatsJsonString).toStdString());
-
-
 }
 
 void WaitRoom::sendPing()
@@ -171,9 +168,8 @@ void WaitRoom::onFinished(int)
     webSocket->deleteLater();
 }
 
-void WaitRoom::processTextMessage(QString message)
+void WaitRoom::processTextMessage(QString message, QJsonObject cheats)
 {
-
     QJsonDocument json_doc = QJsonDocument::fromJson(message.toUtf8());
     QJsonObject json = json_doc.object();
     if (json.value("type").toString() == "reply_players")
@@ -197,10 +193,5 @@ void WaitRoom::processTextMessage(QString message)
         started = 1;
         w->OpenROMNetplay(file_name, webSocket->peerAddress().toString(), room_port, player_number, cheats);
         accept();
-    }
-    else if (json.value("type").toString() == "reply_motd")
-    {
-        QString message = json.value("message").toString();
-        motd->setText(message);
     }
 }

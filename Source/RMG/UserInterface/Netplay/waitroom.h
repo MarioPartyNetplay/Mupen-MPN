@@ -20,7 +20,7 @@ class WaitRoom : public QDialog
 public:
     WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidget *parent = nullptr);
 private slots:
-    void processTextMessage(QString message);
+    void processTextMessage(QString message, QJsonObject cheats);
     void onFinished(int);
     void sendChat();
     void startGame();
