@@ -107,8 +107,8 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 
     bool ui_SilentUpdateCheck = false;
 
-    int ui_TimerId      = 0;
-    int ui_TimerTimeout = 0;
+    int ui_ResetStatusBarTimerId = 0;
+    int ui_StatusBarTimerTimeout = 0;
 
     int ui_FullscreenTimerId = 0;
     int ui_GamesharkButtonTimerId = 0;
@@ -238,7 +238,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     void on_VidExt_ResizeWindow(int width, int height);
     void on_VidExt_ToggleFS(bool fullscreen);
 
-    void on_Core_DebugCallback(CoreDebugMessageType type, QString context, QString message);
+    void on_Core_DebugCallback(QList<CoreCallbackMessage> messages);
     void on_Core_StateCallback(CoreStateCallbackType type, int value);
 };
 } // namespace UserInterface
