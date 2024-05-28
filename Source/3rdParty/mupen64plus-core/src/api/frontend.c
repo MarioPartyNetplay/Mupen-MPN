@@ -226,8 +226,8 @@ EXPORT m64p_error CALL CoreDoCommand(m64p_command Command, int ParamInt, void *P
                 return M64ERR_INPUT_ASSERT;
             return open_pif((const unsigned char *) ParamPtr, ParamInt);
         case M64CMD_ROM_GET_HEADER:
-            if (!l_ROMOpen && !l_DiskOpen)
-                return M64ERR_INVALID_STATE;
+            //if (!l_ROMOpen && !l_DiskOpen)
+            //    return M64ERR_INVALID_STATE;
             if (ParamPtr == NULL)
                 return M64ERR_INPUT_ASSERT;
             if ((int)sizeof(m64p_rom_header) < ParamInt)
@@ -242,8 +242,8 @@ EXPORT m64p_error CALL CoreDoCommand(m64p_command Command, int ParamInt, void *P
             }
             return M64ERR_SUCCESS;
         case M64CMD_ROM_GET_SETTINGS:
-            if (!l_ROMOpen && !l_DiskOpen)
-                return M64ERR_INVALID_STATE;
+            //if (!l_ROMOpen && !l_DiskOpen)
+            //    return M64ERR_INVALID_STATE;
             if (ParamPtr == NULL)
                 return M64ERR_INPUT_ASSERT;
             if ((int)sizeof(m64p_rom_settings) < ParamInt)
