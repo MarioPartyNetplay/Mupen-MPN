@@ -48,7 +48,7 @@ JoinRoom::JoinRoom(QWidget *parent, RomBrowserWidget *romBrowser)
     playerNameEdit->setPlaceholderText("Player Name");
     layout->addWidget(playerNameEdit, 0, 0);
 
-    pingLabel = new QLabel("Ping: (Calculating)", this);
+    pingLabel = new QLabel("(Calculating)", this);
     layout->addWidget(pingLabel, 0, 2);
 
     serverChooser = new QComboBox(this);
@@ -157,6 +157,26 @@ void JoinRoom::refresh()
 
 void JoinRoom::joinGame()
 {
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, "joinGame called");
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Player name: " + playerNameEdit->text()).toStdString().c_str());
+
+    if (webSocket && webSocket->state() != QAbstractSocket::ConnectedState)
+    {
+        CoreAddCallbackMessage(CoreDebugMessageType::Error, "Could not connect to server");
+        QMessageBox msgBox;
+        msgBox.setText("Could not connect to server");
+        msgBox.exec();
+        return;
+    }
+    if (listWidget->currentRow() < 0)
+    {
+        CoreAddCallbackMessage(CoreDebugMessageType::Error, "No game selected to join");
+        QMessageBox msgBox;
+        msgBox.setText("You haven't selected a game to join");
+        msgBox.exec();
+        return;
+    }
+    
     QMessageBox msgBox;
     if (webSocket && webSocket->state() != QAbstractSocket::ConnectedState)
     {
@@ -238,7 +258,7 @@ void JoinRoom::serverChanged(int index)
         customServerAddress.clear();
     }
 
-    pingLabel->setText("Ping: (Calculating)");
+    pingLabel->setText("(Calculating)");
 
     resetList();
     webSocket = new QWebSocket();
@@ -338,7 +358,7 @@ void JoinRoom::processTextMessage(QString message)
 
 void JoinRoom::updatePing(quint64 elapsedTime, const QByteArray&)
 {
-    pingLabel->setText("Ping: " + QString::number(elapsedTime) + " ms");
+    pingLabel->setText(QString::number(elapsedTime) + " ms");
 }
 
 void JoinRoom::sendPing()

@@ -1,5 +1,6 @@
 #include "NetplayUI.hpp"
-
+#include "createroom.h"
+#include "joinroom.h"
 #include <QVBoxLayout>
 
 namespace UserInterface {
@@ -18,6 +19,7 @@ NetplayUI::NetplayUI(QWidget *parent)
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->addWidget(tabWidget);
     setLayout(mainLayout);
-}
 
+
+}
 }

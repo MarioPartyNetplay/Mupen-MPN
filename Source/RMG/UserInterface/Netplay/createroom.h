@@ -2,23 +2,28 @@
 #define CREATEROOM_H
 
 #include <QDialog>
-#include <QCheckBox>
-#include <QPushButton>
 #include <QWebSocket>
+#include <QNetworkAccessManager>
 #include <QComboBox>
 #include <QtNetwork>
+#include <QLineEdit>
 #include <QLabel>
-
 #include <RMG-Core/m64p/Api.hpp>
+#include <QPushButton>
+#include <QUdpSocket>
+#include <QTimer>
+#include "RomBrowser.hpp"
 
 class CreateRoom : public QDialog
 {
     Q_OBJECT
 public:
     CreateRoom(QWidget *parent = nullptr);
+
+signals:
+    void roomClosed();  // Ensure this signal is declared only once
+
 private slots:
-    void handleRomButton();
-    void handleCreateButton();
     void createRoom();
     void downloadFinished(QNetworkReply *reply);
     void processTextMessage(QString message);
@@ -28,15 +33,14 @@ private slots:
     void connectionFailed();
     void sendPing();
     void updatePing(quint64 elapsedTime, const QByteArray&);
+    void handleCreateButton(const QString& filename);
+
 private:
-    QPushButton *romButton;
     QPushButton *createButton;
     QWebSocket *webSocket = nullptr;
     QNetworkAccessManager manager;
     QComboBox *serverChooser;
     m64p_rom_settings rom_settings;
-    QLineEdit *nameEdit;
-    QLineEdit *passwordEdit;
     QLineEdit *playerNameEdit;
     QLabel *pingLabel;
     QLabel *pingValue;
@@ -45,6 +49,7 @@ private:
     QUdpSocket broadcastSocket;
     QString customServerHost;
     QTimer *connectionTimer;
+    UserInterface::Widget::RomBrowser *romBrowser; // Declare romBrowser
 };
 
 #endif // CREATEROOM_H

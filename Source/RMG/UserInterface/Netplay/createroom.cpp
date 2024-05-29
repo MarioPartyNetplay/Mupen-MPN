@@ -1,6 +1,7 @@
 #include "createroom.h"
 #include "waitroom.h"
 #include "netplay_common.h"
+#include "RomBrowser.hpp"
 #include <QGridLayout>
 #include <QLabel>
 #include <QCheckBox>
@@ -10,7 +11,6 @@
 #include <QJsonObject>
 #include <QJsonDocument>
 #include <QInputDialog>
-#include <QLabel>
 #include <QString>
 #include <QLineEdit>
 
@@ -28,14 +28,9 @@ CreateRoom::CreateRoom(QWidget *parent)
     QRegularExpression rx("[a-zA-Z0-9]+");
     QValidator *validator = new QRegularExpressionValidator(rx, this);
 
-    QLabel *romLabel = new QLabel("ROM", this);
-    layout->addWidget(romLabel, 2, 0);
-    romButton = new QPushButton("Select ROM", this);
-    connect(romButton, SIGNAL (released()), this, SLOT (handleRomButton()));
-    layout->addWidget(romButton, 2, 1);
-
+    // Player Name
     QLabel *playerNameLabel = new QLabel("Player Name", this);
-    layout->addWidget(playerNameLabel, 3, 0);
+    layout->addWidget(playerNameLabel, 0, 0);
     playerNameEdit = new QLineEdit(this);
     playerNameEdit->setValidator(validator);
     playerNameEdit->setMaxLength(30);    
@@ -44,29 +39,30 @@ CreateRoom::CreateRoom(QWidget *parent)
     if (!netplayName.empty()) {
         playerNameEdit->setText(QString::fromStdString(netplayName));
     }
-    layout->addWidget(playerNameEdit, 3, 1);
+    layout->addWidget(playerNameEdit, 0, 1);
 
+    // Server Selection
     QLabel *serverLabel = new QLabel("Server", this);
-    layout->addWidget(serverLabel, 6, 0);
+    layout->addWidget(serverLabel, 0, 2);
     serverChooser = new QComboBox(this);
     serverChooser->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-    layout->addWidget(serverChooser, 6, 1);
+    layout->addWidget(serverChooser, 0, 3);
     connect(serverChooser, SIGNAL(currentIndexChanged(int)), this, SLOT(handleServerChanged(int)));
 
-    QLabel *pingLabel = new QLabel("Your ping:", this);
-    layout->addWidget(pingLabel, 7, 0);
+    // Ping
     pingValue = new QLabel(this);
     pingValue->setText("(Calculating)");
-    layout->addWidget(pingValue, 7, 1);
+    layout->addWidget(pingValue, 0, 4);
 
+    // ROM Browser
+    romBrowser = new UserInterface::Widget::RomBrowser(this); // Use the fully qualified name
+    layout->addWidget(romBrowser, 2, 0, 1, 6);
+    romBrowser->setEnabled(false);
+    connect(romBrowser, &UserInterface::Widget::RomBrowser::romDoubleClicked, this, &CreateRoom::handleCreateButton); // Directly connect to handleCreateButton
     QFrame* lineH1 = new QFrame(this);
     lineH1->setFrameShape(QFrame::HLine);
     lineH1->setFrameShadow(QFrame::Sunken);
-    layout->addWidget(lineH1, 8, 0, 1, 2);
-
-    createButton = new QPushButton("Create Game", this);
-    connect(createButton, SIGNAL (released()), this, SLOT (handleCreateButton()));
-    layout->addWidget(createButton, 9, 0, 1, 2);
+    layout->addWidget(lineH1, 3, 0, 1, 6);
 
     setLayout(layout);
 
@@ -112,30 +108,23 @@ void CreateRoom::onFinished(int)
     }
 }
 
-void CreateRoom::handleRomButton()
+void CreateRoom::handleCreateButton(const QString& filename)
 {
-    std::string romPATH;
-    romPATH = CoreSettingsGetStringValue(SettingsID::RomBrowser_Directory);  
-    filename = QFileDialog::getOpenFileName(this,
-        tr("Open ROM"), QString::fromStdString(romPATH), tr("ROM Files (*.n64 *.N64 *.z64 *.Z64 *.v64 *.V64 *.rom *.ROM *.zip *.ZIP *.7z)"));
-    if (!filename.isNull())
-    {
-        romButton->setText(filename);
-    }
-}
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("handleCreateButton called with filename: " + filename).toStdString().c_str());
 
-void CreateRoom::handleCreateButton()
-{
-    QMessageBox msgBox;
     if (serverChooser->currentData() == "Custom" && customServerHost.isEmpty())
     {
+        CoreAddCallbackMessage(CoreDebugMessageType::Error, "Custom Server Address is invalid");
+        QMessageBox msgBox;
         msgBox.setText("Custom Server Address is invalid");
         msgBox.exec();
         return;
     }
-    if (loadROM(romButton->text()) == M64ERR_SUCCESS)
+
+    if (loadROM(filename) == M64ERR_SUCCESS)
     {
-        createButton->setEnabled(false);
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, "ROM loaded successfully");
+        romBrowser->setEnabled(false);
         m64p::Core.DoCommand(M64CMD_ROM_GET_SETTINGS, sizeof(rom_settings), &rom_settings);
 
         connectionTimer = new QTimer(this);
@@ -156,9 +145,85 @@ void CreateRoom::handleCreateButton()
     }
     else
     {
+        CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to load ROM");
+        QMessageBox msgBox;
         msgBox.setText("Could not open ROM");
         msgBox.exec();
     }
+}
+
+void CreateRoom::downloadFinished(QNetworkReply *reply)
+{
+    if (!reply->error())
+    {
+        QJsonDocument json_doc = QJsonDocument::fromJson(reply->readAll());
+        QJsonObject json = json_doc.object();
+        QStringList servers = json.keys();
+        for (int i = 0; i < servers.size(); ++i)
+            serverChooser->addItem(servers.at(i), json.value(servers.at(i)).toString());
+        serverChooser->addItem(QString("Custom"), QString("Custom"));
+    }
+
+    reply->deleteLater();
+}
+
+void CreateRoom::handleServerChanged(int index)
+{
+    if (serverChooser->itemData(index) == "Custom") {
+        bool ok;
+        QString host = QInputDialog::getText(this, "Custom Netplay Server", "IP Address / Host:", QLineEdit::Normal, "", &ok);
+
+        if (ok && !host.isEmpty()) {
+            customServerHost = host;
+        }
+    }
+
+    if (webSocket)
+    {
+        webSocket->close();
+        webSocket->deleteLater();
+    }
+
+    pingValue->setText("(Calculating)");
+
+    webSocket = new QWebSocket;
+    connect(webSocket, &QWebSocket::pong, this, &CreateRoom::updatePing);
+    QTimer *timer = new QTimer(this);
+    connect(timer, &QTimer::timeout, this, &CreateRoom::sendPing);
+    connect(webSocket, &QWebSocket::disconnected, timer, &QTimer::stop);
+    connect(webSocket, &QObject::destroyed, timer, &QTimer::stop);
+
+    connect(webSocket, &QWebSocket::textMessageReceived, this, &CreateRoom::processTextMessage);
+
+    timer->start(2500);
+    QString serverAddress = serverChooser->itemData(index) == "Custom" ? customServerHost.prepend("ws://") : serverChooser->itemData(index).toString();
+    QUrl serverUrl = QUrl(serverAddress);
+    if (serverChooser->itemData(index) == "Custom" && serverUrl.port() < 0)
+        // Be forgiving of custom server addresses that forget the port
+        serverUrl.setPort(45000);
+
+    webSocket->open(serverUrl);
+
+}
+
+void CreateRoom::updatePing(quint64 elapsedTime, const QByteArray&)
+{
+    pingValue->setText(QString::number(elapsedTime) + " ms");
+    romBrowser->setEnabled(true); // Enable the ROM button after ping is updated
+
+}
+
+void CreateRoom::sendPing()
+{
+    webSocket->ping();
+}
+
+void CreateRoom::connectionFailed()
+{
+    QMessageBox msgBox;
+    msgBox.setText("Connection to server failed.");
+    msgBox.exec();
+    romBrowser->setEnabled(true);
 }
 
 void CreateRoom::createRoom() {
@@ -242,6 +307,7 @@ void CreateRoom::processTextMessage(QString message)
             WaitRoom *waitRoom = new WaitRoom(filename, json, webSocket, parentWidget());
             waitRoom->show();
             accept();
+            emit roomClosed(); // Emit the signal to close NetplayUI
         }
         else
         {
@@ -251,79 +317,4 @@ void CreateRoom::processTextMessage(QString message)
             createButton->setEnabled(true);
         }
     }
-}
-
-void CreateRoom::downloadFinished(QNetworkReply *reply)
-{
-    if (!reply->error())
-    {
-        QJsonDocument json_doc = QJsonDocument::fromJson(reply->readAll());
-        QJsonObject json = json_doc.object();
-        QStringList servers = json.keys();
-        for (int i = 0; i < servers.size(); ++i)
-            serverChooser->addItem(servers.at(i), json.value(servers.at(i)).toString());
-        serverChooser->addItem(QString("Custom"), QString("Custom"));
-    }
-
-    reply->deleteLater();
-}
-
-void CreateRoom::handleServerChanged(int index)
-{
-    if (serverChooser->itemData(index) == "Custom") {
-        bool ok;
-        QString host = QInputDialog::getText(this, "Custom Netplay Server", "IP Address / Host:", QLineEdit::Normal, "", &ok);
-
-        if (ok && !host.isEmpty()) {
-            customServerHost = host;
-        }
-    }
-
-    if (webSocket)
-    {
-        webSocket->close();
-        webSocket->deleteLater();
-    }
-
-    pingValue->setText("(Calculating)");
-
-    webSocket = new QWebSocket;
-    connect(webSocket, &QWebSocket::pong, this, &CreateRoom::updatePing);
-    QTimer *timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, &CreateRoom::sendPing);
-    connect(webSocket, &QWebSocket::disconnected, timer, &QTimer::stop);
-    connect(webSocket, &QObject::destroyed, timer, &QTimer::stop);
-
-    connect(webSocket, &QWebSocket::textMessageReceived, this, &CreateRoom::processTextMessage);
-
-    timer->start(2500);
-    QString serverAddress = serverChooser->itemData(index) == "Custom" ? customServerHost.prepend("ws://") : serverChooser->itemData(index).toString();
-    QUrl serverUrl = QUrl(serverAddress);
-    if (serverChooser->itemData(index) == "Custom" && serverUrl.port() < 0)
-        // Be forgiving of custom server addresses that forget the port
-        serverUrl.setPort(45000);
-
-    webSocket->open(serverUrl);
-}
-
-void CreateRoom::connectionFailed()
-{
-    m64p::Core.DoCommand(M64CMD_ROM_CLOSE, 0, NULL);
-    QMessageBox msgBox;
-    msgBox.setText("Could not connect to netplay server.");
-    msgBox.exec();
-    // Allow them to try again
-    createButton->setEnabled(true);
-    // Trigger input dialog for custom IP address, if using custom IP
-    handleServerChanged(serverChooser->currentIndex());
-}
-
-void CreateRoom::updatePing(quint64 elapsedTime, const QByteArray&)
-{
-    pingValue->setText(QString::number(elapsedTime) + " ms");
-}
-
-void CreateRoom::sendPing()
-{
-    webSocket->ping();
 }

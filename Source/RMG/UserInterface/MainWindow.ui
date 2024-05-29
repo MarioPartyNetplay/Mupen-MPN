@@ -148,17 +148,10 @@
     <addaction name="separator"/>
     <addaction name="action_Help_About"/>
    </widget>
-   <widget class="QMenu" name="menuNetplay">
-    <property name="title">
-     <string>Netplay</string>
-    </property>
-    <addaction name="action_Create_Room"/>
-   </widget>
    <addaction name="menuSystem"/>
    <addaction name="menuSettings"/>
    <addaction name="menuView"/>
    <addaction name="menuHelp"/>
-   <addaction name="menuNetplay"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <widget class="QToolBar" name="toolBar">
