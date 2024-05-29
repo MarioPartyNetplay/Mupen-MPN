@@ -408,8 +408,8 @@ EXPORT m64p_error CALL CoreCheatEnabled(const char *CheatName, int Enabled)
 {
     if (!l_CoreInit)
         return M64ERR_NOT_INIT;
-    //f (netplay_is_init())
-    //    return M64ERR_INVALID_STATE;
+    if (netplay_is_init())
+        return M64ERR_INVALID_STATE;
     if (CheatName == NULL)
         return M64ERR_INPUT_ASSERT;
 

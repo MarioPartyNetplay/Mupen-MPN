@@ -12,6 +12,7 @@
 #include <QStatusBar>
 #include <QString>
 #include <QUrl>
+#include <QThread>
 #include <QActionGroup>
 #include <QTimer>
 #include <cmath>
@@ -643,10 +644,10 @@ void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool re
         this->emulationThread->SetNetplay(netplay_ip, netplay_port, netplay_player);
     }
 
-    // Set cheats using SetCheats method
+    this->emulationThread->start();
+    QThread::sleep(2);
     this->emulationThread->ApplyCheats(cheats);
 
-    this->emulationThread->start();
 }
 void MainWindow::updateActions(bool inEmulation, bool isPaused)
 {
