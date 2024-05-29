@@ -16,6 +16,8 @@ class JoinRoom : public QDialog
     Q_OBJECT
 public:
     JoinRoom(QWidget *parent = nullptr, UserInterface::Widget::RomBrowserWidget *romBrowser = nullptr);
+signals:
+    void roomClosed();
 private slots:
     void downloadFinished(QNetworkReply *reply);
     void serverChanged(int index);
@@ -39,6 +41,7 @@ private:
     QPushButton *joinButton;
     QPushButton *refreshButton;
     QLabel *pingLabel;
+    QLabel *pNameLabel;
     QList<QJsonObject> rooms;
     int row = 0;
     int launched;

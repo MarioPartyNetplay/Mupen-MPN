@@ -44,9 +44,9 @@ JoinRoom::JoinRoom(QWidget *parent, RomBrowserWidget *romBrowser)
     if (!netplayName.empty()) {
         playerNameEdit->setText(QString::fromStdString(netplayName));
     }
-
-    playerNameEdit->setPlaceholderText("Player Name");
-    layout->addWidget(playerNameEdit, 0, 0);
+    pNameLabel = new QLabel("Nickname:", this);
+    layout->addWidget(pNameLabel, 0, 0);
+    layout->addWidget(playerNameEdit, 0, 1);
 
     pingLabel = new QLabel("(Calculating)", this);
     layout->addWidget(pingLabel, 0, 2);

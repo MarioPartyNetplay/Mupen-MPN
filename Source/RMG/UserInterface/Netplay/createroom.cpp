@@ -29,7 +29,7 @@ CreateRoom::CreateRoom(QWidget *parent)
     QValidator *validator = new QRegularExpressionValidator(rx, this);
 
     // Player Name
-    QLabel *playerNameLabel = new QLabel("Player Name", this);
+    QLabel *playerNameLabel = new QLabel("Nickname: ", this);
     layout->addWidget(playerNameLabel, 0, 0);
     playerNameEdit = new QLineEdit(this);
     playerNameEdit->setValidator(validator);

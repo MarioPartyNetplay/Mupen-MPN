@@ -21,7 +21,7 @@ public:
     CreateRoom(QWidget *parent = nullptr);
 
 signals:
-    void roomClosed();  // Ensure this signal is declared only once
+    void roomClosed();
 
 private slots:
     void createRoom();
