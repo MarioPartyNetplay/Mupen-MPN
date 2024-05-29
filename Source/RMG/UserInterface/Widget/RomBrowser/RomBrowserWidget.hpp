@@ -17,6 +17,7 @@
 #include "RomBrowserGridViewWidget.hpp"
 #include "RomBrowserLoadingWidget.hpp"
 #include "RomBrowserEmptyWidget.hpp"
+#include "RomBrowserModelData.hpp"
 
 #include <QHeaderView>
 #include <QList>
@@ -28,9 +29,6 @@
 #include <QGridLayout>
 #include <QListWidget>
 #include <QStackedWidget>
-
-// forward declaration of internal struct
-struct RomBrowserModelData;
 
 namespace UserInterface
 {
@@ -52,6 +50,8 @@ class RomBrowserWidget : public QStackedWidget
     void ShowGrid(void);
 
     void SetGridViewUniformSizes(bool value);
+    
+    bool getCurrentData(RomBrowserModelData& data);
 
   private:
     Widget::RomBrowserEmptyWidget*    emptyWidget    = nullptr;
@@ -96,7 +96,6 @@ class RomBrowserWidget : public QStackedWidget
 
     QStandardItemModel* getCurrentModel(void);
     QAbstractItemView*  getCurrentModelView(void);
-    bool getCurrentData(RomBrowserModelData& data);
 
     QString getCurrentRom(void);
 

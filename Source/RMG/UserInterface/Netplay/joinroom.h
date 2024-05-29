@@ -9,12 +9,13 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QLabel>
+#include <RMG/UserInterface/Widget/RomBrowser/RomBrowserWidget.hpp>
 
 class JoinRoom : public QDialog
 {
     Q_OBJECT
 public:
-    JoinRoom(QWidget *parent = nullptr);
+    JoinRoom(QWidget *parent = nullptr, UserInterface::Widget::RomBrowserWidget *romBrowser = nullptr);
 private slots:
     void downloadFinished(QNetworkReply *reply);
     void serverChanged(int index);
@@ -28,6 +29,7 @@ private slots:
     void updatePing(quint64 elapsedTime, const QByteArray&);
 private:
     void resetList();
+    QString findRomFilePath(const QString& gameName);
     QComboBox *serverChooser;
     QNetworkAccessManager manager;
     QTableWidget *listWidget;
@@ -44,6 +46,7 @@ private:
     QUdpSocket broadcastSocket;
     QTimer *connectionTimer;
     QString customServerAddress;
+    UserInterface::Widget::RomBrowserWidget *romBrowserWidget; // Add a member for the RomBrowserWidget
 };
 
 #endif // JOINROOM_H

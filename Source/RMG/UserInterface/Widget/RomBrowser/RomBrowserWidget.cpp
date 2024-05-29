@@ -8,6 +8,7 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "RomBrowserWidget.hpp"
+#include "RomBrowserModelData.hpp"
 
 #include <RMG-Core/Core.hpp>
 
@@ -27,25 +28,6 @@ using namespace UserInterface::Widget;
 //
 // Internal Struct
 //
-
-struct RomBrowserModelData
-{
-    QString         file;
-    CoreRomType     type;
-    CoreRomHeader   header;
-    CoreRomSettings settings;
-    QString         coverFile;
-
-    RomBrowserModelData() {}
-
-    RomBrowserModelData(QString file, CoreRomType type, CoreRomHeader header, CoreRomSettings settings)
-    {
-        this->file     = file;
-        this->type     = type;
-        this->header   = header;
-        this->settings = settings;
-    }
-};
 
 Q_DECLARE_METATYPE(RomBrowserModelData);
 
