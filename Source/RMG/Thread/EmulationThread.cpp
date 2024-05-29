@@ -47,8 +47,6 @@ void EmulationThread::run(void) {
     if (!ret) {
         this->errorMessage = QString::fromStdString(CoreGetError());
     } else {
-        // Apply cheats after starting emulation
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, "Applying cheats after emulation start");
         ApplyCheats(cheatsObject);
     }
 
@@ -61,19 +59,13 @@ QString EmulationThread::GetLastError(void)
 }
 
 void EmulationThread::ApplyCheats(QJsonObject cheatsObject)
-{
-    CoreAddCallbackMessage(CoreDebugMessageType::Info, "Starting ApplyCheats");
-    
+{    
     // Log the entire JSON object to verify its structure
     QJsonDocument cheatsDoc(cheatsObject);
     QString cheatsObjectString = cheatsDoc.toJson(QJsonDocument::Compact);
-    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Received cheatsObject: " + cheatsObjectString).toStdString().c_str());
-    qDebug() << "Received cheatsObject:" << cheatsObjectString;
 
     if (cheatsObject.contains("custom") && cheatsObject.value("custom").isArray()) {
         QJsonArray customCheatsArray = cheatsObject.value("custom").toArray();
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, "Parsed custom cheats JSON array");
-        qDebug() << "Parsed custom cheats JSON array";
 
         CoreCheat cheat;
         cheat.Name = "Netplay"; // Set header name
@@ -91,48 +83,15 @@ void EmulationThread::ApplyCheats(QJsonObject cheatsObject)
                 code.OptionIndex = 0;
                 code.OptionSize = 0;
                 cheat.CheatCodes.push_back(code);
-                qDebug() << "Added cheat code:" << cheatString;
-            } else {
-                CoreAddCallbackMessage(CoreDebugMessageType::Warning, ("Invalid cheat code: " + cheatString.toStdString()).c_str());
-                qDebug() << "Invalid cheat code:" << cheatString;
             }
         }
         if (!cheat.CheatCodes.empty()) {
             std::vector<CoreCheat> cheatsToApply;
             cheatsToApply.push_back(cheat); // Add the constructed cheat to the vector
 
-            // Print the cheat details
-            QString cheatDetails = "Cheat Name: " + QString::fromStdString(cheat.Name) + "\n";
-            for (const auto& code : cheat.CheatCodes) {
-                cheatDetails += "Address: " + QString::number(code.Address, 16) + ", Value: " + QString::number(code.Value, 16) + "\n";
-            }
-            CoreAddCallbackMessage(CoreDebugMessageType::Info, cheatDetails.toStdString().c_str());
-            qDebug() << cheatDetails;
-
             if (CoreApplyCheatsRuntime(cheatsToApply)) {
                 CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Netplay cheat added with " + QString::number(cheat.CheatCodes.size()) + " codes").toStdString().c_str());
-                qDebug() << "Netplay cheat added with" << cheat.CheatCodes.size() << "codes";
-            } else {
-                CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to add Netplay cheat");
-                qDebug() << "Failed to add Netplay cheat";
             }
-        } else {
-            CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Netplay cheat not found or has no codes");
-            qDebug() << "Netplay cheat not found or has no codes";
         }
-    } else {
-        CoreAddCallbackMessage(CoreDebugMessageType::Warning, "Invalid custom cheats format: custom cheats array not found");
-        qDebug() << "Invalid custom cheats format: custom cheats array not found";
-    }
-
-    // Verify if the cheat is enabled
-    CoreCheat netplayCheat;
-    netplayCheat.Name = "Netplay";
-    if (CoreIsCheatEnabled(netplayCheat)) {
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, "Netplay cheat is enabled");
-        qDebug() << "Netplay cheat is enabled";
-    } else {
-        CoreAddCallbackMessage(CoreDebugMessageType::Error, "Netplay cheat is not enabled");
-        qDebug() << "Netplay cheat is not enabled";
     }
 }
