@@ -12,12 +12,18 @@
 #include <QLabel>
 #include <QString>
 #include <QLineEdit>
+#include <QDir>
+#include <QFileInfo>
+#include <QFileInfoList>
 
 #include <RMG-Core/m64p/Api.hpp>
 #include <RMG-Core/Settings/Settings.hpp>
+#include <RMG-Core/Core.hpp>
+#include <RMG/UserInterface/Widget/RomBrowser/RomBrowserWidget.hpp>
+#include <RMG/UserInterface/Widget/RomBrowser/RomBrowserModelData.hpp>
 
-JoinRoom::JoinRoom(QWidget *parent)
-    : QDialog(parent)
+JoinRoom::JoinRoom(QWidget *parent, RomBrowserWidget *romBrowser)
+    : QDialog(parent), romBrowserWidget(romBrowser)
 {
 
     setWindowTitle("NetPlay Setup");
@@ -163,11 +169,15 @@ void JoinRoom::joinGame()
         msgBox.exec();
         return;
     }
-    
-    std::string romPATH;
-    romPATH = CoreSettingsGetStringValue(SettingsID::RomBrowser_Directory);  
-    filename = QFileDialog::getOpenFileName(this,
-    tr("Open ROM"), QString::fromStdString(romPATH), tr("ROM Files (*.n64 *.N64 *.z64 *.Z64 *.v64 *.V64 *.rom *.ROM *.zip *.ZIP *.7z)"));
+
+    QString gameName = listWidget->item(listWidget->currentRow(), 1)->text();
+    QString romFilePath = findRomFilePath(gameName);
+
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Game Name: " + gameName).toStdString().c_str());
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("ROM File Path: " + romFilePath).toStdString().c_str());
+
+
+
     if (!filename.isNull())
     {
         if (loadROM(filename) == M64ERR_SUCCESS)
@@ -337,4 +347,17 @@ void JoinRoom::updatePing(quint64 elapsedTime, const QByteArray&)
 void JoinRoom::sendPing()
 {
     webSocket->ping();
+}
+
+QString JoinRoom::findRomFilePath(const QString& gameName)
+{
+    RomBrowserModelData data;
+    if (romBrowserWidget->getCurrentData(data) && QString::fromStdString(data.settings.GoodName).compare(gameName, Qt::CaseInsensitive) == 0)
+    {
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Match found: " + data.file).toStdString().c_str());
+        return data.file;
+    }
+
+    CoreAddCallbackMessage(CoreDebugMessageType::Error, "No matching ROM file found");
+    return "";
 }
