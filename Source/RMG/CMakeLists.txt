@@ -60,6 +60,8 @@ set(RMG_SOURCES
     UserInterface/Dialog/AboutDialog.ui
     UserInterface/Dialog/LogDialog.cpp
     UserInterface/Dialog/LogDialog.ui
+    UserInterface/Netplay/NetplayUI.cpp
+    UserInterface/Netplay/netplay_common.cpp
     UserInterface/Netplay/netplay_common.cpp
     UserInterface/Netplay/createroom.cpp
     UserInterface/Netplay/joinroom.cpp

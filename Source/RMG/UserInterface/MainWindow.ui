@@ -153,7 +153,6 @@
      <string>Netplay</string>
     </property>
     <addaction name="action_Create_Room"/>
-    <addaction name="action_Join_Room"/>
    </widget>
    <addaction name="menuSystem"/>
    <addaction name="menuSettings"/>
@@ -195,7 +194,6 @@
    <addaction name="separator"/>
    <addaction name="action_System_StartRom3"/>
    <addaction name="action_Create_Room"/>
-   <addaction name="action_Join_Room"/>
    <addaction name="separator"/>
    <addaction name="action_View_Fullscreen2"/>
    <addaction name="action_System_Screenshot2"/>
@@ -327,7 +325,7 @@
      <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>Host</string>
+    <string>NetPlay</string>
    </property>
   </action>
   <action name="action_System_HardReset">
@@ -337,15 +335,6 @@
    </property>
    <property name="text">
     <string>Hard Reset</string>
-   </property>
-  </action>
-  <action name="action_Join_Room">
-   <property name="icon">
-    <iconset theme="online-play-mpn">
-     <normaloff>.</normaloff>.</iconset>
-   </property>
-   <property name="text">
-    <string>Connect</string>
    </property>
   </action>
   <action name="action_System_Screenshot">

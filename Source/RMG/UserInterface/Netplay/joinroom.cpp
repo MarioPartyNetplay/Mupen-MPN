@@ -119,13 +119,14 @@ void JoinRoom::resetList()
     listWidget->setColumnCount(2);
     listWidget->setRowCount(row);
     QStringList headers;
-    headers.append("Hosts Name");
-    headers.append("Game Name");
+    headers.append("Name");
+    headers.append("Game");
+    //headers.append("Players");
     //headers.append("Game MD5");
     //headers.append("Password Protected");
     //headers.append("Fixed Input Delay");
     listWidget->setHorizontalHeaderLabels(headers);
-    listWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    listWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 }
 
 void JoinRoom::downloadFinished(QNetworkReply *reply)
@@ -292,13 +293,9 @@ void JoinRoom::processTextMessage(QString message)
             newItem = new QTableWidgetItem(json.value("game_name").toString());
             newItem->setFlags(newItem->flags() & ~Qt::ItemIsEditable);
             listWidget->setItem(row, 1, newItem);
-            newItem = new QTableWidgetItem(json.value("MD5").toString());
-            newItem->setFlags(newItem->flags() & ~Qt::ItemIsEditable);
-            listWidget->setItem(row, 2, newItem);
-            newItem = new QTableWidgetItem(json.value("protected").toString());
-            newItem->setFlags(newItem->flags() & ~Qt::ItemIsEditable);
-            listWidget->setItem(row, 3, newItem);
-
+            //newItem = new QTableWidgetItem(QString::number(json.value("player_count").toInt())); // Display player count
+            //ewItem->setFlags(newItem->flags() & ~Qt::ItemIsEditable);
+            //listWidget->setItem(row, 2, newItem);
             ++row;
         }
         else

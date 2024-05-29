@@ -29,6 +29,7 @@
 
 #include "UserInterface/Netplay/createroom.h"
 #include "UserInterface/Netplay/joinroom.h"
+#include "UserInterface/Netplay/NetplayUI.hpp"
 
 #include <RMG-Core/Core.hpp>
 #include <RMG-Core/Cheats.hpp>
@@ -676,7 +677,6 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Screenshot));
     this->action_System_Screenshot->setEnabled(inEmulation);
     this->action_Create_Room->setEnabled(!inEmulation);
-    this->action_Join_Room->setEnabled(!inEmulation);
 
     this->action_System_Screenshot->setShortcut(QKeySequence(keyBinding));
     this->menuSpeedFactor->setEnabled(inEmulation);
@@ -1870,14 +1870,8 @@ void MainWindow::on_Action_Help_Update(void)
 
 void MainWindow::on_action_Create_Room_triggered()
 {
-    CreateRoom *createRoom = new CreateRoom(this);
-    createRoom->show();
-}
-
-void MainWindow::on_action_Join_Room_triggered()
-{
-    JoinRoom *joinRoom = new JoinRoom(this);
-    joinRoom->show();
+    NetplayUI *netplayUI = new NetplayUI(this);
+    netplayUI->show();
 }
 
 void MainWindow::on_Action_Audio_IncreaseVolume(void)
