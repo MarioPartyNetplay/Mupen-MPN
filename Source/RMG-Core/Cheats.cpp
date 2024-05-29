@@ -1046,6 +1046,8 @@ bool CoreApplyCheatsRuntime(const std::vector<CoreCheat>& cheats) {
     std::string error;
     m64p_error ret;
 
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, "Starting CoreApplyCheatsRuntime");
+
     if (!m64p::Core.IsHooked()) {
         CoreAddCallbackMessage(CoreDebugMessageType::Info, "Core is not hooked");
         return false;
@@ -1057,13 +1059,17 @@ bool CoreApplyCheatsRuntime(const std::vector<CoreCheat>& cheats) {
         return false;
     }
 
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, "Processing cheats...");
 
     for (const CoreCheat& cheat : cheats) {
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, "Inside cheat loop");
 
         if (cheat.CheatCodes.empty()) {
             CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Cheat " + cheat.Name + " has no codes to apply").c_str());
             continue;
         }
+
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Processing cheat: " + cheat.Name).c_str());
 
         bool skipCheat = false;
         std::vector<m64p_cheat_code> m64p_cheatCodes;
@@ -1088,6 +1094,7 @@ bool CoreApplyCheatsRuntime(const std::vector<CoreCheat>& cheats) {
         }
     }
 
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, "All cheats processed successfully");
     return true;
 }
 
