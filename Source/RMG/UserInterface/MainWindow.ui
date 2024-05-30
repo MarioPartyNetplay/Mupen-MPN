@@ -329,6 +329,15 @@
     <string>Host</string>
    </property>
   </action>
+  <action name="action_Join_Room">
+   <property name="icon">
+    <iconset theme="online-play-mpn">
+     <normaloff>.</normaloff>.</iconset>
+   </property>
+   <property name="text">
+    <string>Host</string>
+   </property>
+  </action>
   <action name="action_System_HardReset">
    <property name="icon">
     <iconset theme="restart-line">

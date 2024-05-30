@@ -210,6 +210,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     void on_Action_Help_Update(void);
 
     void on_action_Create_Room_triggered();
+    void on_action_Join_Room_triggered();
 
     void on_Action_Audio_IncreaseVolume(void);
     void on_Action_Audio_DecreaseVolume(void);

@@ -61,10 +61,11 @@ set(RMG_SOURCES
     UserInterface/Dialog/LogDialog.cpp
     UserInterface/Dialog/LogDialog.ui
     UserInterface/Netplay/RomBrowser.cpp
-    UserInterface/Netplay/netplay_common.cpp
-    UserInterface/Netplay/createroom.cpp
-    UserInterface/Netplay/joinroom.cpp
-    UserInterface/Netplay/waitroom.cpp
+    UserInterface/Netplay/NetFoundation.cpp
+    UserInterface/Netplay/Host.cpp
+    UserInterface/Netplay/Join.cpp
+    UserInterface/Netplay/Lobby.cpp
+    UserInterface/Netplay/NetplayUI.cpp
     UserInterface/NoFocusDelegate.cpp
     UserInterface/EventFilter.cpp
     UserInterface/UIResources.rc

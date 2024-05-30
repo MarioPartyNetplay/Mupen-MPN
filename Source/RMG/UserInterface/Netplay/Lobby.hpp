@@ -14,11 +14,11 @@
 
 #include <UserInterface/MainWindow.hpp>
 
-class WaitRoom : public QDialog
+class Lobby : public QDialog
 {
     Q_OBJECT
 public:
-    WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidget *parent = nullptr);
+    Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *parent = nullptr);
 private slots:
     void processTextMessage(QString message, QJsonObject cheats);
     void onFinished(int);

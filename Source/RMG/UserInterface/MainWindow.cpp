@@ -27,8 +27,9 @@
 #include "Callbacks.hpp"
 #include "VidExt.hpp"
 
-#include "UserInterface/Netplay/createroom.h"
-#include "UserInterface/Netplay/joinroom.h"
+#include "UserInterface/Netplay/Host.hpp"
+#include "UserInterface/Netplay/Join.hpp"
+#include "UserInterface/Netplay/NetplayUI.hpp"
 
 #include <RMG-Core/Core.hpp>
 #include <RMG-Core/Cheats.hpp>
@@ -1870,8 +1871,14 @@ void MainWindow::on_Action_Help_Update(void)
 
 void MainWindow::on_action_Create_Room_triggered()
 {
-    CreateRoom *createRoom = new CreateRoom(this);
-    createRoom->show();
+    Host *netUI = new Host(this);
+    netUI->show();
+}
+
+void MainWindow::on_action_Join_Room_triggered()
+{
+    Join *netUI2 = new Join(this);
+    netUI2->show();
 }
 
 void MainWindow::on_Action_Audio_IncreaseVolume(void)
