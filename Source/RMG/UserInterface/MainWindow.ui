@@ -335,7 +335,7 @@
      <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>Host</string>
+    <string>Join</string>
    </property>
   </action>
   <action name="action_System_HardReset">

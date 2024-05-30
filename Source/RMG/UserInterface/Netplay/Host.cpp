@@ -331,7 +331,6 @@ void Host::processTextMessage(QString message)
             Lobby *waitRoom = new Lobby(romName, json, webSocket, parentWidget());
             waitRoom->show();
             accept();
-            emit roomClosed(); // Emit the signal to close NetplayUI
         }
         else
         {

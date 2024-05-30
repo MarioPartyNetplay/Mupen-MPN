@@ -207,6 +207,8 @@ void Join::joinGame()
         }
     }
 
+    romGoodName = romFilePath;
+
 
     if (!romFilePath.isNull())
     {
@@ -356,7 +358,7 @@ void Join::processTextMessage(QString message)
             json.remove("type");
             json.remove("accept");
             launched = 1;
-            Lobby *waitRoom = new Lobby(filename, json, webSocket, parentWidget());
+            Lobby *waitRoom = new Lobby(romGoodName, json, webSocket, parentWidget());
             waitRoom->show();
             accept();
             return;

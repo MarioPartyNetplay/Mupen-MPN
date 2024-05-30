@@ -31,6 +31,7 @@ private slots:
     void updatePing(quint64 elapsedTime, const QByteArray&);
 private:
     void resetList();
+    QString romGoodName;
     QString findRomFilePath(const QString& gameName);
     QComboBox *serverChooser;
     QNetworkAccessManager manager;
