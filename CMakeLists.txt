@@ -14,7 +14,7 @@ option(USE_LTO          "Enables building with LTO/IPO when compiler supports it
 option(NO_ASM           "Disables the usage of assembly in the mupen64plus-core" OFF)
 option(NO_RUST          "Disables the building of rust subprojects" OFF)
 option(USE_LIBFMT       "Enables usage of libfmt instead of detecting whether std::format is supported" OFF)
-option(USE_ANGRYLION    "Enables building angrylion-rdp-plus which uses a non-GPL compliant license" OFF)
+option(USE_ANGRYLION    "Enables building angrylion-rdp-plus which uses a non-GPL compliant license" ON)
 
 project(RMG)
 
