@@ -17,6 +17,7 @@
 #include <QFileInfoList>
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QRegularExpression>
 
 #include <RMG-Core/m64p/Api.hpp>
 #include <RMG-Core/Settings/Settings.hpp>
@@ -383,8 +384,7 @@ void Join::sendPing()
     webSocket->ping();
 }
 
-// Function to calculate Levenshtein distance
-int levenshteinDistance(const QString &s1, const QString &s2) {
+int Join::levenshteinDistance(const QString &s1, const QString &s2) {
     const int len1 = s1.size(), len2 = s2.size();
     QVector<QVector<int>> d(len1 + 1, QVector<int>(len2 + 1));
 
@@ -396,6 +396,18 @@ int levenshteinDistance(const QString &s1, const QString &s2) {
             d[i][j] = std::min({d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (s1[i - 1] == s2[j - 1] ? 0 : 1)});
 
     return d[len1][len2];
+}
+
+QString Join::cleanGameName(const QString &name) {
+    // Create a modifiable copy of the input string
+    QString cleanedName = name;
+    
+    // Remove anything in brackets or parentheses
+    QRegularExpression re("\\s*\\([^\\)]*\\)|\\s*\\[[^\\]]*\\]");
+    cleanedName.remove(re);
+    
+    // Trim any leading or trailing whitespace
+    return cleanedName.trimmed();
 }
 
 QString Join::findRomFilePath(const QString& gameName)
@@ -411,18 +423,20 @@ QString Join::findRomFilePath(const QString& gameName)
     QString closestMatch;
     int minDistance = std::numeric_limits<int>::max();
 
-    for (const QFileInfo &fileInfo : romFiles) {
-        QString fileName = fileInfo.baseName(); // Get the file name without extension
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Checking ROM: " + fileName).toStdString().c_str());
-        int distance = levenshteinDistance(fileName, gameName);
+    QString cleanedGameName = cleanGameName(gameName);
 
-        if (gameName.compare("Mario Party", Qt::CaseInsensitive) == 0 && fileName.compare("Mario Party 1", Qt::CaseInsensitive) == 0) {
+    for (const QFileInfo &fileInfo : romFiles) {
+        QString fileName = cleanGameName(fileInfo.baseName()); // Get the cleaned file name without extension
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Checking ROM: " + fileName).toStdString().c_str());
+        int distance = levenshteinDistance(fileName, cleanedGameName);
+
+        if (cleanedGameName.compare("Mario Party", Qt::CaseInsensitive) == 0 && fileName.compare("Mario Party 1", Qt::CaseInsensitive) == 0) {
             CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Special case match found: " + fileInfo.absoluteFilePath()).toStdString().c_str());
             return fileInfo.absoluteFilePath();
         }
 
         // Ensure "Mario Party 1" is not loaded for "Mario Party 2" or "Mario Party 3"
-        if ((gameName.compare("Mario Party 2", Qt::CaseInsensitive) == 0 || gameName.compare("Mario Party 3", Qt::CaseInsensitive) == 0) &&
+        if ((cleanedGameName.compare("Mario Party 2", Qt::CaseInsensitive) == 0 || cleanedGameName.compare("Mario Party 3", Qt::CaseInsensitive) == 0) &&
             fileName.compare("Mario Party 1", Qt::CaseInsensitive) == 0) {
             continue;
         }

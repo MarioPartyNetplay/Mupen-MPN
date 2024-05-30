@@ -29,10 +29,11 @@ private slots:
     void processBroadcast();
     void sendPing();
     void updatePing(quint64 elapsedTime, const QByteArray&);
+    QString findRomFilePath(const QString& gameName);
 private:
     void resetList();
     QString romGoodName;
-    QString findRomFilePath(const QString& gameName);
+    QString cleanGameName(const QString &name);
     QComboBox *serverChooser;
     QNetworkAccessManager manager;
     QTableWidget *listWidget;
@@ -46,6 +47,7 @@ private:
     QList<QJsonObject> rooms;
     int row = 0;
     int launched;
+    int levenshteinDistance(const QString &s1, const QString &s2);
     QString filename;
     QUdpSocket broadcastSocket;
     QTimer *connectionTimer;

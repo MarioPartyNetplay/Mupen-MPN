@@ -4,6 +4,7 @@
 #include <QListWidgetItem>
 #include <RMG-Core/Settings/Settings.hpp>
 #include <RMG-Core/m64p/Api.hpp> // Include necessary header for ROM metadata
+#include <QRegularExpression>
 
 namespace UserInterface {
 namespace Widget {
@@ -44,6 +45,14 @@ void RomBrowser::loadRoms()
             displayName.chop(displayName.length() - displayName.lastIndexOf('.'));
         }
 
+        // Clean the display name by removing text within brackets and parentheses
+        displayName = cleanRomName(displayName);
+
+        // Ensure the display name is unique by appending the file name if necessary
+        if (listWidget->findItems(displayName, Qt::MatchExactly).size() > 0) {
+            displayName += " (" + rom + ")";
+        }
+
         QListWidgetItem *item = new QListWidgetItem(displayName, listWidget);
         item->setData(Qt::UserRole, romPath);
     }
@@ -57,6 +66,15 @@ QString RomBrowser::getRomGoodName(const QString &romPath)
         return QString::fromStdString(romSettings.goodname);
     }
     return QString();
+}
+
+QString RomBrowser::cleanRomName(const QString &name)
+{
+    // Remove anything in brackets or parentheses
+    QRegularExpression re("\\s*\\([^\\)]*\\)|\\s*\\[[^\\]]*\\]");
+    QString cleanedName = name;
+    cleanedName.remove(re);
+    return cleanedName.trimmed();
 }
 
 void RomBrowser::onItemDoubleClicked(QListWidgetItem *item)

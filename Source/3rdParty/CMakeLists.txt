@@ -299,16 +299,8 @@ ExternalProject_Get_property(mupen64plus-core BUILD_BYPRODUCTS)
 set(MUPEN64PLUSCORE_LIB ${BUILD_BYPRODUCTS} PARENT_SCOPE)
 set(MUPEN64PLUSCORE_INI ${M64P_CORE_DIR}/data/mupen64plus.ini PARENT_SCOPE)
 
-if (APPLE)
-    ExternalProject_Get_property(mupen64plus-rsp-cxd4 BUILD_BYPRODUCTS)
-    set(MUPEN64PLUS_PLUGIN_RSP_CXD4 ${BUILD_BYPRODUCTS} PARENT_SCOPE)
-
-    ExternalProject_Get_property(mupen64plus-rsp-hle BUILD_BYPRODUCTS)
-    set(MUPEN64PLUS_PLUGIN_RSP_HLE ${BUILD_BYPRODUCTS} PARENT_SCOPE)
-endif()
-
-ExternalProject_Get_property(mupen64plus-rsp-parallel BUILD_BYPRODUCTS)
-set(MUPEN64PLUS_PLUGIN_RSP_PARALLEL ${BUILD_BYPRODUCTS} PARENT_SCOPE)
+ExternalProject_Get_property(mupen64plus-rsp-hle BUILD_BYPRODUCTS)
+set(MUPEN64PLUS_PLUGIN_RSP_HLE ${BUILD_BYPRODUCTS} PARENT_SCOPE)
 
 if (NOT APPLE)
 ExternalProject_Get_property(mupen64plus-input-raphnetraw BUILD_BYPRODUCTS)

@@ -23,6 +23,7 @@ private slots:
 
 private:
     QListWidget *listWidget;
+    QString cleanRomName(const QString &name);
     QStringList romList;
     void loadRoms();
     QString getRomGoodName(const QString &romPath);
