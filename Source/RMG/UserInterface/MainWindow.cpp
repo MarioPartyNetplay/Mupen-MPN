@@ -1119,6 +1119,10 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_Audio_IncreaseVolume, &QAction::triggered, this, &MainWindow::on_Action_Audio_IncreaseVolume);
     connect(this->action_Audio_DecreaseVolume, &QAction::triggered, this, &MainWindow::on_Action_Audio_DecreaseVolume);
     connect(this->action_Audio_ToggleVolumeMute, &QAction::triggered, this, &MainWindow::on_Action_Audio_ToggleVolumeMute);
+
+    connect(this->action_Create_Room, &QAction::triggered, this, &MainWindow::on_action_Create_Room_triggered);
+    connect(this->action_Join_Room, &QAction::triggered, this, &MainWindow::on_action_Join_Room_triggered);
+
 }
 
 #ifdef UPDATER

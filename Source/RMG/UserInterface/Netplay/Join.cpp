@@ -15,6 +15,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFileInfoList>
+#include <QFileDialog>
+#include <QMessageBox>
 
 #include <RMG-Core/m64p/Api.hpp>
 #include <RMG-Core/Settings/Settings.hpp>
@@ -192,9 +194,23 @@ void Join::joinGame()
         return;
     }
 
+    if (romFilePath.isNull())
+    {
+        romFilePath = QFileDialog::getOpenFileName(this, tr("Select ROM File"), "", tr("ROM Files (*.rom *.n64 *.z64)"));
+        if (romFilePath.isEmpty())
+        {
+            CoreAddCallbackMessage(CoreDebugMessageType::Error, "No ROM file selected");
+            QMessageBox msgBox;
+            msgBox.setText("No ROM file selected");
+            msgBox.exec();
+            return;
+        }
+    }
+
+
     if (!romFilePath.isNull())
     {
-        if (loadROM(filename) == M64ERR_SUCCESS)
+        if (loadROM(romFilePath) == M64ERR_SUCCESS)
         {
             int room_port = rooms.at(listWidget->currentRow()).value("port").toInt();
             m64p_rom_settings rom_settings;
