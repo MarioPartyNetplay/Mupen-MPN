@@ -46,6 +46,7 @@ private:
     QLabel *pingValue;
     int launched;
     QString filename;
+    QSstring romName;
     QUdpSocket broadcastSocket;
     QString customServerHost;
     QTimer *connectionTimer;

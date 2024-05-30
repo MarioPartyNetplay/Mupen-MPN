@@ -22,6 +22,8 @@ CreateRoom::CreateRoom(QWidget *parent)
     : QDialog(parent)
 {
     setWindowTitle("NetPlay Setup");
+    setMinimumWidth(1000);
+    setMinimumHeight(500);
 
     QGridLayout *layout = new QGridLayout(this);
 
@@ -111,9 +113,12 @@ void CreateRoom::onFinished(int)
 void CreateRoom::handleCreateButton(const QString& filename)
 {
     CoreAddCallbackMessage(CoreDebugMessageType::Info, ("handleCreateButton called with filename: " + filename).toStdString().c_str());
+    
+    romName = filename;
 
     if (serverChooser->currentData() == "Custom" && customServerHost.isEmpty())
     {
+
         CoreAddCallbackMessage(CoreDebugMessageType::Error, "Custom Server Address is invalid");
         QMessageBox msgBox;
         msgBox.setText("Custom Server Address is invalid");
@@ -304,7 +309,7 @@ void CreateRoom::processTextMessage(QString message)
         {
             json.remove("type");
             launched = 1;
-            WaitRoom *waitRoom = new WaitRoom(filename, json, webSocket, parentWidget());
+            WaitRoom *waitRoom = new WaitRoom(romName, json, webSocket, parentWidget());
             waitRoom->show();
             accept();
             emit roomClosed(); // Emit the signal to close NetplayUI

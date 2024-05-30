@@ -1874,12 +1874,6 @@ void MainWindow::on_action_Create_Room_triggered()
     createRoom->show();
 }
 
-void MainWindow::on_action_Join_Room_triggered()
-{
-    JoinRoom *joinRoom = new JoinRoom(this);
-    joinRoom->show();
-}
-
 void MainWindow::on_Action_Audio_IncreaseVolume(void)
 {
     CoreIncreaseVolume();
