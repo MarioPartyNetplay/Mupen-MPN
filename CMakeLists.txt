@@ -85,8 +85,8 @@ if (NOT USE_LIBFMT)
 endif(NOT USE_LIBFMT)
 
 if (NOT PORTABLE_INSTALL AND WIN32)
-    message(WARNING "Not-Portable build not supported on windows, re-enabling PORTABLE_INSTALL!")
-    set(PORTABLE_INSTALL ON)
+    message(WARNING "Not-Portable build not supported on windows, disabling PORTABLE_INSTALL!")
+    set(PORTABLE_INSTALL OFF)
 endif()
 
 if (NOT PORTABLE_INSTALL AND UPDATER AND NOT APPIMAGE_UPDATER)
@@ -169,6 +169,7 @@ if (USE_MPN_GAME_PLUGIN AND WIN32)
     
     add_custom_target(compile_dlang ALL
         COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioGolf.dll mariogolf.d plugin.d
+        COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioParty1.dll marioparty.d marioparty1.d plugin.d
         COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioParty2.dll marioparty.d marioparty2.d plugin.d
         COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioParty3.dll marioparty.d marioparty3.d plugin.d
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/Source/MPN-Game-Plugins
@@ -197,6 +198,9 @@ if (USE_NETPLAY_SERVER)
 endif()
 
 if (USE_MPN_GAME_PLUGIN AND WIN32)
+install(PROGRAMS ${CMAKE_BINARY_DIR}/plugins/MarioParty1.dll
+DESTINATION ${PLUGIN_INSTALL_PATH}/Execution
+)
     install(PROGRAMS ${CMAKE_BINARY_DIR}/plugins/MarioParty2.dll
         DESTINATION ${PLUGIN_INSTALL_PATH}/Execution
     )
