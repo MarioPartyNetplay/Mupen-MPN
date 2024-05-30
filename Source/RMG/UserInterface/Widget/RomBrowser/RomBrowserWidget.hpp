@@ -42,6 +42,8 @@ class RomBrowserWidget : public QStackedWidget
     RomBrowserWidget(QWidget *);
     ~RomBrowserWidget(void);
 
+    QList<RomBrowserModelData> getRomList() const;
+
     void RefreshRomList(void);
     bool IsRefreshingRomList(void);
     void StopRefreshRomList(void);

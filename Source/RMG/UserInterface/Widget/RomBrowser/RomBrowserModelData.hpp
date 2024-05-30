@@ -1,6 +1,8 @@
 #ifndef ROMBROWSERMODELDATA_HPP
 #define ROMBROWSERMODELDATA_HPP
 #include <QString>
+#include <QMetaType>
+
 #include <RMG-Core/Core.hpp> // Assuming CoreRomType, CoreRomHeader, CoreRomSettings are defined here
 struct RomBrowserModelData
 {
@@ -9,7 +11,6 @@ struct RomBrowserModelData
     CoreRomHeader   header;
     CoreRomSettings settings;
     QString         coverFile;
-    RomBrowserModelData() {}
     RomBrowserModelData(QString file, CoreRomType type, CoreRomHeader header, CoreRomSettings settings)
     {
         this->file = file;
@@ -17,5 +18,11 @@ struct RomBrowserModelData
         this->header = header;
         this->settings = settings;
     }
+
+    RomBrowserModelData() = default;
+
 };
+
+Q_DECLARE_METATYPE(RomBrowserModelData)
+
 #endif // ROMBROWSERMODELDATA_HPP

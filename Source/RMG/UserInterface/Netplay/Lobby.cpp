@@ -1,11 +1,11 @@
-#include "waitroom.h"
+#include "Lobby.hpp"
 #include <QGridLayout>
 #include <QMessageBox>
 #include <QJsonArray>
 #include <RMG-Core/m64p/Api.hpp>
 #include <RMG-Core/Settings/Settings.hpp>
 
-WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidget *parent)
+Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *parent)
     : QDialog(parent)
 {
     QJsonObject featuresObject = room.value("features").toObject();
@@ -29,7 +29,7 @@ WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidg
 
     webSocket = socket;
     connect(webSocket, &QWebSocket::textMessageReceived, this, [this](QString message){ processTextMessage(message, cheats); });
-    connect(webSocket, &QWebSocket::pong, this, &WaitRoom::updatePing);
+    connect(webSocket, &QWebSocket::pong, this, &Lobby::updatePing);
 
     QGridLayout *layout = new QGridLayout(this);
 
@@ -50,7 +50,7 @@ WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidg
     layout->addWidget(p2Label, 4, 0);
 
     QLabel *p3Label = new QLabel("Player 3:", this);
-    layout->addWidget(p3Label, 5, 0);;
+    layout->addWidget(p3Label, 5, 0);
 
     QLabel *p4Label = new QLabel("Player 4:", this);
     layout->addWidget(p4Label, 6, 0);
@@ -67,13 +67,13 @@ WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidg
 
     chatEdit = new QLineEdit(this);
     chatEdit->setPlaceholderText("Enter chat message here");
-    connect(chatEdit, &QLineEdit::returnPressed, this, &WaitRoom::sendChat);
+    connect(chatEdit, &QLineEdit::returnPressed, this, &Lobby::sendChat);
     layout->addWidget(chatEdit, 10, 0, 1, 2);
 
     startGameButton = new QPushButton(this);
     startGameButton->setText("Start Game");
     startGameButton->setAutoDefault(false);
-    connect(startGameButton, &QPushButton::released, this, &WaitRoom::startGame);
+    connect(startGameButton, &QPushButton::released, this, &Lobby::startGame);
     layout->addWidget(startGameButton, 11, 0, 1, 2);
 
     motd = new QLabel(this);
@@ -85,7 +85,7 @@ WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidg
 
     setLayout(layout);
 
-    connect(this, &QDialog::finished, this, &WaitRoom::onFinished);
+    connect(this, &QDialog::finished, this, &Lobby::onFinished);
 
     QJsonObject json;
     json.insert("type", "request_players");
@@ -93,13 +93,13 @@ WaitRoom::WaitRoom(QString filename, QJsonObject room, QWebSocket *socket, QWidg
     QJsonDocument json_doc = QJsonDocument(json);
 
     timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, &WaitRoom::sendPing);
+    connect(timer, &QTimer::timeout, this, &Lobby::sendPing);
     timer->start(5000);
 
     webSocket->sendTextMessage(json_doc.toJson());
 }
 
-void WaitRoom::sendPing()
+void Lobby::sendPing()
 {
     if (motd->text().isEmpty())
     {
@@ -112,12 +112,12 @@ void WaitRoom::sendPing()
     webSocket->ping();
 }
 
-void WaitRoom::updatePing(quint64 elapsedTime, const QByteArray&)
+void Lobby::updatePing(quint64 elapsedTime, const QByteArray&)
 {
     pingValue->setText(QString::number(elapsedTime) + " ms");
 }
 
-void WaitRoom::startGame()
+void Lobby::startGame()
 {
     if (player_name == pName[0]->text())
     {
@@ -135,7 +135,7 @@ void WaitRoom::startGame()
     }
 }
 
-void WaitRoom::sendChat()
+void Lobby::sendChat()
 {
     if (!chatEdit->text().isEmpty())
     {
@@ -150,14 +150,14 @@ void WaitRoom::sendChat()
     }
 }
 
-void WaitRoom::onFinished(int)
+void Lobby::onFinished(int)
 {
     timer->stop();
     webSocket->close();
     webSocket->deleteLater();
 }
 
-void WaitRoom::processTextMessage(QString message, QJsonObject cheats)
+void Lobby::processTextMessage(QString message, QJsonObject cheats)
 {
     QJsonDocument json_doc = QJsonDocument::fromJson(message.toUtf8());
     QJsonObject json = json_doc.object();

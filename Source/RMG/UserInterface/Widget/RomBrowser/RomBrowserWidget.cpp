@@ -29,7 +29,6 @@ using namespace UserInterface::Widget;
 // Internal Struct
 //
 
-Q_DECLARE_METATYPE(RomBrowserModelData);
 
 //
 // Exported Functions
@@ -380,6 +379,37 @@ QString RomBrowserWidget::getCurrentRom(void)
     }
 
     return data.file;
+}
+
+QList<RomBrowserModelData> RomBrowserWidget::getRomList() const
+{
+    QList<RomBrowserModelData> romList;
+
+    // Extract data from listViewModel
+    for (int row = 0; row < listViewModel->rowCount(); ++row) {
+        QStandardItem* item = listViewModel->item(row, 0); // Assuming the first column contains the data
+        if (item) {
+            QVariant variant = item->data();
+            if (variant.canConvert<RomBrowserModelData>()) {
+                RomBrowserModelData data = variant.value<RomBrowserModelData>();
+                romList.append(data);
+            }
+        }
+    }
+
+    // Extract data from gridViewModel
+    for (int row = 0; row < gridViewModel->rowCount(); ++row) {
+        QStandardItem* item = gridViewModel->item(row, 0); // Assuming the first column contains the data
+        if (item) {
+            QVariant variant = item->data();
+            if (variant.canConvert<RomBrowserModelData>()) {
+                RomBrowserModelData data = variant.value<RomBrowserModelData>();
+                romList.append(data);
+            }
+        }
+    }
+
+    return romList;
 }
 
 void RomBrowserWidget::addRomData(QString file, CoreRomType type, CoreRomHeader header, CoreRomSettings settings)

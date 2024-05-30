@@ -176,20 +176,6 @@ void Join::joinGame()
         msgBox.exec();
         return;
     }
-    
-    QMessageBox msgBox;
-    if (webSocket && webSocket->state() != QAbstractSocket::ConnectedState)
-    {
-        msgBox.setText("Could not connect to server");
-        msgBox.exec();
-        return;
-    }
-    if (listWidget->currentRow() < 0)
-    {
-        msgBox.setText("You haven't selected a game to join");
-        msgBox.exec();
-        return;
-    }
 
     QString gameName = listWidget->item(listWidget->currentRow(), 1)->text();
     QString romFilePath = findRomFilePath(gameName);
@@ -197,9 +183,16 @@ void Join::joinGame()
     CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Game Name: " + gameName).toStdString().c_str());
     CoreAddCallbackMessage(CoreDebugMessageType::Info, ("ROM File Path: " + romFilePath).toStdString().c_str());
 
+    if (romFilePath.isEmpty())
+    {
+        CoreAddCallbackMessage(CoreDebugMessageType::Error, "ROM file path is empty");
+        QMessageBox msgBox;
+        msgBox.setText("Could not find ROM file for the selected game");
+        msgBox.exec();
+        return;
+    }
 
-
-    if (!filename.isNull())
+    if (!romFilePath.isNull())
     {
         if (loadROM(filename) == M64ERR_SUCCESS)
         {
@@ -221,9 +214,18 @@ void Join::joinGame()
         }
         else
         {
+            CoreAddCallbackMessage(CoreDebugMessageType::Error, "Could not open ROM");
+            QMessageBox msgBox;
             msgBox.setText("Could not open ROM");
             msgBox.exec();
         }
+    }
+    else
+    {
+        CoreAddCallbackMessage(CoreDebugMessageType::Error, "Filename is null");
+        QMessageBox msgBox;
+        msgBox.setText("Filename is null");
+        msgBox.exec();
     }
 }
 
@@ -323,9 +325,6 @@ void Join::processTextMessage(QString message)
             newItem = new QTableWidgetItem(json.value("game_name").toString());
             newItem->setFlags(newItem->flags() & ~Qt::ItemIsEditable);
             listWidget->setItem(row, 1, newItem);
-            //newItem = new QTableWidgetItem(QString::number(json.value("player_count").toInt())); // Display player count
-            //ewItem->setFlags(newItem->flags() & ~Qt::ItemIsEditable);
-            //listWidget->setItem(row, 2, newItem);
             ++row;
         }
         else
@@ -366,15 +365,61 @@ void Join::sendPing()
     webSocket->ping();
 }
 
+// Function to calculate Levenshtein distance
+int levenshteinDistance(const QString &s1, const QString &s2) {
+    const int len1 = s1.size(), len2 = s2.size();
+    QVector<QVector<int>> d(len1 + 1, QVector<int>(len2 + 1));
+
+    for (int i = 0; i <= len1; ++i) d[i][0] = i;
+    for (int i = 0; i <= len2; ++i) d[0][i] = i;
+
+    for (int i = 1; i <= len1; ++i)
+        for (int j = 1; j <= len2; ++j)
+            d[i][j] = std::min({d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (s1[i - 1] == s2[j - 1] ? 0 : 1)});
+
+    return d[len1][len2];
+}
+
 QString Join::findRomFilePath(const QString& gameName)
 {
-    RomBrowserModelData data;
-    if (romBrowserWidget->getCurrentData(data) && QString::fromStdString(data.settings.GoodName).compare(gameName, Qt::CaseInsensitive) == 0)
-    {
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Match found: " + data.file).toStdString().c_str());
-        return data.file;
+    QString romDirectory = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::RomBrowser_Directory));
+    QDir romDir(romDirectory);
+    if (!romDir.exists()) {
+        CoreAddCallbackMessage(CoreDebugMessageType::Error, "ROMs folder does not exist");
+        return "";
     }
 
-    CoreAddCallbackMessage(CoreDebugMessageType::Error, "No matching ROM file found");
-    return "";
+    QFileInfoList romFiles = romDir.entryInfoList(QStringList() << "*.rom" << "*.n64" << "*.z64", QDir::Files);
+    QString closestMatch;
+    int minDistance = std::numeric_limits<int>::max();
+
+    for (const QFileInfo &fileInfo : romFiles) {
+        QString fileName = fileInfo.baseName(); // Get the file name without extension
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Checking ROM: " + fileName).toStdString().c_str());
+        int distance = levenshteinDistance(fileName, gameName);
+
+        if (gameName.compare("Mario Party", Qt::CaseInsensitive) == 0 && fileName.compare("Mario Party 1", Qt::CaseInsensitive) == 0) {
+            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Special case match found: " + fileInfo.absoluteFilePath()).toStdString().c_str());
+            return fileInfo.absoluteFilePath();
+        }
+
+        // Ensure "Mario Party 1" is not loaded for "Mario Party 2" or "Mario Party 3"
+        if ((gameName.compare("Mario Party 2", Qt::CaseInsensitive) == 0 || gameName.compare("Mario Party 3", Qt::CaseInsensitive) == 0) &&
+            fileName.compare("Mario Party 1", Qt::CaseInsensitive) == 0) {
+            continue;
+        }
+        
+        if (distance < minDistance) {
+            minDistance = distance;
+            closestMatch = fileInfo.absoluteFilePath();
+        }
+    }
+
+    if (closestMatch.isEmpty()) {
+        CoreAddCallbackMessage(CoreDebugMessageType::Error, "No matching ROM file found");
+    } else {
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Closest match found: " + closestMatch).toStdString().c_str());
+    }
+
+    return closestMatch;
 }
