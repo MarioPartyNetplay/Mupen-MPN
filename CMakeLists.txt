@@ -3,18 +3,20 @@
 #
 cmake_minimum_required(VERSION 3.15)
 
-option(PORTABLE_INSTALL "Portable Installation" ON)
-option(UPDATER          "Enables updater" ${WIN32})
-option(APPIMAGE_UPDATER "Enables AppImage updater" OFF)
-option(DISCORD_RPC      "Enables Discord Rich Presence" ON)
-option(DRAG_DROP        "Enables drag and drop" ON)
-option(VRU              "Enables VRU support in RMG-Input" ON)
-option(USE_CCACHE       "Enables usage of ccache when ccache has been found" ON)
-option(USE_LTO          "Enables building with LTO/IPO when compiler supports it" ON)
-option(NO_ASM           "Disables the usage of assembly in the mupen64plus-core" OFF)
-option(NO_RUST          "Disables the building of rust subprojects" OFF)
-option(USE_LIBFMT       "Enables usage of libfmt instead of detecting whether std::format is supported" OFF)
-option(USE_ANGRYLION    "Enables building angrylion-rdp-plus which uses a non-GPL compliant license" ON)
+option(PORTABLE_INSTALL     "Portable Installation" ON)
+option(UPDATER              "Enables updater" ${WIN32})
+option(APPIMAGE_UPDATER     "Enables AppImage updater" OFF)
+option(DISCORD_RPC          "Enables Discord Rich Presence" ON)
+option(DRAG_DROP            "Enables drag and drop" ON)
+option(VRU                  "Enables VRU support in RMG-Input" ON)
+option(USE_CCACHE           "Enables usage of ccache when ccache has been found" ON)
+option(USE_LTO              "Enables building with LTO/IPO when compiler supports it" ON)
+option(NO_ASM               "Disables the usage of assembly in the mupen64plus-core" OFF)
+option(NO_RUST              "Disables the building of rust subprojects" OFF)
+option(USE_LIBFMT           "Enables usage of libfmt instead of detecting whether std::format is supported" OFF)
+option(USE_ANGRYLION        "Enables building angrylion-rdp-plus which uses a non-GPL compliant license" ON)
+option(USE_NETPLAY_SERVER   "Enables building the netplay server" ON)
+option(USE_MPN_GAME_PLUGIN  "Enables building the MPN game plugins" ON)
 
 project(RMG)
 
@@ -141,6 +143,40 @@ add_subdirectory(Source/RMG-Core)
 add_subdirectory(Source/RMG)
 add_subdirectory(Source/RMG-Audio)
 add_subdirectory(Source/RMG-Input)
+
+if (USE_NETPLAY_SERVER)
+    add_custom_target(build_netplay_server ALL
+        COMMAND go build -o ${CMAKE_BINARY_DIR}/RMG-Server.exe ${CMAKE_SOURCE_DIR}/Source/Server
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/Source/Server
+        COMMENT "Building netplay server"
+    )
+endif()
+
+if (USE_MPN_GAME_PLUGIN AND WIN32)
+    find_program(DMD_COMPILER dmd)
+    set(DMD_COMPILER "${CMAKE_BINARY_DIR}/dmd2/windows/bin64/dmd.exe")
+    if (NOT DMD_COMPILER)
+        message(STATUS "DMD compiler not found. Downloading and installing DMD...")
+        set(DMD_URL "https://downloads.dlang.org/releases/2.x/2.098.0/dmd.2.098.0.windows.zip")
+        set(DMD_ZIP "${CMAKE_BINARY_DIR}/dmd.zip")
+        file(DOWNLOAD ${DMD_URL} ${DMD_ZIP})
+        execute_process(COMMAND unzip -qq ${DMD_ZIP} WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+        if (NOT EXISTS ${DMD_COMPILER})
+            message(FATAL_ERROR "Failed to download and install DMD compiler.")
+        endif()
+    endif()
+    message(STATUS "Using DMD compiler: ${DMD_COMPILER}")
+    
+    add_custom_target(compile_dlang ALL
+        COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioGolf.dll mariogolf.d plugin.d
+        COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioParty2.dll marioparty.d marioparty2.d plugin.d
+        COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioParty3.dll marioparty.d marioparty3.d plugin.d
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/Source/MPN-Game-Plugins
+        COMMENT "Compiling D language plugins"
+    )
+    add_dependencies(RMG compile_dlang)
+endif()
+
 install(TARGETS RMG-Core
     DESTINATION ${SYSTEM_LIB_INSTALL_PATH}
 )
@@ -153,6 +189,24 @@ install(TARGETS RMG-Audio
 install(TARGETS RMG-Input
     DESTINATION ${PLUGIN_INSTALL_PATH}/Input
 )
+
+if (USE_NETPLAY_SERVER)
+    install(PROGRAMS ${CMAKE_BINARY_DIR}/RMG-Server.exe
+        DESTINATION ${RMG_INSTALL_PATH}
+    )
+endif()
+
+if (USE_MPN_GAME_PLUGIN AND WIN32)
+    install(PROGRAMS ${CMAKE_BINARY_DIR}/plugins/MarioParty2.dll
+        DESTINATION ${PLUGIN_INSTALL_PATH}/Execution
+    )
+    install(PROGRAMS ${CMAKE_BINARY_DIR}/plugins/MarioParty3.dll
+        DESTINATION ${PLUGIN_INSTALL_PATH}/Execution
+    )
+    install(PROGRAMS ${CMAKE_BINARY_DIR}/plugins/MarioGolf.dll
+        DESTINATION ${PLUGIN_INSTALL_PATH}/Execution
+    )
+endif()
 
 if (WIN32)
     add_subdirectory(Source/Installer)
