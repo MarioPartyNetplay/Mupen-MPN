@@ -16,7 +16,7 @@ option(NO_RUST              "Disables the building of rust subprojects" OFF)
 option(USE_LIBFMT           "Enables usage of libfmt instead of detecting whether std::format is supported" OFF)
 option(USE_ANGRYLION        "Enables building angrylion-rdp-plus which uses a non-GPL compliant license" ON)
 option(USE_NETPLAY_SERVER   "Enables building the netplay server" ON)
-option(USE_MPN_GAME_PLUGIN  "Enables building the MPN game plugins" ON)
+option(USE_MPN_GAME_PLUGIN  "Enables building the MPN game plugins" OFF)
 
 project(RMG)
 
