@@ -48,11 +48,6 @@ void RomBrowser::loadRoms()
         // Clean the display name by removing text within brackets and parentheses
         displayName = cleanRomName(displayName);
 
-        // Ensure the display name is unique by appending the file name if necessary
-        if (listWidget->findItems(displayName, Qt::MatchExactly).size() > 0) {
-            displayName += " (" + rom + ")";
-        }
-
         QListWidgetItem *item = new QListWidgetItem(displayName, listWidget);
         item->setData(Qt::UserRole, romPath);
     }

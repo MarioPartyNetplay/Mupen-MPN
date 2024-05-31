@@ -74,7 +74,15 @@ Join::Join(QWidget *parent, RomBrowserWidget *romBrowser)
     joinButton = new QPushButton(this);
     connect(joinButton, &QPushButton::released, this, &Join::joinGame);
     joinButton->setText("Join Game");
-    layout->addWidget(joinButton, 2, 2, 1, 2);
+    layout->addWidget(joinButton, 2, 0, 1, 6);
+
+    // Add the promotional label
+    QLabel *promoLabel = new QLabel(this);
+    promoLabel->setText("<p style='text-align:center;'>Servers are donated by BisectHosting! Use this <a href='https://bisecthosting.com/endangerednayla'>link</a> for 25% off your own server.</p>");
+    promoLabel->setTextFormat(Qt::RichText);
+    promoLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    promoLabel->setOpenExternalLinks(true);
+    layout->addWidget(promoLabel, 3, 0, 1, 6);
 
     setLayout(layout);
 

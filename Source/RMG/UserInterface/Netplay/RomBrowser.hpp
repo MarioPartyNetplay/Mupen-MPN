@@ -14,7 +14,7 @@ class RomBrowser : public QWidget
 
 public:
     explicit RomBrowser(QWidget *parent = nullptr);
-
+    static QString cleanRomName(const QString &name);
 signals:
     void romDoubleClicked(const QString &romPath);
 
@@ -23,7 +23,6 @@ private slots:
 
 private:
     QListWidget *listWidget;
-    QString cleanRomName(const QString &name);
     QStringList romList;
     void loadRoms();
     QString getRomGoodName(const QString &romPath);

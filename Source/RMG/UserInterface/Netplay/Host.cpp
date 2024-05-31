@@ -66,6 +66,14 @@ Host::Host(QWidget *parent)
     lineH1->setFrameShadow(QFrame::Sunken);
     layout->addWidget(lineH1, 3, 0, 1, 6);
 
+    // Add the promotional label
+    QLabel *promoLabel = new QLabel(this);
+    promoLabel->setText("<p style='text-align:center;'>Servers are donated by BisectHosting! Use this <a href='https://bisecthosting.com/endangerednayla'>link</a> for 25% off your own server.</p>");
+    promoLabel->setTextFormat(Qt::RichText);
+    promoLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    promoLabel->setOpenExternalLinks(true);
+    layout->addWidget(promoLabel, 4, 0, 1, 6);
+
     setLayout(layout);
 
     connect(&manager, SIGNAL(finished(QNetworkReply*)),
@@ -258,7 +266,7 @@ void Host::createRoom() {
     json.insert("player_name", playerNameEdit->text());
     json.insert("password", "MPN");
     json.insert("MD5", QString(rom_settings.MD5));
-    json.insert("game_name", QString(rom_settings.goodname));
+    json.insert("game_name", UserInterface::Widget::RomBrowser::cleanRomName(QString(rom_settings.goodname)));
     json.insert("client_sha", "demo");
     json.insert("netplay_version", NETPLAY_VER);
     json.insert("emulator", "MPN");

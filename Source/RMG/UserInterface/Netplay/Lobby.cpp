@@ -76,12 +76,13 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     connect(startGameButton, &QPushButton::released, this, &Lobby::startGame);
     layout->addWidget(startGameButton, 11, 0, 1, 2);
 
-    motd = new QLabel(this);
-    motd->setTextFormat(Qt::RichText);
-    motd->setTextInteractionFlags(Qt::TextBrowserInteraction);
-    motd->setOpenExternalLinks(true);
-    motd->setAlignment(Qt::AlignCenter);
-    layout->addWidget(motd, 12, 0, 1, 2);
+    // Add the promotional label
+    QLabel *promoLabel = new QLabel(this);
+    promoLabel->setText("<p style='text-align:center;'>Servers are donated by BisectHosting! Use this <a href='https://bisecthosting.com/endangerednayla'>link</a> for 25% off your own server.</p>");
+    promoLabel->setTextFormat(Qt::RichText);
+    promoLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    promoLabel->setOpenExternalLinks(true);
+    layout->addWidget(promoLabel, 12, 0, 1, 2);
 
     setLayout(layout);
 
