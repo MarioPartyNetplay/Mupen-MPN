@@ -186,7 +186,7 @@ install(TARGETS RMG
 )
 install(TARGETS RMG-Audio
     DESTINATION ${PLUGIN_INSTALL_PATH}/Audio
-)
+)go
 install(TARGETS RMG-Input
     DESTINATION ${PLUGIN_INSTALL_PATH}/Input
 )
