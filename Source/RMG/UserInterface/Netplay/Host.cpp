@@ -42,6 +42,7 @@ Host::Host(QWidget *parent)
         playerNameEdit->setText(QString::fromStdString(netplayName));
     }
     layout->addWidget(playerNameEdit, 0, 1);
+    CoreSettingsSetValue(SettingsID::Core_Netplay_Name, playerNameEdit->text().toStdString());
 
     // Server Selection
     QLabel *serverLabel = new QLabel("Server", this);
