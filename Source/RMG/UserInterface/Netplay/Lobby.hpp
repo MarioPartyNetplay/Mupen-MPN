@@ -39,7 +39,6 @@ private:
     QString room_name;
     QPushButton *startGameButton;
     QLabel *pingValue;
-    QLabel *motd;
     QTimer *timer;
     int started;
     UserInterface::MainWindow* w;

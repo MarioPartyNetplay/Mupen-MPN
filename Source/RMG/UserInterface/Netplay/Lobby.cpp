@@ -102,14 +102,6 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
 
 void Lobby::sendPing()
 {
-    if (motd->text().isEmpty())
-    {
-        QJsonObject json;
-        json.insert("type", "request_motd");
-        json.insert("room_name", room_name);
-        QJsonDocument json_doc = QJsonDocument(json);
-        webSocket->sendTextMessage(json_doc.toJson());
-    }
     webSocket->ping();
 }
 
