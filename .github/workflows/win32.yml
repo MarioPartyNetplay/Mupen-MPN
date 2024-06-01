@@ -35,6 +35,8 @@ jobs:
             mingw-w64-x86_64-nasm
             mingw-w64-x86_64-minizip
             mingw-w64-x86_64-go
+            mingw-w64-x86_64-gettext
+            mingw-w64-x86_64-zstd
             git
       - name: Build RMG
         run: ./Source/Script/Build.sh Release

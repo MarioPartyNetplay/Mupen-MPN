@@ -41,6 +41,7 @@ void CoreDiscordRpcUpdate(bool inGame)
     std::string smallImageKey;
     std::string largeImageKey;
     std::string details;
+    std::string largeImageName;
 
     if (!CoreSettingsGetBoolValue(SettingsID::GUI_DiscordRpc))
     {
@@ -59,9 +60,24 @@ void CoreDiscordRpcUpdate(bool inGame)
             return;
         }
 
-        smallImageKey = "project64";
+        smallImageKey = "rmg";
         largeImageKey = romHeader.Name;
-        details = romSettings.GoodName;
+        largeImageName = romSettings.GoodName;
+
+        if (romHeader.GameID == "CLBE")
+        {
+            largeImageKey = "box-mp1";
+        }
+
+        if (romHeader.GameID == "NMWE")
+        {
+            largeImageKey = "box-mp2";
+        }
+
+        if (romHeader.GameID == "NMVE")
+        {
+            largeImageKey = "box-mp3";
+        }
 
         // replace ' ' with '_' and replace '&' with '_'
         // also tolower the entire string
@@ -71,7 +87,7 @@ void CoreDiscordRpcUpdate(bool inGame)
     }
     else
     {
-        largeImageKey = "project64";
+        largeImageKey = "rmg";
         details = "Not in-game";
     }
 
@@ -79,8 +95,7 @@ void CoreDiscordRpcUpdate(bool inGame)
     memset(&discordPresence, 0, sizeof(discordPresence));
     discordPresence.smallImageKey = smallImageKey.c_str();
     discordPresence.largeImageKey = largeImageKey.c_str();
-    discordPresence.largeImageText = "Mario Party Netplay";
-    discordPresence.details = details.c_str();
+    discordPresence.largeImageText = largeImageName.c_str();
     discordPresence.startTimestamp = time(nullptr);
 
     Discord_UpdatePresence(&discordPresence);

@@ -678,7 +678,7 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     this->action_System_Screenshot->setEnabled(inEmulation);
     this->action_Create_Room->setEnabled(!inEmulation);
     this->action_Join_Room->setEnabled(!inEmulation);
-
+    this->action_Settings_Input2->setEnabled(!inEmulation);
     this->action_System_Screenshot->setShortcut(QKeySequence(keyBinding));
     this->menuSpeedFactor->setEnabled(inEmulation);
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_SaveState));

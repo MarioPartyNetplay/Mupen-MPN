@@ -21,9 +21,6 @@
 #include <Windows.h>
 #include <shlobj.h>
 #endif // _WIN32
-#ifdef __APPLE__
-#include <mach-o/dyld.h> // Include the header for _NSGetExecutablePath
-#endif
 
 //
 // Local Variables
@@ -48,7 +45,7 @@ static std::filesystem::path get_exe_directory(void)
 
     if (!directory.empty())
     {
-        return directory.make_preferred();
+        return directory;
     }
 
 #ifdef _WIN32
@@ -58,16 +55,7 @@ static std::filesystem::path get_exe_directory(void)
         std::terminate();
     }
     directory = std::filesystem::path(buffer).parent_path();
-#elif defined(__APPLE__)
-    char buffer[1024];
-    uint32_t size = sizeof(buffer);
-    if (_NSGetExecutablePath(buffer, &size) != 0)
-    {
-        std::cerr << "get_exe_directory: _NSGetExecutablePath failed!" << std::endl;
-        std::terminate();
-    }
-    directory = std::filesystem::path(buffer).parent_path();
-#else // Linux
+#else // _WIN32
     try
     {
         directory =  std::filesystem::canonical("/proc/self/exe").parent_path();
@@ -77,8 +65,8 @@ static std::filesystem::path get_exe_directory(void)
         std::cerr << "get_exe_directory: std::filesystem::canonical(\"/proc/self/exe\") threw an exception!" << std::endl;
         std::terminate();
     }
-#endif
-return directory.make_preferred();
+#endif // _WIN32
+    return directory;
 }
 #endif // PORTABLE_INSTALL
 
@@ -133,7 +121,35 @@ static std::filesystem::path get_var_directory(std::string var, std::string appe
         directory += append;
     }
 
-    return directory.make_preferred();
+    return directory;
+}
+
+static std::filesystem::path get_command_output(std::string command)
+{
+    std::string output;
+    char buf[2048];
+    FILE* pipe = nullptr;
+
+    pipe = popen(command.c_str(), "r");
+    if (pipe == nullptr)
+    {
+        return std::string();
+    }
+
+    while (fgets(buf, sizeof(buf), pipe) != nullptr)
+    {
+        output += buf;
+    }
+
+    pclose(pipe);
+
+    // strip newline
+    if (output.back() == '\n')
+    {
+        output.pop_back();
+    }
+
+    return output;
 }
 #endif // _WIN32
 
@@ -147,11 +163,9 @@ bool CoreCreateDirectories(void)
 
     std::filesystem::path directories[] = 
     {
-#ifdef PORTABLE_INSTALL
         CoreGetCoreDirectory(),
         CoreGetPluginDirectory(),
         CoreGetSharedDataDirectory(),
-#endif // PORTABLE_INSTALL
         CoreGetUserConfigDirectory(),
         CoreGetUserDataDirectory(),
         CoreGetUserCacheDirectory(),
@@ -212,209 +226,64 @@ bool CoreGetPortableDirectoryMode(void)
 std::filesystem::path CoreGetLibraryDirectory(void)
 {
     std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = ".";
-    }
-    else
-    {
-        directory = get_exe_directory();
-    }
-#else // Linux install
-    if (!l_LibraryPathOverride.empty())
-    {
-        directory = l_LibraryPathOverride;
-    }
-    else
-    {
-        directory = CORE_INSTALL_LIBDIR;
-        directory += "/RMG";
-    }
-#endif // PORTABLE_INSTALL
-    return directory.make_preferred();
+    directory = ".";
+    return directory;
 }
 
 std::filesystem::path CoreGetCoreDirectory(void)
 {
     std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Core";
-    }
-    else
-    {
-        directory = get_exe_directory();
-        directory += "/Core";
-    }
-#else // Linux install
-    if (!l_CorePathOverride.empty())
-    {
-        directory = l_CorePathOverride;
-    }
-    else
-    {
-        directory = CoreGetLibraryDirectory();
-        directory += "/Core";
-    }
-#endif // CORE_INSTALL_PREFIX
-    return directory.make_preferred();
+    directory = "Core";
+    return directory;
 }
 
 std::filesystem::path CoreGetPluginDirectory(void)
 {
     std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Plugin";
-    }
-    else
-    {
-        directory = get_exe_directory();
-        directory += "/Plugin";
-    }
-#else // Linux install
-    if (!l_PluginPathOverride.empty())
-    {
-        directory = l_PluginPathOverride;
-    }
-    else
-    {
-        directory = CoreGetLibraryDirectory();
-        directory += "/Plugin";
-    }
-#endif // CORE_INSTALL_PREFIX
-    return directory.make_preferred();
+    directory = "Plugin";
+    return directory;
 }
 
 std::filesystem::path CoreGetUserConfigDirectory(void)
 {
     std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Config";
-    }
-    else
-#endif // PORTABLE_INSTALL
-    {
-#ifdef _WIN32
-        directory = get_appdata_directory("Config");
-
-#else
-        directory = get_var_directory("XDG_CONFIG_HOME", "/RMG", "HOME", "/.config/RMG");
-#endif // _WIN32
-    }
-    return directory.make_preferred();
+    directory = "Config";
+    return directory;
 }
 
 std::filesystem::path CoreGetDefaultUserDataDirectory(void)
 {
     std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Data";
-    }
-    else
-#endif // PORTABLE_INSTALL
-    {
-#ifdef _WIN32
-        directory = get_appdata_directory("Data");
-#else
-        directory = get_var_directory("XDG_DATA_HOME", "/RMG", "HOME", "/.local/share/RMG");
-#endif // _WIN32
-    }
-    return directory.make_preferred();
+    directory = "Data";
+    return directory;
 }
 
 std::filesystem::path CoreGetDefaultUserCacheDirectory(void)
 {
     std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Cache";
-    }
-    else
-#endif // PORTABLE_INSTALL
-    {
-#ifdef _WIN32
-        directory = get_appdata_directory("Cache");
-
-#else
-        directory = get_var_directory("XDG_CACHE_HOME", "/RMG", "HOME", "/.cache/RMG");
-#endif // _WIN32
-    }
-    return directory.make_preferred();
+    directory = "Cache";
+    return directory;
 }
 
 std::filesystem::path CoreGetDefaultSaveDirectory(void)
 {
     std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Save/Game";
-    }
-    else
-#endif // PORTABLE_INSTALL
-    {
-#ifdef _WIN32
-        directory = get_appdata_directory("Save/Game");
-
-#else
-        directory = CoreGetDefaultUserDataDirectory();
-        directory += "/Save/Game";
-#endif // _WIN32
-    }
-    return directory.make_preferred();
+    directory = "Save/Game";
+    return directory;
 }
 
 std::filesystem::path CoreGetDefaultSaveStateDirectory(void)
 {
     std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Save/State";
-    }
-    else
-#endif // PORTABLE_INSTALL
-    {
-#ifdef _WIN32
-        directory = get_appdata_directory("Save/State");
-
-#else
-        directory = CoreGetDefaultUserDataDirectory();
-        directory += "/Save/State";
-#endif // _WIN32
-    }
-    return directory.make_preferred();
+    directory = "Save/State";
+    return directory;
 }
 
 std::filesystem::path CoreGetDefaultScreenshotDirectory(void)
 {
     std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Screenshots";
-    }
-    else
-#endif // PORTABLE_INSTALL
-    {
-#ifdef _WIN32
-        directory = get_appdata_directory("Screenshots");
-
-#else
-        directory = CoreGetDefaultUserDataDirectory();
-        directory += "/Screenshots";
-#endif // _WIN32
-    }
-    return directory.make_preferred();
+    directory = "Screenshots";
+    return directory;
 }
 
 std::filesystem::path CoreGetUserDataDirectory(void)
@@ -430,28 +299,8 @@ std::filesystem::path CoreGetUserCacheDirectory(void)
 std::filesystem::path CoreGetSharedDataDirectory(void)
 {
     std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Data";
-    }
-    else
-    {
-        directory = get_exe_directory();
-        directory += "/Data";
-    }
-#else // Linux install
-    if (!l_SharedDataPathOverride.empty())
-    {
-        directory = l_SharedDataPathOverride;
-    }
-    else
-    {
-        directory = CORE_INSTALL_DATADIR;
-        directory += "/RMG";
-    }
-#endif // PORTABLE_INSTALL
-    return directory.make_preferred();
+    directory = "Data";
+    return directory;
 }
 
 std::filesystem::path CoreGetSaveDirectory(void)
@@ -468,25 +317,3 @@ std::filesystem::path CoreGetScreenshotDirectory(void)
 {
     return CoreSettingsGetStringValue(SettingsID::Core_ScreenshotPath);
 }
-
-#ifndef PORTABLE_INSTALL
-void CoreSetLibraryPathOverride(std::filesystem::path path)
-{
-    l_LibraryPathOverride = path;
-}
-
-void CoreSetCorePathOverride(std::filesystem::path path)
-{
-    l_CorePathOverride = path;
-}
-
-void CoreSetPluginPathOverride(std::filesystem::path path)
-{
-    l_PluginPathOverride = path;
-}
-
-void CoreSetSharedDataPathOverride(std::filesystem::path path)
-{
-    l_SharedDataPathOverride = path;
-}
-#endif // PORTABLE_INSTALL
