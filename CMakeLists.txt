@@ -144,7 +144,7 @@ add_subdirectory(Source/RMG)
 add_subdirectory(Source/RMG-Audio)
 add_subdirectory(Source/RMG-Input)
 
-if (USE_NETPLAY_SERVER)
+if (USE_NETPLAY_SERVER AND WIN32)
     add_custom_target(build_netplay_server ALL
         COMMAND go build -o ${CMAKE_BINARY_DIR}/RMG-Server.exe ${CMAKE_SOURCE_DIR}/Source/Server
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/Source/Server
