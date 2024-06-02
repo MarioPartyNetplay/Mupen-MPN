@@ -47,6 +47,8 @@ Join::Join(QWidget *parent, RomBrowserWidget *romBrowser)
     if (!netplayName.empty()) {
         playerNameEdit->setText(QString::fromStdString(netplayName));
     }
+    CoreSettingsSetValue(SettingsID::Core_Netplay_Name, playerNameEdit->text().toStdString());
+
     pNameLabel = new QLabel("Nickname:", this);
     layout->addWidget(pNameLabel, 0, 0);
     layout->addWidget(playerNameEdit, 0, 1);
