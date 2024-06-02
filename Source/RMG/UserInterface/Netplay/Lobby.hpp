@@ -26,6 +26,7 @@ private slots:
     void startGame();
     void updatePing(quint64 elapsedTime, const QByteArray &payload);
     void sendPing();
+    void changeBuffer(int value);
 private:
     QWebSocket *webSocket = nullptr;
     QLabel *pName[4];
