@@ -88,12 +88,12 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     // Add the buffer spin box
     QLabel *bufferLabel = new QLabel("Buffer:", this);
     QSpinBox *bufferSpinBox = new QSpinBox(this);
-    bufferSpinBox->setRange(0, 100); // Set appropriate range for buffer
+    bufferSpinBox->setRange(1, 100);
     connect(bufferSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &Lobby::changeBuffer);
     // Enable buffer spin box only for the host
     if (player_name == pName[0]->text()) {
-        layout->addWidget(bufferLabel, 13, 0);
-        layout->addWidget(bufferSpinBox, 13, 1);
+        layout->addWidget(bufferLabel, 13, 2);
+        layout->addWidget(bufferSpinBox, 13, 3);
     }
 
 
