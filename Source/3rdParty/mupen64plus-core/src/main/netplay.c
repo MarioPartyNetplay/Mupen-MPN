@@ -352,15 +352,24 @@ static uint32_t netplay_get_input(uint8_t control_id)
     //l_buffer_target is set by the server upon registration
     //l_player_lag is how far behind we are from the lead player
     //buffer_size is the local buffer size
-    if (l_player_lag[control_id] > 0 && buffer_size(control_id) > l_buffer_target)
+    uint8_t current_buffer_size = buffer_size(control_id);
+    if (l_player_lag[control_id] > 0)
     {
-        l_canFF = 1;
-        main_core_state_set(M64CORE_SPEED_LIMITER, 0);
+        if (current_buffer_size < l_buffer_target)
+        {
+            l_canFF = 1;
+            main_core_state_set(M64CORE_SPEED_LIMITER, 0);
+        }
+        else
+        {
+            l_canFF = 0;
+            main_core_state_set(M64CORE_SPEED_LIMITER, 1);
+        }
     }
     else
     {
-        main_core_state_set(M64CORE_SPEED_LIMITER, 1);
         l_canFF = 0;
+        main_core_state_set(M64CORE_SPEED_LIMITER, 1);
     }
 
     if (netplay_ensure_valid(control_id))
