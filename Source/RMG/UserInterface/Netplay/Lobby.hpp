@@ -27,6 +27,7 @@ private slots:
     void updatePing(quint64 elapsedTime, const QByteArray &payload);
     void sendPing();
     void changeBuffer(int value);
+    void setupBufferSpinBox();
 private:
     QWebSocket *webSocket = nullptr;
     QLabel *pName[4];
@@ -43,6 +44,9 @@ private:
     QTimer *timer;
     int started;
     UserInterface::MainWindow* w;
+    bool isNetplayRunning();
+protected:
+    void closeEvent(QCloseEvent *event) override;
 };
 
 #endif // WAITROOM_H

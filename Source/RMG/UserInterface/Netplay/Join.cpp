@@ -100,7 +100,7 @@ Join::Join(QWidget *parent, RomBrowserWidget *romBrowser)
     connect(&broadcastSocket, &QUdpSocket::readyRead, this, &Join::processBroadcast);
     QByteArray multirequest;
     multirequest.append(1);
-    broadcastSocket.writeDatagram(multirequest, QHostAddress::Broadcast, 27886);
+    broadcastSocket.writeDatagram(multirequest, QHostAddress::Broadcast, 45000);
 
     launched = 0;
 }
@@ -314,7 +314,7 @@ void Join::serverChanged(int index)
     QUrl serverUrl = QUrl(serverUrlStr);
     if (!customServerAddress.isEmpty() && serverUrl.port() < 0)
         // Be forgiving of custom server addresses that forget the port
-        serverUrl.setPort(27886);
+        serverUrl.setPort(45000);
 
     webSocket->open(serverUrl);
 }

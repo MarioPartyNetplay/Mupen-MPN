@@ -537,7 +537,7 @@ void main_set_fastforward(int enable)
 
 }
 
-static void main_set_speedlimiter(int enable)
+void main_set_speedlimiter(int enable)
 {
     if (netplay_is_init() && !netplay_lag())
         return;
@@ -976,15 +976,15 @@ static void apply_speed_limiter(void)
 
     // calculate frame duration based upon ROM setting (50/60hz) and mupen64plus speed adjustment
     const double VILimitMilliseconds = 1000.0 / g_dev.vi.expected_refresh_rate;
-    const double SpeedFactorMultiple = defaultSpeedFactor/l_SpeedFactor;
+    const double SpeedFactorMultiple = defaultSpeedFactor / l_SpeedFactor;
     const double AdjustedLimit = VILimitMilliseconds * SpeedFactorMultiple;
 
-    //if this is the first time or we are resuming from pause
-    if(StartFPSTime == 0 || !resetOnce || lastSpeedFactor != l_SpeedFactor)
+    // if this is the first time or we are resuming from pause
+    if (StartFPSTime == 0 || !resetOnce || lastSpeedFactor != l_SpeedFactor)
     {
-       StartFPSTime = CurrentFPSTime;
-       totalVIs = 0;
-       resetOnce = 1;
+        StartFPSTime = CurrentFPSTime;
+        totalVIs = 0;
+        resetOnce = 1;
     }
     else
     {
@@ -998,36 +998,37 @@ static void apply_speed_limiter(void)
 #endif
 
 #ifdef DBG
-    if(g_DebuggerActive) DebuggerCallback(DEBUG_UI_VI, 0);
+    if (g_DebuggerActive) DebuggerCallback(DEBUG_UI_VI, 0);
 #endif
 
-    double totalElapsedGameTime = AdjustedLimit*totalVIs;
+    double totalElapsedGameTime = AdjustedLimit * totalVIs;
     double elapsedRealTime = CurrentFPSTime - StartFPSTime;
     double sleepTime = totalElapsedGameTime - elapsedRealTime;
 
-    //Reset if the sleep needed is an unreasonable value
+    // Reset if the sleep needed is an unreasonable value
     static const double minSleepNeeded = -50;
     static const double maxSleepNeeded = 50;
-    if(sleepTime < minSleepNeeded || sleepTime > (maxSleepNeeded*SpeedFactorMultiple))
+    if (sleepTime < minSleepNeeded || sleepTime > (maxSleepNeeded * SpeedFactorMultiple))
     {
-       resetOnce = 0;
+        resetOnce = 0;
     }
 
-    if (sleepTime < minSleepNeeded) {
-        totalVIs += (unsigned long)(minSleepNeeded/AdjustedLimit);
+    if (sleepTime < minSleepNeeded)
+    {
+        totalVIs += (unsigned long)(minSleepNeeded / AdjustedLimit);
     }
 
-    if(l_MainSpeedLimit && sleepTime > 0 && sleepTime < maxSleepNeeded*SpeedFactorMultiple)
+    if (l_MainSpeedLimit && sleepTime > 0 && sleepTime < maxSleepNeeded * SpeedFactorMultiple)
     {
-        while(sleepTime >= 0) {
-            SDL_Delay((unsigned int) sleepTime);
+        while (sleepTime >= 0)
+        {
+            SDL_Delay((unsigned int)sleepTime);
 
             CurrentFPSTime = SDL_GetTicks();
             elapsedRealTime = CurrentFPSTime - StartFPSTime;
             sleepTime = totalElapsedGameTime - elapsedRealTime;
         }
     }
-
 
 #if defined(PROFILE)
     timed_section_end(TIMED_SECTION_IDLE);
@@ -1991,6 +1992,8 @@ m64p_error main_run(void)
     poweron_device(&g_dev);
     pif_bootrom_hle_execute(&g_dev.r4300);
     run_device(&g_dev);
+
+    main_set_speedlimiter(1);
 
     /* now begin to shut down */
 #ifdef WITH_LIRC

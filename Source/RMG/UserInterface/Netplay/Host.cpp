@@ -89,7 +89,7 @@ Host::Host(QWidget *parent)
     connect(&broadcastSocket, &QUdpSocket::readyRead, this, &Host::processBroadcast);
     QByteArray multirequest;
     multirequest.append(1);
-    broadcastSocket.writeDatagram(multirequest, QHostAddress::Broadcast, 27886);
+    broadcastSocket.writeDatagram(multirequest, QHostAddress::Broadcast, 45000);
 
     launched = 0;
 }

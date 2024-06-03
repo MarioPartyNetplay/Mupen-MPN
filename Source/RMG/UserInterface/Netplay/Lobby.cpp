@@ -4,11 +4,15 @@
 #include <QJsonArray>
 #include <RMG-Core/m64p/Api.hpp>
 #include <RMG-Core/Settings/Settings.hpp>
+#include <RMG-Core/Core.hpp>
 #include <QSpinBox>
 
 Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *parent)
     : QDialog(parent)
 {
+
+    setWindowFlags(windowFlags() | Qt::WindowMinimizeButtonHint);
+
     QJsonObject featuresObject = room.value("features").toObject();
     QString cheatsString = featuresObject.value("cheats").toString();
     QJsonDocument cheatsDoc = QJsonDocument::fromJson(cheatsString.toUtf8());
@@ -85,22 +89,6 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     promoLabel->setOpenExternalLinks(true);
     layout->addWidget(promoLabel, 12, 0, 1, 2);
 
-    // Add the buffer spin box
-    QLabel *bufferLabel = new QLabel("Buffer:", this);
-    QSpinBox *bufferSpinBox = new QSpinBox(this);
-    bufferSpinBox->setRange(1, 100);
-    connect(bufferSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &Lobby::changeBuffer);
-    // Enable buffer spin box only for the host
-    if (player_name == pName[0]->text()) {
-        layout->addWidget(bufferLabel, 13, 2);
-        layout->addWidget(bufferSpinBox, 13, 3);
-    }
-
-
-
-
-
-
     connect(this, &QDialog::finished, this, &Lobby::onFinished);
 
     QJsonObject json;
@@ -165,30 +153,22 @@ void Lobby::onFinished(int)
     webSocket->deleteLater();
 }
 
-void Lobby::processTextMessage(QString message, QJsonObject cheats)
+void Lobby::setupBufferSpinBox()
 {
-    QJsonDocument json_doc = QJsonDocument::fromJson(message.toUtf8());
-    QJsonObject json = json_doc.object();
-    if (json.value("type").toString() == "reply_players")
-    {
-        if (json.contains("player_names"))
-        {
-            for (int i = 0; i < 4; ++i)
-            {
-                pName[i]->setText(json.value("player_names").toArray().at(i).toString());
-                if (pName[i]->text() == player_name)
-                    player_number = i + 1;
-            }
-        }
+    QLabel *bufferLabel = new QLabel("Buffer:", this);
+    QSpinBox *bufferSpinBox = new QSpinBox(this);
+    bufferSpinBox->setRange(1, 100);
+
+    if (player_name == pName[0]->text()) {
+        connect(bufferSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &Lobby::changeBuffer);
+    } else {
+        bufferSpinBox->setEnabled(false);
     }
-    else if (json.value("type").toString() == "reply_chat_message")
-    {
-        chatWindow->appendPlainText(json.value("message").toString());
-    }
-    else if (json.value("type").toString() == "reply_begin_game")
-    {
-        started = 1;
-        w->OpenROMNetplay(file_name, webSocket->peerAddress().toString(), room_port, player_number, cheats);
+
+    QGridLayout *gridLayout = qobject_cast<QGridLayout*>(layout());
+    if (gridLayout) {
+        gridLayout->addWidget(bufferLabel, 13, 0);
+        gridLayout->addWidget(bufferSpinBox, 13, 1);
     }
 }
 
@@ -203,5 +183,74 @@ void Lobby::changeBuffer(int value)
     json.insert("features", features);
 
     QJsonDocument json_doc = QJsonDocument(json);
-    webSocket->sendTextMessage(json_doc.toJson());
+    QString jsonString = json_doc.toJson();
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Sending buffer change request: " + jsonString).toStdString().c_str());
+    webSocket->sendTextMessage(jsonString);
+}
+
+void Lobby::processTextMessage(QString message, QJsonObject cheats)
+{
+    QJsonDocument json_doc = QJsonDocument::fromJson(message.toUtf8());
+    QJsonObject json = json_doc.object();
+
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Received message: " + message).toStdString().c_str());
+
+    if (json.value("type").toString() == "reply_players") {
+        if (json.contains("player_names")) {
+            for (int i = 0; i < 4; ++i) {
+                pName[i]->setText(json.value("player_names").toArray().at(i).toString());
+                if (pName[i]->text() == player_name)
+                    player_number = i + 1;
+            }
+            setupBufferSpinBox();
+        }
+    } else if (json.value("type").toString() == "reply_chat_message") {
+        chatWindow->appendPlainText(json.value("message").toString());
+    } else if (json.value("type").toString() == "reply_begin_game") {
+        started = 1;
+        w->OpenROMNetplay(file_name, webSocket->peerAddress().toString(), room_port, player_number, cheats);
+    } else if (json.value("type").toString() == "reply_change_buffer") {
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, "Processing reply_change_buffer message");
+
+        // Ensure the buffer value is correctly parsed as an integer
+        QString bufferString = json.value("features").toObject().value("buffer").toString();
+        bool ok;
+        int newBufferValue = bufferString.toInt(&ok);
+        if (!ok) {
+            CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to convert buffer value to integer");
+            return;
+        }
+
+        QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
+        if (bufferSpinBox) {
+            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Updating buffer spin box to: " + std::to_string(newBufferValue)).c_str());
+            bufferSpinBox->blockSignals(true); // Block signals to prevent feedback loop
+            bufferSpinBox->setValue(newBufferValue);
+            bufferSpinBox->blockSignals(false); // Unblock signals
+            if (player_name != pName[0]->text()) {
+                bufferSpinBox->setEnabled(false); // Relock for non-Player 1
+            }
+        }
+        // Log buffer change to chat window
+        chatWindow->appendPlainText(tr("Buffer changed to %1").arg(newBufferValue));
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Buffer changed to " + std::to_string(newBufferValue)).c_str());
+    }
+}
+
+bool Lobby::isNetplayRunning()
+{
+    return CoreIsEmulationRunning();
+}
+
+void Lobby::closeEvent(QCloseEvent *event)
+{
+    if (isNetplayRunning())
+    {
+        QMessageBox::warning(this, tr("Warning"), tr("Cannot close the lobby while netplay is running."));
+        event->ignore();
+    }
+    else
+    {
+        event->accept();
+    }
 }

@@ -2433,7 +2433,7 @@ void MainWindow::on_Core_DebugCallback(QList<CoreCallbackMessage> messages)
         // emulation run, we'll stop displaying it
         if (this->ui_DebugCallbackErrors.count(statusbarMessage.Message) < 50)
         {
-            this->showErrorMessage("Core Error", statusbarMessage.Message, false);
+            this->showErrorMessage(statusbarMessage.Message, QString(), false);
         }
         this->ui_DebugCallbackErrors.append(statusbarMessage.Message);
         return;
