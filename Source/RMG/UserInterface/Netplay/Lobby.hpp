@@ -40,6 +40,7 @@ private:
     int room_port;
     QString room_name;
     QPushButton *startGameButton;
+    QSpinBox *bufferSpinBox;
     QLabel *pingValue;
     QTimer *timer;
     int started;
