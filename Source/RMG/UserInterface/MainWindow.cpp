@@ -773,7 +773,7 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     this->action_View_ClearRomCache->setEnabled(!inEmulation);
     this->action_System_Screenshot2->setEnabled(inEmulation);
     this->action_View_Fullscreen2->setEnabled(inEmulation);
-
+    this->action_Settings_Input->setEnabled(!inEmulation);
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_IncreaseVolume));
     this->action_Audio_IncreaseVolume->setShortcut(QKeySequence(keyBinding));
     this->action_Audio_IncreaseVolume->setEnabled(inEmulation);

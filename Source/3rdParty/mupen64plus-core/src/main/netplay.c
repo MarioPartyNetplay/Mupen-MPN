@@ -50,6 +50,7 @@ static struct controller_input_compat *l_cin_compats;
 static uint8_t l_plugin[4];
 static uint8_t l_buffer_target;
 static uint8_t l_player_lag[4];
+static void netplay_request_buffer_target();
 
 //UDP packet formats
 #define UDP_SEND_KEY_INFO 0
@@ -66,6 +67,7 @@ static uint8_t l_player_lag[4];
 #define TCP_REGISTER_PLAYER 5
 #define TCP_GET_REGISTRATION 6
 #define TCP_DISCONNECT_NOTICE 7
+#define TCP_GET_BUFFER_TARGET 8
 
 struct __UDPSocket {
     int ready;
@@ -179,7 +181,7 @@ int netplay_is_init()
 
 static uint8_t buffer_size(uint8_t control_id)
 {
-    //This function returns the size of the local input buffer
+    // This function returns the size of the local input buffer
     uint8_t counter = 0;
     struct netplay_event* current = l_cin_compats[control_id].event_first;
     while (current != NULL)
@@ -187,6 +189,7 @@ static uint8_t buffer_size(uint8_t control_id)
         current = current->next;
         ++counter;
     }
+
     return counter;
 }
 
@@ -343,12 +346,48 @@ static void netplay_delete_event(struct netplay_event* current, uint8_t control_
     free(current);
 }
 
+static void netplay_request_buffer_target()
+{
+    char output_data = TCP_GET_BUFFER_TARGET;
+    SDLNet_TCP_Send(l_tcpSocket, &output_data, 1);
+
+    uint8_t response;
+    size_t recv = 0;
+    while (recv < 1)
+        recv += SDLNet_TCP_Recv(l_tcpSocket, &response, 1);
+    l_buffer_target = response;
+}
+
 static uint32_t netplay_get_input(uint8_t control_id)
 {
     uint32_t keys;
     netplay_process();
     netplay_request_input(control_id);
+    netplay_request_buffer_target();
 
+    //l_buffer_target is set by the server upon registration
+    //l_player_lag is how far behind we are from the lead player
+    //buffer_size is the local buffer size
+    uint8_t current_buffer_size = buffer_size(control_id);
+    if (l_player_lag[control_id] > 0)
+    {
+        if (current_buffer_size < l_buffer_target)
+        {
+            l_canFF = 1;
+            main_core_state_set(M64CORE_SPEED_LIMITER, 0);
+        }
+        else
+        {
+            l_canFF = 0;
+            main_core_state_set(M64CORE_SPEED_LIMITER, 1);
+        }
+    }
+    else
+    {
+        l_canFF = 0;
+        main_core_state_set(M64CORE_SPEED_LIMITER, 1);
+    }
+    
     if (netplay_ensure_valid(control_id))
     {
         //We grab the event from the linked list, the delete it once it has been used
