@@ -243,7 +243,7 @@ static int netplay_require_response(void* opaque)
 
 static void netplay_process()
 {
-    //In this function we process data we have received from the server
+    // In this function we process data we have received from the server
     UDPpacket *packet = SDLNet_AllocPacket(512);
     uint32_t curr, count, keys;
     uint8_t plugin, player, current_status;
@@ -254,8 +254,8 @@ static void netplay_process()
             case UDP_RECEIVE_KEY_INFO:
             case UDP_RECEIVE_KEY_INFO_GRATUITOUS:
                 player = packet->data[1];
-                //current_status is a status update from the server
-                //it will let us know if another player has disconnected, or the games have desynced
+                // current_status is a status update from the server
+                // it will let us know if another player has disconnected, or the games have desynced
                 current_status = packet->data[2];
                 if (packet->data[0] == UDP_RECEIVE_KEY_INFO)
                     l_player_lag[player] = packet->data[3];
@@ -271,14 +271,14 @@ static void netplay_process()
                     l_status = current_status;
                 }
                 curr = 5;
-                //this loop processes input data from the server, inserting new events into the linked list for each player
-                //it skips events that we have already recorded, or if we receive data for an event that has already happened
+                // this loop processes input data from the server, inserting new events into the linked list for each player
+                // it skips events that we have already recorded, or if we receive data for an event that has already happened
                 for (uint8_t i = 0; i < packet->data[4]; ++i)
                 {
                     count = SDLNet_Read32(&packet->data[curr]);
                     curr += 4;
 
-                    if (((count - l_cin_compats[player].netplay_count) > (UINT32_MAX / 2)) || (check_valid(player, count))) //event doesn't need to be recorded
+                    if (((count - l_cin_compats[player].netplay_count) > (UINT32_MAX / 2)) || (check_valid(player, count))) // event doesn't need to be recorded
                     {
                         curr += 5;
                         continue;
@@ -289,13 +289,34 @@ static void netplay_process()
                     plugin = packet->data[curr];
                     curr += 1;
 
-                    //insert new event at beginning of linked list
+                    // insert new event at beginning of linked list
                     struct netplay_event* new_event = (struct netplay_event*)malloc(sizeof(struct netplay_event));
                     new_event->count = count;
                     new_event->buttons = keys;
                     new_event->plugin = plugin;
                     new_event->next = l_cin_compats[player].event_first;
                     l_cin_compats[player].event_first = new_event;
+                }
+
+                // Adjust speed limiter based on player lag
+                uint32_t max_netplay_count = 0;
+                for (int i = 0; i < 4; ++i)
+                {
+                    if (l_cin_compats[i].netplay_count > max_netplay_count)
+                    {
+                        max_netplay_count = l_cin_compats[i].netplay_count;
+                    }
+                }
+
+                if (l_cin_compats[player].netplay_count < max_netplay_count)
+                {
+                    l_canFF = 0;
+                    main_core_state_set(M64CORE_SPEED_LIMITER, 0);
+                }
+                else
+                {
+                    l_canFF = 1;
+                    main_core_state_set(M64CORE_SPEED_LIMITER, 1);
                 }
                 break;
             default:
@@ -364,29 +385,6 @@ static uint32_t netplay_get_input(uint8_t control_id)
     netplay_process();
     netplay_request_input(control_id);
     netplay_request_buffer_target();
-
-    //l_buffer_target is set by the server upon registration
-    //l_player_lag is how far behind we are from the lead player
-    //buffer_size is the local buffer size
-    uint8_t current_buffer_size = buffer_size(control_id);
-    if (l_player_lag[control_id] > 0)
-    {
-        if (current_buffer_size < l_buffer_target)
-        {
-            l_canFF = 1;
-            main_core_state_set(M64CORE_SPEED_LIMITER, 0);
-        }
-        else
-        {
-            l_canFF = 0;
-            main_core_state_set(M64CORE_SPEED_LIMITER, 1);
-        }
-    }
-    else
-    {
-        l_canFF = 0;
-        main_core_state_set(M64CORE_SPEED_LIMITER, 1);
-    }
     
     if (netplay_ensure_valid(control_id))
     {
