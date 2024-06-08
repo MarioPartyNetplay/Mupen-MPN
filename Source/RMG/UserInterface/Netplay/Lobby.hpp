@@ -28,9 +28,11 @@ private slots:
     void sendPing();
     void changeBuffer(int value);
     void setupBufferSpinBox();
+    void copyPublicIp();
 private:
     QWebSocket *webSocket = nullptr;
     QLabel *pName[4];
+    QPushButton *copyIpButton;
     QPlainTextEdit *chatWindow;
     QLineEdit *chatEdit;
     QString player_name;

@@ -19,12 +19,15 @@ class Host : public QDialog
     Q_OBJECT
 public:
     Host(QWidget *parent = nullptr);
+    QProcess *serverProcess = nullptr;
 
 signals:
     void roomClosed();
 
 private slots:
+    void hostLocalServer();
     void createRoom();
+    void refreshServerList();
     void downloadFinished(QNetworkReply *reply);
     void processTextMessage(QString message);
     void onFinished(int result);
@@ -50,8 +53,9 @@ private:
     QUdpSocket broadcastSocket;
     QString customServerHost;
     QTimer *connectionTimer;
-    UserInterface::Widget::RomBrowser *romBrowser; // Declare romBrowser
+    UserInterface::Widget::RomBrowser *romBrowser;
     QString generateRandomHexChar();
+    int selectedPort = 45000;
 };
 
 #endif // CREATEROOM_H

@@ -44,12 +44,18 @@
 
 using namespace UserInterface;
 
-MainWindow::MainWindow() : QMainWindow(nullptr)
+MainWindow::MainWindow() : QMainWindow(nullptr), host(new Host(this))
 {
 }
 
 MainWindow::~MainWindow()
 {
+    if (host && host->serverProcess)
+    {
+        host->serverProcess->terminate();
+        host->serverProcess->waitForFinished();
+    }
+    delete host;
 }
 
 bool MainWindow::Init(QApplication* app, bool showUI, bool launchROM)

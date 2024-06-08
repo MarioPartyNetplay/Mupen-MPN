@@ -38,6 +38,7 @@
 #endif // UPDATER
 
 #include "ui_MainWindow.h"
+#include "UserInterface/Netplay/Host.hpp"
 
 namespace UserInterface
 {
@@ -53,10 +54,10 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     void OpenROM(QString file, QString disk, bool fullscreen, bool quitAfterEmulation, int stateSlot);
     void OpenROMNetplay(QString file, QString netplay_ip, int netplay_port, int netplay_player, QJsonObject cheats);
   private:
+    Host *host;
     Thread::EmulationThread *emulationThread = nullptr;
 
     CoreCallbacks* coreCallBacks = nullptr;
-
     QStackedWidget *ui_Widgets                     = nullptr;
     Widget::OGLWidget *ui_Widget_OpenGL            = nullptr;
     Widget::VKWidget  *ui_Widget_Vulkan            = nullptr;

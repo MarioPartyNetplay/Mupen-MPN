@@ -6,6 +6,7 @@
 #include <RMG-Core/Settings/Settings.hpp>
 #include <RMG-Core/Core.hpp>
 #include <QSpinBox>
+#include <QClipboard>
 
 Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *parent)
     : QDialog(parent)
@@ -89,6 +90,12 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     promoLabel->setOpenExternalLinks(true);
     layout->addWidget(promoLabel, 12, 0, 1, 2);
 
+    // Add the "Copy Public IP" button for Player 1
+    copyIpButton = new QPushButton("Copy Public IP", this);
+    layout->addWidget(copyIpButton, 14, 0, 1, 2);
+    connect(copyIpButton, &QPushButton::clicked, this, &Lobby::copyPublicIp);
+    copyIpButton->setVisible(false);
+
     connect(this, &QDialog::finished, this, &Lobby::onFinished);
 
     QJsonObject json;
@@ -106,6 +113,22 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
 void Lobby::sendPing()
 {
     webSocket->ping();
+}
+
+void Lobby::copyPublicIp()
+{
+    QNetworkAccessManager *manager = new QNetworkAccessManager(this);
+    connect(manager, &QNetworkAccessManager::finished, this, [this](QNetworkReply *reply) {
+        if (reply->error() == QNetworkReply::NoError)
+        {
+            QString publicIp = reply->readAll();
+            QClipboard *clipboard = QGuiApplication::clipboard();
+            clipboard->setText(publicIp + ":" + QString::number(room_port));
+            QMessageBox::information(nullptr, "Public IP", "Public IP copied to clipboard: " + publicIp + ":" + QString::number(room_port));
+        }
+        reply->deleteLater();
+    });
+    manager->get(QNetworkRequest(QUrl("https://api.ipify.org")));
 }
 
 void Lobby::updatePing(quint64 elapsedTime, const QByteArray&)
@@ -203,6 +226,9 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
                     player_number = i + 1;
             }
             setupBufferSpinBox();
+            if (player_number == 1 && webSocket->peerAddress().toString() == "127.0.0.1") {
+                copyIpButton->setVisible(true);
+            }
         }
     } else if (json.value("type").toString() == "reply_chat_message") {
         chatWindow->appendPlainText(json.value("message").toString());

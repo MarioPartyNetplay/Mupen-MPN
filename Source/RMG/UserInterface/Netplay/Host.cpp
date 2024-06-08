@@ -13,6 +13,7 @@
 #include <QInputDialog>
 #include <QString>
 #include <QLineEdit>
+#include <QProcess>
 
 #include <RMG-Core/m64p/Api.hpp>
 #include <RMG-Core/Settings/Settings.hpp>
@@ -73,7 +74,13 @@ Host::Host(QWidget *parent)
     promoLabel->setTextFormat(Qt::RichText);
     promoLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
     promoLabel->setOpenExternalLinks(true);
-    layout->addWidget(promoLabel, 4, 0, 1, 6);
+    layout->addWidget(promoLabel, 4, 0, 1, 3);
+
+    // Add the "Host local server" button
+    QPushButton *hostServerButton = new QPushButton("Host Local Server", this);
+    layout->addWidget(hostServerButton, 4, 3, 1, 1);
+    connect(hostServerButton, &QPushButton::clicked, this, &Host::hostLocalServer);
+
 
     setLayout(layout);
 
@@ -92,6 +99,43 @@ Host::Host(QWidget *parent)
     broadcastSocket.writeDatagram(multirequest, QHostAddress::Broadcast, 45000);
 
     launched = 0;
+}
+
+void Host::hostLocalServer()
+{
+    bool ok;
+    int port = QInputDialog::getInt(this, "Host Local Server", "Enter port number:", 45000, 1024, 65535, 1, &ok);
+    if (ok)
+    {
+        selectedPort = port;
+
+        QString program = "RMG-Server.exe";
+        QStringList arguments;
+        arguments << "-baseport" << QString::number(port);
+
+        serverProcess = new QProcess(this);
+        serverProcess->start(program, arguments);
+
+        if (!serverProcess->waitForStarted())
+        {
+            QMessageBox::critical(this, "Error", "Failed to start RMG-Server.exe");
+            delete serverProcess;
+            serverProcess = nullptr;
+        }
+        else
+        {
+            refreshServerList();
+            QMessageBox::information(this, "Server Started", "Local server started on port " + QString::number(port));
+        }
+    }
+}
+
+void Host::refreshServerList()
+{
+    QString localhostEntry = QString("ws://127.0.0.1:%1").arg(selectedPort);;
+    QString localhostEntryName = "Localhost";
+    serverChooser->insertItem(0, localhostEntryName, localhostEntry);
+    serverChooser->setCurrentIndex(0);
 }
 
 void Host::processBroadcast()
