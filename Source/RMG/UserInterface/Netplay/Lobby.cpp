@@ -31,6 +31,7 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     room_port = room.value("port").toInt();
     room_name = room.value("room_name").toString();
     file_name = filename;
+    base_port = room.value("base_port").toInt();
     started = 0;
 
     webSocket = socket;
@@ -124,7 +125,7 @@ void Lobby::copyPublicIp()
             QString publicIp = reply->readAll();
             QClipboard *clipboard = QGuiApplication::clipboard();
             clipboard->setText(publicIp + ":" + QString::number(room_port));
-            QMessageBox::information(nullptr, "Public IP", "Public IP copied to clipboard: " + publicIp + ":" + QString::number(room_port));
+            QMessageBox::information(this, "Public IP", "Public IP copied to clipboard: " + publicIp + ":" + QString::number(base_port));
         }
         reply->deleteLater();
     });

@@ -40,6 +40,7 @@ private:
     int player_number;
     QString file_name;
     int room_port;
+    int base_port;
     QString room_name;
     QPushButton *startGameButton;
     QSpinBox *bufferSpinBox;
