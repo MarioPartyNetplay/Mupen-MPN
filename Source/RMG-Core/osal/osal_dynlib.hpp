@@ -18,6 +18,10 @@
 typedef HMODULE osal_dynlib_lib_handle;
 typedef FARPROC osal_dynlib_lib_sym;
 #define OSAL_DYNLIB_LIB_EXT_STR ".dll"
+#elif _APPLE_ // macOS
+typedef void*   osal_dynlib_lib_handle;
+typedef void*   osal_dynlib_lib_sym;
+#define OSAL_DYNLIB_LIB_EXT_STR ".dylib"
 #else // Unix
 typedef void*   osal_dynlib_lib_handle;
 typedef void*   osal_dynlib_lib_sym;
