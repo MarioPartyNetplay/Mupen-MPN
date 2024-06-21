@@ -2,7 +2,7 @@ app-id: com.github.Rosalie241.RMG-MPN
 runtime: org.kde.Platform
 runtime-version: 6.6
 sdk: org.kde.Sdk
-command: RMG-MPN
+command: RMG
 finish-args:
   - --socket=x11
   - --socket=pulseaudio
