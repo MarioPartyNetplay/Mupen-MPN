@@ -76,6 +76,14 @@ struct __UDPSocket {
 
 #define CS4 32
 
+static uint32_t last_buffer_increase_time = 0;
+
+static uint32_t calculate_buffer_increase_threshold(uint8_t current_buffer_size) {
+    // Calculate the threshold based on the current buffer size
+    // You can adjust this calculation based on your specific requirements
+    return current_buffer_size * 10; // Adjust the multiplier as needed
+}
+
 m64p_error netplay_start(const char* host, int port)
 {
     if (SDLNet_Init() < 0)
@@ -363,7 +371,15 @@ static uint32_t netplay_get_input(uint8_t control_id)
      // Recalculate the buffer size
     uint8_t current_buffer_size = buffer_size(control_id);
 
-    if (l_player_lag[control_id] > 0 && current_buffer_size > l_buffer_target)
+    if (current_buffer_size > l_buffer_target) {
+        last_buffer_increase_time = SDL_GetTicks(); // Update time when buffer increased
+    }
+
+    // Calculate the buffer increase threshold based on the current buffer size
+    uint32_t buffer_increase_threshold = calculate_buffer_increase_threshold(current_buffer_size);
+
+
+    if (SDL_GetTicks() - last_buffer_increase_time > buffer_increase_threshold && l_player_lag[control_id] > 0 && current_buffer_size > l_buffer_target)
     {
         if (!l_canFF)
         {
@@ -373,7 +389,7 @@ static uint32_t netplay_get_input(uint8_t control_id)
     }
     else
     {
-        if (l_canFF)
+        if (l_canFF || current_buffer_size != buffer_size(control_id))
         {
             main_core_state_set(M64CORE_SPEED_LIMITER, 1);
             l_canFF = 0;

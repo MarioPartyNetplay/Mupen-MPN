@@ -142,7 +142,6 @@ void Lobby::startGame()
     if (player_name == pName[0]->text())
     {
         startGameButton->setEnabled(false);
-
         QJsonObject json;
         json.insert("type", "request_begin_game");
         json.insert("port", room_port);
@@ -183,11 +182,8 @@ void Lobby::setupBufferSpinBox()
     QSpinBox *bufferSpinBox = new QSpinBox(this);
     bufferSpinBox->setRange(1, 100);
 
-    if (player_name == pName[0]->text()) {
-        connect(bufferSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &Lobby::changeBuffer);
-    } else {
-        bufferSpinBox->setEnabled(false);
-    }
+    connect(bufferSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &Lobby::changeBuffer);
+    bufferSpinBox->setEnabled(false);
 
     QGridLayout *gridLayout = qobject_cast<QGridLayout*>(layout());
     if (gridLayout) {
@@ -235,6 +231,10 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
         chatWindow->appendPlainText(json.value("message").toString());
     } else if (json.value("type").toString() == "reply_begin_game") {
         started = 1;
+        if (player_name == pName[0]->text()) {
+            QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
+            bufferSpinBox->setEnabled(true);
+        }
         w->OpenROMNetplay(file_name, webSocket->peerAddress().toString(), room_port, player_number, cheats);
     } else if (json.value("type").toString() == "reply_change_buffer") {
         CoreAddCallbackMessage(CoreDebugMessageType::Info, "Processing reply_change_buffer message");
@@ -273,8 +273,12 @@ void Lobby::closeEvent(QCloseEvent *event)
 {
     if (isNetplayRunning())
     {
-        QMessageBox::warning(this, tr("Warning"), tr("Cannot close the lobby while netplay is running."));
-        event->ignore();
+        int result = QMessageBox::question(this, tr("Close Room"), tr("Are you sure you want to close the room?"), QMessageBox::Yes | QMessageBox::No);
+        if (result == QMessageBox::Yes) {
+            event->accept();
+        } else {
+            event->ignore();
+        }
     }
     else
     {
