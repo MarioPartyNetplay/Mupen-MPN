@@ -140,10 +140,7 @@ void Join::resetList()
     QStringList headers;
     headers.append("Name");
     headers.append("Game");
-    //headers.append("Players");
-    //headers.append("Game MD5");
-    //headers.append("Password Protected");
-    //headers.append("Fixed Input Delay");
+
     listWidget->setHorizontalHeaderLabels(headers);
     listWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 }
@@ -342,13 +339,18 @@ void Join::processTextMessage(QString message)
 
     if (json.value("type").toString() == "reply_get_rooms")
     {
+
         if (json.value("accept").toInt() == 0)
         {
             json.remove("type");
             rooms << json;
 
+            //QJsonDocument doc(json);
+            //std::string jsonDataStr = json_doc.toJson(QJsonDocument::Compact).toStdString();
+            //CoreAddCallbackMessage(CoreDebugMessageType::Info, "JSON Response: " + jsonDataStr);
+
             listWidget->insertRow(row);
-            QTableWidgetItem *newItem = new QTableWidgetItem(json.value("room_name").toString());
+            QTableWidgetItem *newItem = new QTableWidgetItem(json.value("player_name").toString());
             newItem->setFlags(newItem->flags() & ~Qt::ItemIsEditable);
             listWidget->setItem(row, 0, newItem);
             newItem = new QTableWidgetItem(json.value("game_name").toString());

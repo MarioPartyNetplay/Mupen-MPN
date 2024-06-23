@@ -42,6 +42,9 @@ Host::Host(QWidget *parent)
     if (!netplayName.empty()) {
         playerNameEdit->setText(QString::fromStdString(netplayName));
     }
+    else {
+        playerNameEdit->setText("MPN Player");
+    }
     layout->addWidget(playerNameEdit, 0, 1);
 
     // Server Selection
@@ -308,7 +311,7 @@ void Host::createRoom() {
     QString playerNameID = playerNameEdit->text();
     CoreSettingsSetValue(SettingsID::Core_Netplay_Name, playerNameID.toStdString());
     json.insert("type", "request_create_room");
-    json.insert("room_name", playerNameEdit->text());
+    json.insert("room_name", generateRandomHexChar());
     json.insert("player_name", playerNameEdit->text());
     json.insert("password", "MPN");
     json.insert("MD5", QString(rom_settings.MD5));
