@@ -183,7 +183,6 @@ void Lobby::setupBufferSpinBox()
     bufferSpinBox->setRange(1, 100);
 
     connect(bufferSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &Lobby::changeBuffer);
-    bufferSpinBox->setEnabled(false);
 
     QGridLayout *gridLayout = qobject_cast<QGridLayout*>(layout());
     if (gridLayout) {

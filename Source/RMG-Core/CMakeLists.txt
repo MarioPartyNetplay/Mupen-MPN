@@ -111,6 +111,17 @@ if (APPLE)
     target_link_libraries(RMG-Core "-framework CoreServices")
 endif()
 
+# Call the version calculation script
+execute_process(
+    COMMAND python make_version.py
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# Define variables for version information
+set(VERSION_BRANCH "unknown")
+set(VERSION_HASH "unknown")
+set(VERSION_DATE "unknown")
+set(VERSION_TAG "unknown")
 
 if (DISCORD_RPC)
     target_link_libraries(RMG-Core

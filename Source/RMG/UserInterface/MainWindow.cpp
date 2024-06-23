@@ -35,6 +35,7 @@
 #include <RMG-Core/Cheats.hpp>
 #include <RMG-Core/m64p/Api.hpp>
 #include <RMG-Core/Settings/Settings.hpp>
+#include <RMG-Core/VersionHash.hpp>
 
 #ifdef UPDATER
 #include "UserInterface/Dialog/Update/UpdateDialog.hpp"
@@ -294,8 +295,8 @@ void MainWindow::configureUI(QApplication* app, bool showUI)
     this->ui_Widget_OpenGL->installEventFilter(this->ui_EventFilter);
     this->ui_Widget_Vulkan->installEventFilter(this->ui_EventFilter);
 
-    this->ui_WindowTitle = "Rosalie's Mupen GUI MPN";
-
+    this->ui_WindowTitle = "Rosalie's Mupen GUI MPN (" + QString::fromStdString(VERSION_HASH) + ")";
+    
     this->setWindowTitle(this->ui_WindowTitle);
 }
 
