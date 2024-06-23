@@ -227,6 +227,10 @@ void Join::joinGame()
             m64p::Core.DoCommand(M64CMD_ROM_GET_SETTINGS, sizeof(rom_settings), &rom_settings);
 
             joinButton->setEnabled(false);
+            
+            QString playerNameID = playerNameEdit->text();
+            CoreSettingsSetValue(SettingsID::Core_Netplay_Name, playerNameID.toStdString());
+
             QJsonObject json;
             json.insert("type", "request_join_room");
             json.insert("player_name", playerNameEdit->text());
@@ -234,6 +238,7 @@ void Join::joinGame()
             json.insert("client_sha", "demo");
             json.insert("MD5", QString(rom_settings.MD5));
             json.insert("port", room_port);
+
 
             QJsonDocument json_doc(json);
             webSocket->sendTextMessage(json_doc.toJson());
