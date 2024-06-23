@@ -43,7 +43,6 @@ Host::Host(QWidget *parent)
         playerNameEdit->setText(QString::fromStdString(netplayName));
     }
     layout->addWidget(playerNameEdit, 0, 1);
-    CoreSettingsSetValue(SettingsID::Core_Netplay_Name, playerNameEdit->text().toStdString());
 
     // Server Selection
     QLabel *serverLabel = new QLabel("Server", this);
@@ -306,6 +305,8 @@ QString Host::generateRandomHexChar() {
 void Host::createRoom() {
     connectionTimer->stop();
     QJsonObject json;
+    QString playerNameID = playerNameEdit->text();
+    CoreSettingsSetValue(SettingsID::Core_Netplay_Name, playerNameID.toStdString());
     json.insert("type", "request_create_room");
     json.insert("room_name", playerNameEdit->text());
     json.insert("player_name", playerNameEdit->text());

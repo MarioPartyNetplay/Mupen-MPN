@@ -52,7 +52,7 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
 
     QLabel *p1Label = new QLabel("Player 1:", this);
     layout->addWidget(p1Label, 3, 0);
-
+    
     QLabel *p2Label = new QLabel("Player 2:", this);
     layout->addWidget(p2Label, 4, 0);
 

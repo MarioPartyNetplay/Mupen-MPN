@@ -60,7 +60,7 @@ QString RomBrowser::getRomGoodName(const QString &romPath)
     {
         return QString::fromStdString(romSettings.goodname);
     }
-    return QString();
+    return romPath;
 }
 
 QString RomBrowser::cleanRomName(const QString &name)
