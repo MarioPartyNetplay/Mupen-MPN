@@ -379,7 +379,7 @@ static uint32_t netplay_get_input(uint8_t control_id)
     uint32_t buffer_increase_threshold = calculate_buffer_increase_threshold(current_buffer_size);
 
 
-    if (SDL_GetTicks() - last_buffer_increase_time > buffer_increase_threshold && l_player_lag[control_id] > 0 && current_buffer_size > l_buffer_target)
+    if (l_player_lag[control_id] > 0 && current_buffer_size > l_buffer_target)
     {
         if (!l_canFF)
         {
