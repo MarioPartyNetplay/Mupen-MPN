@@ -35,7 +35,8 @@ do
 	copyForOBJ "$file"
 done
 
-windeployqt-qt6 --no-translations "$exe"
+windeployqt-qt6 --no-translations "$exe" --plugindir "$bin_dir/QtPlugins/plugins"
+echo -e "[Paths]\nPrefix = QtPlugins/\nPlugins = plugins" >  "$bin_dir/qt.conf"
 
 # needed by Qt at runtime
 cp "$path/libcrypto-3-x64.dll" "$bin_dir/"
@@ -43,6 +44,10 @@ cp "$path/libssl-3-x64.dll"    "$bin_dir/"
 cp "$path/libjpeg-8.dll"       "$bin_dir/"
 
 touch "$bin_dir/portable.txt"
+
+ls
+cp -r "../../Data/Extras" "$bin_dir/"
+cp -r "../../Data/Games" "$bin_dir/"
 
 # remove *.a files
 find "$bin_dir/" -name '*.a' -delete
