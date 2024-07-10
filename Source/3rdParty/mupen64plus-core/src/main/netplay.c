@@ -389,7 +389,7 @@ static uint32_t netplay_get_input(uint8_t control_id)
     }
     else
     {
-        if (l_canFF || current_buffer_size != buffer_size(control_id))
+        if (l_canFF || current_buffer_size != buffer_size(control_id) || last_buffer_increase_time == 0)
         {
             main_core_state_set(M64CORE_SPEED_LIMITER, 1);
             l_canFF = 0;
