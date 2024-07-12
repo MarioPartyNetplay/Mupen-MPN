@@ -205,6 +205,19 @@ void Lobby::changeBuffer(int value)
     QString jsonString = json_doc.toJson();
     CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Sending buffer change request: " + jsonString).toStdString().c_str());
     webSocket->sendTextMessage(jsonString);
+    
+    // Lock the buffer box for everyone but player 1
+    if (player_name != pName[0]->text()) {
+        QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
+        if (bufferSpinBox) {
+            bufferSpinBox->setEnabled(false);
+        }
+    } else {
+        QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
+        if (bufferSpinBox) {
+            bufferSpinBox->setEnabled(true);
+        }
+    }
 }
 
 void Lobby::processTextMessage(QString message, QJsonObject cheats)
@@ -249,7 +262,7 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
 
         QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
         if (bufferSpinBox) {
-            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Updating buffer spin box to: " + std::to_string(newBufferValue)).c_str());
+            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Updating buffer to: " + std::to_string(newBufferValue)).c_str());
             bufferSpinBox->blockSignals(true); // Block signals to prevent feedback loop
             bufferSpinBox->setValue(newBufferValue);
             bufferSpinBox->blockSignals(false); // Unblock signals
