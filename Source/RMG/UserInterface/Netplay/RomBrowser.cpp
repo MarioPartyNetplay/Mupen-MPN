@@ -58,9 +58,11 @@ QString RomBrowser::getRomGoodName(const QString &romPath)
     m64p_rom_settings romSettings;
     if (m64p::Core.DoCommand(M64CMD_ROM_GET_SETTINGS, sizeof(romSettings), &romSettings) == M64ERR_SUCCESS)
     {
-        return QString::fromStdString(romSettings.goodname);
+        if (!QString::fromStdString(romSettings.goodname).isEmpty()) {
+            return QString::fromStdString(romSettings.goodname);
+        }
     }
-    return romPath;
+    return QFileInfo(romPath).fileName();
 }
 
 QString RomBrowser::cleanRomName(const QString &name)
