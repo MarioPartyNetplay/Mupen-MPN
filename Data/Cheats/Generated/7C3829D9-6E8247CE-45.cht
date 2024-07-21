@@ -1,219 +1,30 @@
 [7C3829D9-6E8247CE-C:45]
 Name=Mario Party 3 (U)
 
-$Always On: Always Save After Every Turn
+$QOL - Always Save After Every Turn
 Note= By: gamemasterplc
 800CD06A 0000
 
-$Always On: Do Not Proceed on Results
+$QOL - Do Not Proceed on Results
 Note= By: gamemasterplc, Lavendew. Only applies to Battle Royal in Party Mode.
 D11095AA 2484
 D00B23B0 0001
 81109348 2400
 
-$Always On: Increased Board Speed
+$QOL - Increased Board Speed
 Note= By: gamemasterplc.
 800CD06D 0000
 
-$Always On: Increased Taunt Capabilities
-Note= By: Celery. Use the D-Pad to taunt at any time during the game. Additionally, normal taunting can be spammed.
+$QOL - Increased Taunt Capabilities
+Note= By: Celery. Normal taunting can be spammed.
 81078E9C 0802
 81078E9E 6ED8
 810073B4 2400
 810073B8 0802
 810073BA 6F2C
 810073BC 2400
-8109BB60 3C08
-8109BB62 8009
-8109BB64 AD1F
-8109BB66 BB50
-8109BB68 0000
-8109BB6A 4810
-8109BB6C 3C0A
-8109BB6E 0001
-8109BB70 000A
-8109BB72 5402
-8109BB74 012A
-8109BB76 4824
-8109BB78 1549
-8109BB7A 003F
-8109BB7C 3C08
-8109BB7E 800D
-8109BB80 A100
-8109BB82 BB58
-8109BB84 810B
-8109BB86 110B
-8109BB88 0C02
-8109BB8A 6EEE
-8109BB8C 810C
-8109BB8E 110A
-8109BB90 810B
-8109BB92 1143
-8109BB94 0C02
-8109BB96 6EEE
-8109BB98 810C
-8109BB9A 1142
-8109BB9C 810B
-8109BB9E 117B
-8109BBA0 0C02
-8109BBA2 6EEE
-8109BBA4 810C
-8109BBA6 117A
-8109BBA8 810B
-8109BBAA 11B3
-8109BBAC 0C02
-8109BBAE 6EEE
-8109BBB0 810C
-8109BBB2 11B2
-8109BBB4 0802
-8109BBB6 6F1E
-8109BBB8 3C0D
-8109BBBA 0000
-8109BBBC 000D
-8109BBBE 6C02
-8109BBC0 11AC
-8109BBC2 000E
-8109BBC4 8D0A
-8109BBC6 5558
-8109BBC8 3C0D
-8109BBCA 0001
-8109BBCC 000D
-8109BBCE 6C02
-8109BBD0 11AC
-8109BBD2 000A
-8109BBD4 8D0A
-8109BBD6 5556
-8109BBD8 3C0D
-8109BBDA 0002
-8109BBDC 000D
-8109BBDE 6C02
-8109BBE0 11AC
-8109BBE2 0006
-8109BBE4 8D0A
-8109BBE6 555C
-8109BBE8 3C0D
-8109BBEA 0003
-8109BBEC 000D
-8109BBEE 6C02
-8109BBF0 11AC
-8109BBF2 0002
-8109BBF4 8D0A
-8109BBF6 555A
-8109BBF8 03E0
-8109BBFA 0008
-8109BBFC 3C09
-8109BBFE 0001
-8109BC00 1149
-8109BC02 0020
-8109BC04 3C04
-8109BC06 02AC
-8109BC08 3C09
-8109BC0A 0002
-8109BC0C 1149
-8109BC0E 001D
-8109BC10 3C04
-8109BC12 0287
-8109BC14 3C09
-8109BC16 0004
-8109BC18 1149
-8109BC1A 001A
-8109BC1C 3C04
-8109BC1E 02B5
-8109BC20 3C09
-8109BC22 0008
-8109BC24 1149
-8109BC26 0017
-8109BC28 3C04
-8109BC2A 026C
-8109BC2C 3C09
-8109BC2E 0020
-8109BC30 1149
-8109BC32 0014
-8109BC34 3C04
-8109BC36 02BE
-8109BC38 3C09
-8109BC3A 2020
-8109BC3C 1149
-8109BC3E 0011
-8109BC40 3C04
-8109BC42 02C5
-8109BC44 3C09
-8109BC46 0100
-8109BC48 1149
-8109BC4A 000E
-8109BC4C 3C04
-8109BC4E 0290
-8109BC50 3C09
-8109BC52 0200
-8109BC54 1149
-8109BC56 000B
-8109BC58 3C04
-8109BC5A 0263
-8109BC5C 3C09
-8109BC5E 0400
-8109BC60 1149
-8109BC62 0008
-8109BC64 3C04
-8109BC66 0275
-8109BC68 3C09
-8109BC6A 0800
-8109BC6C 1149
-8109BC6E 0005
-8109BC70 3C04
-8109BC72 027E
-8109BC74 03E0
-8109BC76 0008
-8109BC78 3C09
-8109BC7A 8009
-8109BC7C 8D3F
-8109BC7E BB50
-8109BC80 03E0
-8109BC82 0008
-8109BC84 3C0E
-8109BC86 0002
-8109BC88 000E
-8109BC8A 7402
-8109BC8C 018E
-8109BC8E 0018
-8109BC90 0000
-8109BC92 6012
-8109BC94 218C
-8109BC96 0003
-8109BC98 A10C
-8109BC9A BB58
-8109BC9C 0004
-8109BC9E 2402
-8109BCA0 0C00
-8109BCA2 1C20
-8109BCA4 008B
-8109BCA6 2020
-8109BCA8 0802
-8109BCAA 6F1E
-8109BCAC 2400
-8109BCB0 3C19
-8109BCB2 800D
-8109BCB4 AF3F
-8109BCB6 BB54
-8109BCB8 8323
-8109BCBA BB58
-8109BCBC 1003
-8109BCBE 0002
-8109BCC0 2400
-8109BCC4 8326
-8109BCC6 BB58
-8109BCC8 0006
-8109BCCA 1180
-8109BCCC 0046
-8109BCCE 1023
-8109BCD0 0002
-8109BCD2 1080
-8109BCD4 8F3F
-8109BCD6 BB54
-8109BCD8 0800
-8109BCDA 1CF0
-8109BCDC 2400
 
-$Always On: Show Board On Results
+$QOL - Show Board On Results
 Note= By: gamemasterplc.
 81009C10 080F
 81009C12 FC00
@@ -250,7 +61,7 @@ Note= By: gamemasterplc.
 813FF03C AFBF
 813FF03E 0014
 
-$Always On: Show Who Paused
+$QOL - Show Who Paused
 Note= By: gamemasterplc.
 810499FC 080F
 810499FE FC10
@@ -325,7 +136,7 @@ D10EF712 BDCB
 813FF0B8 3042
 813FF0BA 8000
 
-$Always On: Unlock Everything
+$QOL - Unlock Everything
 Note= By: gamemasterplc.
 D11A6356 0003
 811A6354 0004
@@ -342,41 +153,41 @@ D1113FD4 5440
 D110D432 0048
 8110D434 2400 
 
-$Board: Chilly Waters: No Ice Slip
+$Board: Chilly Waters - No Ice Slip
 Note= By: gamemasterplc.
 D1118AD6 60C2
 81118AC4 1000
 
-$Board: Deep Bloober Sea: Blowfish Always Back To Start
+$Board: Deep Bloober Sea - Blowfish Always Back To Start
 Note= By: gamemasterplc.
 D1119EFE FF76
 81119ED0 241E
 D1119EFE FF76
 81119ED2 0005
 
-$Board: Deep Bloober Sea: No Missiles
+$Board: Deep Bloober Sea - No Missiles
 Note= By: gamemasterplc.
 D111861E 0005
 81118610 1000
 D111861E 0005
 81118398 A480
 
-$Board: Spiny Desert: Both Stars are Real
+$Board: Spiny Desert - Both Stars are Real
 Note= By: gamemasterplc.
 D110A312 0001
 8110A314 2400
 
-$Board: Waluigi's Island: Always Pass Hole Trap
+$Board: Waluigi's Island - Always Pass Hole Trap
 Note= By: gamemasterplc.
 D110A902 0124
 8110A900 1000
 
-$Board: Waluigi's Island: Bomb Counter Always at 1
+$Board: Waluigi's Island - Bomb Counter Always at 1
 Note= By: gamemasterplc.
 D10CD098 0005
 810CD098 0001
 
-$Board: Waluigi's Island: Island Space is Always
+$Board: Waluigi's Island - Island Space is Always
 Note= By: gamemasterplc.
 D10CE202 004D
 810CD09A 00?? 
@@ -389,7 +200,7 @@ D10CE202 004D
 09 Chance Time
 0A Nothing
 
-$Board: Waluigi's Island: Roulette is Always
+$Board: Waluigi's Island - Roulette is Always
 Note= By: gamemasterplc.
 D110907A 6000
 81109070 2415
@@ -399,7 +210,7 @@ D110907A 6000
 04 Medium
 02 Fast
 
-$Extra: Custom Turns
+$Mechanics: Custom Turns
 Note= By: gamemasterplc.
 800CD05A 00??
 01 1 Turn
@@ -422,16 +233,16 @@ Note= By: gamemasterplc.
 5F 95 Turns
 63 99 Turns
 
-$Mechanics: Auto Advance Text Boxes
+$Mechanics - Auto Advance Text Boxes
 Note= By: gamemasterplc. Automatically scroll through text.
 8105DF98 2400
 
-$Mechanics: Bonus Ztars
+$Mechanics - Bonus Ztars
 Note= By: Celery. Bonus Stars take away a Star rather than awarding one.
 D10CE202 004F
 81108006 00FF
 
-$Mechanics: Boo Coin Steals Cost 15 Coins
+$Mechanics - Boo Coin Steals Cost 15 Coins
 Note= By: Celery.
 D110E38A 0005
 8110E38A 000F
@@ -470,7 +281,7 @@ D110FC4E FFFB
 D110FC5A FFFB
 8110FC5A FFF1
 
-$Mechanics: Boo Star Steals Cost 100 Coins
+$Mechanics - Boo Star Steals Cost 100 Coins
 Note= By: Celery.
 D110E4D2 0032
 8110E4D2 0064
@@ -509,7 +320,7 @@ D110FC66 FFCE
 D110FC6E FFCE
 8110FC6E FF9C
 
-$Mechanics: Disable Reverse Mushroom
+$Mechanics - Disable Reverse Mushroom
 Note= By Nayla, Rain. Turns Reverse Mushroom into a Mushroom.
 D00D1120 0003
 800D1120 0000
@@ -536,7 +347,7 @@ D00D11C9 0003
 D00D11CA 0003
 800D11CA 0000
 
-$Mechanics: Disable Wacky Watch
+$Mechanics - Disable Wacky Watch
 Note= By Nayla, Rain. Turns Wacky Watch into a Mushroom.
 D00D1120 0012
 800D1120 0000
@@ -563,13 +374,13 @@ D00D11C9 0012
 D00D11CA 0012
 800D11CA 0000
 
-$Mechanics: Duel Partner Roulette
+$Mechanics - Duel Partner Roulette
 Note= By: gamemasterplc.
 800CD0B3 00??
 00 Fast
 02 Slow
 
-$Mechanics: Faster Chance Time
+$Mechanics - Faster Chance Time
 Note= By Celery. Speeds up Chance Time enough to make it totally luck-dependant.
 D10CE202 006A
 8110FD08 4220
@@ -580,7 +391,7 @@ D10CE202 006A
 D10CE202 006A
 8110FD14 4220
 
-$Mechanics: Gain X Coins on Blue Spaces (Doesn't Respect Last 5)
+$Mechanics - Gain X Coins on Blue Spaces (Doesn't Respect Last 5)
 Note= By: Rain.
 810FE284 3408
 810FE286 0000
@@ -614,7 +425,7 @@ Note= By: Rain.
 5F 95 Coins
 63 99 Coins
 
-$Mechanics: Gain X Coins on Blue Spaces (Respects Last 5)
+$Mechanics - Gain X Coins on Blue Spaces (Respects Last 5)
 Note= By: Rain.
 810FE284 3408
 810FE286 0001
@@ -648,8 +459,7 @@ Note= By: Rain.
 5F 95 Coins
 63 99 Coins
 
-
-$Mechanics: Game Guy Spaces Become Duel Spaces
+$Mechanics - Game Guy Spaces Become Duel Spaces
 Note= By: gamemasterplc.
 D10FEA1A 3C1D
 810FE9C0 3C1B
@@ -675,19 +485,19 @@ D10FEA1A 3C1D
 810FE9D4 2400
 D10FEA1A 3C1D
 
-$Mechanics: Game Guy Spaces Do Nothing
+$Mechanics - Game Guy Spaces Do Nothing
 Note= By: gamemasterplc.
 D11026DA E9C0
 811026DA EEBC
 
-$Mechanics: Item Hidden Blocks only contain Magic Lamps and Boo Bells
+$Mechanics - Item Hidden Blocks only contain Magic Lamps and Boo Bells
 Note= By: WolfGC64. Boo Bell get text will say "Skeleton Key", but will display the correct image and give out the correct item.
 D1101E70 0148
 81101E70 0B31
 D1101E72 0E50
 81101E72 0E64
 
-$Mechanics: Lose X Coins on Red Spaces (Doesn't Respect Last 5)
+$Mechanics - Lose X Coins on Red Spaces (Doesn't Respect Last 5)
 Note= By: gamemasterplc.
 810FE2C0 3408
 810FE2C2 0000
@@ -721,8 +531,7 @@ Note= By: gamemasterplc.
 5F 95 Coins
 63 99 Coins
 
-
-$Mechanics: Lose X Coins on Red Spaces (Respects Last 5)
+$Mechanics - Lose X Coins on Red Spaces (Respects Last 5)
 Note= By: gamemasterplc.
 810FE2C0 3408
 810FE2C2 0001
@@ -756,98 +565,7 @@ Note= By: gamemasterplc.
 5F 95 Turns
 63 99 Turns
 
-
-$Mechanics: Minigame Balance
-Note= By: Airsola, gamemasterplc, Rain, Lavendew. Includes all "MG" codes in one.
-D110903E 24E5
-81108FF6 0004
-D110B1E0 0384
-8110B1E0 02EE
-D10CE202 0005
-81106632 C0A9
-D10CE202 0005
-8110664A 40A9
-D10CE202 0005
-81108966 C0A9
-D10CE202 0005
-81108A1E 40A9
-D10CE202 0005
-81108A0A C0A9
-D10CE202 0022
-8110A11A FFFE
-D10CE202 0022
-811097C0 0004
-D10CE202 0022
-811097C2 2040
-D10CE202 001A
-81106BB2 0384
-D10CE202 001A
-D01292D7 0001
-8110A168 0384
-D10CE202 0021
-8110B650 2402
-D10CE202 0021
-8110B652 0001
-D10CE202 0021
-8110B5D4 0000
-D10CE202 0021
-8110B5D6 0000
-D10CE202 0021
-8110B5DC 0000
-D10CE202 0021
-8110B5DE 0000
-D10CE202 0021
-8110B644 0000
-D10CE202 0021
-8110B646 0000
-D10CE202 001D
-81107B76 4040
-D10CE202 001D
-81107BFE 4040
-D10CE202 001D
-81107AEA 4040
-D10CE202 001D
-81107A62 4040
-D10CE202 001D
-D1115D8E 0384
-81115D8E 01C2
-D10CE202 0028
-8110E98C 0000
-D10CE202 0028
-8110E98E 0000
-D10CE202 0028
-8110E990 0000
-D10CE202 0028
-8110E992 0000
-D10CE202 0020
-8110BCE0 3C01
-D10CE202 0020
-8110BCE2 4014
-D10CE202 0020
-8110BCE4 3421
-D10CE202 0020
-8110BCE6 7AE1
-D110AD62 A18C
-8110AD20 0000
-D1109998 4500
-81109998 1000
-D10CE202 000A
-8110AC00 4040
-D10CE202 000A
-8110AC02 0000
-D10CE202 0015
-D110B064 414C
-8110B05A 0708
-D10CE202 000F
-8110E304 2463
-D10CE202 000F
-8110E306 0001
-D10CE202 000F
-8110E314 0000
-D10CE202 000F
-8110E316 0000
-
-$Mechanics: No Star Hidden Blocks
+$Mechanics - No Star Hidden Blocks
 Note= By: Airsola.
 D10CE202 0048
 800D124F 00FF
@@ -862,7 +580,7 @@ D10CE202 004C
 D10CE202 004D
 800D124F 00FF
 
-$Mechanics: Reverse Mode
+$Mechanics - Reverse Mode
 Note= By: gamemasterplc. Permanently under the effects of a Reverse Mushroom.
 D10FD196 0080
 810FD194 3442
@@ -895,7 +613,7 @@ D00D11C9 0003
 D00D11CA 0003
 800D11CA 0002
 
-$Mechanics: Reverse Rolls Halved
+$Mechanics - Reverse Rolls Halved
 Note= By: Rain.
 810DBE34 0802
 810DBE36 7D80
@@ -930,21 +648,21 @@ Note= By: Rain.
 8109F634 A0A2
 8109F636 0005
 
-$Mechanics: Same Space Duels Always Happen
+$Mechanics - Same Space Duels Always Happen
 Note= By: Rain.
 D10FA850 2842
 810FA850 3402
 D10FA852 0005
 810FA852 0001
 
-$Mechanics: Same Space Duels Never Happen
+$Mechanics - Same Space Duels Never Happen
 Note= By: Rain.
 D10661A8 2842
 810661A8 3402
 D10661AA 0005
 810661AA 0000
 
-$Mechanics: Shop Is Open Last Turn
+$Mechanics - Shop Is Open Last Turn
 Note= By: gamemasterplc.
 D110BB2E 0298
 8110BB28 1000
@@ -983,7 +701,7 @@ D1111376 0298
 D1110E06 0298
 81110E00 1000
 
-$Mechanics: Use Multiple Items Per Turn
+$Mechanics - Use Multiple Items Per Turn
 Note= By: Airsola.
 D10CE202 0048
 800CD0A9 0000
@@ -997,17 +715,17 @@ D10CE202 004C
 800CD0A9 0000
 D10CE202 004D
 
-$MG: Boulder Ball: Less Boulder Cooldown
+$Minigame: Boulder Ball - Less Boulder Cooldown
 Note= By: Airsola.
 D110903E 24E5
 81108FF6 0004
 
-$MG: Coconut Conk: 25 Second Timer
+$Minigame: Coconut Conk - 25 Second Timer
 Note= By: Airsola.
 D110B1E0 0384
 8110B1E0 02EE
 
-$MG: Crazy Cogs: Faster Cog
+$Minigame: Crazy Cogs - Faster Cog
 Note= By: Airsola.
 D10CE202 0005
 81106632 C0A9
@@ -1020,7 +738,7 @@ D10CE202 0005
 D10CE202 0005
 81108A0A C0A9
 
-$MG: Curtain Call: Faster NPCs/5 Second Timer
+$Minigame: Curtain Call - Faster NPCs/5 Second Timer
 Note= By: gamemasterplc, Airsola.
 D10CE202 0022
 8110A11A FFFE
@@ -1029,7 +747,7 @@ D10CE202 0022
 D10CE202 0022
 811097C2 2040
 
-$MG: Locked Out: 30 Second Timer
+$Minigame: Locked Out - 30 Second Timer
 Note= By: Airsola.
 D10CE202 001A
 81106BB2 0384
@@ -1037,7 +755,7 @@ D10CE202 001A
 D01292D7 0001
 8110A168 0384
 
-$MG: M.P.I.Q.: Permadeath
+$Minigame: M.P.I.Q. - Permadeath
 Note= By: Airsola.
 D10CE202 0021
 8110B650 2402
@@ -1056,7 +774,7 @@ D10CE202 0021
 D10CE202 0021
 8110B646 0000
 
-$MG: Messy Memory: Faster Cursor/15 Second Timer
+$Minigame: Messy Memory - Faster Cursor/15 Second Timer
 Note= By: Lavendew.
 D10CE202 001D
 81107B76 4040
@@ -1070,7 +788,7 @@ D10CE202 001D
 D1115D8E 0384
 81115D8E 01C2
 
-$MG: Picking Panic: All Cherries Worth 1 Point
+$Minigame: Picking Panic - All Cherries Worth 1 Point
 Note= By: Airsola.
 D10CE202 000F
 8110E304 2463
@@ -1081,7 +799,7 @@ D10CE202 000F
 D10CE202 000F
 8110E316 0000
 
-$MG: Snowball Summit: Held Snowballs Block If Bigger
+$Minigame: Snowball Summit - Held Snowballs Block If Bigger
 Note= By: Airsola.
 D10CE202 0028
 8110E98C 0000
@@ -1092,7 +810,7 @@ D10CE202 0028
 D10CE202 0028
 8110E992 0000
 
-$MG: The Beat Goes On: 1.75x Speed
+$Minigame: The Beat Goes On - 1.75x Speed
 Note= By: Airsola.
 D10CE202 0020
 8110BCE0 3C01
@@ -1103,67 +821,67 @@ D10CE202 0020
 D10CE202 0020
 8110BCE6 7AE1
 
-$MG: Tidal Toss: No 3P Movement/Water Doesn't Push
+$Minigame: Tidal Toss - No 3P Movement/Water Doesn't Push
 Note= By: gamemasterplc, Rain, Airsola.
 D110AD62 A18C
 
-$MG: Treadmill Grill: 60 Second Timer
+$Minigame: Treadmill Grill - 60 Second Timer
 Note= By: Airsola.
 D10CE202 0015
 D110B064 414C
 8110B05A 0708
 
-$MGR: Bowser Toss -> Tick Tock Hop
+$Minigame Replacement - Bowser Toss -> Tick Tock Hop
 Note= By: Celery
 D00CD068 0034
 800CD068 0039
 
-$MGR: End of the Line -> Vine With Me
+$Minigame Replacement - End of the Line -> Vine With Me
 Note= By: Celery
 D00CD068 0033
 800CD068 0031
 
-$MGR: Hand, Line and Sinker -> Ridiculous Relay
+$Minigame Replacement - Hand, Line and Sinker -> Ridiculous Relay
 Note= By: Celery. Recommended if a player in your party is using a keyboard or doesn't know what to set their control stick sensitivity to.
 D00CD068 0001
 800CD068 0007
 
-$MGR: Hide and Sneak -> Tidal Toss
+$Minigame Replacement - Hide and Sneak -> Tidal Toss
 Note= By: Celery
 D00CD068 0006
 800CD068 000A
 
-$MGR: Magic Boxes -> Lucky 7
+$Minigame Replacement - Magic Boxes -> Lucky 7
 Note= By: Celery
 D00CD068 0045
 800CD068 0044
 
-$MGR: Merry-Go-Chomp -> Eye Sore
+$Minigame Replacement - Merry-Go-Chomp -> Eye Sore
 Note= By: Celery
 D00CD068 002D
 800CD068 0030
 
-$MGR: River Raiders -> Thwomp Pull
+$Minigame Replacement - River Raiders -> Thwomp Pull
 Note= By: Celery
 D00CD068 0009
 800CD068 0008
 
-$MGR: Spotlight Swim -> Coconut Conk
+$Minigame Replacement - Spotlight Swim -> Coconut Conk
 Note= By: Celery
 D00CD068 0003
 800CD068 0002
 
-$MGR: Stacked Deck -> All Fired Up
+$Minigame Replacement - Stacked Deck -> All Fired Up
 Note= By: Celery
 D00CD068 002A
 800CD068 0029
 
-$MGR: Swing 'n' Swipe -> Swinging With Sharks
+$Minigame Replacement - Swing 'n' Swipe -> Swinging With Sharks
 Note= By: Celery
 D00CD068 0040
 800CD068 003F
 
-$MGR: The Beat Goes On -> Toadstool Titan
+$Minigame Replacement - The Beat Goes On -> Toadstool Titan
 Note= By: Celery
 D00CD068 0020
 800CD068 0016

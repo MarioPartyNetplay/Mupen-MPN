@@ -6,7 +6,8 @@
  *  it under the terms of the GNU General Public License version 3.
  *  You should have received a copy of the GNU General Public License
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
- */
+*/
+
 #include "CheatsDialog.hpp"
 
 #include "AddCheatDialog.hpp"
@@ -52,6 +53,27 @@ void CheatsDialog::loadCheats(void)
         this->failedToParseCheats = true;
         return;
     }
+
+    // Separate recommended cheats and others
+    std::vector<CoreCheat> recommendedCheats;
+    std::vector<CoreCheat> otherCheats;
+
+    for (CoreCheat& cheat : cheats)
+    {
+        if (QString::fromStdString(cheat.Name).contains("QOL", Qt::CaseInsensitive))
+        {
+            recommendedCheats.push_back(cheat);
+        }
+        else
+        {
+            otherCheats.push_back(cheat);
+        }
+    }
+
+    // Merge recommended cheats with other cheats
+    cheats.clear();
+    cheats.insert(cheats.end(), recommendedCheats.begin(), recommendedCheats.end());
+    cheats.insert(cheats.end(), otherCheats.begin(), otherCheats.end());
 
     for (CoreCheat& cheat : cheats)
     {
