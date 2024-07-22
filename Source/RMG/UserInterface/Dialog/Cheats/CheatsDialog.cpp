@@ -70,15 +70,22 @@ void CheatsDialog::loadCheats(void)
         }
     }
 
-    // Sort recommended cheats in descending order
+    // Sort recommended cheats in ascending order
     std::sort(recommendedCheats.begin(), recommendedCheats.end(), [](const CoreCheat& a, const CoreCheat& b) {
-       return QString::fromStdString(a.Name).compare(QString::fromStdString(b.Name), Qt::CaseInsensitive) > 0;
+        QString aName = QString::fromStdString(a.Name);
+        QString bName = QString::fromStdString(b.Name);
+        std::cout << "Comparing (Recommended): " << aName.toStdString() << " < " << bName.toStdString() << std::endl;
+        return aName.compare(bName, Qt::CaseInsensitive) < 0;
     });
 
-    // Sort other cheats in descending order
+    // Sort other cheats in ascending order
     std::sort(otherCheats.begin(), otherCheats.end(), [](const CoreCheat& a, const CoreCheat& b) {
-       return QString::fromStdString(a.Name).compare(QString::fromStdString(b.Name), Qt::CaseInsensitive) > 0;
+        QString aName = QString::fromStdString(a.Name);
+        QString bName = QString::fromStdString(b.Name);
+        std::cout << "Comparing (Other): " << aName.toStdString() << " < " << bName.toStdString() << std::endl;
+        return aName.compare(bName, Qt::CaseInsensitive) < 0;
     });
+}
 
     // Merge sorted cheats
     cheats.clear();
