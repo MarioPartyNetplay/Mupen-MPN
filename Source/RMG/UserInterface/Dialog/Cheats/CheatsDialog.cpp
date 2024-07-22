@@ -60,7 +60,7 @@ void CheatsDialog::loadCheats(void)
 
     for (CoreCheat& cheat : cheats)
     {
-        if (QString::fromStdString(cheat.Name).contains("QOL", Qt::CaseInsensitive))
+        if (QString::fromStdString(cheat.Name).contains("QOL - ", Qt::CaseInsensitive))
         {
             recommendedCheats.push_back(cheat);
         }
@@ -75,6 +75,7 @@ void CheatsDialog::loadCheats(void)
     cheats.insert(cheats.end(), recommendedCheats.begin(), recommendedCheats.end());
     cheats.insert(cheats.end(), otherCheats.begin(), otherCheats.end());
 
+    // Add cheats to tree widget
     for (CoreCheat& cheat : cheats)
     {
         QString name = QString::fromStdString(cheat.Name);
@@ -108,7 +109,7 @@ void CheatsDialog::loadCheats(void)
             }
 
             if (i == 0)
-            { 
+            {
                 this->cheatsTreeWidget->addTopLevelItem(item);
             }
             else
@@ -134,7 +135,27 @@ void CheatsDialog::loadCheats(void)
         }
     }
 
-    this->cheatsTreeWidget->sortItems(0, Qt::SortOrder::AscendingOrder);
+    // If you need to sort top-level items based on a specific criterion, handle it here
+    // This step is optional based on your requirements and hierarchy
+    this->sortTopLevelItems();
+}
+
+void CheatsDialog::sortTopLevelItems()
+{
+    QList<QTreeWidgetItem*> topLevelItems;
+    for (int i = 0; i < this->cheatsTreeWidget->topLevelItemCount(); ++i)
+    {
+        topLevelItems.append(this->cheatsTreeWidget->topLevelItem(i));
+    }
+
+    std::sort(topLevelItems.begin(), topLevelItems.end(), [](QTreeWidgetItem* a, QTreeWidgetItem* b) {
+        QString aText = a->text(0);
+        QString bText = b->text(0);
+        return aText.compare(bText, Qt::CaseInsensitive) < 0;
+    });
+
+    this->cheatsTreeWidget->clear();
+    this->cheatsTreeWidget->addTopLevelItems(topLevelItems);
 }
 
 QTreeWidgetItem* CheatsDialog::findItem(QStringList sections, int size, QString itemText)
