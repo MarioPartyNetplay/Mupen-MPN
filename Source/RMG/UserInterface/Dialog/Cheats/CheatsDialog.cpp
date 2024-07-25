@@ -72,20 +72,13 @@ void CheatsDialog::loadCheats(void)
 
     // Sort recommended cheats in ascending order
     std::sort(recommendedCheats.begin(), recommendedCheats.end(), [](const CoreCheat& a, const CoreCheat& b) {
-        QString aName = QString::fromStdString(a.Name);
-        QString bName = QString::fromStdString(b.Name);
-        std::cout << "Comparing (Recommended): " << aName.toStdString() << " < " << bName.toStdString() << std::endl;
-        return aName.compare(bName, Qt::CaseInsensitive) < 0;
+       return QString::fromStdString(a.Name).compare(QString::fromStdString(b.Name), Qt::CaseInsensitive) < 0;
     });
 
     // Sort other cheats in ascending order
     std::sort(otherCheats.begin(), otherCheats.end(), [](const CoreCheat& a, const CoreCheat& b) {
-        QString aName = QString::fromStdString(a.Name);
-        QString bName = QString::fromStdString(b.Name);
-        std::cout << "Comparing (Other): " << aName.toStdString() << " < " << bName.toStdString() << std::endl;
-        return aName.compare(bName, Qt::CaseInsensitive) < 0;
+       return QString::fromStdString(a.Name).compare(QString::fromStdString(b.Name), Qt::CaseInsensitive) < 0;
     });
-}
 
     // Merge sorted cheats
     cheats.clear();
@@ -98,6 +91,7 @@ void CheatsDialog::loadCheats(void)
         QString name = QString::fromStdString(cheat.Name);
         QString section;
         QStringList sections = name.split("\\");
+
         bool enabled = CoreIsCheatEnabled(cheat);
 
         for (int i = 0; i < sections.size(); i++)
