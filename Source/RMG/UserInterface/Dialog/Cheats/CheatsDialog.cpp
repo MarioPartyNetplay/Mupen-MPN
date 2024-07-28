@@ -85,9 +85,10 @@ void CheatsDialog::loadCheats(void)
     cheats.insert(cheats.end(), recommendedCheats.begin(), recommendedCheats.end());
     cheats.insert(cheats.end(), otherCheats.begin(), otherCheats.end());
 
-    // Add cheats to tree widget
-    for (CoreCheat& cheat : cheats)
+    // Add cheats to tree widget in reverse order
+    for (auto it = cheats.rbegin(); it != cheats.rend(); ++it)
     {
+        CoreCheat& cheat = *it;
         QString name = QString::fromStdString(cheat.Name);
         QString section;
         QStringList sections = name.split("\\");
