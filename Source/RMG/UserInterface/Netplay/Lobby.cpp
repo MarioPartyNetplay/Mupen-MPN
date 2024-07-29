@@ -11,7 +11,6 @@
 Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *parent)
     : QDialog(parent)
 {
-
     setWindowFlags(windowFlags() | Qt::WindowMinimizeButtonHint);
 
     QJsonObject featuresObject = room.value("features").toObject();
@@ -45,20 +44,12 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     QLabel *gameName = new QLabel(room.value("game_name").toString(), this);
     layout->addWidget(gameName, 0, 1);
 
-    QLabel *pingLabel = new QLabel("Your Ping:", this);
-    layout->addWidget(pingLabel, 1, 0);
-    pingValue = new QLabel(this);
-    layout->addWidget(pingValue, 1, 1);
-
     QLabel *p1Label = new QLabel("Player 1:", this);
     layout->addWidget(p1Label, 3, 0);
-    
     QLabel *p2Label = new QLabel("Player 2:", this);
     layout->addWidget(p2Label, 4, 0);
-
     QLabel *p3Label = new QLabel("Player 3:", this);
     layout->addWidget(p3Label, 5, 0);
-
     QLabel *p4Label = new QLabel("Player 4:", this);
     layout->addWidget(p4Label, 6, 0);
 
@@ -66,6 +57,10 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     {
         pName[i] = new QLabel(this);
         layout->addWidget(pName[i], i + 3, 1);
+        
+        // Initialize player ping labels
+        playerPingLabels[i] = new QLabel("(0 ms)", this);
+        layout->addWidget(playerPingLabels[i], i + 3, 2); // Add ping label next to player name
     }
 
     chatWindow = new QPlainTextEdit(this);
@@ -113,7 +108,13 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
 
 void Lobby::sendPing()
 {
-    webSocket->ping();
+    // Send ping request for the current player only
+    QJsonObject json;
+    json.insert("type", "request_player_ping");
+    json.insert("player_name", player_name); // Send the current player's name
+    json.insert("port", room_port);
+    QJsonDocument json_doc = QJsonDocument(json);
+    webSocket->sendTextMessage(json_doc.toJson());
 }
 
 void Lobby::copyPublicIp()
@@ -134,7 +135,8 @@ void Lobby::copyPublicIp()
 
 void Lobby::updatePing(quint64 elapsedTime, const QByteArray&)
 {
-    pingValue->setText(QString::number(elapsedTime) + " ms");
+    int currentPlayerIndex = player_number;
+    playerPingLabels[currentPlayerIndex]->setText(" (" + QString::number(elapsedTime) + " ms)");
 }
 
 void Lobby::startGame()
@@ -205,19 +207,6 @@ void Lobby::changeBuffer(int value)
     QString jsonString = json_doc.toJson();
     CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Sending buffer change request: " + jsonString).toStdString().c_str());
     webSocket->sendTextMessage(jsonString);
-    
-    // Lock the buffer box for everyone but player 1
-    if (player_name != pName[0]->text()) {
-        QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
-        if (bufferSpinBox) {
-            bufferSpinBox->setEnabled(false);
-        }
-    } else {
-        QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
-        if (bufferSpinBox) {
-            bufferSpinBox->setEnabled(true);
-        }
-    }
 }
 
 void Lobby::processTextMessage(QString message, QJsonObject cheats)
@@ -233,10 +222,29 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
                 pName[i]->setText(json.value("player_names").toArray().at(i).toString());
                 if (pName[i]->text() == player_name)
                     player_number = i + 1;
+
+                // Initialize each player's ping label
+                playerPingLabels[i]->setText("0 ms"); // Default ping value
             }
             setupBufferSpinBox();
             if (player_number == 1 && webSocket->peerAddress().toString() == "127.0.0.1") {
                 copyIpButton->setVisible(true);
+            }
+        }
+    } else if (json.value("type").toString() == "reply_player_pings") {
+        // Receive all players' pings
+        QJsonArray players = json.value("players").toArray();
+        for (int i = 0; i < players.size(); ++i) {
+            QJsonObject player = players.at(i).toObject();
+            QString playerName = player.value("name").toString();
+            quint64 ping = player.value("ping").toVariant().toUInt();
+
+            // Update the corresponding player's ping label
+            for (int j = 0; j < 4; ++j) {
+                if (pName[j]->text() == playerName) {
+                    playerPingLabels[j]->setText(" (" + QString::number(ping) + " ms)");
+                    break;
+                }
             }
         }
     } else if (json.value("type").toString() == "reply_chat_message") {
