@@ -136,7 +136,8 @@ void Lobby::updatePing(quint64 elapsedTime, const QByteArray&)
 {
     int currentPlayerIndex = player_number - 1; // Assuming player_number is 1-based
     QString currentText = pName[currentPlayerIndex]->text();
-    QString newText = currentText.split(" (").first() + QString(" (%1 ms)").arg(elapsedTime);
+    QString playerName = currentText.split(" (").first(); // Extract the player name
+    QString newText = QString("%1 (%2 ms)").arg(playerName).arg(elapsedTime); // Keep the player name and update the ping
     pName[currentPlayerIndex]->setText(newText);
 }
 

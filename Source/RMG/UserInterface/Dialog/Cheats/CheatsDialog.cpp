@@ -82,8 +82,8 @@ void CheatsDialog::loadCheats(void)
 
     // Merge sorted cheats
     cheats.clear();
-    cheats.insert(cheats.end(), recommendedCheats.end(), recommendedCheats.begin());
-    cheats.insert(cheats.end(), otherCheats.end(), otherCheats.begin());
+    cheats.insert(cheats.end(), recommendedCheats.begin(), recommendedCheats.end());
+    cheats.insert(cheats.end(), otherCheats.begin(), otherCheats.end());
 
     // Add cheats to tree widget in reverse order
     for (auto it = cheats.rbegin(); it != cheats.rend(); ++it)
