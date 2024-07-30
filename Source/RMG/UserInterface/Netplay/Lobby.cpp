@@ -225,6 +225,8 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
                 if (pName[i]->text().contains(player_name)) {
                     player_number = i + 1; // Identify the current player
                 }
+                // Debugging output
+                CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Player " + std::to_string(i + 1) + ": " + pName[i]->text().toStdString()).c_str());
             }
             setupBufferSpinBox();
             if (player_number == 1 && webSocket->peerAddress().toString() == "127.0.0.1") {
@@ -239,10 +241,14 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
             QString playerName = player.value("name").toString();
             quint64 ping = player.value("ping").toVariant().toUInt();
 
+            // Debugging output
+            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Updating ping for " + playerName.toStdString() + " to " + std::to_string(ping) + " ms").c_str());
+
             // Update the corresponding player's ping label
             for (int j = 0; j < 4; ++j) {
                 if (pName[j]->text().contains(playerName)) { // Check if the player name matches
                     pName[j]->setText(QString("%1 (%2 ms)").arg(playerName).arg(ping)); // Update ping
+                    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Updated " + playerName.toStdString() + " ping to " + std::to_string(ping) + " ms").c_str());
                     break; // Exit the loop once the correct player is found and updated
                 }
             }
