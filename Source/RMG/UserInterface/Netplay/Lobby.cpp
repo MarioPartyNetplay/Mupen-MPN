@@ -55,7 +55,7 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
 
         // Initialize player ping labels
         playerPingLabels[i] = new QLabel("(0 ms)", this);
-        playerRowLayout->addWidget(playerPingLabels[i]); // Add ping label next to player name
+        playerRowLayout->addWidget(playerPingLabels[i] - 1); // Add ping label next to player name
 
         playerLayout->addLayout(playerRowLayout);
     }
