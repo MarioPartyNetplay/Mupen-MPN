@@ -59,8 +59,7 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
         layout->addWidget(pName[i], i + 3, 1);
         
         // Initialize player ping labels
-        playerPingLabels[i] = new QLabel("(0 ms)", this);
-        layout->addWidget(playerPingLabels[i], i + 3, 2); // Add ping label next to player name
+        pName[i]->setText(QString("%1 (0 ms)").arg("Player " + QString::number(i + 1))); // Example player name
     }
 
     chatWindow = new QPlainTextEdit(this);
@@ -135,8 +134,10 @@ void Lobby::copyPublicIp()
 
 void Lobby::updatePing(quint64 elapsedTime, const QByteArray&)
 {
-    int currentPlayerIndex = player_number;
-    playerPingLabels[currentPlayerIndex]->setText(" (" + QString::number(elapsedTime) + " ms)");
+    int currentPlayerIndex = player_number - 1; // Assuming player_number is 1-based
+    QString currentText = pName[currentPlayerIndex]->text();
+    QString newText = currentText.split(" (").first() + QString(" (%1 ms)").arg(elapsedTime);
+    pName[currentPlayerIndex]->setText(newText);
 }
 
 void Lobby::startGame()
@@ -217,21 +218,20 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
     CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Received message: " + message).toStdString().c_str());
 
     if (json.value("type").toString() == "reply_players") {
-        if (json.contains("player_names")) {
-            for (int i = 0; i < 4; ++i) {
-                pName[i]->setText(json.value("player_names").toArray().at(i).toString());
-                if (pName[i]->text() == player_name)
-                    player_number = i + 1;
-
-                // Initialize each player's ping label
-                playerPingLabels[i]->setText("0 ms"); // Default ping value
-            }
-            setupBufferSpinBox();
-            if (player_number == 1 && webSocket->peerAddress().toString() == "127.0.0.1") {
-                copyIpButton->setVisible(true);
+    if (json.contains("player_names")) {
+        for (int i = 0; i < 4; ++i) {
+            QString playerName = json.value("player_names").toArray().at(i).toString();
+            pName[i]->setText(QString("%1 (0 ms)").arg(playerName));
+            if (pName[i]->text().contains(player_name)) {
+                player_number = i + 1;
             }
         }
-    } else if (json.value("type").toString() == "reply_player_pings") {
+        setupBufferSpinBox();
+        if (player_number == 1 && webSocket->peerAddress().toString() == "127.0.0.1") {
+            copyIpButton->setVisible(true);
+        }
+    }
+} else if (json.value("type").toString() == "reply_player_pings") {
         // Receive all players' pings
         QJsonArray players = json.value("players").toArray();
         for (int i = 0; i < players.size(); ++i) {
