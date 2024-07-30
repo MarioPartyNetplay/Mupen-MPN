@@ -37,6 +37,7 @@
 #include <sstream>
 #include <filesystem>
 #include <fstream>
+#include <fmt/core.h>
 
 //
 // Local Structs
@@ -99,7 +100,7 @@ static std::filesystem::path get_cheat_file_name(CoreRomHeader romHeader, CoreRo
     if (!romSettings.GoodName.empty())
     {
         // Use the good name as the cheat file name
-        cheatFileName = fmt::format("{}.cht", romSettings.GoodName.string());
+        cheatFileName = fmt::format("{}.cht", romSettings.GoodName);
     }
 
     return cheatFileName;
