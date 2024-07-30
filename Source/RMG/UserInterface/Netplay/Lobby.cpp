@@ -224,7 +224,7 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
                     player_number = i + 1;
 
                 // Initialize each player's ping label
-                playerPingLabels[i]->setText("0 ms"); // Default ping value
+                playerPingLabels[i]->setText("(0 ms)"); // Default ping value
             }
             setupBufferSpinBox();
             if (player_number == 1 && webSocket->peerAddress().toString() == "127.0.0.1") {
