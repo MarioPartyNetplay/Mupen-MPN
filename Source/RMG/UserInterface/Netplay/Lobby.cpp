@@ -35,7 +35,6 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
 
     webSocket = socket;
     connect(webSocket, &QWebSocket::textMessageReceived, this, [this](QString message){ processTextMessage(message, cheats); });
-    connect(webSocket, &QWebSocket::pong, this, &Lobby::updatePing);
 
     QGridLayout *layout = new QGridLayout(this);
 
@@ -107,7 +106,6 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
 
 void Lobby::sendPing()
 {
-    // Send ping request for the current player only
     QJsonObject json;
     json.insert("type", "request_player_ping");
     json.insert("player_name", player_name); // Send the current player's name
@@ -130,15 +128,6 @@ void Lobby::copyPublicIp()
         reply->deleteLater();
     });
     manager->get(QNetworkRequest(QUrl("https://api.ipify.org")));
-}
-
-void Lobby::updatePing(quint64 elapsedTime, const QByteArray&)
-{
-    int currentPlayerIndex = player_number - 1; // Assuming player_number is 1-based
-    QString currentText = pName[currentPlayerIndex]->text();
-    QString playerName = currentText.split(" (").first(); // Extract the player name
-    QString newText = QString("%1 (%2 ms)").arg(playerName).arg(elapsedTime); // Keep the player name and update the ping
-    pName[currentPlayerIndex]->setText(newText);
 }
 
 void Lobby::startGame()
@@ -234,26 +223,20 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
                 copyIpButton->setVisible(true);
             }
         }
-        } else if (json.value("type").toString() == "reply_player_pings") {
-        // Receive pings for all players
+    } else if (json.value("type").toString() == "reply_player_pings") {
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Received full JSON: " + message.toStdString()).c_str());
         QJsonArray players = json.value("players").toArray();
         for (int i = 0; i < players.size(); ++i) {
             QJsonObject player = players.at(i).toObject();
             QString playerName = player.value("name").toString();
             quint64 ping = player.value("ping").toVariant().toUInt();
 
-            // Debugging output
             CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Updating ping for " + playerName.toStdString() + " to " + std::to_string(ping) + " ms").c_str());
 
             // Update the corresponding player's ping label
-            for (int j = 0; j < 4; ++j) {
-                if (pName[j]->text().split(" (").first() == playerName) {
-                    QString pingDisplay = (ping == 0) ? "N/A" : QString("%1 ms").arg(ping);
-                    pName[j]->setText(QString("%1 (%2)").arg(playerName).arg(pingDisplay));
-                    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Updated " + playerName.toStdString() + " ping to " + pingDisplay.toStdString()).c_str());
-                    break;
-                }
-            }
+            QString pingDisplay = (ping == 0) ? "N/A" : QString("%1 ms").arg(ping);
+            pName[i]->setText(QString("%1 (%2)").arg(playerName).arg(pingDisplay));
+            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Updated " + playerName.toStdString() + " ping to " + pingDisplay.toStdString()).c_str());
         }
     } else if (json.value("type").toString() == "reply_chat_message") {
         chatWindow->appendPlainText(json.value("message").toString());

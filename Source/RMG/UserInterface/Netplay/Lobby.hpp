@@ -24,7 +24,6 @@ private slots:
     void onFinished(int);
     void sendChat();
     void startGame();
-    void updatePing(quint64 elapsedTime, const QByteArray &payload);
     void sendPing();
     void changeBuffer(int value);
     void setupBufferSpinBox();

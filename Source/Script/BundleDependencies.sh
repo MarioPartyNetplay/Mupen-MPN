@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# ./BundleDependencies.sh "./Bin/Release/RMG.exe" "./Bin/Release/" "/mingw64/bin"
+# ./BundleDependencies.sh "./Bin/Release/MupenMPN.exe" "./Bin/Release/" "/mingw64/bin"
 #
 
 exe="$1"

@@ -145,7 +145,7 @@ int main(int argc, char **argv)
 
     QDir::setCurrent(app.applicationDirPath());
 
-    QCoreApplication::setApplicationName("Rosalie's Mupen GUI MPN");
+    QCoreApplication::setApplicationName("Mupen MPN");
     QCoreApplication::setApplicationVersion(QString::fromStdString(CoreGetVersion()));
 
     // setup commandline parser

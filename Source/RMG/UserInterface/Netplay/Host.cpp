@@ -111,7 +111,7 @@ void Host::hostLocalServer()
     {
         selectedPort = port;
 
-        QString program = "RMG-Server.exe";
+        QString program = "MupenMPN-Server.exe";
         QStringList arguments;
         arguments << "-baseport" << QString::number(port);
 
@@ -120,7 +120,7 @@ void Host::hostLocalServer()
 
         if (!serverProcess->waitForStarted())
         {
-            QMessageBox::critical(this, "Error", "Failed to start RMG-Server.exe");
+            QMessageBox::critical(this, "Error", "Failed to start MupenMPN-Server.exe");
             delete serverProcess;
             serverProcess = nullptr;
         }

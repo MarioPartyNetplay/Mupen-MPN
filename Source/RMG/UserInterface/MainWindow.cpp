@@ -295,7 +295,7 @@ void MainWindow::configureUI(QApplication* app, bool showUI)
     this->ui_Widget_OpenGL->installEventFilter(this->ui_EventFilter);
     this->ui_Widget_Vulkan->installEventFilter(this->ui_EventFilter);
 
-    this->ui_WindowTitle = "Rosalie's Mupen GUI MPN (" + QString::fromStdString(VERSION_HASH) + ")";
+    this->ui_WindowTitle = "Mupen MPN (" + QString::fromStdString(VERSION_HASH) + ")";
     
     this->setWindowTitle(this->ui_WindowTitle);
 }
