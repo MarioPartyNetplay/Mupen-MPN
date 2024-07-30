@@ -221,7 +221,7 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
         if (json.contains("player_names")) {
             for (int i = 0; i < 4; ++i) {
                 QString playerName = json.value("player_names").toArray().at(i).toString();
-                pName[i]->setText(QString("%1 (0 ms)").arg(playerName)); // Set player name with default ping value
+                pName[i]->setText(QString("%1").arg(playerName)); // Set player name with default ping value
                 if (pName[i]->text().contains(player_name)) {
                     player_number = i + 1; // Identify the current player
                 }
