@@ -32,6 +32,7 @@ private slots:
 private:
     QWebSocket *webSocket = nullptr;
     QLabel *pName[4];
+    QLabel* playerPingLabels[4];
     QPushButton *copyIpButton;
     QPlainTextEdit *chatWindow;
     QLineEdit *chatEdit;
