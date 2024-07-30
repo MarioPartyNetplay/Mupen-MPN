@@ -234,7 +234,7 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
                 copyIpButton->setVisible(true);
             }
         }
-    } else if (json.value("type").toString() == "reply_player_pings") {
+        } else if (json.value("type").toString() == "reply_player_pings") {
         // Receive pings for all players
         QJsonArray players = json.value("players").toArray();
         for (int i = 0; i < players.size(); ++i) {
