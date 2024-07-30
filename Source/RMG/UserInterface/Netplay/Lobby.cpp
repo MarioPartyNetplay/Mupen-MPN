@@ -59,7 +59,7 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
         layout->addWidget(pName[i], i + 3, 1);
         
         // Initialize player ping labels
-        pName[i]->setText(QString("%1 (0 ms)").arg("Player " + QString::number(i + 1))); // Example player name
+        pName[i]->setText(QString("%1").arg("Player " + QString::number(i + 1))); // Example player name
     }
 
     chatWindow = new QPlainTextEdit(this);
@@ -221,7 +221,7 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
     if (json.contains("player_names")) {
         for (int i = 0; i < 4; ++i) {
             QString playerName = json.value("player_names").toArray().at(i).toString();
-            pName[i]->setText(QString("%1 (0 ms)").arg(playerName));
+            pName[i]->setText(QString("%1").arg(playerName));
             if (pName[i]->text().contains(player_name)) {
                 player_number = i + 1;
             }
