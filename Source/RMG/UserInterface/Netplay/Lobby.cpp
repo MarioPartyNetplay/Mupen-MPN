@@ -218,20 +218,20 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
     CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Received message: " + message).toStdString().c_str());
 
     if (json.value("type").toString() == "reply_players") {
-    if (json.contains("player_names")) {
-        for (int i = 0; i < 4; ++i) {
-            QString playerName = json.value("player_names").toArray().at(i).toString();
-            pName[i]->setText(QString("%1").arg(playerName));
-            if (pName[i]->text().contains(player_name)) {
-                player_number = i + 1;
+        if (json.contains("player_names")) {
+            for (int i = 0; i < 4; ++i) {
+                QString playerName = json.value("player_names").toArray().at(i).toString();
+                pName[i]->setText(QString("%1 (0 ms)").arg(playerName)); // Set player name with default ping value
+                if (pName[i]->text().contains(player_name)) {
+                    player_number = i + 1; // Identify the current player
+                }
+            }
+            setupBufferSpinBox();
+            if (player_number == 1 && webSocket->peerAddress().toString() == "127.0.0.1") {
+                copyIpButton->setVisible(true);
             }
         }
-        setupBufferSpinBox();
-        if (player_number == 1 && webSocket->peerAddress().toString() == "127.0.0.1") {
-            copyIpButton->setVisible(true);
-        }
-    }
-} else if (json.value("type").toString() == "reply_player_pings") {
+    } else if (json.value("type").toString() == "reply_player_pings") {
         // Receive all players' pings
         QJsonArray players = json.value("players").toArray();
         for (int i = 0; i < players.size(); ++i) {
@@ -241,9 +241,9 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
 
             // Update the corresponding player's ping label
             for (int j = 0; j < 4; ++j) {
-                if (pName[j]->text() == playerName) {
-                    playerPingLabels[j]->setText(" (" + QString::number(ping) + " ms)");
-                    break;
+                if (pName[j]->text().contains(playerName)) { // Check if the player name matches
+                    pName[j]->setText(QString("%1 (%2 ms)").arg(playerName).arg(ping)); // Update ping
+                    break; // Exit the loop once the correct player is found and updated
                 }
             }
         }
