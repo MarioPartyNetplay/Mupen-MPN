@@ -44,38 +44,39 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     QLabel *gameName = new QLabel(room.value("game_name").toString(), this);
     layout->addWidget(gameName, 0, 1);
 
-    // Create a vertical layout for player names and pings
-    QVBoxLayout *playerLayout = new QVBoxLayout();
+    QLabel *p1Label = new QLabel("Player 1:", this);
+    layout->addWidget(p1Label, 3, 0);
+    QLabel *p2Label = new QLabel("Player 2:", this);
+    layout->addWidget(p2Label, 4, 0);
+    QLabel *p3Label = new QLabel("Player 3:", this);
+    layout->addWidget(p3Label, 5, 0);
+    QLabel *p4Label = new QLabel("Player 4:", this);
+    layout->addWidget(p4Label, 6, 0);
 
     for (int i = 0; i < 4; ++i)
     {
-        QHBoxLayout *playerRowLayout = new QHBoxLayout();
         pName[i] = new QLabel(this);
-        playerRowLayout->addWidget(pName[i]);
-
+        layout->addWidget(pName[i], i + 3, 1);
+        
         // Initialize player ping labels
         playerPingLabels[i] = new QLabel("(0 ms)", this);
-        playerRowLayout->addWidget(playerPingLabels[i] - 1); // Add ping label next to player name
-
-        playerLayout->addLayout(playerRowLayout);
+        layout->addWidget(playerPingLabels[i], i + 3, 2); // Add ping label next to player name
     }
-
-    layout->addLayout(playerLayout, 1, 1); // Add player layout to the grid
 
     chatWindow = new QPlainTextEdit(this);
     chatWindow->setReadOnly(true);
-    layout->addWidget(chatWindow, 1, 0, 3, 1); // Add chat window to the left
+    layout->addWidget(chatWindow, 7, 0, 3, 2);
 
     chatEdit = new QLineEdit(this);
     chatEdit->setPlaceholderText("Enter chat message here");
     connect(chatEdit, &QLineEdit::returnPressed, this, &Lobby::sendChat);
-    layout->addWidget(chatEdit, 4, 0, 1, 1); // Add chat input below chat window
+    layout->addWidget(chatEdit, 10, 0, 1, 2);
 
     startGameButton = new QPushButton(this);
     startGameButton->setText("Start Game");
     startGameButton->setAutoDefault(false);
     connect(startGameButton, &QPushButton::released, this, &Lobby::startGame);
-    layout->addWidget(startGameButton, 5, 0, 1, 1); // Add start game button below chat input
+    layout->addWidget(startGameButton, 11, 0, 1, 2);
 
     // Add the promotional label
     QLabel *promoLabel = new QLabel(this);
@@ -83,11 +84,11 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     promoLabel->setTextFormat(Qt::RichText);
     promoLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
     promoLabel->setOpenExternalLinks(true);
-    layout->addWidget(promoLabel, 6, 0, 1, 2);
+    layout->addWidget(promoLabel, 12, 0, 1, 2);
 
     // Add the "Copy Public IP" button for Player 1
     copyIpButton = new QPushButton("Copy Public IP", this);
-    layout->addWidget(copyIpButton, 7, 0, 1, 2);
+    layout->addWidget(copyIpButton, 14, 0, 1, 2);
     connect(copyIpButton, &QPushButton::clicked, this, &Lobby::copyPublicIp);
     copyIpButton->setVisible(false);
 
@@ -104,7 +105,6 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
 
     webSocket->sendTextMessage(json_doc.toJson());
 }
-
 
 void Lobby::sendPing()
 {
@@ -224,7 +224,7 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
                     player_number = i + 1;
 
                 // Initialize each player's ping label
-                playerPingLabels[i]->setText("(0 ms)"); // Default ping value
+                playerPingLabels[i]->setText("0 ms"); // Default ping value
             }
             setupBufferSpinBox();
             if (player_number == 1 && webSocket->peerAddress().toString() == "127.0.0.1") {
