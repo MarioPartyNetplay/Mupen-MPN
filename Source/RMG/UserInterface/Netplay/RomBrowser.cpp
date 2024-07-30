@@ -40,13 +40,14 @@ void RomBrowser::loadRoms()
         QString displayName = getRomGoodName(romPath);
 
         if (displayName.isEmpty()) {
-            // If good name is not available, remove the file extension
-            displayName = rom;
-            displayName.chop(displayName.length() - displayName.lastIndexOf('.'));
+            displayName = QFileInfo(rom).baseName();
         }
 
         // Clean the display name by removing text within brackets and parentheses
         displayName = cleanRomName(displayName);
+
+        // Debugging output to check the display names
+        qDebug() << "Adding ROM:" << displayName << "Path:" << romPath;
 
         QListWidgetItem *item = new QListWidgetItem(displayName, listWidget);
         item->setData(Qt::UserRole, romPath);

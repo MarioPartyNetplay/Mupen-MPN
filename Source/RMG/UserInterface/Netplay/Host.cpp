@@ -154,6 +154,21 @@ void Host::processBroadcast()
     }
 }
 
+void Host::downloadFinished(QNetworkReply *reply)
+{
+    if (!reply->error())
+    {
+        QJsonDocument json_doc = QJsonDocument::fromJson(reply->readAll());
+        QJsonObject json = json_doc.object();
+        QStringList servers = json.keys();
+        for (int i = 0; i < servers.size(); ++i)
+            serverChooser->addItem(servers.at(i), json.value(servers.at(i)).toString());
+        serverChooser->addItem(QString("Custom"), QString("Custom"));
+    }
+
+    reply->deleteLater();
+}
+
 void Host::onFinished(int)
 {
     broadcastSocket.close();
@@ -210,21 +225,6 @@ void Host::handleCreateButton(const QString& filename)
         msgBox.setText("Could not open ROM");
         msgBox.exec();
     }
-}
-
-void Host::downloadFinished(QNetworkReply *reply)
-{
-    if (!reply->error())
-    {
-        QJsonDocument json_doc = QJsonDocument::fromJson(reply->readAll());
-        QJsonObject json = json_doc.object();
-        QStringList servers = json.keys();
-        for (int i = 0; i < servers.size(); ++i)
-            serverChooser->addItem(servers.at(i), json.value(servers.at(i)).toString());
-        serverChooser->addItem(QString("Custom"), QString("Custom"));
-    }
-
-    reply->deleteLater();
 }
 
 void Host::handleServerChanged(int index)

@@ -245,10 +245,24 @@ void Join::joinGame()
         }
         else
         {
-            CoreAddCallbackMessage(CoreDebugMessageType::Error, "Could not open ROM");
-            QMessageBox msgBox;
-            msgBox.setText("Could not open ROM");
-            msgBox.exec();
+            // Instead of showing an error message, open a file dialog
+            std::string romPATH;
+            romPATH = CoreSettingsGetStringValue(SettingsID::RomBrowser_Directory);  
+            QString filename = QFileDialog::getOpenFileName(this,
+                tr("Open ROM"), QString::fromStdString(romPATH), 
+                tr("ROM Files (*.n64 *.N64 *.z64 *.Z64 *.v64 *.V64 *.rom *.ROM *.zip *.ZIP *.7z)"));
+        
+            if (filename.isEmpty())
+            {
+                CoreAddCallbackMessage(CoreDebugMessageType::Error, "No ROM file selected");
+                QMessageBox msgBox;
+                msgBox.setText("No ROM file selected");
+                msgBox.exec();
+                return;
+            }
+        
+            romFilePath = filename; // Update romFilePath with the selected file
+
         }
     }
     else
