@@ -318,9 +318,12 @@ void Join::serverChanged(int index)
         // Be forgiving of custom server addresses that forget the port
         serverUrl.setPort(45000);
 
+    QString serverLabel = serverChooser->itemText(index);
+    serverLabel = serverLabel.mid(2); // Trim the first two characters
+    serverChooser->setItemText(index, serverLabel);
+
     webSocket->open(serverUrl);
 }
-
 
 void Join::onConnected()
 {

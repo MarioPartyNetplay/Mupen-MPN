@@ -258,10 +258,17 @@ void Host::handleServerChanged(int index)
     timer->start(2500);
     QString serverAddress = serverChooser->itemData(index) == "Custom" ? customServerHost.prepend("ws://") : serverChooser->itemData(index).toString();
     QUrl serverUrl = QUrl(serverAddress);
-    if (serverChooser->itemData(index) == "Custom" && serverUrl.port() < 0)
+    if (serverChooser->itemData(index) == "Custom" && serverUrl.port() < 0)     
+    {
         // Be forgiving of custom server addresses that forget the port
         serverUrl.setPort(45000);
-
+    }
+    else
+    {
+        QString serverLabel = serverChooser->itemText(index);
+        serverLabel = serverLabel.mid(2); // Remove the first two characters
+        serverChooser->setItemText(index, serverLabel);
+    }
     webSocket->open(serverUrl);
 
 }
