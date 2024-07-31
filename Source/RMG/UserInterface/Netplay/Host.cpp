@@ -219,8 +219,14 @@ void Host::downloadFinished(QNetworkReply *reply)
         QJsonDocument json_doc = QJsonDocument::fromJson(reply->readAll());
         QJsonObject json = json_doc.object();
         QStringList servers = json.keys();
-        for (int i = 0; i < servers.size(); ++i)
-            serverChooser->addItem(servers.at(i), json.value(servers.at(i)).toString());
+        for (int i = 0; i < servers.size(); ++i) {
+            QString serverName = servers.at(i);
+            // Trim the first two characters only if the server is not "Localhost" or "Custom"
+            if (serverName != "Localhost" && serverName != "Custom") {
+                serverName = serverName.mid(2); // Trim the first two characters
+            }
+            serverChooser->addItem(serverName, json.value(servers.at(i)).toString());
+        }
         serverChooser->addItem(QString("Custom"), QString("Custom"));
     }
 
@@ -259,16 +265,8 @@ void Host::handleServerChanged(int index)
     QString serverAddress = serverChooser->itemData(index) == "Custom" ? customServerHost.prepend("ws://") : serverChooser->itemData(index).toString();
     QUrl serverUrl = QUrl(serverAddress);
     if (serverChooser->itemData(index) == "Custom" && serverUrl.port() < 0)     
-    {
         // Be forgiving of custom server addresses that forget the port
         serverUrl.setPort(45000);
-    }
-    else
-    {
-        QString serverLabel = serverChooser->itemText(index);
-        serverLabel = serverLabel.mid(2); // Remove the first two characters
-        serverChooser->setItemText(index, serverLabel);
-    }
     webSocket->open(serverUrl);
 
 }
