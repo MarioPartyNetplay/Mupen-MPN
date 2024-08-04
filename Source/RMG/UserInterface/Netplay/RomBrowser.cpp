@@ -5,6 +5,7 @@
 #include <RMG-Core/Settings/Settings.hpp>
 #include <RMG-Core/m64p/Api.hpp> // Include necessary header for ROM metadata
 #include <QRegularExpression>
+#include <RMG-Core/Core.hpp> // For CoreAddCallbackMessage
 
 namespace UserInterface {
 namespace Widget {
@@ -26,13 +27,19 @@ RomBrowser::RomBrowser(QWidget *parent)
 
 void RomBrowser::loadRoms()
 {
-    // Example directory containing ROMs
-    QString romDirectory = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::RomBrowser_Directory));  
+    QString romDirectory = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::RomBrowser_Directory));
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("ROM Directory Path: " + romDirectory.toStdString()).c_str());
 
     QDir dir(romDirectory);
+    if (!dir.exists()) {
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Directory does not exist: " + romDirectory.toStdString()).c_str());
+        return;
+    }
+
     QStringList filters;
     filters << "*.n64" << "*.z64" << "*.v64" << "*.rom" << "*.zip";
-    romList = dir.entryList(filters, QDir::Files);
+    QStringList romList = dir.entryList(filters, QDir::Files);
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("ROM List: " + romList.join(", ").toStdString()).c_str());
 
     for (const QString &rom : romList)
     {
@@ -48,6 +55,8 @@ void RomBrowser::loadRoms()
         // Clean the display name by removing text within brackets and parentheses
         displayName = cleanRomName(displayName);
 
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Adding ROM: " + displayName.toStdString() + " with path: " + romPath.toStdString()).c_str());
+
         QListWidgetItem *item = new QListWidgetItem(displayName, listWidget);
         item->setData(Qt::UserRole, romPath);
     }
@@ -56,20 +65,19 @@ void RomBrowser::loadRoms()
 QString RomBrowser::getRomGoodName(const QString &romPath)
 {
     m64p_rom_settings romSettings;
-    if (m64p::Core.DoCommand(M64CMD_ROM_GET_SETTINGS, sizeof(romSettings), &romSettings) == M64ERR_SUCCESS)
-    {
-        if (!QString::fromStdString(romSettings.goodname).isEmpty()) {
-            return QString::fromStdString(romSettings.goodname);
-        }
-    }
-    return QFileInfo(romPath).fileName();
+    QString fallbackName = QFileInfo(romPath).fileName();
+    QString cleanedFallbackName = cleanRomName(fallbackName);
+    return cleanedFallbackName;
 }
 
 QString RomBrowser::cleanRomName(const QString &name)
 {
+    // Remove the file extension
+    QString nameWithoutExtension = name.left(name.lastIndexOf('.'));
+
     // Remove anything in brackets or parentheses
     QRegularExpression re("\\s*\\([^\\)]*\\)|\\s*\\[[^\\]]*\\]");
-    QString cleanedName = name;
+    QString cleanedName = nameWithoutExtension;
     cleanedName.remove(re);
     return cleanedName.trimmed();
 }
@@ -77,6 +85,7 @@ QString RomBrowser::cleanRomName(const QString &name)
 void RomBrowser::onItemDoubleClicked(QListWidgetItem *item)
 {
     QString romPath = item->data(Qt::UserRole).toString();
+    CoreAddCallbackMessage(CoreDebugMessageType::Info, ("ROM double-clicked: " + romPath.toStdString()).c_str());
     emit romDoubleClicked(romPath);
 }
 

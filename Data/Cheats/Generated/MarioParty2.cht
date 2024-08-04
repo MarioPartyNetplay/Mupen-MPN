@@ -33,10 +33,7 @@ D111019E 4040
 
 $aQOL - Increased Taunt Capabilities
 Note=By: gamemasterplc, Taunting can be spammed during your own turn.
-8101C880 0802
-8101C882 FE48
-8101C884 0000
-8101C886 0000
+81062D8C 1000
 
 $aQOL - Show Player Who Paused
 Note=By: Celery.
