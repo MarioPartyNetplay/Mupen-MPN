@@ -201,6 +201,25 @@ static uint8_t buffer_size(uint8_t control_id)
     return counter;
 }
 
+static void netplay_remove_player(uint8_t player_id) {
+    // Logic to remove a player from the netplay session
+    if (player_id < 4) {
+        // Reset player control and plugin settings
+        l_netplay_control[player_id] = -1;
+        l_plugin[player_id] = 0;
+        l_player_lag[player_id] = 0;
+
+        // Notify other players about the disconnection
+        char output_data[2];
+        output_data[0] = TCP_DISCONNECT_NOTICE;
+        output_data[1] = player_id; // Player ID to remove
+        SDLNet_TCP_Send(l_tcpSocket, &output_data, sizeof(output_data));
+        
+        DebugMessage(M64MSG_INFO, "Netplay: Player %u has left the room", player_id);
+    }
+}
+
+
 static void netplay_request_input(uint8_t control_id)
 {
     UDPpacket *packet = SDLNet_AllocPacket(12);
@@ -300,6 +319,10 @@ static void netplay_process()
                     new_event->next = l_cin_compats[player].event_first;
                     l_cin_compats[player].event_first = new_event;
                 }
+                break;
+            case TCP_DISCONNECT_NOTICE:
+                uint8_t leaving_player = packet->data[1];
+                netplay_remove_player(leaving_player); // Call to remove player
                 break;
             default:
                 DebugMessage(M64MSG_ERROR, "Netplay: received unknown message from server");
