@@ -1,21 +1,21 @@
 [7C3829D9-6E8247CE-C:45]
 Name=Mario Party 3 (U)
 
-$QOL - Always Save After Every Turn
+$aQOL - Always Save After Every Turn
 Note= By: gamemasterplc
 800CD06A 0000
 
-$QOL - Do Not Proceed on Results
+$aQOL - Do Not Proceed on Results
 Note= By: gamemasterplc, Lavendew. Only applies to Battle Royal in Party Mode.
 D11095AA 2484
 D00B23B0 0001
 81109348 2400
 
-$QOL - Increased Board Speed
+$aQOL - Increased Board Speed
 Note= By: gamemasterplc.
 800CD06D 0000
 
-$QOL - Increased Taunt Capabilities
+$aQOL - Increased Taunt Capabilities
 Note= By: Celery. Normal taunting can be spammed.
 81078E9C 0802
 81078E9E 6ED8
@@ -24,7 +24,7 @@ Note= By: Celery. Normal taunting can be spammed.
 810073BA 6F2C
 810073BC 2400
 
-$QOL - Show Board On Results
+$aQOL - Show Board On Results
 Note= By: gamemasterplc.
 81009C10 080F
 81009C12 FC00
@@ -61,7 +61,7 @@ Note= By: gamemasterplc.
 813FF03C AFBF
 813FF03E 0014
 
-$QOL - Show Who Paused
+$aQOL - Show Who Paused
 Note= By: gamemasterplc.
 810499FC 080F
 810499FE FC10
@@ -136,7 +136,7 @@ D10EF712 BDCB
 813FF0B8 3042
 813FF0BA 8000
 
-$QOL - Unlock Everything
+$aQOL - Unlock Everything
 Note= By: gamemasterplc.
 D11A6356 0003
 811A6354 0004

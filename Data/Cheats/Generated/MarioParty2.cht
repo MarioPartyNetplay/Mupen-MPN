@@ -1,23 +1,23 @@
 [9EA95858-AF72B618-C:45]
 Name=Mario Party 2 (U)
 
-$QOL - Always Save After Every Turn
+$aQOL - Always Save After Every Turn
 Note=By: gamemasterplc.
 800F93CC 0000
 800F93CE 0000
 D00FA63F 004B
 800F93CC 0002
 
-$QOL - Do Not Proceed on Results
+$aQOL - Do Not Proceed on Results
 Note=By: gamemasterplc.
 D1107336 1CBB
 811072A0 2400
 
-$QOL - Faster Map Scrolling
+$aQOL - Faster Map Scrolling
 Note=By: Rain.
 8106793E 40E0
 
-$QOL - Increased Board Speed
+$aQOL - Increased Board Speed
 Note=By: Celery/gamemasterplc.
 810657EE 0005
 D110724A CC90
@@ -31,14 +31,14 @@ D1110166 4020
 D111019E 4040
 8111019E 40C0
 
-$QOL - Increased Taunt Capabilities
+$aQOL - Increased Taunt Capabilities
 Note=By: gamemasterplc, Taunting can be spammed during your own turn.
 8101C880 0802
 8101C882 FE48
 8101C884 0000
 8101C886 0000
 
-$QOL - Show Player Who Paused
+$aQOL - Show Player Who Paused
 Note=By: Celery.
 81078A50 080F
 81078A52 FC10
@@ -74,11 +74,11 @@ Note=By: Celery.
 813FF078 0002
 813FF07A 1040
 
-$QOL - Skip Player Start Screen
+$aQOL - Skip Player Start Screen
 Note=By: gamemasterplc.
 8104F0D4 1000
 
-$QOL - Unlock Everything
+$aQOL - Unlock Everything
 Note=By: gamemasterplc
 810F8C7C FFFF
 810F8C7E FFFF
@@ -644,7 +644,7 @@ D10661A8 2842
 D10661AA 0005
 810661AA 0000
 
-$Minigame - Archer-ival: Disable NPCs
+$Minigame: Archer-ival: Disable NPCs
 Note=By: gamemasterplc.
 D110701A 1A1F
 81105666 0004

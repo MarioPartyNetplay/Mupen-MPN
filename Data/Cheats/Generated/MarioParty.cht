@@ -1,28 +1,28 @@
 [2829657E-A0621877-C:45]
 Name=Mario Party (U)
 
-$QOL - Always Save After Every Turn, Msg Speed Always Fast
+$aQOL - Always Save After Every Turn, Msg Speed Always Fast
 Note=By: gamemasterplc.
 800ED5E2 0002
 800ED5E4 0002
 D00F09F7 007F
 800ED5E2 0000
 
-$QOL - Do Not Proceed on Results
+$aQOL - Do Not Proceed on Results
 Note=By: gamemasterplc.
 D10FB20A EC5C
 810FB1AC 2400
 
-$QOL - Increased Board Speed
+$aQOL - Increased Board Speed
 Note=By: gamemasterplc.
 81057852 4218
 
-$QOL - Increased Taunt Capabilities
+$aQOL - Increased Taunt Capabilities
 Note=By: gamemasterplc, Taunting can be spammed during your own turn.
 8109023C 0802
 8109023E F3A8
 
-$QOL - Show Player Who Paused
+$aQOL - Show Player Who Paused
 Note=By: gamemasterplc.
 8105FA08 080F
 8105FA0A FC10
@@ -58,7 +58,7 @@ Note=By: gamemasterplc.
 813FF078 0002
 813FF07A 1040
 
-$QOL - Skip Player Start Screen
+$aQOL - Skip Player Start Screen
 Note=By: gamemasterplc.
 D10F09F6 0064
 810FB1AC 2400

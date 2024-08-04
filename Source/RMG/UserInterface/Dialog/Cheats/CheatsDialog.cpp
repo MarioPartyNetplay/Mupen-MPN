@@ -6,8 +6,7 @@
  *  it under the terms of the GNU General Public License version 3.
  *  You should have received a copy of the GNU General Public License
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
-*/
-
+ */
 #include "CheatsDialog.hpp"
 
 #include "AddCheatDialog.hpp"
@@ -15,7 +14,6 @@
 
 #include <QMessageBox>
 #include <QFileInfo>
-#include <iostream>
 
 #include <RMG-Core/Core.hpp>
 
@@ -49,50 +47,26 @@ void CheatsDialog::loadCheats(void)
 
     if (!CoreGetCurrentCheats(cheats))
     {
-        this->showErrorMessage("CoreGetCurrentCheats() Failed!", QString::fromStdString(CoreGetError()));
+        this->showErrorMessage("CoreGetCurrentCheats() Failed", QString::fromStdString(CoreGetError()));
         this->failedToParseCheats = true;
         return;
     }
 
-    // Separate recommended cheats and others
-    std::vector<CoreCheat> recommendedCheats;
-    std::vector<CoreCheat> otherCheats;
-
     for (CoreCheat& cheat : cheats)
     {
-        if (QString::fromStdString(cheat.Name).contains("QOL - ", Qt::CaseInsensitive))
-        {
-            recommendedCheats.push_back(cheat);
-        }
-        else
-        {
-            otherCheats.push_back(cheat);
-        }
-    }
-
-    // Sort recommended cheats in ascending order
-    std::sort(recommendedCheats.begin(), recommendedCheats.end(), [](const CoreCheat& a, const CoreCheat& b) {
-       return QString::fromStdString(a.Name).compare(QString::fromStdString(b.Name), Qt::CaseInsensitive) < 0;
-    });
-
-    // Sort other cheats in ascending order
-    std::sort(otherCheats.begin(), otherCheats.end(), [](const CoreCheat& a, const CoreCheat& b) {
-       return QString::fromStdString(a.Name).compare(QString::fromStdString(b.Name), Qt::CaseInsensitive) < 0;
-    });
-
-    // Merge sorted cheats
-    cheats.clear();
-    cheats.insert(cheats.end(), recommendedCheats.begin(), recommendedCheats.end());
-    cheats.insert(cheats.end(), otherCheats.begin(), otherCheats.end());
-
-    // Add cheats to tree widget in reverse order
-    for (auto it = cheats.rbegin(); it != cheats.rend(); ++it)
-    {
-        CoreCheat& cheat = *it;
         QString name = QString::fromStdString(cheat.Name);
+
+        // Debug: Print original name
+        qDebug() << "Original Name:" << name;
+
+        // Rename 'aQOL' to 'QOL'
+        if (name.contains("aQOL", Qt::CaseInsensitive))
+        {
+            name.replace("aQOL", "QOL", Qt::CaseInsensitive);
+        }
+
         QString section;
         QStringList sections = name.split("\\");
-
         bool enabled = CoreIsCheatEnabled(cheat);
 
         for (int i = 0; i < sections.size(); i++)
@@ -121,7 +95,7 @@ void CheatsDialog::loadCheats(void)
             }
 
             if (i == 0)
-            {
+            { 
                 this->cheatsTreeWidget->addTopLevelItem(item);
             }
             else
@@ -130,6 +104,10 @@ void CheatsDialog::loadCheats(void)
                 if (foundParent != nullptr)
                 {
                     foundParent->addChild(item);
+                }
+                else
+                {
+                    delete item;
                 }
 
                 // when the cheat is enabled & we're at the last item,
@@ -146,6 +124,8 @@ void CheatsDialog::loadCheats(void)
             }
         }
     }
+
+    this->cheatsTreeWidget->sortItems(0, Qt::SortOrder::AscendingOrder);
 }
 
 QTreeWidgetItem* CheatsDialog::findItem(QStringList sections, int size, QString itemText)
@@ -341,7 +321,7 @@ void CheatsDialog::on_removeCheatButton_clicked(void)
     // try to remove cheat
     if (!CoreRemoveCheat(cheat))
     {
-        this->showErrorMessage("CoreRemoveCheat() Failed!", QString::fromStdString(CoreGetError()));
+        this->showErrorMessage("CoreRemoveCheat() Failed", QString::fromStdString(CoreGetError()));
         return;
     }
 
@@ -355,7 +335,7 @@ void CheatsDialog::accept(void)
 
     if (!CoreApplyCheats())
     {
-        this->showErrorMessage("CoreApplyCheats() Failed!", QString::fromStdString(CoreGetError()));
+        this->showErrorMessage("CoreApplyCheats() Failed", QString::fromStdString(CoreGetError()));
         return;
     }
 
