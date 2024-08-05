@@ -32,7 +32,7 @@ endif(DRAG_DROP)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
 
-add_definitions(-DNETPLAY_VER="MPN-1")
+add_definitions(-DNETPLAY_VER="MPN-2")
 
 set(RMG_SOURCES
     UserInterface/MainWindow.cpp
