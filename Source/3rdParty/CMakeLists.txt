@@ -91,21 +91,6 @@ ExternalProject_Add(mupen64plus-core
 
 set(APIDIR "${CMAKE_SOURCE_DIR}/Source/3rdParty/mupen64plus-core/src/api")
 
-ExternalProject_Add(mupen64plus-rsp-cxd4
-SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-cxd4/
-CONFIGURE_COMMAND ""
-INSTALL_COMMAND ""
-BUILD_COMMAND ${MAKE_CMD} all -f ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-cxd4/projects/unix/Makefile
-    SRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-cxd4
-    APIDIR=${APIDIR} DEBUG=${MAKE_DEBUG} POSTFIX= 
-    CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
-    OPTFLAGS=${MAKE_OPTFLAGS}
-BUILD_IN_SOURCE False
-BUILD_ALWAYS True
-BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-cxd4
-BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-cxd4/mupen64plus-rsp-cxd4.${SO_EXT}
-DEPENDS mupen64plus-core)
-
 
 ExternalProject_Add(mupen64plus-rsp-hle
 SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-hle/
@@ -123,18 +108,6 @@ BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-hle/mupen64plus-rsp
 DEPENDS mupen64plus-core
 )
 
-ExternalProject_Add(mupen64plus-rsp-parallel
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-parallel/
-
-    INSTALL_COMMAND ""
-
-    BUILD_IN_SOURCE False
-    BUILD_ALWAYS True
-    CMAKE_ARGS ${CMAKE_CONFIGURE_ARGS}
-    BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-parallel
-
-    BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-parallel/mupen64plus-rsp-parallel.${SO_EXT}
-)
 if (NOT APPLE)
     ExternalProject_Add(mupen64plus-input-raphnetraw
         SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-input-raphnetraw/
@@ -312,18 +285,10 @@ if (BUILD_INPUT_GCA)
     set(MUPEN64PLUS_PLUGIN_INPUT_GCA ${BUILD_BYPRODUCTS} PARENT_SCOPE)
 endif(BUILD_INPUT_GCA)
 
-if (USE_ANGRYLION)
-    ExternalProject_Get_property(mupen64plus-video-angrylion-plus BUILD_BYPRODUCTS)
-    set(MUPEN64PLUS_PLUGIN_GFX_ANGRYLION ${BUILD_BYPRODUCTS} PARENT_SCOPE)
-endif(USE_ANGRYLION)
-
 if (NOT APPLE)
     ExternalProject_Get_property(mupen64plus-video-GLideN64 BUILD_BYPRODUCTS)
     set(MUPEN64PLUS_PLUGIN_GFX_GLIDEN64 ${BUILD_BYPRODUCTS} ${GLIDENUI_TRANSLATIONS} ${GLIDEN64_CUSTOM_INI} PARENT_SCOPE)
 endif()
-
-ExternalProject_Get_property(mupen64plus-video-parallel BUILD_BYPRODUCTS)
-set(MUPEN64PLUS_PLUGIN_GFX_PARALLEL ${BUILD_BYPRODUCTS} PARENT_SCOPE)
 
 if (DISCORD_RPC)
     ExternalProject_Get_property(discord-rpc BUILD_BYPRODUCTS)

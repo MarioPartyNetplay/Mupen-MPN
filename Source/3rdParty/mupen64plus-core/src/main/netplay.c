@@ -31,6 +31,8 @@
 
 #include "../../../sdl2_net/include/SDL_net.h"
 
+#include <signal.h>
+
 #if !defined(WIN32)
 #include <netinet/ip.h>
 #endif
@@ -79,13 +81,22 @@ struct __UDPSocket {
 static uint32_t last_buffer_increase_time = 0;
 
 static uint32_t calculate_buffer_increase_threshold(uint8_t current_buffer_size) {
-    // Calculate the threshold based on the current buffer size
-    // You can adjust this calculation based on your specific requirements
-    return current_buffer_size * 10; // Adjust the multiplier as needed
+    return current_buffer_size * 10;
 }
+
+void handle_signal(int signal) {
+    if (netplay_is_init()) {
+        netplay_stop();
+    }
+    exit(signal);
+}
+
 
 m64p_error netplay_start(const char* host, int port)
 {
+    signal(SIGINT, handle_signal);  // Handle Ctrl+C
+    signal(SIGTERM, handle_signal); // Handle termination signal
+
     if (SDLNet_Init() < 0)
     {
         DebugMessage(M64MSG_ERROR, "Netplay: Could not initialize SDL Net library");
