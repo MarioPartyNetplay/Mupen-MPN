@@ -47,6 +47,9 @@ Join::Join(QWidget *parent, RomBrowserWidget *romBrowser)
     if (!netplayName.empty()) {
         playerNameEdit->setText(QString::fromStdString(netplayName));
     }
+    else {
+        playerNameEdit->setText("MPN Player");
+    }
     CoreSettingsSetValue(SettingsID::Core_Netplay_Name, playerNameEdit->text().toStdString());
 
     pNameLabel = new QLabel("Nickname:", this);

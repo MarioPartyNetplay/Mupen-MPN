@@ -109,6 +109,19 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     timer->start(5000);
 
     webSocket->sendTextMessage(json_doc.toJson());
+
+    // Lock the buffer box for everyone but player 1
+    if (player_name != pName[0]->text()) {
+        QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
+        if (bufferSpinBox) {
+            bufferSpinBox->setEnabled(false);
+        }
+    } else {
+        QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
+        if (bufferSpinBox) {
+            bufferSpinBox->setEnabled(true);
+        }
+    }
 }
 
 void Lobby::sendPing()
