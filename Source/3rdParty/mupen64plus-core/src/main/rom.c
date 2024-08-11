@@ -219,10 +219,12 @@ m64p_error open_rom(const unsigned char* romimage, unsigned int size)
             /* When current ROM has the Advanced Homebrew ROM Header, use the save type */
             ROM_SETTINGS.savetype = rom_homebrew_savetype_to_savetype(ROM_HEADER.Version >> 4);
         }
+        else if (memcmp(ROM_HEADER.Name, "NMVE", 4) == 0) {
+            ROM_SETTINGS.savetype = SAVETYPE_EEPROM_16K;
+        }
         else
         {
-            /* There's no way to guess the save type, but 4K EEPROM is better than nothing */
-            ROM_SETTINGS.savetype = SAVETYPE_EEPROM_4K;
+            ROM_SETTINGS.savetype = SAVETYPE_EEPROM_16K;
         }
     }
 
@@ -339,7 +341,7 @@ m64p_error open_disk(void)
     {
         strcpy(ROM_SETTINGS.goodname, "(unknown disk)");
         /* There's no way to guess the save type, but 4K EEPROM is better than nothing */
-        ROM_SETTINGS.savetype = SAVETYPE_EEPROM_4K;
+        ROM_SETTINGS.savetype = SAVETYPE_EEPROM_16K;
         ROM_SETTINGS.status = 0;
         ROM_SETTINGS.players = 4;
         ROM_SETTINGS.rumble = 1;

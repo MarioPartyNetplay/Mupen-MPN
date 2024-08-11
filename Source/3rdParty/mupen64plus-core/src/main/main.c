@@ -87,6 +87,7 @@
 #include "lirc.h"
 #endif //WITH_LIRC
 
+
 /* version number for Core config section */
 #define CONFIG_PARAM_VERSION 1.01
 
@@ -1177,6 +1178,7 @@ static void open_sra_file(struct file_storage* fstorage)
         format_sram(fstorage->data);
     }
 }
+
 
 static void open_eep_file(struct file_storage* fstorage)
 {
