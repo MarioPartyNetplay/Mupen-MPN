@@ -47,6 +47,7 @@ touch "$bin_dir/portable.txt"
 
 ls
 cp -r "../../Data/Extras" "$bin_dir/"
+cp -r "../../Data/Config" "$bin_dir/"
 cp -r "../../Data/Games" "$bin_dir/"
 
 # remove *.a files
