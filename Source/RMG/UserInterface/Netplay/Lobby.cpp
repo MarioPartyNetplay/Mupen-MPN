@@ -34,10 +34,6 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     base_port = room.value("base_port").toInt();
     started = 0;
 
-    webSocket = socket;
-    connect(webSocket, &QWebSocket::textMessageReceived, this, [this](QString message){ processTextMessage(message, cheats); });
-    connect(webSocket, &QWebSocket::pong, this, &Lobby::updatePing);
-
     QGridLayout *layout = new QGridLayout(this);
 
     QLabel *gameLabel = new QLabel("Game Name:", this);
@@ -61,12 +57,22 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
 
     QLabel *p4Label = new QLabel("Player 4:", this);
     layout->addWidget(p4Label, 6, 0);
-
+    
     for (int i = 0; i < 4; ++i)
     {
         pName[i] = new QLabel(this);
         layout->addWidget(pName[i], i + 3, 1);
     }
+
+    QStringList playerNames;
+    for (int i = 0; i < 4; ++i)
+    {
+        playerNames.append(pName[i]->text());
+    }
+
+    webSocket = socket;
+    connect(webSocket, &QWebSocket::textMessageReceived, this, [this, playerNames](QString message){ processTextMessage(message, cheats, playerNames); });
+    connect(webSocket, &QWebSocket::pong, this, &Lobby::updatePing);
 
     chatWindow = new QPlainTextEdit(this);
     chatWindow->setReadOnly(true);
@@ -110,18 +116,7 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
 
     webSocket->sendTextMessage(json_doc.toJson());
 
-    // Lock the buffer box for everyone but player 1
-    if (player_name != pName[0]->text()) {
-        QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
-        if (bufferSpinBox) {
-            bufferSpinBox->setEnabled(false);
-        }
-    } else {
-        QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
-        if (bufferSpinBox) {
-            bufferSpinBox->setEnabled(true);
-        }
-    }
+    setupBufferSpinBox(playerNames);
 }
 
 void Lobby::sendPing()
@@ -189,7 +184,7 @@ void Lobby::onFinished(int)
     webSocket->deleteLater();
 }
 
-void Lobby::setupBufferSpinBox()
+void Lobby::setupBufferSpinBox(const QStringList &playerNames)
 {
     QLabel *bufferLabel = new QLabel("Buffer:", this);
     QSpinBox *bufferSpinBox = new QSpinBox(this);
@@ -201,6 +196,11 @@ void Lobby::setupBufferSpinBox()
     if (gridLayout) {
         gridLayout->addWidget(bufferLabel, 13, 0);
         gridLayout->addWidget(bufferSpinBox, 13, 1);
+    }
+    if (player_name == pName[0]->text()) {
+        bufferSpinBox->setEnabled(true);
+    } else {
+        bufferSpinBox->setEnabled(false);
     }
 }
 
@@ -218,22 +218,9 @@ void Lobby::changeBuffer(int value)
     QString jsonString = json_doc.toJson();
     CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Sending buffer change request: " + jsonString).toStdString().c_str());
     webSocket->sendTextMessage(jsonString);
-    
-    // Lock the buffer box for everyone but player 1
-    if (player_name != pName[0]->text()) {
-        QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
-        if (bufferSpinBox) {
-            bufferSpinBox->setEnabled(false);
-        }
-    } else {
-        QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
-        if (bufferSpinBox) {
-            bufferSpinBox->setEnabled(true);
-        }
-    }
 }
 
-void Lobby::processTextMessage(QString message, QJsonObject cheats)
+void Lobby::processTextMessage(QString message, QJsonObject cheats, QStringList playerNames)
 {
     QJsonDocument json_doc = QJsonDocument::fromJson(message.toUtf8());
     QJsonObject json = json_doc.object();
@@ -247,7 +234,7 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
                 if (pName[i]->text() == player_name)
                     player_number = i + 1;
             }
-            setupBufferSpinBox();
+            setupBufferSpinBox(playerNames);
             if (player_number == 1 && webSocket->peerAddress().toString() == "127.0.0.1") {
                 copyIpButton->setVisible(true);
             }
@@ -258,7 +245,6 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
         started = 1;
         if (player_name == pName[0]->text()) {
             QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
-            bufferSpinBox->setEnabled(true);
         }
         w->OpenROMNetplay(file_name, webSocket->peerAddress().toString(), room_port, player_number, cheats);
     } else if (json.value("type").toString() == "reply_change_buffer") {
@@ -276,12 +262,11 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats)
         QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
         if (bufferSpinBox) {
             CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Updating buffer to: " + std::to_string(newBufferValue)).c_str());
+            bufferSpinBox->setEnabled(true);
             bufferSpinBox->blockSignals(true); // Block signals to prevent feedback loop
             bufferSpinBox->setValue(newBufferValue);
             bufferSpinBox->blockSignals(false); // Unblock signals
-            if (player_name != pName[0]->text()) {
-                bufferSpinBox->setEnabled(false); // Relock for non-Player 1
-            }
+            bufferSpinBox->setEnabled(false);
         }
         // Log buffer change to chat window
         chatWindow->appendPlainText(tr("Buffer changed to %1").arg(newBufferValue));

@@ -20,14 +20,14 @@ class Lobby : public QDialog
 public:
     Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *parent = nullptr);
 private slots:
-    void processTextMessage(QString message, QJsonObject cheats);
+    void processTextMessage(QString message, QJsonObject cheats, QStringList playerNames);
     void onFinished(int);
     void sendChat();
     void startGame();
     void updatePing(quint64 elapsedTime, const QByteArray &payload);
     void sendPing();
     void changeBuffer(int value);
-    void setupBufferSpinBox();
+    void setupBufferSpinBox(const QStringList &playerNames);
     void copyPublicIp();
 private:
     QWebSocket *webSocket = nullptr;
