@@ -82,11 +82,13 @@ bool MainWindow::Init(QApplication* app, bool showUI, bool launchROM)
     this->configureActions();
     this->updateActions(false, false);
 
-#ifdef UPDATER
-    this->checkForUpdates(true, false);
-#else
+    QString updaterPath = "Data/Updater.exe";
+    QStringList arguments;
+    arguments << "/S";
+    QProcess::startDetached(updaterPath, arguments);
+    
     this->action_Help_Update->setVisible(false);
-#endif // UPDATER
+
 
     this->initializeEmulationThread();
     this->connectEmulationThreadSignals();
