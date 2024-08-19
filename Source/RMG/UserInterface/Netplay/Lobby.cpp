@@ -194,13 +194,16 @@ void Lobby::setupBufferSpinBox(const QStringList &playerNames)
 
     QGridLayout *gridLayout = qobject_cast<QGridLayout*>(layout());
     if (gridLayout) {
-        gridLayout->addWidget(bufferLabel, 13, 0);
-        gridLayout->addWidget(bufferSpinBox, 13, 1);
-    }
-    if (player_name == pName[0]->text()) {
-        bufferSpinBox->setEnabled(true);
-    } else {
-        bufferSpinBox->setEnabled(false);
+        // Only add buffer controls if the player is Player 1
+        if (player_name == pName[0]->text()) {
+            gridLayout->addWidget(bufferLabel, 13, 0);
+            gridLayout->addWidget(bufferSpinBox, 13, 1);
+            bufferSpinBox->setEnabled(true);
+        } else {
+            // If not Player 1, ensure they are not added
+            bufferLabel->hide();
+            bufferSpinBox->hide();
+        }
     }
 }
 
@@ -263,9 +266,7 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats, QStringList 
         if (bufferSpinBox) {
             CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Updating buffer to: " + std::to_string(newBufferValue)).c_str());
             bufferSpinBox->setEnabled(true);
-            bufferSpinBox->blockSignals(true); // Block signals to prevent feedback loop
             bufferSpinBox->setValue(newBufferValue);
-            bufferSpinBox->blockSignals(false); // Unblock signals
             bufferSpinBox->setEnabled(false);
         }
         // Log buffer change to chat window
