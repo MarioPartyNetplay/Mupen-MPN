@@ -49,6 +49,9 @@ ls
 cp -r "../../Data/Extras" "$bin_dir/"
 cp -r "../../Data/Config" "$bin_dir/"
 cp -r "../../Data/Games" "$bin_dir/"
+cp "../../Data/Downloader.exe" "$bin_dir/"
+cp "../../Data/Updater.exe" "$bin_dir/"
+cp "../../Data/Updater.ini" "$bin_dir/"
 
 # remove *.a files
 find "$bin_dir/" -name '*.a' -delete
