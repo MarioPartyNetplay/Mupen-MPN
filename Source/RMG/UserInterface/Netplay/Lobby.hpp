@@ -19,6 +19,7 @@ class Lobby : public QDialog
     Q_OBJECT
 public:
     Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *parent = nullptr);
+    bool bufferChangeInProgress = false;
 private slots:
     void processTextMessage(QString message, QJsonObject cheats, QStringList playerNames);
     void onFinished(int);
@@ -44,6 +45,7 @@ private:
     QString room_name;
     QPushButton *startGameButton;
     QSpinBox *bufferSpinBox;
+    int lastBufferValue;
     QLabel *pingValue;
     QTimer *timer;
     int started;

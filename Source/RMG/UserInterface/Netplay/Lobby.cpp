@@ -209,6 +209,10 @@ void Lobby::setupBufferSpinBox(const QStringList &playerNames)
 
 void Lobby::changeBuffer(int value)
 {
+    if (bufferChangeInProgress) return; // Prevent feedback loop
+
+    bufferChangeInProgress = true; // Set the flag
+
     QJsonObject json;
     json.insert("type", "request_change_buffer");
     json.insert("port", room_port);
@@ -262,16 +266,23 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats, QStringList 
             return;
         }
 
-        QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
-        if (bufferSpinBox) {
-            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Updating buffer to: " + std::to_string(newBufferValue)).c_str());
-            bufferSpinBox->setEnabled(true);
-            bufferSpinBox->setValue(newBufferValue);
-            bufferSpinBox->setEnabled(false);
+        // Check if the buffer value has changed
+        if (newBufferValue != lastBufferValue) {
+            lastBufferValue = newBufferValue;
+
+            QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
+            if (bufferSpinBox) {
+                CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Updating buffer to: " + std::to_string(newBufferValue)).c_str());
+                bufferSpinBox->setEnabled(true);
+                bufferSpinBox->setValue(newBufferValue);
+                bufferSpinBox->setEnabled(false);
+            }
+            // Log buffer change to chat window
+            chatWindow->appendPlainText(tr("Buffer changed to %1").arg(newBufferValue));
+            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Buffer changed to " + std::to_string(newBufferValue)).c_str());
         }
-        // Log buffer change to chat window
-        chatWindow->appendPlainText(tr("Buffer changed to %1").arg(newBufferValue));
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Buffer changed to " + std::to_string(newBufferValue)).c_str());
+
+        bufferChangeInProgress = false; // Reset the flag
     }
 }
 
