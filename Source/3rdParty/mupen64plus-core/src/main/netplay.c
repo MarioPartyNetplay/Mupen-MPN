@@ -391,20 +391,33 @@ static uint32_t netplay_get_input(uint8_t control_id)
     netplay_request_input(control_id);
     netplay_request_buffer_target();
 
-    // Recalculate the buffer size
+     // Recalculate the buffer size
     uint8_t current_buffer_size = buffer_size(control_id);
 
-    if (l_player_lag[control_id] > 0 && buffer_size(control_id) > l_buffer_target)
+    if (current_buffer_size > l_buffer_target) {
+        last_buffer_increase_time = SDL_GetTicks(); // Update time when buffer increased
+    }
+
+    // Calculate the buffer increase threshold based on the current buffer size
+    uint32_t buffer_increase_threshold = calculate_buffer_increase_threshold(current_buffer_size);
+
+
+    if (l_player_lag[control_id] > 0 && current_buffer_size > l_buffer_target)
     {
-        l_canFF = 1;
-        main_core_state_set(M64CORE_SPEED_LIMITER, 0);
+        if (!l_canFF)
+        {
+            l_canFF = 1;
+            main_core_state_set(M64CORE_SPEED_LIMITER, 0);
+        }
     }
     else
     {
-        main_core_state_set(M64CORE_SPEED_LIMITER, 1);
-        l_canFF = 0;
+        if (l_canFF || current_buffer_size != buffer_size(control_id) || last_buffer_increase_time == 0)
+        {
+            main_core_state_set(M64CORE_SPEED_LIMITER, 1);
+            l_canFF = 0;
+        }
     }
-
     
     if (netplay_ensure_valid(control_id))
     {
