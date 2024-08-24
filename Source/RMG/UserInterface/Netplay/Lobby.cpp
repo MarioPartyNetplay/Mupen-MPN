@@ -116,7 +116,7 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
 
     webSocket->sendTextMessage(json_doc.toJson());
 
-    setupBufferSpinBox(playerNames);
+    setupBufferSpinBox(playerNames, 3);
 }
 
 void Lobby::sendPing()
@@ -184,11 +184,12 @@ void Lobby::onFinished(int)
     webSocket->deleteLater();
 }
 
-void Lobby::setupBufferSpinBox(const QStringList &playerNames)
+void Lobby::setupBufferSpinBox(const QStringList &playerNames, int p1BufferValue)
 {
     QLabel *bufferLabel = new QLabel("Buffer:", this);
     QSpinBox *bufferSpinBox = new QSpinBox(this);
     bufferSpinBox->setRange(1, 100);
+    bufferSpinBox->setValue(p1BufferValue); // Set initial value
 
     connect(bufferSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &Lobby::changeBuffer);
 
@@ -225,6 +226,14 @@ void Lobby::changeBuffer(int value)
     QString jsonString = json_doc.toJson();
     CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Sending buffer change request: " + jsonString).toStdString().c_str());
     webSocket->sendTextMessage(jsonString);
+
+    // Update the QSpinBox value directly
+    QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
+    if (bufferSpinBox) {
+        bufferSpinBox->setEnabled(true);
+        bufferSpinBox->setValue(value);
+        bufferSpinBox->setEnabled(false);
+    }
 }
 
 void Lobby::processTextMessage(QString message, QJsonObject cheats, QStringList playerNames)
@@ -236,14 +245,48 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats, QStringList 
 
     if (json.value("type").toString() == "reply_players") {
         if (json.contains("player_names")) {
+            QStringList newPlayerNames;
             for (int i = 0; i < 4; ++i) {
-                pName[i]->setText(json.value("player_names").toArray().at(i).toString());
-                if (pName[i]->text() == player_name)
+                QString playerName = json.value("player_names").toArray().at(i).toString();
+                pName[i]->setText(playerName);
+                newPlayerNames.append(playerName);
+                if (playerName == player_name)
                     player_number = i + 1;
             }
-            setupBufferSpinBox(playerNames);
             if (player_number == 1 && webSocket->peerAddress().toString() == "127.0.0.1") {
                 copyIpButton->setVisible(true);
+            }
+
+            // Check if a new user has joined
+            if (newPlayerNames != playerNames) {
+                // If this client is Player 1its 
+                if (player_name == pName[0]->text()) {
+                    QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
+                    if (bufferSpinBox) {
+                        int p1BufferValue = bufferSpinBox->value();
+                        if (p1BufferValue == 0) { // Check if the value is empty (0)
+                            p1BufferValue = 3; // Set to 3 if empty
+                        }
+
+                        // Send Player 1's buffer value to the new user
+                        QJsonObject json;
+                        json.insert("type", "request_change_buffer");
+                        json.insert("port", room_port);
+
+                        QJsonObject features;
+                        features.insert("buffer", QString::number(p1BufferValue));
+                        json.insert("features", features);
+
+                        QJsonDocument json_doc = QJsonDocument(json);
+                        QString jsonString = json_doc.toJson();
+                        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Sending buffer change request to new user: " + jsonString).toStdString().c_str());
+                        webSocket->sendTextMessage(jsonString);
+
+                        // Change the buffer to Player 1's buffer value
+                        changeBuffer(p1BufferValue);
+                        setupBufferSpinBox(newPlayerNames, p1BufferValue);
+                    }
+                }
             }
         }
     } else if (json.value("type").toString() == "reply_chat_message") {

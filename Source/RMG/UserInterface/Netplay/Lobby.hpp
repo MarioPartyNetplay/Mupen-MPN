@@ -28,7 +28,7 @@ private slots:
     void updatePing(quint64 elapsedTime, const QByteArray &payload);
     void sendPing();
     void changeBuffer(int value);
-    void setupBufferSpinBox(const QStringList &playerNames);
+    void setupBufferSpinBox(const QStringList &playerNames, int p1BufferValue);
     void copyPublicIp();
 private:
     QWebSocket *webSocket = nullptr;
