@@ -30,6 +30,7 @@ private slots:
     void changeBuffer(int value);
     void setupBufferSpinBox(const QStringList &playerNames, int p1BufferValue);
     void copyPublicIp();
+    void sendPingMessage();
 private:
     QWebSocket *webSocket = nullptr;
     QLabel *pName[4];

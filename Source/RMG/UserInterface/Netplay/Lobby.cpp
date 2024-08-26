@@ -117,11 +117,25 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     webSocket->sendTextMessage(json_doc.toJson());
 
     setupBufferSpinBox(playerNames, 3);
+
+    // Set up a timer to send ping messages periodically
+    QTimer *pingTimer = new QTimer(this);
+    connect(pingTimer, &QTimer::timeout, this, &Lobby::sendPingMessage);
+    pingTimer->start(5000); // Send ping every 5 seconds
+
 }
 
 void Lobby::sendPing()
 {
     webSocket->ping();
+}
+
+void Lobby::sendPingMessage() {
+    QJsonObject json;
+    json.insert("type", 5);
+    json.insert("ping", pingValue->text().toInt()); // Include the ping value
+    QJsonDocument json_doc = QJsonDocument(json);
+    webSocket->sendTextMessage(json_doc.toJson());
 }
 
 void Lobby::copyPublicIp()
