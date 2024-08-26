@@ -49,6 +49,7 @@ ls
 cp -r "../../Data/Extras" "$bin_dir/"
 cp -r "../../Data/Config" "$bin_dir/"
 cp -r "../../Data/Games" "$bin_dir/"
+cp -r "../../Data/Save/Game" "$bin_dir/Save"
 cp "../../Data/Downloader.exe" "$bin_dir/Data/"
 cp "../../Data/Updater.exe" "$bin_dir/Data/"
 cp "../../Data/Updater.ini" "$bin_dir/Data/"
