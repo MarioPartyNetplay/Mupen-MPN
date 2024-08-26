@@ -282,6 +282,11 @@ Note=By: gamemasterplc. Slows random space roulette to one eighth of original sp
 D10F7F66 0003
 810F7F66 0018
 
+$Board: Wario's Battle Canyon - Untimeable Cannon Rulette
+Note=By: Nayla, gamemasterplc. Makes the roulette untimeable.
+D10F7F66 0003
+810F7F66 0000
+
 $Board: Yoshi's Tropical Island - Fees start at 10 coins
 Note=By: gamemasterplc. Slows random space roulette to one eighth of original speed.
 D10F7F66 0003
