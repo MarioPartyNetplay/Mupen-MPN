@@ -21,6 +21,8 @@
   <file alias="icons/white/svg/graphics-mpn.png">Resource/icons/white/svg/graphics-mpn.png</file>
   <file alias="icons/black/svg/controller-mpn.png">Resource/icons/black/svg/controller-mpn.png</file>
   <file alias="icons/white/svg/controller-mpn.png">Resource/icons/white/svg/controller-mpn.png</file>
+  <file alias="icons/black/svg/modifications-mpn.png">Resource/icons/black/svg/modifications-mpn.png</file>
+  <file alias="icons/white/svg/modifications-mpn.png">Resource/icons/white/svg/modifications-mpn.png</file>
 
   <file alias="icons/black/index.theme">Resource/icons/black/index.theme</file>
   <file alias="icons/black/svg/add-line.svg">Resource/icons/black/svg/add-line.svg</file>
