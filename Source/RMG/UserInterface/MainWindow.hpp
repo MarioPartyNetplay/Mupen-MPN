@@ -13,6 +13,7 @@
 #include "Thread/EmulationThread.hpp"
 #include "Dialog/SettingsDialog.hpp"
 #include "Dialog/Cheats/CheatsDialog.hpp"
+#include "Dialog/Cheats/ModificationsDialog.hpp"
 #include "Dialog/RomInfoDialog.hpp"
 #include "Dialog/LogDialog.hpp"
 #include "EventFilter.hpp"

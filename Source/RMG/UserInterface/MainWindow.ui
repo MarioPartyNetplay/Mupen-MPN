@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>639</width>
-    <height>543</height>
+    <width>1360</width>
+    <height>1060</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -251,7 +251,7 @@
   </action>
   <action name="action_Settings_Modifications">
    <property name="icon">
-    <iconset theme="modificatons-mpn">
+    <iconset theme="modifications-mpn">
      <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">

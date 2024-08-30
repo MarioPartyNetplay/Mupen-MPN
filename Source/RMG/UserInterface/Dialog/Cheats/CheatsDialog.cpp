@@ -17,6 +17,8 @@
 
 #include <RMG-Core/Core.hpp>
 
+#include <fstream>
+
 Q_DECLARE_METATYPE(CoreCheat);
 
 using namespace UserInterface::Dialog;

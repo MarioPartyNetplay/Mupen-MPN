@@ -13,15 +13,12 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <filesystem>
 
 struct CoreCheatCode
 {
-    // Cheat Code Address
     uint32_t Address = 0;
-
-    // Cheat Code Address Value
     int32_t  Value   = 0;
-
     bool UseOptions  = false;
     int  OptionIndex = 0;
     int  OptionSize  = 0;
@@ -38,13 +35,8 @@ struct CoreCheatCode
 
 struct CoreCheatOption
 {
-    // Cheat Option Name
     std::string Name;
-
-    // Cheat Option Value
     uint32_t    Value = 0;
-
-    // Cheat Option Value Size
     int32_t     Size  = 0;
 
     bool operator==(const CoreCheatOption& other) const
@@ -57,21 +49,11 @@ struct CoreCheatOption
 
 struct CoreCheat
 {
-    // Cheat Name
     std::string Name;
-
-    // Cheat Author
     std::string Author;
-
-    // Cheat Note
     std::string Note;
-
-    // Whether Cheat Has Options
-    bool                         HasOptions = false;
-    // Cheat Options
+    bool HasOptions = false;
     std::vector<CoreCheatOption> CheatOptions;
-
-    // Cheat Codes
     std::vector<CoreCheatCode> CheatCodes;
 
     bool operator==(const CoreCheat& other) const
@@ -85,70 +67,34 @@ struct CoreCheat
     }
 };
 
-#ifdef CORE_INTERNAL
 struct CoreCheatFile
 {
     uint32_t CRC1 = 0;
     uint32_t CRC2 = 0;
     uint32_t CountryCode = 0;
-
     std::string MD5;
-
     std::string Name;
-
     std::vector<CoreCheat> Cheats;
 };
-#endif // CORE_INTERNAL
 
-// attempts to retrieve the cheats for the currently opened ROM
 bool CoreGetCurrentCheats(std::vector<CoreCheat>& cheats);
-
-// attempts to parse cheat from lines
 bool CoreParseCheat(const std::vector<std::string>& lines, CoreCheat& cheat);
-
-// attemps to convert the cheat into parsable code lines & option lines
 bool CoreGetCheatLines(CoreCheat cheat, std::vector<std::string>& codeLines, std::vector<std::string>& optionLines);
-
-// attempts to add the cheat
 bool CoreAddCheat(CoreCheat cheat);
-
-// attemps to update given cheat
 bool CoreUpdateCheat(CoreCheat oldCheat, CoreCheat newCheat);
-
-// returns whether you can remove the cheat
 bool CoreCanRemoveCheat(CoreCheat cheat);
-
-// attempts to remove the given cheat
 bool CoreRemoveCheat(CoreCheat cheat);
-
-// attempt to enable the cheat
 bool CoreEnableCheat(CoreCheat cheat, bool enabled);
-
-// returns whether cheat is enabled
 bool CoreIsCheatEnabled(CoreCheat cheat);
-
-// returns whether an option has been set for the given cheat
 bool CoreHasCheatOptionSet(CoreCheat cheat);
-
-// attempts to set the cheat's option
 bool CoreSetCheatOption(CoreCheat cheat, CoreCheatOption option);
-
-// attempts to retrieve the currently's set cheat's option
 bool CoreGetCheatOption(CoreCheat cheat, CoreCheatOption& option);
-
-// attempts to reset the cheat option
 bool CoreResetCheatOption(CoreCheat cheat);
-
-// attempts to apply the enabled cheats to the currently opened ROM
 bool CoreApplyCheats(void);
-
-// attempts to apply the enabled cheats to the currently opened ROM dynamically
 bool CoreApplyCheatsRuntime(const std::vector<CoreCheat>& cheats);
-
-// attempts to remove all cheats from the currently opened ROM
 bool CoreClearCheats(void);
-
-// attemps to press the gameshark button
 bool CorePressGamesharkButton(bool enabled);
+bool read_file_lines(std::filesystem::path file, std::vector<std::string>& lines);
+bool parse_cheat_file(const std::vector<std::string>& lines, CoreCheatFile& cheatFile);
 
 #endif // CORE_CHEATS_HPP

@@ -60,7 +60,7 @@ static std::vector<l_LoadedCheat> l_LoadedCheats;
 // Local Functions
 //
 
-static bool read_file_lines(std::filesystem::path file, std::vector<std::string>& lines)
+bool read_file_lines(std::filesystem::path file, std::vector<std::string>& lines)
 {
     std::string error;
     std::ifstream inputStream(file);
@@ -347,7 +347,7 @@ static bool parse_cheat(const std::vector<std::string>& lines, int startIndex, C
     return !cheat.Name.empty() && !cheat.CheatCodes.empty();
 }
 
-static bool parse_cheat_file(const std::vector<std::string>& lines, CoreCheatFile& cheatFile)
+bool parse_cheat_file(const std::vector<std::string>& lines, CoreCheatFile& cheatFile)
 {
     int endIndex = -1;
     std::string line;

@@ -81,6 +81,8 @@ bool MainWindow::Init(QApplication* app, bool showUI, bool launchROM)
     this->connectActionSignals();
     this->configureActions();
     this->updateActions(false, false);
+    
+    this->resize(1355, 1050);
 
     QString updaterPath = "Data/Updater.exe";
     QStringList arguments;
@@ -1768,7 +1770,7 @@ void MainWindow::on_Action_Modifications_Settings(void)
         this->on_Action_System_Pause();
     }
 
-    Dialog::CheatsDialog dialog(this);
+    Dialog::ModificationsDialog dialog(this);
     if (!dialog.HasFailed())
     {
         dialog.exec();
