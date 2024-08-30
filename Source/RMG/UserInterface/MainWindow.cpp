@@ -688,6 +688,7 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     this->action_Create_Room->setEnabled(!inEmulation);
     this->action_Join_Room->setEnabled(!inEmulation);
     this->action_Settings_Input2->setEnabled(!inEmulation);
+    this->action_Settings_Modifications->setEnabled(!inEmulation);
     this->action_System_Screenshot->setShortcut(QKeySequence(keyBinding));
     this->menuSpeedFactor->setEnabled(inEmulation);
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_SaveState));
@@ -1105,7 +1106,8 @@ void MainWindow::connectActionSignals(void)
             &MainWindow::on_Action_Settings_Input);
     connect(this->action_Settings_Input2, &QAction::triggered, this,
             &MainWindow::on_Action_Settings_Input);
-
+    connect(this->action_Settings_Modifications, &QAction::triggered, this,
+            &MainWindow::on_Action_Modifications_Settings);
     connect(this->action_Settings_Settings, &QAction::triggered, this, &MainWindow::on_Action_Settings_Settings);
     connect(this->action_Settings_Settings2, &QAction::triggered, this, &MainWindow::on_Action_Settings_Settings);
 
@@ -1754,6 +1756,28 @@ void MainWindow::on_Action_Settings_Rsp(void)
 void MainWindow::on_Action_Settings_Input(void)
 {
     CorePluginsOpenConfig(CorePluginType::Input);
+}
+
+void MainWindow::on_Action_Modifications_Settings(void)
+{
+    bool isRunning = CoreIsEmulationRunning();
+    bool isPaused = CoreIsEmulationPaused();
+
+    if (isRunning && !isPaused)
+    {
+        this->on_Action_System_Pause();
+    }
+
+    Dialog::CheatsDialog dialog(this);
+    if (!dialog.HasFailed())
+    {
+        dialog.exec();
+    }
+
+    if (isRunning && !isPaused)
+    {
+        this->on_Action_System_Pause();
+    }
 }
 
 void MainWindow::on_Action_Settings_Settings(void)

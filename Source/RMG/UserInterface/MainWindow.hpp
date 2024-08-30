@@ -196,6 +196,9 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     void on_Action_Settings_Input(void);
     void on_Action_Settings_Settings(void);
 
+    void on_Action_Modifications_Settings(void);
+
+
     void on_Action_View_Toolbar(bool checked);
     void on_Action_View_StatusBar(bool checked);
     void on_Action_View_GameList(bool checked);

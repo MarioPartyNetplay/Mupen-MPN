@@ -202,6 +202,7 @@
    <addaction name="action_Settings_Settings2"/>
    <addaction name="action_Settings_Graphics2"/>
    <addaction name="action_Settings_Input2"/>
+   <addaction name="action_Settings_Modifications"/>
   </widget>
   <action name="action_System_StartRom">
    <property name="icon">
@@ -246,6 +247,15 @@
    </property>
    <property name="text">
     <string>Controllers</string>
+   </property>
+  </action>
+  <action name="action_Settings_Modifications">
+   <property name="icon">
+    <iconset theme="modificatons-mpn">
+     <normaloff>.</normaloff>.</iconset>
+   </property>
+   <property name="text">
+    <string>Modifications</string>
    </property>
   </action>
   <action name="action_System_Screenshot2">
