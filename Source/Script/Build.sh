@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-
-
 # Check if the system is macOS
 if [[ "$(uname)" == "Darwin" ]]; then
     alias nproc="sysctl -n hw.logicalcpu"
@@ -37,15 +35,15 @@ cmake -S "$toplvl_dir" -B "$build_dir" -DCMAKE_BUILD_TYPE="$build_config" -DPORT
 
 cmake --build "$build_dir" --parallel "$threads"
 
-if [[ "$build_config" = "Debug" ]] ||
-    [[ "$build_config" = "RelWithDebInfo" ]]
-then
-    cmake --install "$build_dir" --prefix="$toplvl_dir"
-else
-    cmake --install "$build_dir" --strip --prefix="$toplvl_dir"
+if [[ "$(uname)" == "Linux" ]]; then
+    if [[ "$build_config" == "Debug" ]] || 
+       [[ "$build_config" == "RelWithDebInfo" ]]; then
+        cmake --install "$build_dir" --prefix="$toplvl_dir"
+    else
+        cmake --install "$build_dir" --strip --prefix="$toplvl_dir"
+    fi
 fi
 
-if [[ $(uname -s) = *MINGW64* ]]
-then
+if [[ "$(uname -s)" == *MINGW64* ]]; then
     cmake --build "$build_dir" --target=bundle_dependencies -j11
 fi
