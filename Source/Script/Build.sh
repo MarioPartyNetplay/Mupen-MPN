@@ -35,13 +35,12 @@ cmake -S "$toplvl_dir" -B "$build_dir" -DCMAKE_BUILD_TYPE="$build_config" -DPORT
 
 cmake --build "$build_dir" --parallel "$threads"
 
-if [[ "$(uname)" == "Linux" ]]; then
-    if [[ "$build_config" == "Debug" ]] || 
-       [[ "$build_config" == "RelWithDebInfo" ]]; then
-        cmake --install "$build_dir" --prefix="$toplvl_dir"
-    else
-        cmake --install "$build_dir" --strip --prefix="$toplvl_dir"
-    fi
+if [[ "$build_config" = "Debug" ]] ||/
+    [[ "$build_config" = "RelWithDebInfo" ]]
+then
+    cmake --install "$build_dir" --prefix="$toplvl_dir"
+else
+    cmake --install "$build_dir" --strip --prefix="$toplvl_dir"
 fi
 
 if [[ "$(uname -s)" == *MINGW64* ]]; then
