@@ -29,7 +29,7 @@ private slots:
     void processBroadcast();
     void sendPing();
     void updatePing(quint64 elapsedTime, const QByteArray&);
-    QString findRomFilePath(const QString& gameName);
+    QString findRomFilePath(const QString& gameName, const QList<QString>& failedRoms);
 private:
     void resetList();
     QString romGoodName;

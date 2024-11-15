@@ -196,8 +196,10 @@ void Join::joinGame()
         return;
     }
 
+    // Get the initial game name and ROM file path
     QString gameName = listWidget->item(listWidget->currentRow(), 1)->text();
-    QString romFilePath = findRomFilePath(gameName);
+    QList<QString> failedRoms; // List to keep track of failed ROMs
+    QString romFilePath = findRomFilePath(gameName, failedRoms);
 
     CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Game Name: " + gameName).toStdString().c_str());
     CoreAddCallbackMessage(CoreDebugMessageType::Info, ("ROM File Path: " + romFilePath).toStdString().c_str());
@@ -211,61 +213,70 @@ void Join::joinGame()
         return;
     }
 
-    if (romFilePath.isNull())
+    // Attempt to load the ROM until a match is found
+    bool matchFound = false; // Flag to indicate if a valid ROM has been found
+    int currentIndex = 0; // Index to track the current ROM being attempted
+
+    while (!matchFound)
     {
-        romFilePath = QFileDialog::getOpenFileName(this, tr("Select ROM File"), "", tr("ROM Files (*.rom *.n64 *.z64)"));
-        if (romFilePath.isEmpty())
-        {
-            CoreAddCallbackMessage(CoreDebugMessageType::Error, "No ROM file selected");
-            QMessageBox msgBox;
-            msgBox.setText("No ROM file selected");
-            msgBox.exec();
-            return;
-        }
-    }
-
-    romGoodName = romFilePath;
-
-
-    if (!romFilePath.isNull())
-    {
+        // Attempt to load the ROM
         if (loadROM(romFilePath) == M64ERR_SUCCESS)
         {
-            int room_port = rooms.at(listWidget->currentRow()).value("port").toInt();
             m64p_rom_settings rom_settings;
             m64p::Core.DoCommand(M64CMD_ROM_GET_SETTINGS, sizeof(rom_settings), &rom_settings);
 
-            joinButton->setEnabled(false);
-            
-            QString playerNameID = playerNameEdit->text();
-            CoreSettingsSetValue(SettingsID::Core_Netplay_Name, playerNameID.toStdString());
+            // Debugging: Log the expected and actual ROM MD5
+            QString expectedMD5 = rooms.at(listWidget->currentRow()).value("md5").toString();
+            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Expected MD5: " + expectedMD5).toStdString().c_str());
+            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Actual MD5: " + QString(rom_settings.MD5)).toStdString().c_str());
 
-            QJsonObject json;
-            json.insert("type", "request_join_room");
-            json.insert("player_name", playerNameEdit->text());
-            json.insert("password", "MPN");
-            json.insert("client_sha", "demo");
-            json.insert("MD5", QString(rom_settings.MD5));
-            json.insert("port", room_port);
+            // Check if the loaded ROM matches the expected MD5 from the room
+            if (expectedMD5 == QString(rom_settings.MD5))
+            {
+                joinButton->setEnabled(false);
+                
+                QString playerNameID = playerNameEdit->text();
+                CoreSettingsSetValue(SettingsID::Core_Netplay_Name, playerNameID.toStdString());
 
+                QJsonObject json;
+                json.insert("type", "request_join_room");
+                json.insert("player_name", playerNameEdit->text());
+                json.insert("password", "MPN");
+                json.insert("client_sha", "demo");
+                json.insert("MD5", QString(rom_settings.MD5));
+                json.insert("port", rooms.at(listWidget->currentRow()).value("port").toInt());
 
-            QJsonDocument json_doc(json);
-            webSocket->sendTextMessage(json_doc.toJson());
+                QJsonDocument json_doc(json);
+                webSocket->sendTextMessage(json_doc.toJson());
+                matchFound = true; // Match found, exit loop
+            }
+            else
+            {
+                // If the ROM doesn't match, log the mismatch
+                CoreAddCallbackMessage(CoreDebugMessageType::Error, "ROM does not match the expected room ROM.");
+            }
         }
         else
         {
-            CoreAddCallbackMessage(CoreDebugMessageType::Error, "Could not open ROM");
-            QMessageBox msgBox;
-            msgBox.setText("Could not open ROM");
-            msgBox.exec();
+            // If the ROM doesn't load, log the error
+            CoreAddCallbackMessage(CoreDebugMessageType::Error, std::string("Failed to load ROM: ") + romFilePath.toStdString());
         }
-    }
-    else
-    {
-        CoreAddCallbackMessage(CoreDebugMessageType::Error, "Filename is null");
-        QMessageBox msgBox;
-        msgBox.setText("Filename is null");
-        msgBox.exec();
+
+        // Find the next game name and get its ROM path, skipping failed ROMs
+        romFilePath = findRomFilePath(gameName, failedRoms);
+
+        // Log the new ROM path being attempted
+        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Next ROM File Path: " + romFilePath).toStdString().c_str());
+
+        // If no valid next ROM is found, exit the loop
+        if (romFilePath.isEmpty())
+        {
+            CoreAddCallbackMessage(CoreDebugMessageType::Error, "No matching ROM file found");
+            QMessageBox msgBox;
+            msgBox.setText("Could not find a matching ROM file for the selected games.");
+            msgBox.exec();
+            return;
+        }
     }
 }
 
@@ -435,7 +446,7 @@ QString Join::cleanGameName(const QString &name) {
     return cleanedName.trimmed();
 }
 
-QString Join::findRomFilePath(const QString& gameName)
+QString Join::findRomFilePath(const QString& gameName, const QList<QString>& failedRoms)
 {
     QString romDirectory = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::RomBrowser_Directory));
     QDir romDir(romDirectory);
@@ -452,20 +463,15 @@ QString Join::findRomFilePath(const QString& gameName)
 
     for (const QFileInfo &fileInfo : romFiles) {
         QString fileName = cleanGameName(fileInfo.baseName()); // Get the cleaned file name without extension
+
+        // Skip the previously failed ROMs
+        if (failedRoms.contains(fileInfo.absoluteFilePath())) {
+            continue;
+        }
+
         CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Checking ROM: " + fileName).toStdString().c_str());
         int distance = levenshteinDistance(fileName, cleanedGameName);
 
-        if (cleanedGameName.compare("Mario Party", Qt::CaseInsensitive) == 0 && fileName.compare("Mario Party 1", Qt::CaseInsensitive) == 0) {
-            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Special case match found: " + fileInfo.absoluteFilePath()).toStdString().c_str());
-            return fileInfo.absoluteFilePath();
-        }
-
-        // Ensure "Mario Party 1" is not loaded for "Mario Party 2" or "Mario Party 3"
-        if ((cleanedGameName.compare("Mario Party 2", Qt::CaseInsensitive) == 0 || cleanedGameName.compare("Mario Party 3", Qt::CaseInsensitive) == 0) &&
-            fileName.compare("Mario Party 1", Qt::CaseInsensitive) == 0) {
-            continue;
-        }
-        
         if (distance < minDistance) {
             minDistance = distance;
             closestMatch = fileInfo.absoluteFilePath();
