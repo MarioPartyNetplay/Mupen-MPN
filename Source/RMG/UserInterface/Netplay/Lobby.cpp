@@ -286,6 +286,10 @@ void Lobby::closeEvent(QCloseEvent *event)
     {
         int result = QMessageBox::question(this, tr("Close Room"), tr("Are you sure you want to close the room?"), QMessageBox::Yes | QMessageBox::No);
         if (result == QMessageBox::Yes) {
+            if (webSocket) {
+                webSocket->close();
+                webSocket->deleteLater();
+            }
             event->accept();
         } else {
             event->ignore();
@@ -293,6 +297,10 @@ void Lobby::closeEvent(QCloseEvent *event)
     }
     else
     {
+        if (webSocket) {
+            webSocket->close();
+            webSocket->deleteLater();
+        }
         event->accept();
     }
 }
