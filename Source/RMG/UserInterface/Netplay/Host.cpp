@@ -72,7 +72,7 @@ Host::Host(QWidget *parent)
 
     // Add the promotional label
     QLabel *promoLabel = new QLabel(this);
-    promoLabel->setText("<p style='text-align:center;'>Servers are funded by Nayla! Use this <a href='https://paypal.me/naylahanegan'>link</a> to help fund the process.</p>");
+    promoLabel->setText("<p style='text-align:center;'>Servers are funded by Nayla! Use this <a href='https://ko-fi.com/naylahanegan'>link</a> to help fund the process.</p>");
     promoLabel->setTextFormat(Qt::RichText);
     promoLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
     promoLabel->setOpenExternalLinks(true);
@@ -91,7 +91,7 @@ Host::Host(QWidget *parent)
 
     connect(this, SIGNAL (finished(int)), this, SLOT (onFinished(int)));
 
-    QNetworkRequest request(QUrl(QStringLiteral("https://gist.githubusercontent.com/EndangeredNayla/509752dc059d5b868e9403fb30218315/raw/c10dafddb99f89854e00c223f0687485a5e9009c/")));
+    QNetworkRequest request(QUrl(QStringLiteral("https://gist.githubusercontent.com/RainbowTabitha/509752dc059d5b868e9403fb30218315/raw/c10dafddb99f89854e00c223f0687485a5e9009c/")));
     manager.get(request);
 
     broadcastSocket.bind(QHostAddress(QHostAddress::AnyIPv4), 0);
