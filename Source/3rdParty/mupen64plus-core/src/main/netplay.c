@@ -73,13 +73,7 @@ struct __UDPSocket {
 };
 
 #define CS4 32
-static uint32_t last_buffer_increase_time = 0;
 
-static uint32_t calculate_buffer_increase_threshold(uint8_t current_buffer_size) {
-    // Calculate the threshold based on the current buffer size
-    // You can adjust this calculation based on your specific requirements
-    return current_buffer_size * 3; // Adjust the multiplier as needed
-}
 m64p_error netplay_start(const char* host, int port)
 {
     if (SDLNet_Init() < 0)
@@ -352,23 +346,6 @@ static uint32_t netplay_get_input(uint8_t control_id)
     netplay_process();
     netplay_request_input(control_id);
 
-    //l_buffer_target is set by the server upon registration
-    //l_player_lag is how far behind we are from the lead player
-    //buffer_size is the local buffer size
-
-    netplay_request_buffer_target();
-
-    // Recalculate the buffer size
-    uint8_t current_buffer_size = buffer_size(control_id);
-
-    if (current_buffer_size > l_buffer_target) {
-        last_buffer_increase_time = SDL_GetTicks(); // Update time when buffer increased
-    }
-
-    // Calculate the buffer increase threshold based on the current buffer size
-    uint32_t buffer_increase_threshold = calculate_buffer_increase_threshold(current_buffer_size);
-
-
     // Check if the player is lagging behind
     if (l_player_lag[control_id] > 0) {
         // Slow down the players who are ahead
@@ -389,7 +366,6 @@ static uint32_t netplay_get_input(uint8_t control_id)
         Controls[control_id].Plugin = current->plugin;
         netplay_delete_event(current, control_id);
         ++l_cin_compats[control_id].netplay_count;
-        current_buffer_size = buffer_size(control_id);
     }
     else
     {
@@ -400,6 +376,7 @@ static uint32_t netplay_get_input(uint8_t control_id)
 
     return keys;
 }
+
 
 static void netplay_send_input(uint8_t control_id, uint32_t keys)
 {

@@ -41,27 +41,32 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     QLabel *gameName = new QLabel(room.value("game_name").toString(), this);
     layout->addWidget(gameName, 0, 1);
 
+    QLabel *codeLabel = new QLabel("Host Code:", this);
+    layout->addWidget(codeLabel, 1, 0);
+    QLabel *codeID = new QLabel(room.value("room_name").toString(), this);
+    layout->addWidget(codeID, 1, 1);
+
     QLabel *pingLabel = new QLabel("Your Ping:", this);
-    layout->addWidget(pingLabel, 1, 0);
+    layout->addWidget(pingLabel, 2, 0);
     pingValue = new QLabel(this);
-    layout->addWidget(pingValue, 1, 1);
+    layout->addWidget(pingValue, 2, 1);
 
     QLabel *p1Label = new QLabel("Player 1:", this);
-    layout->addWidget(p1Label, 3, 0);
+    layout->addWidget(p1Label, 4, 0);
     
     QLabel *p2Label = new QLabel("Player 2:", this);
-    layout->addWidget(p2Label, 4, 0);
+    layout->addWidget(p2Label, 5, 0);
 
     QLabel *p3Label = new QLabel("Player 3:", this);
-    layout->addWidget(p3Label, 5, 0);
+    layout->addWidget(p3Label, 6, 0);
 
     QLabel *p4Label = new QLabel("Player 4:", this);
-    layout->addWidget(p4Label, 6, 0);
+    layout->addWidget(p4Label, 7, 0);
     
     for (int i = 0; i < 4; ++i)
     {
         pName[i] = new QLabel(this);
-        layout->addWidget(pName[i], i + 3, 1);
+        layout->addWidget(pName[i], i + 4, 1);
     }
 
     QStringList playerNames;
@@ -76,18 +81,18 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
 
     chatWindow = new QPlainTextEdit(this);
     chatWindow->setReadOnly(true);
-    layout->addWidget(chatWindow, 7, 0, 3, 2);
+    layout->addWidget(chatWindow, 8, 0, 3, 2);
 
     chatEdit = new QLineEdit(this);
     chatEdit->setPlaceholderText("Enter chat message here");
     connect(chatEdit, &QLineEdit::returnPressed, this, &Lobby::sendChat);
-    layout->addWidget(chatEdit, 10, 0, 1, 2);
+    layout->addWidget(chatEdit, 11, 0, 1, 2);
 
     startGameButton = new QPushButton(this);
     startGameButton->setText("Start Game");
     startGameButton->setAutoDefault(false);
     connect(startGameButton, &QPushButton::released, this, &Lobby::startGame);
-    layout->addWidget(startGameButton, 11, 0, 1, 2);
+    layout->addWidget(startGameButton, 12, 0, 1, 2);
 
     // Add the promotional label
     QLabel *promoLabel = new QLabel(this);
@@ -95,11 +100,11 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     promoLabel->setTextFormat(Qt::RichText);
     promoLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
     promoLabel->setOpenExternalLinks(true);
-    layout->addWidget(promoLabel, 12, 0, 1, 2);
+    layout->addWidget(promoLabel, 15, 0, 1, 2);
 
     // Add the "Copy Public IP" button for Player 1
     copyIpButton = new QPushButton("Copy Public IP", this);
-    layout->addWidget(copyIpButton, 14, 0, 1, 2);
+    layout->addWidget(copyIpButton, 16, 0, 1, 2);
     connect(copyIpButton, &QPushButton::clicked, this, &Lobby::copyPublicIp);
     copyIpButton->setVisible(false);
 
@@ -253,7 +258,6 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats, QStringList 
     } else if (json.value("type").toString() == "reply_change_buffer") {
         CoreAddCallbackMessage(CoreDebugMessageType::Info, "Processing reply_change_buffer message");
 
-        // Ensure the buffer value is correctly parsed as an integer
         QString bufferString = json.value("features").toObject().value("buffer").toString();
         bool ok;
         int newBufferValue = bufferString.toInt(&ok);
@@ -264,14 +268,13 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats, QStringList 
 
         QSpinBox *bufferSpinBox = findChild<QSpinBox*>();
         if (bufferSpinBox) {
+            // Update buffer value and log the change
             CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Updating buffer to: " + std::to_string(newBufferValue)).c_str());
-            bufferSpinBox->setEnabled(true);
-            bufferSpinBox->setValue(newBufferValue);
-            bufferSpinBox->setEnabled(false);
-        }
-        // Log buffer change to chat window
-        chatWindow->appendPlainText(tr("Buffer changed to %1").arg(newBufferValue));
-        CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Buffer changed to " + std::to_string(newBufferValue)).c_str());
+            bufferSpinBox->setValue(newBufferValue); // Set the new buffer value directly
+            // Log buffer change to chat window
+            chatWindow->appendPlainText(tr("Buffer changed to %1").arg(newBufferValue));
+            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Buffer changed to " + std::to_string(newBufferValue)).c_str());
+        }    
     }
 }
 

@@ -111,7 +111,7 @@ void Host::hostLocalServer()
     {
         selectedPort = port;
 
-        QString program = "RMG-Server.exe";
+        QString program = "Netplay-Server.exe";
         QStringList arguments;
         arguments << "-baseport" << QString::number(port);
 
@@ -120,7 +120,7 @@ void Host::hostLocalServer()
 
         if (!serverProcess->waitForStarted())
         {
-            QMessageBox::critical(this, "Error", "Failed to start RMG-Server.exe");
+            QMessageBox::critical(this, "Error", "Failed to start Netplay-Server.exe");
             delete serverProcess;
             serverProcess = nullptr;
         }
@@ -320,7 +320,7 @@ void Host::createRoom() {
     json.insert("player_name", playerNameEdit->text());
     json.insert("password", "MPN");
     json.insert("MD5", QString(rom_settings.MD5));
-    json.insert("game_name", UserInterface::Widget::RomBrowser::cleanRomName(QString(rom_settings.goodname)));
+    json.insert("game_name", QFileInfo(romName).baseName());
     json.insert("client_sha", "demo");
     json.insert("netplay_version", NETPLAY_VER);
     json.insert("emulator", "MPN");

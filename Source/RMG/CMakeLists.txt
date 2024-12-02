@@ -94,27 +94,27 @@ set_source_files_properties(${IMGUI_SOURCES} PROPERTIES GENERATED TRUE)
 list(APPEND RMG_SOURCES ${IMGUI_SOURCES})
 
 if (CMAKE_BUILD_TYPE MATCHES Release)
-    add_executable(RMG WIN32 ${RMG_SOURCES})
+    add_executable(Mupen-MPN WIN32 ${RMG_SOURCES})
 else()
-    add_executable(RMG ${RMG_SOURCES})
+    add_executable(Mupen-MPN ${RMG_SOURCES})
 endif()
 
-add_dependencies(RMG 
+add_dependencies(Mupen-MPN 
     imgui
 )
 
-target_link_libraries(RMG 
+target_link_libraries(Mupen-MPN 
     RMG-Core
 )
 
-# needed for dynamically linked RMG-Core
+# needed for dynamically linked Mupen-MPN-Core
 if (PORTABLE_INSTALL)
-    set_target_properties(RMG PROPERTIES
+    set_target_properties(Mupen-MPN PROPERTIES
         INSTALL_RPATH "$ORIGIN"
     )
 endif(PORTABLE_INSTALL)
 
-target_include_directories(RMG PRIVATE 
+target_include_directories(Mupen-MPN PRIVATE 
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../
@@ -122,11 +122,11 @@ target_include_directories(RMG PRIVATE
     ${IMGUI_DIR}
 )
 
-target_include_directories(RMG PRIVATE ${SDL2_INCLUDE_DIRS} )
+target_include_directories(Mupen-MPN PRIVATE ${SDL2_INCLUDE_DIRS} )
 
-target_link_libraries(RMG Qt6::Gui Qt6::Widgets Qt6::WebSockets Qt6::OpenGL Qt6::Svg)
+target_link_libraries(Mupen-MPN Qt6::Gui Qt6::Widgets Qt6::WebSockets Qt6::OpenGL Qt6::Svg)
 
 if (UPDATER)
-    target_link_libraries(RMG Qt6::Network)
+    target_link_libraries(Mupen-MPN Qt6::Network)
 endif(UPDATER)
 

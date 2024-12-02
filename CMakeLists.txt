@@ -146,7 +146,7 @@ add_subdirectory(Source/RMG-Input)
 
 if (USE_NETPLAY_SERVER AND WIN32)
     add_custom_target(build_netplay_server ALL
-        COMMAND go build -o ${CMAKE_BINARY_DIR}/RMG-Server.exe ${CMAKE_SOURCE_DIR}/Source/Server
+        COMMAND go build -o ${CMAKE_BINARY_DIR}/Netplay-Server.exe ${CMAKE_SOURCE_DIR}/Source/Server
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/Source/Server
         COMMENT "Building netplay server"
     )
@@ -181,7 +181,7 @@ endif()
 install(TARGETS RMG-Core
     DESTINATION ${SYSTEM_LIB_INSTALL_PATH}
 )
-install(TARGETS RMG
+install(TARGETS Mupen-MPN
     DESTINATION ${RMG_INSTALL_PATH}
 )
 install(TARGETS RMG-Audio
@@ -192,7 +192,7 @@ install(TARGETS RMG-Input
 )
 
 if (USE_NETPLAY_SERVER AND WIN32)
-    install(PROGRAMS ${CMAKE_BINARY_DIR}/RMG-Server.exe
+    install(PROGRAMS ${CMAKE_BINARY_DIR}/Netplay-Server.exe
         DESTINATION ${RMG_INSTALL_PATH}
     )
 endif()
@@ -215,7 +215,7 @@ endif()
 if (WIN32)
     add_subdirectory(Source/Installer)
     add_custom_target(bundle_dependencies
-        COMMAND bash "${CMAKE_SOURCE_DIR}/Source/Script/BundleDependencies.sh" "${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}/RMG.exe" "${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}" "/mingw64/bin"
+        COMMAND bash "${CMAKE_SOURCE_DIR}/Source/Script/BundleDependencies.sh" "${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}/Mupen-MPN.exe" "${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}" "/mingw64/bin"
 	)
 endif(WIN32)
 

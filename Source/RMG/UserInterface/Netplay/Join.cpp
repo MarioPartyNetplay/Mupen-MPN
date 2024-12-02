@@ -357,11 +357,7 @@ void Join::processTextMessage(QString message)
         {
             json.remove("type");
             rooms << json;
-
-            //QJsonDocument doc(json);
-            //std::string jsonDataStr = json_doc.toJson(QJsonDocument::Compact).toStdString();
-            //CoreAddCallbackMessage(CoreDebugMessageType::Info, "JSON Response: " + jsonDataStr);
-
+            
             listWidget->insertRow(row);
             QTableWidgetItem *newItem = new QTableWidgetItem(json.value("player_name").toString());
             newItem->setFlags(newItem->flags() & ~Qt::ItemIsEditable);
