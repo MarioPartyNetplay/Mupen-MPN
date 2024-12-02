@@ -50,7 +50,6 @@ static struct controller_input_compat *l_cin_compats;
 static uint8_t l_plugin[4];
 static uint8_t l_buffer_target;
 static uint8_t l_player_lag[4];
-static void netplay_request_buffer_target();
 
 //UDP packet formats
 #define UDP_SEND_KEY_INFO 0
@@ -67,7 +66,6 @@ static void netplay_request_buffer_target();
 #define TCP_REGISTER_PLAYER 5
 #define TCP_GET_REGISTRATION 6
 #define TCP_DISCONNECT_NOTICE 7
-#define TCP_GET_BUFFER_TARGET 8
 
 struct __UDPSocket {
     int ready;
@@ -75,7 +73,6 @@ struct __UDPSocket {
 };
 
 #define CS4 32
-
 static uint32_t last_buffer_increase_time = 0;
 
 static uint32_t calculate_buffer_increase_threshold(uint8_t current_buffer_size) {
@@ -83,7 +80,6 @@ static uint32_t calculate_buffer_increase_threshold(uint8_t current_buffer_size)
     // You can adjust this calculation based on your specific requirements
     return current_buffer_size * 10; // Adjust the multiplier as needed
 }
-
 m64p_error netplay_start(const char* host, int port)
 {
     if (SDLNet_Init() < 0)
@@ -189,7 +185,7 @@ int netplay_is_init()
 
 static uint8_t buffer_size(uint8_t control_id)
 {
-    // This function returns the size of the local input buffer
+    //This function returns the size of the local input buffer
     uint8_t counter = 0;
     struct netplay_event* current = l_cin_compats[control_id].event_first;
     while (current != NULL)
@@ -197,28 +193,8 @@ static uint8_t buffer_size(uint8_t control_id)
         current = current->next;
         ++counter;
     }
-
     return counter;
 }
-
-static void netplay_remove_player(uint8_t player_id) {
-    // Logic to remove a player from the netplay session
-    if (player_id < 4) {
-        // Reset player control and plugin settings
-        l_netplay_control[player_id] = -1;
-        l_plugin[player_id] = 0;
-        l_player_lag[player_id] = 0;
-
-        // Notify other players about the disconnection
-        char output_data[2];
-        output_data[0] = TCP_DISCONNECT_NOTICE;
-        output_data[1] = player_id; // Player ID to remove
-        SDLNet_TCP_Send(l_tcpSocket, &output_data, sizeof(output_data));
-        
-        DebugMessage(M64MSG_INFO, "Netplay: Player %u has left the room", player_id);
-    }
-}
-
 
 static void netplay_request_input(uint8_t control_id)
 {
@@ -270,7 +246,7 @@ static int netplay_require_response(void* opaque)
 
 static void netplay_process()
 {
-    // In this function we process data we have received from the server
+    //In this function we process data we have received from the server
     UDPpacket *packet = SDLNet_AllocPacket(512);
     uint32_t curr, count, keys;
     uint8_t plugin, player, current_status;
@@ -281,6 +257,8 @@ static void netplay_process()
             case UDP_RECEIVE_KEY_INFO:
             case UDP_RECEIVE_KEY_INFO_GRATUITOUS:
                 player = packet->data[1];
+                //current_status is a status update from the server
+                //it will let us know if another player has disconnected, or the games have desynced
                 current_status = packet->data[2];
                 if (packet->data[0] == UDP_RECEIVE_KEY_INFO)
                     l_player_lag[player] = packet->data[3];
@@ -296,12 +274,14 @@ static void netplay_process()
                     l_status = current_status;
                 }
                 curr = 5;
+                //this loop processes input data from the server, inserting new events into the linked list for each player
+                //it skips events that we have already recorded, or if we receive data for an event that has already happened
                 for (uint8_t i = 0; i < packet->data[4]; ++i)
                 {
                     count = SDLNet_Read32(&packet->data[curr]);
                     curr += 4;
 
-                    if (((count - l_cin_compats[player].netplay_count) > (UINT32_MAX / 2)) || (check_valid(player, count)))
+                    if (((count - l_cin_compats[player].netplay_count) > (UINT32_MAX / 2)) || (check_valid(player, count))) //event doesn't need to be recorded
                     {
                         curr += 5;
                         continue;
@@ -312,6 +292,7 @@ static void netplay_process()
                     plugin = packet->data[curr];
                     curr += 1;
 
+                    //insert new event at beginning of linked list
                     struct netplay_event* new_event = (struct netplay_event*)malloc(sizeof(struct netplay_event));
                     new_event->count = count;
                     new_event->buttons = keys;
@@ -319,10 +300,6 @@ static void netplay_process()
                     new_event->next = l_cin_compats[player].event_first;
                     l_cin_compats[player].event_first = new_event;
                 }
-                break;
-            case TCP_DISCONNECT_NOTICE:
-                uint8_t leaving_player = packet->data[1];
-                netplay_remove_player(leaving_player); // Call to remove player
                 break;
             default:
                 DebugMessage(M64MSG_ERROR, "Netplay: received unknown message from server");
@@ -342,11 +319,8 @@ static int netplay_ensure_valid(uint8_t control_id)
     if (l_udpChannel == -1)
         return 0;
 
-#if SDL_VERSION_ATLEAST(2,0,0)
     SDL_Thread* thread = SDL_CreateThread(netplay_require_response, "Netplay key request", &control_id);
-#else
-    SDL_Thread* thread = SDL_CreateThread(netplay_require_response, &control_id);
-#endif
+
     while (!check_valid(control_id, l_cin_compats[control_id].netplay_count) && l_udpChannel != -1)
         netplay_process();
     int success;
@@ -372,24 +346,17 @@ static void netplay_delete_event(struct netplay_event* current, uint8_t control_
     free(current);
 }
 
-static void netplay_request_buffer_target()
-{
-    char output_data = TCP_GET_BUFFER_TARGET;
-    SDLNet_TCP_Send(l_tcpSocket, &output_data, 1);
-
-    uint8_t response;
-    size_t recv = 0;
-    while (recv < 1)
-        recv += SDLNet_TCP_Recv(l_tcpSocket, &response, 1);
-    l_buffer_target = response;
-}
-
 static uint32_t netplay_get_input(uint8_t control_id)
 {
     uint32_t keys;
     netplay_process();
     netplay_request_input(control_id);
-    netplay_request_buffer_target();
+
+    //l_buffer_target is set by the server upon registration
+    //l_player_lag is how far behind we are from the lead player
+    //buffer_size is the local buffer size
+
+        netplay_request_buffer_target();
 
      // Recalculate the buffer size
     uint8_t current_buffer_size = buffer_size(control_id);
@@ -418,7 +385,7 @@ static uint32_t netplay_get_input(uint8_t control_id)
             l_canFF = 0;
         }
     }
-    
+
     if (netplay_ensure_valid(control_id))
     {
         //We grab the event from the linked list, the delete it once it has been used
@@ -430,9 +397,8 @@ static uint32_t netplay_get_input(uint8_t control_id)
         Controls[control_id].Plugin = current->plugin;
         netplay_delete_event(current, control_id);
         ++l_cin_compats[control_id].netplay_count;
-
-        // Recalculate the buffer size after deleting the event
         current_buffer_size = buffer_size(control_id);
+
     }
     else
     {
@@ -598,6 +564,9 @@ void netplay_sync_settings(uint32_t *count_per_op, uint32_t *count_per_op_denom_
 
 void netplay_check_sync(struct cp0* cp0)
 {
+    //This function is used to check if games have desynced
+    //Every 600 VIs, it sends the value of the CP0 registers to the server
+    //The server will compare the values, and update the status byte if it detects a desync
     if (!netplay_is_init())
         return;
 
@@ -608,7 +577,7 @@ void netplay_check_sync(struct cp0* cp0)
         uint32_t packet_len = (CP0_REGS_COUNT * 4) + 5;
         UDPpacket *packet = SDLNet_AllocPacket(packet_len);
         packet->data[0] = UDP_SYNC_DATA;
-        SDLNet_Write32(l_vi_counter, &packet->data[1]);
+        SDLNet_Write32(l_vi_counter, &packet->data[1]); //current VI count
         for (int i = 0; i < CP0_REGS_COUNT; ++i)
         {
             SDLNet_Write32(cp0_regs[i], &packet->data[(i * 4) + 5]);
@@ -641,6 +610,9 @@ void netplay_read_registration(struct controller_input_compat* cin_compats)
     {
         reg_id = SDLNet_Read32(&input_data[curr]);
         curr += 4;
+
+        Controls[i].Type = CONT_TYPE_STANDARD; //make sure VRU is disabled
+
         if (reg_id == 0) //No one registered to control this player
         {
             Controls[i].Present = 0;
