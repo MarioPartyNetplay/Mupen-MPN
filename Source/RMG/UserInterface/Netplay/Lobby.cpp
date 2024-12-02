@@ -212,8 +212,11 @@ void Lobby::setupBufferSpinBox(const QStringList &playerNames)
     }
 }
 
+bool bufferChangeInitiatedByUser = false;
+
 void Lobby::changeBuffer(int value)
 {
+    bufferChangeInitiatedByUser = true; // Set the flag to true when user changes buffer
     QJsonObject json;
     json.insert("type", "request_change_buffer");
     json.insert("port", room_port);
@@ -271,10 +274,14 @@ void Lobby::processTextMessage(QString message, QJsonObject cheats, QStringList 
             // Update buffer value and log the change
             CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Updating buffer to: " + std::to_string(newBufferValue)).c_str());
             bufferSpinBox->setValue(newBufferValue); // Set the new buffer value directly
-            // Log buffer change to chat window
-            chatWindow->appendPlainText(tr("Buffer changed to %1").arg(newBufferValue));
-            CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Buffer changed to " + std::to_string(newBufferValue)).c_str());
+            
+            // Log buffer change to chat window only if it was not initiated by the user
+            if (!bufferChangeInitiatedByUser) {
+                chatWindow->appendPlainText(tr("Buffer changed to %1").arg(newBufferValue));
+                CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Buffer changed to " + std::to_string(newBufferValue)).c_str());
+            }
         }    
+        bufferChangeInitiatedByUser = false;
     }
 }
 

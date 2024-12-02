@@ -49,6 +49,7 @@ private:
     int started;
     UserInterface::MainWindow* w;
     bool isNetplayRunning();
+    bool bufferChangeInitiatedByUser = false;
 protected:
     void closeEvent(QCloseEvent *event) override;
 };
