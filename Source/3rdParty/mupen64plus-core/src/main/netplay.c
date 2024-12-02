@@ -78,7 +78,7 @@ static uint32_t last_buffer_increase_time = 0;
 static uint32_t calculate_buffer_increase_threshold(uint8_t current_buffer_size) {
     // Calculate the threshold based on the current buffer size
     // You can adjust this calculation based on your specific requirements
-    return current_buffer_size * 10; // Adjust the multiplier as needed
+    return current_buffer_size * 3; // Adjust the multiplier as needed
 }
 m64p_error netplay_start(const char* host, int port)
 {
@@ -356,9 +356,9 @@ static uint32_t netplay_get_input(uint8_t control_id)
     //l_player_lag is how far behind we are from the lead player
     //buffer_size is the local buffer size
 
-        netplay_request_buffer_target();
+    netplay_request_buffer_target();
 
-     // Recalculate the buffer size
+    // Recalculate the buffer size
     uint8_t current_buffer_size = buffer_size(control_id);
 
     if (current_buffer_size > l_buffer_target) {
@@ -369,27 +369,19 @@ static uint32_t netplay_get_input(uint8_t control_id)
     uint32_t buffer_increase_threshold = calculate_buffer_increase_threshold(current_buffer_size);
 
 
-    if (l_player_lag[control_id] > 0 && current_buffer_size > l_buffer_target)
-    {
-        if (!l_canFF)
-        {
-            l_canFF = 1;
-            main_core_state_set(M64CORE_SPEED_LIMITER, 0);
-        }
-    }
-    else
-    {
-        if (l_canFF || current_buffer_size != buffer_size(control_id) || last_buffer_increase_time == 0)
-        {
-            main_core_state_set(M64CORE_SPEED_LIMITER, 1);
-            l_canFF = 0;
-        }
+    // Check if the player is lagging behind
+    if (l_player_lag[control_id] > 0) {
+        // Slow down the players who are ahead
+        main_core_state_set(M64CORE_SPEED_LIMITER, 1);
+    } else {
+        // If the player is not lagging, allow normal speed
+        main_core_state_set(M64CORE_SPEED_LIMITER, 0);
     }
 
     if (netplay_ensure_valid(control_id))
     {
-        //We grab the event from the linked list, the delete it once it has been used
-        //Finally we increment the event counter
+        // We grab the event from the linked list, then delete it once it has been used
+        // Finally, we increment the event counter
         struct netplay_event* current = l_cin_compats[control_id].event_first;
         while (current->count != l_cin_compats[control_id].netplay_count)
             current = current->next;
@@ -398,7 +390,6 @@ static uint32_t netplay_get_input(uint8_t control_id)
         netplay_delete_event(current, control_id);
         ++l_cin_compats[control_id].netplay_count;
         current_buffer_size = buffer_size(control_id);
-
     }
     else
     {
