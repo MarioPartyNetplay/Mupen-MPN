@@ -349,16 +349,15 @@ static uint32_t netplay_get_input(uint8_t control_id)
     // Check if the player is lagging behind
     if (l_player_lag[control_id] > buffer_size(control_id))
     {
-        DebugMessage(M64MSG_INFO, "Player %d lag: %d, buffer size: %d", control_id, l_player_lag[control_id], buffer_size(control_id));
-        main_core_state_set(M64CORE_SPEED_LIMITER, 0); // Disable the speed limiter
-        main_core_state_set(M64CORE_SPEED_FACTOR, 1000); // Set the new speed factor
+        //DebugMessage(M64MSG_INFO, "Player %d lag: %d, buffer size: %d", control_id, l_player_lag[control_id], buffer_size(control_id));
+        main_core_state_set(M64CORE_SPEED_LIMITER, 0);
+        l_canFF = 1;
     }
     else
     {
-        DebugMessage(M64MSG_INFO, "Player %d not lagging. Lag: %d, buffer size: %d", control_id, l_player_lag[control_id], buffer_size(control_id));
-
-        main_core_state_set(M64CORE_SPEED_LIMITER, 1); // Enable the speed limiter
-        main_core_state_set(M64CORE_SPEED_FACTOR, 1); // Set the new speed factor
+        //DebugMessage(M64MSG_INFO, "Player %d not lagging. Lag: %d, buffer size: %d", control_id, l_player_lag[control_id], buffer_size(control_id));
+        main_core_state_set(M64CORE_SPEED_LIMITER, 1);
+        l_canFF = 1;
     }
 
     if (netplay_ensure_valid(control_id))
@@ -420,6 +419,11 @@ uint8_t netplay_register_player(uint8_t player, uint8_t plugin, uint8_t rawdata,
 int netplay_next_controller()
 {
     return l_netplay_controller;
+}
+
+int netplay_lag()
+{
+    return l_canFF;
 }
 
 void netplay_set_controller(uint8_t player)
