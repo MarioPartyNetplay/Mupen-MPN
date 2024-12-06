@@ -83,7 +83,7 @@ Join::Join(QWidget *parent, RomBrowserWidget *romBrowser)
 
     // Add the promotional label
     QLabel *promoLabel = new QLabel(this);
-    promoLabel->setText("<p style='text-align:center;'>Servers are funded by Nayla! Use this <a href='https://ko-fi.com/naylahanegan'>link</a> to help fund the process.</p>");
+    promoLabel->setText("<p style='text-align:center;'>Servers are funded by Tabitha! Use this <a href='https://ko-fi.com/naylahanegan'>link</a> to help fund the process.</p>");
     promoLabel->setTextFormat(Qt::RichText);
     promoLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
     promoLabel->setOpenExternalLinks(true);

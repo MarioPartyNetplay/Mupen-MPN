@@ -98,7 +98,7 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
 
     // Add the promotional label
     QLabel *promoLabel = new QLabel(this);
-    promoLabel->setText("<p style='text-align:center;'>Servers are funded by Nayla! Use this <a href='https://paypal.me/naylahanegan'>link</a> to help fund the process.</p>");
+    promoLabel->setText("<p style='text-align:center;'>Servers are funded by Tabitha! Use this <a href='https://paypal.me/naylahanegan'>link</a> to help fund the process.</p>");
     promoLabel->setTextFormat(Qt::RichText);
     promoLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
     promoLabel->setOpenExternalLinks(true);
