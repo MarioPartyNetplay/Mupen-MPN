@@ -1,6 +1,6 @@
 #ifndef VERSION_HPP
 #define VERSION_HPP
 
-#define VERSION_HASH "fb2519b8"
+#define VERSION_HASH "b55fbe7d"
 
 #endif

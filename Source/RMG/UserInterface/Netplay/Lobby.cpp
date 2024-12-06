@@ -79,6 +79,8 @@ Lobby::Lobby(QString filename, QJsonObject room, QWebSocket *socket, QWidget *pa
     connect(webSocket, &QWebSocket::textMessageReceived, this, [this, playerNames](QString message){ processTextMessage(message, cheats, playerNames); });
     connect(webSocket, &QWebSocket::pong, this, &Lobby::updatePing);
 
+    connect(this, &Lobby::bufferChanged, this, &Lobby::handleBufferChange);
+
     chatWindow = new QPlainTextEdit(this);
     chatWindow->setReadOnly(true);
     layout->addWidget(chatWindow, 8, 0, 3, 2);
@@ -129,6 +131,16 @@ void Lobby::sendPing()
     webSocket->ping();
 }
 
+void Lobby::handleBufferChange(int newBufferValue)
+{
+    // Handle the buffer change request here
+    QJsonObject json;
+    json.insert("type", "request_change_buffer");
+    json.insert("newBufferValue", newBufferValue);
+    QJsonDocument json_doc = QJsonDocument(json);
+    webSocket->sendTextMessage(json_doc.toJson());
+}
+
 void Lobby::copyPublicIp()
 {
     QNetworkAccessManager *manager = new QNetworkAccessManager(this);
@@ -138,7 +150,7 @@ void Lobby::copyPublicIp()
             QString publicIp = reply->readAll();
             QClipboard *clipboard = QGuiApplication::clipboard();
             clipboard->setText(publicIp + ":" + QString::number(room_port));
-            QMessageBox::information(this, "Public IP", "Public IP copied to clipboard: " + publicIp + ":" + QString::number(base_port));
+            QMessageBox::information(this, "Public IP", "Public IP copied to clipboard: " + publicIp + ":" + QString::number(room_port));
         }
         reply->deleteLater();
     });
@@ -217,6 +229,8 @@ bool bufferChangeInitiatedByUser = false;
 void Lobby::changeBuffer(int value)
 {
     bufferChangeInitiatedByUser = true; // Set the flag to true when user changes buffer
+    emit bufferChanged(value); // Emit the signal with the new buffer value
+
     QJsonObject json;
     json.insert("type", "request_change_buffer");
     json.insert("port", room_port);
@@ -229,6 +243,11 @@ void Lobby::changeBuffer(int value)
     QString jsonString = json_doc.toJson();
     CoreAddCallbackMessage(CoreDebugMessageType::Info, ("Sending buffer change request: " + jsonString).toStdString().c_str());
     webSocket->sendTextMessage(jsonString);
+}
+
+void Lobby::changeBufferFromNetplay(int value)
+{
+    changeBuffer(value);
 }
 
 void Lobby::processTextMessage(QString message, QJsonObject cheats, QStringList playerNames)

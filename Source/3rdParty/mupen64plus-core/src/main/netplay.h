@@ -71,11 +71,6 @@ static osal_inline uint8_t netplay_register_player(uint8_t player, uint8_t plugi
     return 0;
 }
 
-static osal_inline int netplay_lag()
-{
-    return 0;
-}
-
 static osal_inline void netplay_set_controller(uint8_t player)
 {
 }
@@ -129,6 +124,8 @@ static osal_inline m64p_error netplay_receive_config(char* data, int size)
 {
     return M64ERR_INCOMPATIBLE;
 }
+
+extern int l_SpeedFactor;
 
 #endif
 

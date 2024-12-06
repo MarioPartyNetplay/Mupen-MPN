@@ -347,12 +347,18 @@ static uint32_t netplay_get_input(uint8_t control_id)
     netplay_request_input(control_id);
 
     // Check if the player is lagging behind
-    if (l_player_lag[control_id] > 0) {
-        // Slow down the players who are ahead
-        main_core_state_set(M64CORE_SPEED_LIMITER, 1);
-    } else {
-        // If the player is not lagging, allow normal speed
-        main_core_state_set(M64CORE_SPEED_LIMITER, 0);
+    if (l_player_lag[control_id] > buffer_size(control_id))
+    {
+        DebugMessage(M64MSG_INFO, "Player %d lag: %d, buffer size: %d", control_id, l_player_lag[control_id], buffer_size(control_id));
+        main_core_state_set(M64CORE_SPEED_LIMITER, 0); // Disable the speed limiter
+        main_core_state_set(M64CORE_SPEED_FACTOR, 1000); // Set the new speed factor
+    }
+    else
+    {
+        DebugMessage(M64MSG_INFO, "Player %d not lagging. Lag: %d, buffer size: %d", control_id, l_player_lag[control_id], buffer_size(control_id));
+
+        main_core_state_set(M64CORE_SPEED_LIMITER, 1); // Enable the speed limiter
+        main_core_state_set(M64CORE_SPEED_FACTOR, 1); // Set the new speed factor
     }
 
     if (netplay_ensure_valid(control_id))
@@ -409,11 +415,6 @@ uint8_t netplay_register_player(uint8_t player, uint8_t plugin, uint8_t rawdata,
         recv += SDLNet_TCP_Recv(l_tcpSocket, &response[recv], 2 - recv);
     l_buffer_target = response[1]; //local buffer size target
     return response[0];
-}
-
-int netplay_lag()
-{
-    return l_canFF;
 }
 
 int netplay_next_controller()

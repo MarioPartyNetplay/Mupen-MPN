@@ -538,12 +538,9 @@ void main_set_fastforward(int enable)
 
 }
 
-// Forward declaration
-int netplay_lag();
-
 void main_set_speedlimiter(int enable)
 {
-    if (netplay_is_init() && !netplay_lag())
+    if (netplay_is_init())
         return;
 
     l_MainSpeedLimit = enable ? 1 : 0;
