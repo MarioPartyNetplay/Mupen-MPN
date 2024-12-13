@@ -29,8 +29,7 @@
 #include "backends/plugins_compat/plugins_compat.h"
 #include "netplay.h"
 
-#include "../../../sdl2_net/include/SDL_net.h"
-
+#include <SDL_net.h>
 #if !defined(WIN32)
 #include <netinet/ip.h>
 #endif
@@ -346,24 +345,24 @@ static uint32_t netplay_get_input(uint8_t control_id)
     netplay_process();
     netplay_request_input(control_id);
 
-    // Check if the player is lagging behind
-    if (l_player_lag[control_id] > buffer_size(control_id))
+    //l_buffer_target is set by the server upon registration
+    //l_player_lag is how far behind we are from the lead player
+    //buffer_size is the local buffer size
+    if (l_player_lag[control_id] > 0 && buffer_size(control_id) > l_buffer_target)
     {
-        //DebugMessage(M64MSG_INFO, "Player %d lag: %d, buffer size: %d", control_id, l_player_lag[control_id], buffer_size(control_id));
-        main_core_state_set(M64CORE_SPEED_LIMITER, 0);
         l_canFF = 1;
+        main_core_state_set(M64CORE_SPEED_LIMITER, 0);
     }
     else
     {
-        //DebugMessage(M64MSG_INFO, "Player %d not lagging. Lag: %d, buffer size: %d", control_id, l_player_lag[control_id], buffer_size(control_id));
         main_core_state_set(M64CORE_SPEED_LIMITER, 1);
-        l_canFF = 1;
+        l_canFF = 0;
     }
 
     if (netplay_ensure_valid(control_id))
     {
-        // We grab the event from the linked list, then delete it once it has been used
-        // Finally, we increment the event counter
+        //We grab the event from the linked list, the delete it once it has been used
+        //Finally we increment the event counter
         struct netplay_event* current = l_cin_compats[control_id].event_first;
         while (current->count != l_cin_compats[control_id].netplay_count)
             current = current->next;
@@ -381,7 +380,6 @@ static uint32_t netplay_get_input(uint8_t control_id)
 
     return keys;
 }
-
 
 static void netplay_send_input(uint8_t control_id, uint32_t keys)
 {
@@ -416,14 +414,14 @@ uint8_t netplay_register_player(uint8_t player, uint8_t plugin, uint8_t rawdata,
     return response[0];
 }
 
-int netplay_next_controller()
-{
-    return l_netplay_controller;
-}
-
 int netplay_lag()
 {
     return l_canFF;
+}
+
+int netplay_next_controller()
+{
+    return l_netplay_controller;
 }
 
 void netplay_set_controller(uint8_t player)

@@ -26,11 +26,7 @@ private slots:
     void startGame();
     void updatePing(quint64 elapsedTime, const QByteArray &payload);
     void sendPing();
-    void handleBufferChange(int newBufferValue);
-    void changeBuffer(int value);
-    void setupBufferSpinBox(const QStringList &playerNames);
     void copyPublicIp();
-    void changeBufferFromNetplay(int value);
 private:
     QWebSocket *webSocket = nullptr;
     QLabel *pName[4];
@@ -51,11 +47,8 @@ private:
     int started;
     UserInterface::MainWindow* w;
     bool isNetplayRunning();
-    bool bufferChangeInitiatedByUser = false;
 protected:
     void closeEvent(QCloseEvent *event) override;
-signals:
-    void bufferChanged(int newBufferValue);
 };
 
 #endif // WAITROOM_H
