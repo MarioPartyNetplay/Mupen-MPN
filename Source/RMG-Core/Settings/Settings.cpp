@@ -153,11 +153,11 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::Core_GFX_Plugin:
         setting = {SETTING_SECTION_CORE, "GFX_Plugin", 
     #ifdef _WIN32
-                    std::string("mupen64plus-video-GLideN64.dll"),
+                    std::string("mupen64plus-video-parallel.dll"),
     #elif defined(__APPLE__)
-                    std::string("mupen64plus-video-GLideN64.dylib"),
+                    std::string("mupen64plus-video-parallel.dylib"),
     #else
-                    std::string("mupen64plus-video-GLideN64.so"),
+                    std::string("mupen64plus-video-parallel.so"),
     #endif
                   };
         break;
@@ -186,11 +186,11 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::Core_RSP_Plugin:
         setting = {SETTING_SECTION_CORE, "RSP_Plugin", 
     #ifdef _WIN32
-                    std::string("mupen64plus-rsp-hle.dll"),
+                    std::string("mupen64plus-rsp-parellel.dll"),
     #elif defined(__APPLE__)
-                    std::string("mupen64plus-rsp-hle.dylib"),
+                    std::string("mupen64plus-rsp-parellel.dylib"),
     #else
-                    std::string("mupen64plus-rsp-hle.so"),
+                    std::string("mupen64plus-rsp-parellel.so"),
     #endif
                   };
         break;

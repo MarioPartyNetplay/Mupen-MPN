@@ -152,31 +152,31 @@ if (USE_NETPLAY_SERVER AND WIN32)
     )
 endif()
 
-#if (USE_MPN_GAME_PLUGIN AND WIN32)
-#    find_program(DMD_COMPILER dmd)
-#    set(DMD_COMPILER "${CMAKE_BINARY_DIR}/dmd2/windows/bin64/dmd.exe")
-#    if (NOT DMD_COMPILER)
-#        message(STATUS "DMD compiler not found. Downloading and installing DMD...")
-#        set(DMD_URL "https://downloads.dlang.org/releases/2.x/2.098.0/dmd.2.098.0.windows.zip")
-#        set(DMD_ZIP "${CMAKE_BINARY_DIR}/dmd.zip")
-#        file(DOWNLOAD ${DMD_URL} ${DMD_ZIP})
-#        execute_process(COMMAND unzip -qq ${DMD_ZIP} WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-#        if (NOT EXISTS ${DMD_COMPILER})
-#            message(FATAL_ERROR "Failed to download and install DMD compiler.")
-#        endif()
-#    endif()
-#    message(STATUS "Using DMD compiler: ${DMD_COMPILER}")
-#    
-#    add_custom_target(compile_dlang ALL
-#        COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioGolf.dll mariogolf.d plugin.d
-#        COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioParty1.dll marioparty.d marioparty1.d plugin.d
-#        COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioParty2.dll marioparty.d marioparty2.d plugin.d
-#        COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioParty3.dll marioparty.d marioparty3.d plugin.d
-#        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/Source/MPN-Game-Plugins
-#        COMMENT "Compiling D language plugins"
-#    )
-#    add_dependencies(RMG compile_dlang)
-#endif()
+if (USE_MPN_GAME_PLUGIN AND WIN32)
+    find_program(DMD_COMPILER dmd)
+    set(DMD_COMPILER "${CMAKE_BINARY_DIR}/dmd2/windows/bin64/dmd.exe")
+    if (NOT DMD_COMPILER)
+        message(STATUS "DMD compiler not found. Downloading and installing DMD...")
+        set(DMD_URL "https://downloads.dlang.org/releases/2.x/2.098.0/dmd.2.098.0.windows.zip")
+        set(DMD_ZIP "${CMAKE_BINARY_DIR}/dmd.zip")
+        file(DOWNLOAD ${DMD_URL} ${DMD_ZIP})
+        execute_process(COMMAND unzip -qq ${DMD_ZIP} WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+        if (NOT EXISTS ${DMD_COMPILER})
+            message(FATAL_ERROR "Failed to download and install DMD compiler.")
+        endif()
+    endif()
+    message(STATUS "Using DMD compiler: ${DMD_COMPILER}")
+    
+    add_custom_target(compile_dlang ALL
+        COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioGolf.dll mariogolf.d plugin.d
+        COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioParty1.dll marioparty.d marioparty1.d plugin.d
+        COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioParty2.dll marioparty.d marioparty2.d plugin.d
+        COMMAND ${DMD_COMPILER} -shared -L/DEFAULTLIB:user32.lib -of${CMAKE_BINARY_DIR}/plugins/MarioParty3.dll marioparty.d marioparty3.d plugin.d
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/Source/MPN-Game-Plugins
+        COMMENT "Compiling D language plugins"
+    )
+    add_dependencies(RMG compile_dlang)
+endif()
 
 install(TARGETS RMG-Core
     DESTINATION ${SYSTEM_LIB_INSTALL_PATH}

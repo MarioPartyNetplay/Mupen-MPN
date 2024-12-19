@@ -46,8 +46,6 @@ cp "$path/libjpeg-8.dll"       "$bin_dir/"
 touch "$bin_dir/portable.txt"
 
 ls
-cp -r "../../Data/Extras" "$bin_dir/"
-cp -r "../../Data/Config" "$bin_dir/"
 cp -r "../../Data/Games" "$bin_dir/"
 cp "../../Data/Downloader.exe" "$bin_dir/Data/"
 cp "../../Data/Updater.exe" "$bin_dir/Data/"
