@@ -249,6 +249,7 @@ static void set_jump_target(int addr,u_int target)
 {
   u_char *ptr=(u_char *)addr;
   u_int *ptr2=(u_int *)ptr;
+  if(ptr==NULL) return;
   if(ptr[3]==0xe2) {
     assert((target-(u_int)ptr2-8)<1024);
     assert((addr&3)==0);
@@ -1956,6 +1957,7 @@ static void emit_movzwl_reg(int rs, int rt)
 
 static void emit_writeword_indexed(int rt, int offset, int rs)
 {
+  if(rt<0) return;
   assert(offset>-4096&&offset<4096);
   assem_debug("str %s,%s+%d",regname[rt],regname[rs],offset);
   if(offset>=0) {
@@ -2622,6 +2624,7 @@ static void emit_extjump2(int addr, int target, int linker)
 
 static void do_invstub(int n)
 {
+  if(stubs[n][4]==-1) return;
   literal_pool(20);
   u_int reglist=stubs[n][3];
   set_jump_target(stubs[n][1],(int)out);
