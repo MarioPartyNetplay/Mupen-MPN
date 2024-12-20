@@ -37,7 +37,7 @@ jobs:
         bundle: MupenMPN-linux.flatpak
     # Upload Artifact
     - name: Upload Build Artifact
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: MupenMPN-Linux-flatpak
         path: /home/runner/work/Mupen-MPN-src/Mupen-MPN-src/.flatpak/OUT
