@@ -186,11 +186,11 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::Core_RSP_Plugin:
         setting = {SETTING_SECTION_CORE, "RSP_Plugin", 
     #ifdef _WIN32
-                    std::string("mupen64plus-rsp-parellel.dll"),
+                    std::string("mupen64plus-rsp-parallel.dll"),
     #elif defined(__APPLE__)
-                    std::string("mupen64plus-rsp-parellel.dylib"),
+                    std::string("mupen64plus-rsp-parallel.dylib"),
     #else
-                    std::string("mupen64plus-rsp-parellel.so"),
+                    std::string("mupen64plus-rsp-parallel.so"),
     #endif
                   };
         break;
