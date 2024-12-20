@@ -153,11 +153,11 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::Core_GFX_Plugin:
         setting = {SETTING_SECTION_CORE, "GFX_Plugin", 
     #ifdef _WIN32
-                    std::string("mupen64plus-video-parallel.dll"),
+                    std::string("mupen64plus-video-angrylion-plus.dll"),
     #elif defined(__APPLE__)
-                    std::string("mupen64plus-video-parallel.dylib"),
+                    std::string("mupen64plus-video-angrylion-plus.dylib"),
     #else
-                    std::string("mupen64plus-video-parallel.so"),
+                    std::string("mupen64plus-video-angrylion-plus.so"),
     #endif
                   };
         break;
