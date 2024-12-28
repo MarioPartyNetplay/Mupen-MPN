@@ -97,10 +97,6 @@ bool MainWindow::Init(QApplication* app, bool showUI, bool launchROM)
     this->action_Help_Update->setVisible(false);
 #endif // UPDATER
 
-#ifndef NETPLAY
-    this->menuNetplay->menuAction()->setVisible(false);
-#endif // NETPLAY
-
     this->initializeEmulationThread();
     this->connectEmulationThreadSignals();
 
@@ -191,7 +187,6 @@ void MainWindow::initializeUI(bool launchROM)
 
     this->ui_EventFilter = new EventFilter(this);
     this->ui_StatusBar_Label = new QLabel(this);
-    //this->ui_StatusBar_RenderModeLabel = new QLabel(this);
     this->ui_StatusBar_SpeedLabel = new QLabel(this);
 
     // only start refreshing the ROM browser
@@ -460,34 +455,6 @@ void MainWindow::updateUI(bool inEmulation, bool isPaused)
             this->setWindowTitle(goodName + QString(" - ") + this->ui_WindowTitle);
         }
 
-        if (this->ui_VidExtRenderMode == VidExtRenderMode::OpenGL)
-        {
-            if (QSurfaceFormat::defaultFormat().renderableType() == QSurfaceFormat::OpenGLES)
-            {
-                //this->ui_StatusBar_RenderModeLabel->setText("OpenGL ES");
-            }
-            else
-            {
-                //this->ui_StatusBar_RenderModeLabel->setText("OpenGL");
-            }
-            this->ui_Widgets->setCurrentWidget(this->ui_Widget_OpenGL->GetWidget());
-        }
-        else if (this->ui_VidExtRenderMode == VidExtRenderMode::Vulkan)
-        {
-            //this->ui_StatusBar_RenderModeLabel->setText("Vulkan");
-            this->ui_Widgets->setCurrentWidget(this->ui_Widget_Vulkan->GetWidget());
-        }
-        else
-        {
-            // when the video extension hasn't been initialized correctly
-            // yet, we'll show a dummy widget with a black color pallete
-            // to minimize the flicker that would occur when switching
-            // from the ROM browser to the render widget when you i.e
-            // launch RMG with a ROM on the commandline or drag & drop
-            this->ui_Widgets->setCurrentWidget(this->ui_Widget_Dummy);
-        }
-
-        this->storeGeometry();
     }
     else if (!this->ui_NoSwitchToRomBrowser)
     {
@@ -696,6 +663,10 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_StartROM));
     this->action_System_StartRom->setShortcut(QKeySequence(keyBinding));
     this->action_System_StartRom->setEnabled(!inEmulation);
+    this->action_System_StartRom2->setShortcut(QKeySequence(keyBinding));
+    this->action_System_StartRom2->setEnabled(!inEmulation);
+    this->action_System_StartRom3->setShortcut(QKeySequence(keyBinding));
+    this->action_System_StartRom3->setEnabled(!inEmulation);
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_StartCombo));
     this->action_System_OpenCombo->setShortcut(QKeySequence(keyBinding));
     this->action_System_OpenCombo->setEnabled(!inEmulation);
@@ -716,6 +687,8 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Screenshot));
     this->action_System_Screenshot->setEnabled(inEmulation);
     this->action_System_Screenshot->setShortcut(QKeySequence(keyBinding));
+    this->action_System_Screenshot2->setEnabled(inEmulation);
+    this->action_System_Screenshot2->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_LimitFPS));
     this->action_System_LimitFPS->setEnabled(inEmulation && !CoreHasInitNetplay());
     this->action_System_LimitFPS->setShortcut(QKeySequence(keyBinding));
@@ -805,9 +778,13 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Fullscreen));
     this->action_View_Fullscreen->setEnabled(inEmulation);
     this->action_View_Fullscreen->setShortcut(QKeySequence(keyBinding));
+    this->action_View_Fullscreen2->setEnabled(inEmulation);
+    this->action_View_Fullscreen2->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_RefreshROMList));
     this->action_View_RefreshRoms->setEnabled(!inEmulation);
     this->action_View_RefreshRoms->setShortcut(QKeySequence(keyBinding));
+    this->action_View_RefreshRoms2->setEnabled(!inEmulation);
+    this->action_View_RefreshRoms2->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Keybinding_ViewLog));
     this->action_View_Log->setShortcut(QKeySequence(keyBinding));
     this->action_View_ClearRomCache->setEnabled(!inEmulation);
@@ -895,7 +872,7 @@ QString MainWindow::getSaveStateSlotDateTimeText(QAction* action)
     QFileInfo saveStateFileInfo(filePath);
     if (!filePath.isEmpty() && saveStateFileInfo.exists())
     {
-        saveStateSlotText = saveStateFileInfo.lastModified().toString("yyyy-MM-dd hh:mm:ss");
+        saveStateSlotText = saveStateFileInfo.lastModified().toString("dd/MM/yyyy hh:mm");
     }
 
     return saveStateSlotText;
@@ -1002,7 +979,7 @@ void MainWindow::configureActions(void)
         this->action_View_Fullscreen, this->action_View_RefreshRoms,
         this->action_View_Log,
         // Help actions
-        this->action_Help_Github, this->action_Help_About,
+        this->action_Help_Github, this->action_Help_Discord, this->action_Help_About,
     });
 
     // configure save slot actions
@@ -1108,6 +1085,7 @@ void MainWindow::configureActions(void)
 void MainWindow::connectActionSignals(void)
 {
     connect(this->action_System_StartRom, &QAction::triggered, this, &MainWindow::on_Action_System_OpenRom);
+    connect(this->action_System_StartRom2, &QAction::triggered, this, &MainWindow::on_Action_System_OpenRom);
     connect(this->action_System_OpenCombo, &QAction::triggered, this, &MainWindow::on_Action_System_OpenCombo);
     connect(this->action_System_Exit, &QAction::triggered, this, &MainWindow::on_Action_System_Exit);
 
@@ -1116,6 +1094,8 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_System_HardReset, &QAction::triggered, this, &MainWindow::on_Action_System_HardReset);
     connect(this->action_System_Pause, &QAction::triggered, this, &MainWindow::on_Action_System_Pause);
     connect(this->action_System_Screenshot, &QAction::triggered, this,
+            &MainWindow::on_Action_System_Screenshot);
+    connect(this->action_System_Screenshot2, &QAction::triggered, this,
             &MainWindow::on_Action_System_Screenshot);
     connect(this->action_System_LimitFPS, &QAction::triggered, this, &MainWindow::on_Action_System_LimitFPS);
     connect(this->action_System_SaveState, &QAction::triggered, this, &MainWindow::on_Action_System_SaveState);
@@ -1126,19 +1106,24 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_System_GSButton, &QAction::triggered, this, &MainWindow::on_Action_System_GSButton);
 
     connect(this->action_Settings_Graphics, &QAction::triggered, this, &MainWindow::on_Action_Settings_Graphics);
+    connect(this->action_Settings_Graphics2, &QAction::triggered, this, &MainWindow::on_Action_Settings_Graphics);
     connect(this->action_Settings_Audio, &QAction::triggered, this, &MainWindow::on_Action_Settings_Audio);
     connect(this->action_Settings_Rsp, &QAction::triggered, this, &MainWindow::on_Action_Settings_Rsp);
     connect(this->action_Settings_Input, &QAction::triggered, this,
             &MainWindow::on_Action_Settings_Input);
+    connect(this->action_Settings_Input2, &QAction::triggered, this,
+            &MainWindow::on_Action_Settings_Input);
     connect(this->action_Settings_Settings, &QAction::triggered, this, &MainWindow::on_Action_Settings_Settings);
-
+    connect(this->action_Settings_Settings2, &QAction::triggered, this, &MainWindow::on_Action_Settings_Settings);
     connect(this->action_View_Toolbar, &QAction::toggled, this, &MainWindow::on_Action_View_Toolbar);
     connect(this->action_View_StatusBar, &QAction::toggled, this, &MainWindow::on_Action_View_StatusBar);
     connect(this->action_View_GameList, &QAction::toggled, this, &MainWindow::on_Action_View_GameList);
     connect(this->action_View_GameGrid, &QAction::toggled, this, &MainWindow::on_Action_View_GameGrid);
     connect(this->action_View_UniformSize, &QAction::toggled, this, &MainWindow::on_Action_View_UniformSize);
     connect(this->action_View_Fullscreen, &QAction::triggered, this, &MainWindow::on_Action_View_Fullscreen);
+    connect(this->action_View_Fullscreen2, &QAction::triggered, this, &MainWindow::on_Action_View_Fullscreen);
     connect(this->action_View_RefreshRoms, &QAction::triggered, this, &MainWindow::on_Action_View_RefreshRoms);
+    connect(this->action_View_RefreshRoms2, &QAction::triggered, this, &MainWindow::on_Action_View_RefreshRoms);
     connect(this->action_View_ClearRomCache, &QAction::triggered, this, &MainWindow::on_Action_View_ClearRomCache);
     connect(this->action_View_Log, &QAction::triggered, this, &MainWindow::on_Action_View_Log);
 
@@ -1148,6 +1133,7 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_Help_Github, &QAction::triggered, this, &MainWindow::on_Action_Help_Github);
     connect(this->action_Help_About, &QAction::triggered, this, &MainWindow::on_Action_Help_About);
     connect(this->action_Help_Update, &QAction::triggered, this, &MainWindow::on_Action_Help_Update);
+    connect(this->action_Help_Discord, &QAction::triggered, this, &MainWindow::on_Action_Help_Discord);
 
     connect(this->action_Audio_IncreaseVolume, &QAction::triggered, this, &MainWindow::on_Action_Audio_IncreaseVolume);
     connect(this->action_Audio_DecreaseVolume, &QAction::triggered, this, &MainWindow::on_Action_Audio_DecreaseVolume);
@@ -1942,7 +1928,12 @@ void MainWindow::on_Action_Netplay_JoinSession(void)
 
 void MainWindow::on_Action_Help_Github(void)
 {
-    QDesktopServices::openUrl(QUrl("https://github.com/Rosalie241/RMG"));
+    QDesktopServices::openUrl(QUrl("https://github.com/MarioPartyNetplay/Mupen-MPN"));
+}
+
+void MainWindow::on_Action_Help_Discord(void)
+{
+    QDesktopServices::openUrl(QUrl("https://discord.gg/marioparty"));
 }
 
 void MainWindow::on_Action_Help_About(void)

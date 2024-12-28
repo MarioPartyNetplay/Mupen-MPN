@@ -11,7 +11,8 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Mupen64Plus - MPN (VERSION)</string>  </property>
+   <string>Mupen64Plus - MPN (VERSION)</string>
+  </property>
   <property name="windowIcon">
    <iconset resource="UIResources.qrc">
     <normaloff>:/Resource/RMG.png</normaloff>:/Resource/RMG.png</iconset>
@@ -142,489 +143,581 @@
      <string>He&amp;lp</string>
     </property>
     <addaction name="action_Help_Github"/>
+    <addaction name="action_Help_Discord"/>
     <addaction name="separator"/>
     <addaction name="action_Help_Update"/>
     <addaction name="separator"/>
     <addaction name="action_Help_About"/>
    </widget>
-   <widget class="QMenu" name="menuNetplay">
-    <property name="title">
-     <string>Netplay</string>
-    </property>
-    <addaction name="action_Netplay_CreateSession"/>
-    <addaction name="action_Netplay_JoinSession"/>
-   </widget>
    <addaction name="menuSystem"/>
    <addaction name="menuSettings"/>
    <addaction name="menuView"/>
-   <addaction name="menuNetplay"/>
    <addaction name="menuHelp"/>
+   </widget>
+   <widget class="QStatusBar" name="statusbar"/>
+   <widget class="QToolBar" name="toolBar">
+    <property name="windowTitle">
+     <string>toolBar</string>
+    </property>
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="movable">
+     <bool>false</bool>
+    </property>
+    <property name="iconSize">
+     <size>
+      <width>32</width>
+      <height>32</height>
+     </size>
+    </property>
+    <property name="toolButtonStyle">
+     <enum>Qt::ToolButtonTextUnderIcon</enum>
+    </property>
+    <property name="floatable">
+     <bool>false</bool>
+    </property>
+    <attribute name="toolBarArea">
+     <enum>TopToolBarArea</enum>
+    </attribute>
+    <attribute name="toolBarBreak">
+     <bool>false</bool>
+    </attribute>
+    <addaction name="action_System_StartRom2"/>
+    <addaction name="action_View_RefreshRoms2"/>
+    <addaction name="separator"/>
+    <addaction name="action_System_StartRom3"/>
+    <addaction name="action_Netplay_CreateSession"/>
+    <addaction name="action_Netplay_JoinSession"/>
+    <addaction name="separator"/>
+    <addaction name="action_View_Fullscreen2"/>
+    <addaction name="action_System_Screenshot2"/>
+    <addaction name="separator"/>
+    <addaction name="action_Settings_Settings2"/>
+    <addaction name="action_Settings_Graphics2"/>
+    <addaction name="action_Settings_Input2"/>
+   </widget>
+   <action name="action_View_Fullscreen2">
+    <property name="icon">
+     <iconset theme="fullscreen-mpn">
+      <normaloff>.</normaloff>.
+     </iconset>
+    </property>
+    <property name="text">
+     <string>Fullscreen</string>
+    </property>
+   </action>
+   <action name="action_Settings_Settings2">
+    <property name="icon">
+     <iconset theme="settings-mpn">
+      <normaloff>.</normaloff>.
+     </iconset>
+    </property>
+    <property name="text">
+     <string>Config</string>
+    </property>
+   </action>
+   <action name="action_Settings_Graphics2">
+    <property name="icon">
+     <iconset theme="graphics-mpn">
+      <normaloff>.</normaloff>.
+     </iconset>
+    </property>
+    <property name="text">
+     <string>Graphics</string>
+    </property>
+   </action>
+   <action name="action_Settings_Input2">
+    <property name="icon">
+     <iconset theme="controller-mpn">
+      <normaloff>.</normaloff>.
+     </iconset>
+    </property>
+    <property name="text">
+     <string>Controllers</string>
+    </property>
+   </action>
+   <action name="action_System_Screenshot2">
+    <property name="icon">
+     <iconset theme="screenshot-mpn">
+      <normaloff>.</normaloff>.
+     </iconset>
+    </property>
+    <property name="text">
+     <string>Screenshot</string>
+    </property>
+   </action>
+   <action name="action_System_StartRom2">
+    <property name="icon">
+     <iconset theme="open-mpn">
+      <normaloff>.</normaloff>.
+     </iconset>
+    </property>
+    <property name="text">
+     <string>Open</string>
+    </property>
+   </action>
+   <action name="action_System_StartRom3">
+    <property name="icon">
+     <iconset theme="local-play-mpn">
+      <normaloff>.</normaloff>.
+     </iconset>
+    </property>
+    <property name="text">
+     <string>Open</string>
+    </property>
+   </action>
+   <action name="action_View_RefreshRoms2">
+    <property name="icon">
+     <iconset theme="refresh-mpn">
+      <normaloff>.</normaloff>.
+     </iconset>
+    </property>
+    <property name="text">
+     <string>Refresh</string>
+    </property>
+   </action>
+   <action name="action_System_StartRom">
+    <property name="icon">
+     <iconset theme="file-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Start ROM</string>
+    </property>
+   </action>
+   <action name="action_System_OpenCombo">
+    <property name="icon">
+     <iconset theme="file-line"/>
+    </property>
+    <property name="text">
+     <string>Start Co&amp;mbo</string>
+    </property>
+   </action>
+   <action name="action_System_Shutdown">
+    <property name="icon">
+     <iconset theme="shut-down-line"/>
+    </property>
+    <property name="text">
+     <string>S&amp;hutdown</string>
+    </property>
+   </action>
+   <action name="action_System_SoftReset">
+    <property name="icon">
+     <iconset theme="restart-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Soft Reset</string>
+    </property>
+   </action>
+   <action name="action_System_HardReset">
+    <property name="icon">
+     <iconset theme="restart-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Hard Reset</string>
+    </property>
+   </action>
+   <action name="action_System_Pause">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="icon">
+     <iconset theme="pause-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Pause</string>
+    </property>
+   </action>
+   <action name="action_System_Screenshot">
+    <property name="icon">
+     <iconset theme="screenshot-2-line"/>
+    </property>
+    <property name="text">
+     <string>Scree&amp;nshot</string>
+    </property>
+   </action>
+   <action name="action_System_LimitFPS">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="icon">
+     <iconset theme="speed-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Limit FPS</string>
+    </property>
+   </action>
+   <action name="action_System_SaveState">
+    <property name="icon">
+     <iconset theme="save-3-line"/>
+    </property>
+    <property name="text">
+     <string>Sa&amp;ve State</string>
+    </property>
+   </action>
+   <action name="action_System_SaveAs">
+    <property name="icon">
+     <iconset theme="save-3-line"/>
+    </property>
+    <property name="text">
+     <string>Save As...</string>
+    </property>
+   </action>
+   <action name="action_System_LoadState">
+    <property name="icon">
+     <iconset theme="folder-open-line"/>
+    </property>
+    <property name="text">
+     <string>L&amp;oad State</string>
+    </property>
+   </action>
+   <action name="action_System_Load">
+    <property name="icon">
+     <iconset theme="folder-open-line"/>
+    </property>
+    <property name="text">
+     <string>Loa&amp;d...</string>
+    </property>
+   </action>
+   <action name="actionSlot_0">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="text">
+     <string>&amp;Slot 0</string>
+    </property>
+   </action>
+   <action name="actionSlot_1">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="text">
+     <string>Slot &amp;1</string>
+    </property>
+   </action>
+   <action name="actionSlot_2">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="text">
+     <string>Slot &amp;2</string>
+    </property>
+   </action>
+   <action name="actionSlot_3">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="text">
+     <string>Slot &amp;3</string>
+    </property>
+   </action>
+   <action name="actionSlot_4">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="text">
+     <string>Slot &amp;4</string>
+    </property>
+   </action>
+   <action name="actionSlot_5">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="text">
+     <string>Slot &amp;5</string>
+    </property>
+   </action>
+   <action name="actionSlot_6">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="text">
+     <string>Slot &amp;6</string>
+    </property>
+   </action>
+   <action name="actionSlot_7">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="text">
+     <string>Slot &amp;7</string>
+    </property>
+   </action>
+   <action name="actionSlot_8">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="text">
+     <string>Slot &amp;8</string>
+    </property>
+   </action>
+   <action name="actionSlot_9">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="text">
+     <string>Slot &amp;9</string>
+    </property>
+   </action>
+   <action name="action_System_Cheats">
+    <property name="icon">
+     <iconset theme="code-box-line"/>
+    </property>
+    <property name="text">
+     <string>Cheats...</string>
+    </property>
+   </action>
+   <action name="action_System_GSButton">
+    <property name="icon">
+     <iconset theme="checkbox-blank-circle-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;GS Button</string>
+    </property>
+   </action>
+   <action name="action_System_Exit">
+    <property name="icon">
+     <iconset theme="door-open-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Exit</string>
+    </property>
+   </action>
+   <action name="action_Settings_Graphics">
+    <property name="icon">
+     <iconset theme="brush-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Graphics</string>
+    </property>
+   </action>
+   <action name="action_Settings_Input">
+    <property name="icon">
+     <iconset theme="gamepad-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Input</string>
+    </property>
+   </action>
+   <action name="action_Settings_Rsp">
+    <property name="icon">
+     <iconset theme="settings-3-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;RSP</string>
+    </property>
+   </action>
+   <action name="action_Settings_Audio">
+    <property name="icon">
+     <iconset theme="volume-up-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Audio</string>
+    </property>
+   </action>
+   <action name="action_Settings_Settings">
+    <property name="icon">
+     <iconset theme="settings-3-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Settings</string>
+    </property>
+   </action>
+   <action name="action_View_Fullscreen">
+    <property name="icon">
+     <iconset theme="fullscreen-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Fullscreen</string>
+    </property>
+   </action>
+   <action name="action_Help_Github">
+    <property name="icon">
+     <iconset theme="github-fill"/>
+    </property>
+    <property name="text">
+     <string>&amp;Github Repository</string>
+    </property>
+   </action>
+   <action name="action_Help_Discord">
+    <property name="icon">
+     <iconset theme="discord-fill"/>
+    </property>
+    <property name="text">
+     <string>&amp;Discord Server</string>
+    </property>
+   </action>
+   <action name="action_Help_About">
+    <property name="icon">
+     <iconset theme="information-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;About RMG</string>
+    </property>
+   </action>
+   <action name="action_View_Toolbar">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="icon">
+     <iconset theme="tools-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Toolbar</string>
+    </property>
+   </action>
+   <action name="action_View_StatusBar">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="icon">
+     <iconset theme="information-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Status Bar</string>
+    </property>
+   </action>
+   <action name="action_View_GameList">
+    <property name="icon">
+     <iconset theme="list-check"/>
+    </property>
+    <property name="text">
+     <string>&amp;Game List</string>
+    </property>
+   </action>
+   <action name="action_View_GameGrid">
+    <property name="icon">
+     <iconset theme="function-line"/>
+    </property>
+    <property name="text">
+     <string>Ga&amp;me Grid</string>
+    </property>
+   </action>
+   <action name="action_View_RefreshRoms">
+    <property name="icon">
+     <iconset theme="refresh-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Refresh ROMs</string>
+    </property>
+   </action>
+   <action name="action_View_Log">
+    <property name="icon">
+     <iconset theme="file-list-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Log</string>
+    </property>
+   </action>
+   <action name="action_View_ClearRomCache">
+    <property name="icon">
+     <iconset theme="delete-bin-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Clear ROM Cache</string>
+    </property>
+   </action>
+   <action name="action_View_UniformSize">
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+    <property name="icon">
+     <iconset theme="function-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Uniform Size (Grid View)</string>
+    </property>
+   </action>
+   <action name="actionSpeed25">
+    <property name="checkable">
+     <bool>false</bool>
+    </property>
+    <property name="text">
+     <string>&amp;25%</string>
+    </property>
+   </action>
+   <action name="actionSpeed50">
+    <property name="text">
+     <string>&amp;50%</string>
+    </property>
+   </action>
+   <action name="actionSpeed100">
+    <property name="text">
+     <string>&amp;100%</string>
+    </property>
+   </action>
+   <action name="actionSpeed125">
+    <property name="text">
+     <string>125%</string>
+    </property>
+   </action>
+   <action name="actionSpeed150">
+    <property name="text">
+     <string>150%</string>
+    </property>
+   </action>
+   <action name="actionSpeed200">
+    <property name="text">
+     <string>2&amp;00%</string>
+    </property>
+   </action>
+   <action name="actionSpeed75">
+    <property name="text">
+     <string>&amp;75%</string>
+    </property>
+   </action>
+   <action name="actionSpeed175">
+    <property name="text">
+     <string>175%</string>
+    </property>
+   </action>
+   <action name="actionSpeed225">
+    <property name="text">
+     <string>225%</string>
+    </property>
+   </action>
+   <action name="actionSpeed250">
+    <property name="text">
+     <string>250%</string>
+    </property>
+   </action>
+   <action name="actionSpeed275">
+    <property name="text">
+     <string>275%</string>
+    </property>
+   </action>
+   <action name="actionSpeed300">
+    <property name="text">
+     <string>&amp;300%</string>
+    </property>
+   </action>
+   <action name="action_Help_Update">
+    <property name="icon">
+     <iconset theme="download-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Check For Updates</string>
+    </property>
+   </action>
+   <action name="action_Netplay_CreateSession">
+    <property name="icon">
+     <iconset theme="online-play-mpn"/>
+    </property>
+    <property name="text">
+     <string>&amp;Host</string>
+    </property>
+   </action>
+   <action name="action_Netplay_JoinSession">
+    <property name="icon">
+     <iconset theme="online-play-mpn"/>
+    </property>
+    <property name="text">
+     <string>&amp;Connect</string>
+    </property>
+   </action>
   </widget>
-  <widget class="QStatusBar" name="statusbar"/>
-  <widget class="QToolBar" name="toolBar">
-   <property name="windowTitle">
-    <string>toolBar</string>
-   </property>
-   <property name="movable">
-    <bool>true</bool>
-   </property>
-   <property name="toolButtonStyle">
-    <enum>Qt::ToolButtonStyle::ToolButtonTextUnderIcon</enum>
-   </property>
-   <property name="floatable">
-    <bool>false</bool>
-   </property>
-   <attribute name="toolBarArea">
-    <enum>TopToolBarArea</enum>
-   </attribute>
-   <attribute name="toolBarBreak">
-    <bool>false</bool>
-   </attribute>
-   <addaction name="action_System_StartRom"/>
-   <addaction name="action_System_OpenCombo"/>
-   <addaction name="separator"/>
-   <addaction name="action_System_Shutdown"/>
-   <addaction name="action_System_SoftReset"/>
-   <addaction name="action_System_Pause"/>
-   <addaction name="action_System_Screenshot"/>
-   <addaction name="separator"/>
-   <addaction name="action_View_Fullscreen"/>
-   <addaction name="separator"/>
-   <addaction name="action_Settings_Settings"/>
-  </widget>
-  <action name="action_System_StartRom">
-   <property name="icon">
-    <iconset theme="file-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Start ROM</string>
-   </property>
-  </action>
-  <action name="action_System_OpenCombo">
-   <property name="icon">
-    <iconset theme="file-line"/>
-   </property>
-   <property name="text">
-    <string>Start Co&amp;mbo</string>
-   </property>
-  </action>
-  <action name="action_System_Shutdown">
-   <property name="icon">
-    <iconset theme="shut-down-line"/>
-   </property>
-   <property name="text">
-    <string>S&amp;hutdown</string>
-   </property>
-  </action>
-  <action name="action_System_SoftReset">
-   <property name="icon">
-    <iconset theme="restart-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Soft Reset</string>
-   </property>
-  </action>
-  <action name="action_System_HardReset">
-   <property name="icon">
-    <iconset theme="restart-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Hard Reset</string>
-   </property>
-  </action>
-  <action name="action_System_Pause">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="icon">
-    <iconset theme="pause-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Pause</string>
-   </property>
-  </action>
-  <action name="action_System_Screenshot">
-   <property name="icon">
-    <iconset theme="screenshot-2-line"/>
-   </property>
-   <property name="text">
-    <string>Scree&amp;nshot</string>
-   </property>
-  </action>
-  <action name="action_System_LimitFPS">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="icon">
-    <iconset theme="speed-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Limit FPS</string>
-   </property>
-  </action>
-  <action name="action_System_SaveState">
-   <property name="icon">
-    <iconset theme="save-3-line"/>
-   </property>
-   <property name="text">
-    <string>Sa&amp;ve State</string>
-   </property>
-  </action>
-  <action name="action_System_SaveAs">
-   <property name="icon">
-    <iconset theme="save-3-line"/>
-   </property>
-   <property name="text">
-    <string>Save As...</string>
-   </property>
-  </action>
-  <action name="action_System_LoadState">
-   <property name="icon">
-    <iconset theme="folder-open-line"/>
-   </property>
-   <property name="text">
-    <string>L&amp;oad State</string>
-   </property>
-  </action>
-  <action name="action_System_Load">
-   <property name="icon">
-    <iconset theme="folder-open-line"/>
-   </property>
-   <property name="text">
-    <string>Loa&amp;d...</string>
-   </property>
-  </action>
-  <action name="actionSlot_0">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>&amp;Slot 0</string>
-   </property>
-  </action>
-  <action name="actionSlot_1">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Slot &amp;1</string>
-   </property>
-  </action>
-  <action name="actionSlot_2">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Slot &amp;2</string>
-   </property>
-  </action>
-  <action name="actionSlot_3">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Slot &amp;3</string>
-   </property>
-  </action>
-  <action name="actionSlot_4">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Slot &amp;4</string>
-   </property>
-  </action>
-  <action name="actionSlot_5">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Slot &amp;5</string>
-   </property>
-  </action>
-  <action name="actionSlot_6">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Slot &amp;6</string>
-   </property>
-  </action>
-  <action name="actionSlot_7">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Slot &amp;7</string>
-   </property>
-  </action>
-  <action name="actionSlot_8">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Slot &amp;8</string>
-   </property>
-  </action>
-  <action name="actionSlot_9">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Slot &amp;9</string>
-   </property>
-  </action>
-  <action name="action_System_Cheats">
-   <property name="icon">
-    <iconset theme="code-box-line"/>
-   </property>
-   <property name="text">
-    <string>Cheats...</string>
-   </property>
-  </action>
-  <action name="action_System_GSButton">
-   <property name="icon">
-    <iconset theme="checkbox-blank-circle-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;GS Button</string>
-   </property>
-  </action>
-  <action name="action_System_Exit">
-   <property name="icon">
-    <iconset theme="door-open-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Exit</string>
-   </property>
-  </action>
-  <action name="action_Settings_Graphics">
-   <property name="icon">
-    <iconset theme="brush-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Graphics</string>
-   </property>
-  </action>
-  <action name="action_Settings_Input">
-   <property name="icon">
-    <iconset theme="gamepad-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Input</string>
-   </property>
-  </action>
-  <action name="action_Settings_Rsp">
-   <property name="icon">
-    <iconset theme="settings-3-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;RSP</string>
-   </property>
-  </action>
-  <action name="action_Settings_Audio">
-   <property name="icon">
-    <iconset theme="volume-up-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Audio</string>
-   </property>
-  </action>
-  <action name="action_Settings_Settings">
-   <property name="icon">
-    <iconset theme="settings-3-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Settings</string>
-   </property>
-  </action>
-  <action name="action_View_Fullscreen">
-   <property name="icon">
-    <iconset theme="fullscreen-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Fullscreen</string>
-   </property>
-  </action>
-  <action name="action_Help_Github">
-   <property name="icon">
-    <iconset theme="github-fill"/>
-   </property>
-   <property name="text">
-    <string>&amp;Github Repository</string>
-   </property>
-  </action>
-  <action name="action_Help_About">
-   <property name="icon">
-    <iconset theme="information-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;About RMG</string>
-   </property>
-  </action>
-  <action name="action_View_Toolbar">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="icon">
-    <iconset theme="tools-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Toolbar</string>
-   </property>
-  </action>
-  <action name="action_View_StatusBar">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="icon">
-    <iconset theme="information-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Status Bar</string>
-   </property>
-  </action>
-  <action name="action_View_GameList">
-   <property name="icon">
-    <iconset theme="list-check"/>
-   </property>
-   <property name="text">
-    <string>&amp;Game List</string>
-   </property>
-  </action>
-  <action name="action_View_GameGrid">
-   <property name="icon">
-    <iconset theme="function-line"/>
-   </property>
-   <property name="text">
-    <string>Ga&amp;me Grid</string>
-   </property>
-  </action>
-  <action name="action_View_RefreshRoms">
-   <property name="icon">
-    <iconset theme="refresh-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Refresh ROMs</string>
-   </property>
-  </action>
-  <action name="action_View_Log">
-   <property name="icon">
-    <iconset theme="file-list-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Log</string>
-   </property>
-  </action>
-  <action name="action_View_ClearRomCache">
-   <property name="icon">
-    <iconset theme="delete-bin-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Clear ROM Cache</string>
-   </property>
-  </action>
-  <action name="action_View_UniformSize">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="icon">
-    <iconset theme="function-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Uniform Size (Grid View)</string>
-   </property>
-  </action>
-  <action name="actionSpeed25">
-   <property name="checkable">
-    <bool>false</bool>
-   </property>
-   <property name="text">
-    <string>&amp;25%</string>
-   </property>
-  </action>
-  <action name="actionSpeed50">
-   <property name="text">
-    <string>&amp;50%</string>
-   </property>
-  </action>
-  <action name="actionSpeed100">
-   <property name="text">
-    <string>&amp;100%</string>
-   </property>
-  </action>
-  <action name="actionSpeed125">
-   <property name="text">
-    <string>125%</string>
-   </property>
-  </action>
-  <action name="actionSpeed150">
-   <property name="text">
-    <string>150%</string>
-   </property>
-  </action>
-  <action name="actionSpeed200">
-   <property name="text">
-    <string>2&amp;00%</string>
-   </property>
-  </action>
-  <action name="actionSpeed75">
-   <property name="text">
-    <string>&amp;75%</string>
-   </property>
-  </action>
-  <action name="actionSpeed175">
-   <property name="text">
-    <string>175%</string>
-   </property>
-  </action>
-  <action name="actionSpeed225">
-   <property name="text">
-    <string>225%</string>
-   </property>
-  </action>
-  <action name="actionSpeed250">
-   <property name="text">
-    <string>250%</string>
-   </property>
-  </action>
-  <action name="actionSpeed275">
-   <property name="text">
-    <string>275%</string>
-   </property>
-  </action>
-  <action name="actionSpeed300">
-   <property name="text">
-    <string>&amp;300%</string>
-   </property>
-  </action>
-  <action name="action_Help_Update">
-   <property name="icon">
-    <iconset theme="download-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Check For Updates</string>
-   </property>
-  </action>
-  <action name="action_Netplay_CreateSession">
-   <property name="icon">
-    <iconset theme="server-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Create Session</string>
-   </property>
-  </action>
-  <action name="action_Netplay_JoinSession">
-   <property name="icon">
-    <iconset theme="plug-line"/>
-   </property>
-   <property name="text">
-    <string>&amp;Join Session</string>
-   </property>
-  </action>
- </widget>
- <resources>
-  <include location="UIResources.qrc"/>
- </resources>
- <connections/>
+  <resources>
+   <include location="UIResources.qrc"/>
+  </resources>
+  <connections/>
 </ui>
