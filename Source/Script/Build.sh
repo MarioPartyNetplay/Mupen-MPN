@@ -2,7 +2,7 @@
 set -ex
 script_dir="$(dirname "$0")"
 toplvl_dir="$(realpath "$script_dir/../../")"
-build_config="${1:-Debug}"
+build_config="${1:-Release}"
 build_dir="$toplvl_dir/Build/$build_config"
 threads="${2:-$(nproc)}"
 
@@ -19,7 +19,7 @@ cmake -S "$toplvl_dir" -B "$build_dir" -DCMAKE_BUILD_TYPE="$build_config" -DPORT
 
 cmake --build "$build_dir" --parallel "$threads"
 
-if [[ "$build_config" = "Debug" ]] ||
+if [[ "$build_config" = "Release" ]] ||
     [[ "$build_config" = "RelWithDebInfo" ]]
 then
     cmake --install "$build_dir" --prefix="$toplvl_dir"

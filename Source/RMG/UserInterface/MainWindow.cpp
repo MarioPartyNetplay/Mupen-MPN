@@ -10,6 +10,7 @@
 #include "MainWindow.hpp"
 
 #include <RMG-Core/Core.hpp>
+#include <RMG-Core/VersionHash.hpp>
 
 #include "UserInterface/Dialog/AboutDialog.hpp"
 #include "Dialog/Cheats/CheatsDialog.hpp"
@@ -287,9 +288,9 @@ void MainWindow::configureUI(QApplication* app, bool showUI)
     this->installEventFilter(this->ui_EventFilter);
     this->ui_Widget_Dummy->installEventFilter(this->ui_EventFilter);
 
-    this->ui_WindowTitle = QCoreApplication::applicationName();
+    this->ui_WindowTitle = "Mupen MPN";
     this->ui_WindowTitle += " (";
-    this->ui_WindowTitle += QString::fromStdString(CoreGetVersion());
+    this->ui_WindowTitle += QString::fromStdString(VERSION_HASH);
     this->ui_WindowTitle += ")";
 
     this->setWindowTitle(this->ui_WindowTitle);
@@ -302,7 +303,7 @@ void MainWindow::configureTheme(QApplication* app)
     QString fallbackThemeName = QIcon::themeName();
 
     // set theme style
-    QString fallbackStyleSheet = "QTableView { border: none; color: #0096d3; selection-color: #FFFFFF; selection-background-color: #0096d3; }";
+    QString fallbackStyleSheet = "QTableView { border: none; color:rgb(252, 196, 44); selection-color: #FFFFFF; selection-background-color: rgb(252, 196, 44); }";
     this->setStyleSheet(fallbackStyleSheet);
 
     // set application theme

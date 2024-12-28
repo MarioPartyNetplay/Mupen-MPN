@@ -11,8 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Rosalie's Mupen GUI (VERSION)</string>
-  </property>
+   <string>Mupen64Plus - MPN (VERSION)</string>  </property>
   <property name="windowIcon">
    <iconset resource="UIResources.qrc">
     <normaloff>:/Resource/RMG.png</normaloff>:/Resource/RMG.png</iconset>
