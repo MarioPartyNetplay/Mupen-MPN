@@ -73,7 +73,12 @@ static void apply_game_coresettings_overlay(void)
         return;
     }
 
-    section = romSettings.MD5;
+    int format = CoreSettingsGetIntValue(SettingsID::Core_SaveFileNameFormat);
+    if (format == 0) {
+        section = romSettings.InternalName;
+    } else {
+        section = romSettings.MD5;
+    }
 
     // when we don't need to override the core settings, return
     overrideCoreSettings = CoreSettingsGetBoolValue(SettingsID::Game_OverrideCoreSettings, section);

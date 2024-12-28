@@ -51,6 +51,8 @@ void EmulationThread::SetNetplay(QString address, int port, int player)
 
 void EmulationThread::run(void)
 {
+    setPriority(QThread::TimeCriticalPriority);
+
     emit this->on_Emulation_Started();
 
     bool ret = CoreStartEmulation(this->rom.toStdU32String(), this->disk.toStdU32String(), 

@@ -129,6 +129,7 @@ static std::filesystem::path get_user_cheat_file_path(CoreRomHeader romHeader, C
 {
     std::filesystem::path oldCheatFilePath;
     std::filesystem::path cheatFilePath;
+    std::filesystem::path namedCheatFilePath;
 
     oldCheatFilePath = CoreGetUserDataDirectory();
     oldCheatFilePath += OSAL_FILES_DIR_SEPERATOR_STR;
@@ -141,6 +142,12 @@ static std::filesystem::path get_user_cheat_file_path(CoreRomHeader romHeader, C
     cheatFilePath += "Cheats-User";
     cheatFilePath += OSAL_FILES_DIR_SEPERATOR_STR;
     cheatFilePath += get_cheat_file_name(romHeader, romSettings);
+
+    namedCheatFilePath = CoreGetUserConfigDirectory();
+    namedCheatFilePath += OSAL_FILES_DIR_SEPERATOR_STR;
+    namedCheatFilePath += "Cheats-User";
+    namedCheatFilePath += OSAL_FILES_DIR_SEPERATOR_STR;
+    namedCheatFilePath += fmt_string("{}.cht", romHeader.Name);
 
     // try to make the user cheats directory
     // if it doesn't exist yet
@@ -160,6 +167,13 @@ static std::filesystem::path get_user_cheat_file_path(CoreRomHeader romHeader, C
     if (std::filesystem::is_regular_file(oldCheatFilePath))
     {
         return oldCheatFilePath;
+    }
+
+    // use ROM name if it exists instead of CRC
+    if (!std::filesystem::is_regular_file(cheatFilePath)
+      && std::filesystem::is_regular_file(namedCheatFilePath))
+    {
+        return namedCheatFilePath;
     }
 
     return cheatFilePath;

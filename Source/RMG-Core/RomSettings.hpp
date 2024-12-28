@@ -17,6 +17,8 @@ struct CoreRomSettings
 {
     // rom goodname
     std::string GoodName;
+    // rom internal name
+    std::string InternalName;
     // rom MD5 string
     std::string MD5;
     // rom save type

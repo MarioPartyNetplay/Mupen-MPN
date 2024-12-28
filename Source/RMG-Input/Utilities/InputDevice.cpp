@@ -159,10 +159,10 @@ void InputDevice::on_SDLThread_DeviceSearchFinished(void)
         device.name = iter->name;
         device.number = iter->number;
     }
-    else
-    { // no exact match, use first with name match
-        device = this->foundDevicesWithNameMatch.at(0);
-    }
+    //else
+    //{ // no exact match, use first with name match
+    //    device = this->foundDevicesWithNameMatch.at(0);
+    //}
 
     this->joystick = SDL_JoystickOpen(device.number);
     if (SDL_IsGameController(device.number))

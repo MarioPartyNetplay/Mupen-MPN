@@ -229,7 +229,12 @@ static void load_settings(void)
     // try to retrieve current ROM settings
     if (CoreGetCurrentRomSettings(romSettings))
     {
-        gameId = romSettings.MD5;
+        int format = CoreSettingsGetIntValue(SettingsID::Core_SaveFileNameFormat);
+        if (format == 0) {
+            gameId = romSettings.InternalName;
+        } else {
+            gameId = romSettings.MD5;
+        }
     }
 
     // retrieve all user profiles
@@ -913,6 +918,8 @@ static void sdl_init()
     std::filesystem::path gameControllerDbPath;
     std::string debugMessage;
     int ret = -1;
+
+    SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT, "0");
 
     for (const int subsystem : {SDL_INIT_GAMECONTROLLER, SDL_INIT_AUDIO, SDL_INIT_VIDEO, SDL_INIT_HAPTIC})
     {

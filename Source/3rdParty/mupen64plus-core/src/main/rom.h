@@ -101,11 +101,13 @@ enum
 typedef struct
 {
    char* goodname;
+   char* internalname;
    md5_byte_t md5[16];
    md5_byte_t* refmd5;
    char *cheats;
    unsigned int crc1;
    unsigned int crc2;
+   unsigned char countrycode;
    unsigned char status; /* Rom status on a scale from 0-5. */
    unsigned char savetype;
    unsigned char players; /* Local players 0-4, 2/3/4 way Netplay indicated by 5/6/7. */
@@ -122,19 +124,22 @@ typedef struct
 
 #define ROMDATABASE_ENTRY_NONE          0ULL
 #define ROMDATABASE_ENTRY_GOODNAME      BIT(0)
-#define ROMDATABASE_ENTRY_CRC           BIT(1)
-#define ROMDATABASE_ENTRY_STATUS        BIT(2)
-#define ROMDATABASE_ENTRY_SAVETYPE      BIT(3)
-#define ROMDATABASE_ENTRY_PLAYERS       BIT(4)
-#define ROMDATABASE_ENTRY_RUMBLE        BIT(5)
-#define ROMDATABASE_ENTRY_COUNTEROP     BIT(6)
-#define ROMDATABASE_ENTRY_CHEATS        BIT(7)
-#define ROMDATABASE_ENTRY_EXTRAMEM      BIT(8)
-#define ROMDATABASE_ENTRY_TRANSFERPAK   BIT(9)
-#define ROMDATABASE_ENTRY_MEMPAK        BIT(10)
-#define ROMDATABASE_ENTRY_BIOPAK        BIT(11)
-#define ROMDATABASE_ENTRY_SIDMADURATION BIT(12)
-#define ROMDATABASE_ENTRY_AIDMAMODIFIER BIT(13)
+#define ROMDATABASE_ENTRY_INTERNALNAME  BIT(1)
+#define ROMDATABASE_ENTRY_CRC           BIT(2)
+#define ROMDATABASE_ENTRY_COUNTRYCODE   BIT(3)
+#define ROMDATABASE_ENTRY_STATUS        BIT(4)
+#define ROMDATABASE_ENTRY_SAVETYPE      BIT(5)
+#define ROMDATABASE_ENTRY_PLAYERS       BIT(6)
+#define ROMDATABASE_ENTRY_RUMBLE        BIT(7)
+#define ROMDATABASE_ENTRY_COUNTEROP     BIT(8)
+#define ROMDATABASE_ENTRY_CHEATS        BIT(9)
+#define ROMDATABASE_ENTRY_EXTRAMEM      BIT(10)
+#define ROMDATABASE_ENTRY_TRANSFERPAK   BIT(11)
+#define ROMDATABASE_ENTRY_MEMPAK        BIT(12)
+#define ROMDATABASE_ENTRY_BIOPAK        BIT(13)
+#define ROMDATABASE_ENTRY_SIDMADURATION BIT(14)
+#define ROMDATABASE_ENTRY_AIDMAMODIFIER BIT(15)
+
 
 typedef struct _romdatabase_search
 {
