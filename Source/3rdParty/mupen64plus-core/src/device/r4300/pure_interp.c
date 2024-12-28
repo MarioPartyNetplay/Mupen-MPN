@@ -31,7 +31,6 @@
 #include "api/m64p_types.h"
 #include "device/r4300/r4300_core.h"
 #include "osal/preproc.h"
-#include "plugin/plugin.h"
 
 #ifdef DBG
 #include "debugger/dbg_debugger.h"
@@ -59,10 +58,7 @@ static void InterpretOpcode(struct r4300_core* r4300);
       { \
         r4300->interp_PC.addr += 4; \
         r4300->delay_slot=1; \
-        const uint32_t pc = r4300->interp_PC.addr; \
-        if (execution_addr_masked(pc)) execution.execute(pc); \
         InterpretOpcode(r4300); \
-        if (execution_addr_masked(pc)) execution.executeDone(pc); \
         cp0_update_count(r4300); \
         r4300->delay_slot=0; \
         if (take_jump && !r4300->skip_jump) \
@@ -166,19 +162,9 @@ static void InterpretOpcode(struct r4300_core* r4300);
 
 #include "mips_instructions.def"
 
-int rounding_mode = -1;
-
 void InterpretOpcode(struct r4300_core* r4300)
 {
-	uint32_t pc = *r4300_pc(r4300);
-
-	if (execution_addr_masked(pc))
-	{
-		execution.execute(pc);
-		if (*r4300_pc(r4300) != pc) return;
-	}
-
-	uint32_t* op_address = fast_mem_access(r4300, pc);
+	uint32_t* op_address = fast_mem_access(r4300, *r4300_pc(r4300));
 	if (op_address == NULL)
 		return;
 	uint32_t op = *op_address;
@@ -755,11 +741,6 @@ void InterpretOpcode(struct r4300_core* r4300)
 		RESERVED(r4300, op);
 		break;
 	} /* switch ((op >> 26) & 0x3F) */
-
-	if (execution_addr_masked(pc))
-	{
-		execution.executeDone(pc);
-	}
 }
 
 void run_pure_interpreter(struct r4300_core* r4300)

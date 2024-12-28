@@ -167,7 +167,6 @@ void CoreReadRomHeaderAndSettingsCache(void)
         FREAD(size);
         FREAD_STR(md5Buf, size);
         cacheEntry.settings.GoodName = std::string(goodNameBuf);
-        cacheEntry.settings.InternalName = std::string(headerNameBuf);
         cacheEntry.settings.MD5 = std::string(md5Buf);
 
         // add to cached entries

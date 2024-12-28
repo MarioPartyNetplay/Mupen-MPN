@@ -187,7 +187,7 @@ void MainWindow::initializeUI(bool launchROM)
 
     this->ui_EventFilter = new EventFilter(this);
     this->ui_StatusBar_Label = new QLabel(this);
-    this->ui_StatusBar_SpeedLabel = new QLabel(this);
+    this->ui_StatusBar_RenderModeLabel = new QLabel(this);
 
     // only start refreshing the ROM browser
     // when RMG isn't launched with a ROM 
@@ -261,8 +261,7 @@ void MainWindow::configureUI(QApplication* app, bool showUI)
     this->toolBar->setVisible(this->ui_ShowToolbar);
     this->statusBar()->setVisible(this->ui_ShowStatusbar);
     this->statusBar()->addPermanentWidget(this->ui_StatusBar_Label, 99);
-    //this->statusBar()->addPermanentWidget(this->ui_StatusBar_RenderModeLabel, 1);
-    this->statusBar()->addPermanentWidget(this->ui_StatusBar_SpeedLabel, 1);
+    this->statusBar()->addPermanentWidget(this->ui_StatusBar_RenderModeLabel, 1);
 
     // set toolbar position according to setting
     int toolbarAreaSetting = CoreSettingsGetIntValue(SettingsID::GUI_ToolbarArea);
@@ -455,13 +454,40 @@ void MainWindow::updateUI(bool inEmulation, bool isPaused)
             this->setWindowTitle(goodName + QString(" - ") + this->ui_WindowTitle);
         }
 
+        if (this->ui_VidExtRenderMode == VidExtRenderMode::OpenGL)
+        {
+            if (QSurfaceFormat::defaultFormat().renderableType() == QSurfaceFormat::OpenGLES)
+            {
+                this->ui_StatusBar_RenderModeLabel->setText("OpenGL ES");
+            }
+            else
+            {
+                this->ui_StatusBar_RenderModeLabel->setText("OpenGL");
+            }
+            this->ui_Widgets->setCurrentWidget(this->ui_Widget_OpenGL->GetWidget());
+        }
+        else if (this->ui_VidExtRenderMode == VidExtRenderMode::Vulkan)
+        {
+            this->ui_StatusBar_RenderModeLabel->setText("Vulkan");
+            this->ui_Widgets->setCurrentWidget(this->ui_Widget_Vulkan->GetWidget());
+        }
+        else
+        {
+            // when the video extension hasn't been initialized correctly
+            // yet, we'll show a dummy widget with a black color pallete
+            // to minimize the flicker that would occur when switching
+            // from the ROM browser to the render widget when you i.e
+            // launch RMG with a ROM on the commandline or drag & drop
+            this->ui_Widgets->setCurrentWidget(this->ui_Widget_Dummy);
+        }
+
+        this->storeGeometry();
     }
     else if (!this->ui_NoSwitchToRomBrowser)
     {
         this->setWindowTitle(this->ui_WindowTitle);
         this->ui_Widgets->setCurrentWidget(this->ui_Widget_RomBrowser);
-        //this->ui_StatusBar_RenderModeLabel->clear();
-        this->ui_StatusBar_SpeedLabel->clear();
+        this->ui_StatusBar_RenderModeLabel->clear();
         this->loadGeometry();
     }
     else
@@ -1251,9 +1277,6 @@ void MainWindow::timerEvent(QTimerEvent *event)
             expectedWidth  = this->ui_Widget_Vulkan->GetWidget()->width()  * this->devicePixelRatio();
             expectedHeight = this->ui_Widget_Vulkan->GetWidget()->height() * this->devicePixelRatio();
         }
-
-        expectedWidth  &= ~0x1;
-        expectedHeight &= ~0x1;
 
         if (width  != expectedWidth ||
             height != expectedHeight)
@@ -2696,16 +2719,6 @@ void MainWindow::on_Core_StateCallback(CoreStateCallbackType type, int value)
             else
             {
                 OnScreenDisplaySetMessage("Captured screenshot.");
-            }
-        } break;
-        case CoreStateCallbackType::SpeedUpdate:
-        {
-            if (value > 0)
-            {
-                std::ostringstream stream;
-                stream << std::fixed << std::setprecision(0) << (30000.0 / value) << " VI/s";
-                std::string result = stream.str();
-                this->ui_StatusBar_SpeedLabel->setText(result.c_str());
             }
         } break;
     }

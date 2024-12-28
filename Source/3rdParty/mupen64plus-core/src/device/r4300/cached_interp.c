@@ -36,7 +36,6 @@
 #include "device/r4300/idec.h"
 #include "main/main.h"
 #include "osal/preproc.h"
-#include "plugin/plugin.h"
 
 #ifdef DBG
 #include "debugger/dbg_debugger.h"
@@ -84,7 +83,7 @@ void cached_interp_##name(void) \
         (*r4300_pc_struct(r4300))++; \
         r4300->delay_slot=1; \
         UPDATE_DEBUGGER(); \
-        exec_cached_ops(r4300); \
+        (*r4300_pc_struct(r4300))->ops(); \
         cp0_update_count(r4300); \
         r4300->delay_slot=0; \
         if (take_jump && !r4300->skip_jump) \
@@ -117,7 +116,7 @@ void cached_interp_##name##_OUT(void) \
         (*r4300_pc_struct(r4300))++; \
         r4300->delay_slot=1; \
         UPDATE_DEBUGGER(); \
-        exec_cached_ops(r4300); \
+        (*r4300_pc_struct(r4300))->ops(); \
         cp0_update_count(r4300); \
         r4300->delay_slot=0; \
         if (take_jump && !r4300->skip_jump) \
@@ -204,7 +203,7 @@ void cached_interp_FIN_BLOCK(void)
 #endif
 Used by dynarec only, check should be unnecessary
 */
-        exec_cached_ops(r4300);
+        (*r4300_pc_struct(r4300))->ops();
     }
     else
     {
@@ -220,12 +219,12 @@ Used by dynarec only, check should be unnecessary
 */
         if (!r4300->skip_jump)
         {
-            exec_cached_ops(r4300);
+            (*r4300_pc_struct(r4300))->ops();
             r4300->cached_interp.actual = blk;
             (*r4300_pc_struct(r4300)) = inst+1;
         }
         else
-            exec_cached_ops(r4300);
+            (*r4300_pc_struct(r4300))->ops();
     }
 }
 
@@ -997,6 +996,6 @@ void run_cached_interpreter(struct r4300_core* r4300)
 #ifdef DBG
         if (g_DebuggerActive) update_debugger((*r4300_pc_struct(r4300))->addr);
 #endif
-        exec_cached_ops(r4300);
+        (*r4300_pc_struct(r4300))->ops();
     }
 }

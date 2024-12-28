@@ -59,8 +59,6 @@ enum { DEFAULT_AI_DMA_MODIFIER = 100 };
 
 static romdatabase_entry* ini_search_by_md5(md5_byte_t* md5);
 
-static romdatabase_entry* ini_search_by_internal_name_and_country(char* name, unsigned char country);
-
 static _romdatabase g_romdatabase;
 
 /* Global loaded rom size. */
@@ -199,23 +197,6 @@ m64p_error open_rom(const unsigned char* romimage, unsigned int size)
         ROM_SETTINGS.aidmamodifier = entry->aidmamodifier;
         ROM_PARAMS.cheats = entry->cheats;
     }
-    else if ((entry=ini_search_by_internal_name_and_country(ROM_PARAMS.headername, ROM_HEADER.Country_code)) != NULL)
-    {
-        strcpy(ROM_SETTINGS.goodname, ROM_PARAMS.headername);
-        strcat(ROM_SETTINGS.goodname, " (unknown rom)");
-        ROM_SETTINGS.savetype = entry->savetype;
-        ROM_SETTINGS.status = entry->status;
-        ROM_SETTINGS.players = entry->players;
-        ROM_SETTINGS.rumble = entry->rumble;
-        ROM_SETTINGS.transferpak = entry->transferpak;
-        ROM_SETTINGS.mempak = entry->mempak;
-        ROM_SETTINGS.biopak = entry->biopak;
-        ROM_SETTINGS.countperop = entry->countperop;
-        ROM_SETTINGS.disableextramem = entry->disableextramem;
-        ROM_SETTINGS.sidmaduration = entry->sidmaduration;
-        ROM_SETTINGS.aidmamodifier = entry->aidmamodifier;
-        ROM_PARAMS.cheats = NULL;
-    }
     else
     {
         strcpy(ROM_SETTINGS.goodname, ROM_PARAMS.headername);
@@ -352,23 +333,6 @@ m64p_error open_disk(void)
         ROM_SETTINGS.sidmaduration = entry->sidmaduration;
         ROM_SETTINGS.aidmamodifier = entry->aidmamodifier;
         ROM_PARAMS.cheats = entry->cheats;
-    }
-    else if ((entry=ini_search_by_internal_name_and_country(ROM_PARAMS.headername, ROM_HEADER.Country_code)) != NULL)
-    {
-        strcpy(ROM_SETTINGS.goodname, ROM_PARAMS.headername);
-        strcat(ROM_SETTINGS.goodname, " (unknown disk)");
-        ROM_SETTINGS.savetype = entry->savetype;
-        ROM_SETTINGS.status = entry->status;
-        ROM_SETTINGS.players = entry->players;
-        ROM_SETTINGS.rumble = entry->rumble;
-        ROM_SETTINGS.transferpak = entry->transferpak;
-        ROM_SETTINGS.mempak = entry->mempak;
-        ROM_SETTINGS.biopak = entry->biopak;
-        ROM_SETTINGS.countperop = entry->countperop;
-        ROM_SETTINGS.disableextramem = entry->disableextramem;
-        ROM_SETTINGS.sidmaduration = entry->sidmaduration;
-        ROM_SETTINGS.aidmamodifier = entry->aidmamodifier;
-        ROM_PARAMS.cheats = NULL;
     }
     else
     {
@@ -509,24 +473,11 @@ static size_t romdatabase_resolve_round(void)
                 entry->entry.set_flags |= ROMDATABASE_ENTRY_GOODNAME;
         }
 
-        if (!isset_bitmask(entry->entry.set_flags, ROMDATABASE_ENTRY_INTERNALNAME) &&
-            isset_bitmask(ref->set_flags, ROMDATABASE_ENTRY_INTERNALNAME)) {
-            entry->entry.internalname = strdup(ref->internalname);
-            if (entry->entry.internalname)
-                entry->entry.set_flags |= ROMDATABASE_ENTRY_INTERNALNAME;
-        }
-
         if (!isset_bitmask(entry->entry.set_flags, ROMDATABASE_ENTRY_CRC) &&
             isset_bitmask(ref->set_flags, ROMDATABASE_ENTRY_CRC)) {
             entry->entry.crc1 = ref->crc1;
             entry->entry.crc2 = ref->crc2;
             entry->entry.set_flags |= ROMDATABASE_ENTRY_CRC;
-        }
-
-        if (!isset_bitmask(entry->entry.set_flags, ROMDATABASE_ENTRY_COUNTRYCODE) &&
-            isset_bitmask(ref->set_flags, ROMDATABASE_ENTRY_COUNTRYCODE)) {
-            entry->entry.countrycode = ref->countrycode;
-            entry->entry.set_flags |= ROMDATABASE_ENTRY_COUNTRYCODE;
         }
 
         if (!isset_bitmask(entry->entry.set_flags, ROMDATABASE_ENTRY_STATUS) &&
@@ -683,12 +634,10 @@ void romdatabase_open(void)
             memset(search, 0, sizeof(romdatabase_search));
 
             search->entry.goodname = NULL;
-            search->entry.internalname = NULL;
             memcpy(search->entry.md5, md5, 16);
             search->entry.refmd5 = NULL;
             search->entry.crc1 = 0;
             search->entry.crc2 = 0;
-            search->entry.countrycode = 0;
             search->entry.status = 0; /* Set default to 0 stars. */
             search->entry.savetype = SAVETYPE_EEPROM_4K;
             search->entry.players = 4;
@@ -724,22 +673,6 @@ void romdatabase_open(void)
             {
                 search->entry.goodname = strdup(l.value);
                 search->entry.set_flags |= ROMDATABASE_ENTRY_GOODNAME;
-            }
-            else if(!strcmp(l.name, "InternalName"))
-            {
-                search->entry.internalname = strdup(l.value);
-                search->entry.set_flags |= ROMDATABASE_ENTRY_INTERNALNAME;
-            }
-            else if(!strcmp(l.name, "CountryCode"))
-            {
-                unsigned char countrycode;
-                if (parse_hex(l.value, &countrycode, 1))
-                {
-                    search->entry.countrycode = countrycode;
-                    search->entry.set_flags |= ROMDATABASE_ENTRY_COUNTRYCODE;
-                }
-                else
-                    DebugMessage(M64MSG_WARNING, "ROM Database: Invalid CountryCode on line %i", lineno);
             }
             else if(!strcmp(l.name, "CRC"))
             {
@@ -946,8 +879,6 @@ void romdatabase_close(void)
         romdatabase_search* search = g_romdatabase.list->next_entry;
         if(g_romdatabase.list->entry.goodname)
             free(g_romdatabase.list->entry.goodname);
-        if(g_romdatabase.list->entry.internalname)
-            free(g_romdatabase.list->entry.internalname);
         if(g_romdatabase.list->entry.refmd5)
             free(g_romdatabase.list->entry.refmd5);
         free(g_romdatabase.list->entry.cheats);
@@ -1003,20 +934,4 @@ romdatabase_entry* ini_search_by_crc(unsigned int crc1, unsigned int crc2)
     return found_entry;
 }
 
-romdatabase_entry* ini_search_by_internal_name_and_country(char* name, unsigned char country)
-{
-    romdatabase_search* search;
 
-    if (!g_romdatabase.have_database)
-        return NULL;
-
-    for (search = g_romdatabase.list; search != NULL; search = search->next_entry) {
-        if (search->entry.internalname == NULL) continue;
-        if (strcmp(search->entry.internalname, name) == 0 && search->entry.countrycode == country) break;
-    }
-
-    if (search == NULL)
-        return NULL;
-
-    return &(search->entry);
-}

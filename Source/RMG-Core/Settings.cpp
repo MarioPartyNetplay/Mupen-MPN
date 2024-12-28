@@ -202,9 +202,6 @@ static l_Setting get_setting(SettingsID settingId)
 #endif // _WIN32
                   };
         break;
-    case SettingsID::Core_EXECUTION_Plugin:
-        setting = {SETTING_SECTION_CORE, "EXECUTION_Plugin", std::string("(None)")};
-        break;
 
     case SettingsID::Core_OverrideUserDirs:
         setting = {SETTING_SECTION_CORE, "OverrideUserDirectories", true};
@@ -371,9 +368,6 @@ static l_Setting get_setting(SettingsID settingId)
         break;
     case SettingsID::Game_RSP_Plugin:
         setting = {"", "RSP_Plugin", std::string("")};
-        break;
-    case SettingsID::Game_EXECUTION_Plugin:
-        setting = {"", "EXECUTION_Plugin", std::string("")};
         break;
 
     case SettingsID::KeyBinding_RemoveDuplicates:

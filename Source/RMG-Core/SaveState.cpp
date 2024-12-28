@@ -155,7 +155,7 @@ bool CoreGetSaveStatePath(CoreRomHeader header, CoreRomSettings settings, int sl
 
     // else use new filename
     int format = CoreSettingsGetIntValue(SettingsID::Core_SaveFileNameFormat);
-    if (format == 0 && false)
+    if (format == 0)
     {
         saveStatePath += header.Name;
         saveStatePath += saveStateExtension;

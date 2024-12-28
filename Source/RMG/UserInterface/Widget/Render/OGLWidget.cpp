@@ -80,9 +80,6 @@ void OGLWidget::resizeEvent(QResizeEvent *event)
     // see https://github.com/Rosalie241/RMG/issues/2
     this->width  = event->size().width() * this->devicePixelRatio();
     this->height = event->size().height() * this->devicePixelRatio();
-
-    this->width  &= ~0x1;
-    this->height &= ~0x1;
 }
 
 void OGLWidget::timerEvent(QTimerEvent *event)

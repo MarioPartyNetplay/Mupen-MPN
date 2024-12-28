@@ -34,7 +34,6 @@ bool CoreGetCurrentRomSettings(CoreRomSettings& settings)
     std::string       error;
     m64p_error        ret;
     m64p_rom_settings m64p_settings;
-    m64p_rom_header   m64p_header;
 
     if (!m64p::Core.IsHooked())
     {
@@ -50,17 +49,7 @@ bool CoreGetCurrentRomSettings(CoreRomSettings& settings)
         return false;
     }
 
-    ret = m64p::Core.DoCommand(M64CMD_ROM_GET_HEADER, sizeof(m64p_header), &m64p_header);
-    if (ret != M64ERR_SUCCESS)
-    {
-        error = "CoreGetCurrentRomSettings m64p::Core.DoCommand(M64CMD_ROM_GET_HEADER) Failed: ";
-        error += m64p::Core.ErrorMessage(ret);
-        CoreSetError(error);
-        return false;
-    }
-
     settings.GoodName = CoreConvertStringEncoding(m64p_settings.goodname, CoreStringEncoding::Shift_JIS);
-    settings.InternalName = CoreConvertStringEncoding((char*)m64p_header.Name, CoreStringEncoding::Shift_JIS);
     settings.MD5 = std::string(m64p_settings.MD5);
     settings.SaveType = m64p_settings.savetype;
     settings.DisableExtraMem = m64p_settings.disableextramem;
@@ -165,31 +154,23 @@ bool CoreApplyRomSettingsOverlay(void)
         return false;
     }
 
-    std::string section;
-    int format = CoreSettingsGetIntValue(SettingsID::Core_SaveFileNameFormat);
-    if (format == 0) {
-        section = settings.InternalName;
-    } else {
-        section = settings.MD5;
-    }
-
     // don't do anything when section doesn't exist
-    if (!CoreSettingsSectionExists(section))
+    if (!CoreSettingsSectionExists(settings.MD5))
     {
         return false;
     }
 
     // or when we don't override the settings
-    if (!CoreSettingsGetBoolValue(SettingsID::Game_OverrideSettings, section))
+    if (!CoreSettingsGetBoolValue(SettingsID::Game_OverrideSettings, settings.MD5))
     {
         return false;
     }
 
-    settings.SaveType = CoreSettingsGetIntValue(SettingsID::Game_SaveType, section);
-    settings.DisableExtraMem = CoreSettingsGetBoolValue(SettingsID::Game_DisableExtraMem, section);
-    settings.TransferPak = CoreSettingsGetBoolValue(SettingsID::Game_TransferPak, section);
-    settings.CountPerOp = CoreSettingsGetIntValue(SettingsID::Game_CountPerOp, section);
-    settings.SiDMADuration = CoreSettingsGetIntValue(SettingsID::Game_SiDmaDuration, section);
+    settings.SaveType = CoreSettingsGetIntValue(SettingsID::Game_SaveType, settings.MD5);
+    settings.DisableExtraMem = CoreSettingsGetBoolValue(SettingsID::Game_DisableExtraMem, settings.MD5);
+    settings.TransferPak = CoreSettingsGetBoolValue(SettingsID::Game_TransferPak, settings.MD5);
+    settings.CountPerOp = CoreSettingsGetIntValue(SettingsID::Game_CountPerOp, settings.MD5);
+    settings.SiDMADuration = CoreSettingsGetIntValue(SettingsID::Game_SiDmaDuration, settings.MD5);
 
     return CoreApplyRomSettings(settings);
 }
