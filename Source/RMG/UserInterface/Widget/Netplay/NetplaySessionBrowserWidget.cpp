@@ -61,8 +61,6 @@ NetplaySessionBrowserWidget::NetplaySessionBrowserWidget(QWidget* parent) : QSta
     QStringList labels;
     labels << "Name";
     labels << "Game";
-    labels << "Game MD5";
-    labels << "Password?";
     this->tableWidget->setColumnCount(labels.size());
     this->tableWidget->setHorizontalHeaderLabels(labels);
 
@@ -112,14 +110,6 @@ void NetplaySessionBrowserWidget::AddSessionData(QString name, QString game, QSt
     // Game
     QTableWidgetItem* tableWidgetItem2 = new QTableWidgetItem(game);
     this->tableWidget->setItem(row, 1, tableWidgetItem2);
-
-    // MD5
-    QTableWidgetItem* tableWidgetItem3 = new QTableWidgetItem(md5);
-    this->tableWidget->setItem(row, 2, tableWidgetItem3);
-
-    // Password
-    QTableWidgetItem* tableWidgetItem4 = new QTableWidgetItem(password ? "Yes" : "No");
-    this->tableWidget->setItem(row, 3, tableWidgetItem4);
 }
 
 void NetplaySessionBrowserWidget::RefreshDone(void)
