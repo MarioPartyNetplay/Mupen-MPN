@@ -110,7 +110,7 @@ void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
     }
     else if (type == "reply_motd")
     {
-        QString message = "<b>MOTD:</b> " + json.value("message").toString();
+        QString message = "<b>Notice:</b> <div style='text-align:center;'>Servers are funded by Tabitha! Use this <a href='https://ko-fi.com/tabithahanegan'>link</a> to help fund the process.</div>";
         this->chatPlainTextEdit->appendHtml(message);
         this->chatPlainTextEdit->setTextInteractionFlags(Qt::TextBrowserInteraction);
     }

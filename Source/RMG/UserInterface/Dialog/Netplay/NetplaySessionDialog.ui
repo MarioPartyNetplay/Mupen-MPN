@@ -19,7 +19,7 @@
      <item>
       <widget class="QLabel" name="label">
        <property name="text">
-        <string>Session name</string>
+        <string>Host Code</string>
        </property>
       </widget>
      </item>
@@ -43,7 +43,7 @@
      <item>
       <widget class="QLabel" name="label_2">
        <property name="text">
-        <string>Game name</string>
+        <string>Game Name</string>
        </property>
       </widget>
      </item>

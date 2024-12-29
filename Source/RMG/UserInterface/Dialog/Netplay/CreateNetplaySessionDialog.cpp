@@ -264,6 +264,7 @@ void CreateNetplaySessionDialog::accept()
             QJsonObject jsonFeatures;
             jsonFeatures.insert("rsp_plugin", plugins[0]);
             jsonFeatures.insert("gfx_plugin", plugins[1]);
+            jsonFeatures.insert("host_name", this->nickNameLineEdit->text());
 
             // Retrieve and format cheats
             QJsonArray cheatsArray = GetSessionCheats();

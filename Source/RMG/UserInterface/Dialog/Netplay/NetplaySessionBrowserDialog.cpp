@@ -195,7 +195,7 @@ void NetplaySessionBrowserDialog::on_webSocket_textMessageReceived(QString messa
             {
                 session = sessions.at(i).toObject();
 
-                this->sessionBrowserWidget->AddSessionData(session.value("room_name").toString(), 
+                this->sessionBrowserWidget->AddSessionData(session.value("features").toObject().value("host_name").toString(),
                                                             session.value("game_name").toString(), 
                                                             session.value("MD5").toString(), 
                                                             session.value("protected").toBool(),
