@@ -331,22 +331,6 @@ void NetplaySessionBrowserDialog::accept()
     QPushButton* joinButton = this->buttonBox->button(QDialogButtonBox::Ok);
     joinButton->setEnabled(false);
 
-    // request password when needed
-    QString password;
-    if (sessionData.PasswordProtected)
-    {
-        NetplaySessionPasswordDialog dialog(this);
-        dialog.exec();
-        password = dialog.GetPassword();
-
-        // do nothing if password is empty
-        if (password.isEmpty())
-        {
-            joinButton->setEnabled(true);
-            return;
-        }
-    }
-
     // ensure features match to what we currently have
     QList<QString> pluginNames = NetplayCommon::GetPluginNames(sessionData.MD5);
     QString details;
@@ -395,7 +379,7 @@ void NetplaySessionBrowserDialog::accept()
     json.insert("type", "request_join_room");
     json.insert("player_name", this->nickNameLineEdit->text());
     session.insert("port", sessionData.Port);
-    session.insert("password", password);
+    session.insert("password", "MPN");
     session.insert("MD5", QString::fromStdString(md5));
 
     json.insert("room", session);

@@ -46,7 +46,8 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
 
     QString getGameName(QString goodName, QString file);
     QString FormatCheatCode(const CoreCheat& cheat, const CoreCheatCode& code);
-
+    QString generateRandomHexChar();
+    
     bool validate(void);
     void validateCreateButton(void);
 
@@ -58,8 +59,6 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
     void on_serverComboBox_currentIndexChanged(int index);
 
     void on_nickNameLineEdit_textChanged(void);
-    void on_sessionNameLineEdit_textChanged(void);
-    void on_passwordLineEdit_textChanged(void);
 
     void on_romListWidget_OnRomChanged(bool valid);
 

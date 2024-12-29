@@ -9,7 +9,7 @@ option(APPIMAGE_UPDATER "Enables AppImage updater" OFF)
 option(DISCORD_RPC      "Enables Discord Rich Presence" ON)
 option(DRAG_DROP        "Enables drag and drop" ON)
 option(NETPLAY          "Enables netplay" ON)
-option(VRU              "Enables VRU support in RMG-Input" ON)
+option(VRU              "Enables VRU support in RMG-Input" OFF)
 option(USE_CCACHE       "Enables usage of ccache when ccache has been found" ON)
 option(USE_LTO          "Enables building with LTO/IPO when compiler supports it" ON)
 option(NO_ASM           "Disables the usage of assembly in the mupen64plus-core" OFF)
@@ -155,7 +155,7 @@ if (WIN32)
     add_subdirectory(Source/Installer)
 
     add_custom_target(bundle_dependencies
-        COMMAND bash "${CMAKE_SOURCE_DIR}/Source/Script/BundleDependencies.sh" "${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}/RMG.exe" "${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}" "/mingw64/bin"
+        COMMAND bash "${CMAKE_SOURCE_DIR}/Source/Script/BundleDependencies.sh" "${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}/Mupen-MPN.exe" "${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}" "/mingw64/bin"
 	)
 endif(WIN32)
 

@@ -45,13 +45,13 @@ BEGIN
     BEGIN
         BLOCK "200004b0"
         BEGIN
-            VALUE "CompanyName", "Rosalie"
-            VALUE "FileDescription", "Rosalie's Mupen GUI"
+            VALUE "CompanyName", "Mario Party Netplay"
+            VALUE "FileDescription", "Mupen MPN"
             VALUE "FileVersion", "1.0.0.1"
-            VALUE "InternalName", "RMG.exe"
-            VALUE "LegalCopyright", "Copyright (C) 2020 Rosalie Wanders"
-            VALUE "OriginalFilename", "RMG.exe"
-            VALUE "ProductName", "Rosalie's Mupen GUI"
+            VALUE "InternalName", "Mupen-MPN.exe"
+            VALUE "LegalCopyright", "Copyright (C) 2025 Tabitha Hanegan"
+            VALUE "OriginalFilename", "Mupen-MPN.exe"
+            VALUE "ProductName", "Mupen MPN"
             VALUE "ProductVersion", "1.0.0.1"
         END
     END
