@@ -28,6 +28,7 @@ set(RMG_CORE_SOURCES
     m64p/Api.cpp
     m64p/CoreApi.cpp
     m64p/ConfigApi.cpp
+    m64p/DebugApi.cpp
     m64p/PluginApi.cpp
     CachedRomHeaderAndSettings.cpp
     ConvertStringEncoding.cpp
@@ -44,6 +45,7 @@ set(RMG_CORE_SOURCES
     Callback.cpp
     Settings.cpp
     Netplay.cpp
+    GDBStub.cpp
     Plugins.cpp
     Version.cpp
     Cheats.cpp
