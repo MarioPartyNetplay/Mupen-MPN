@@ -29,7 +29,7 @@ NetplaySessionPasswordDialog::~NetplaySessionPasswordDialog(void)
 
 QString NetplaySessionPasswordDialog::GetPassword(void)
 {
-    return this->password;
+    return "MPN";
 }
 
 void NetplaySessionPasswordDialog::accept()

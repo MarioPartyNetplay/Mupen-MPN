@@ -96,7 +96,7 @@ static std::filesystem::path get_appdata_directory(std::filesystem::path directo
     }
 
     fullDirectory = appdataDirectory;
-    fullDirectory += "/RMG/";
+    fullDirectory += "/MupenMPN/";
     fullDirectory += directory;
 
     return fullDirectory;

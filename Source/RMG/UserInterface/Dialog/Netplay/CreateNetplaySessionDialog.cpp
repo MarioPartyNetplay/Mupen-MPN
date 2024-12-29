@@ -21,6 +21,8 @@
 
 #include <RMG-Core/Settings.hpp>
 
+#include <random>
+
 using namespace UserInterface::Dialog;
 using namespace Utilities;
 
@@ -55,14 +57,6 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, QWebSock
     QRegularExpression nicknameRe(NETPLAYCOMMON_NICKNAME_REGEX);
     this->nickNameLineEdit->setValidator(new QRegularExpressionValidator(nicknameRe, this));
     this->nickNameLineEdit->setText(QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_Nickname)));
-
-    // set validator for session
-    QRegularExpression sessionRe(NETPLAYCOMMON_SESSION_REGEX);
-    this->sessionNameLineEdit->setValidator(new QRegularExpressionValidator(sessionRe, this));
-
-    // set validator for password
-    QRegularExpression passwordRe(NETPLAYCOMMON_PASSWORD_REGEX);
-    this->passwordLineEdit->setValidator(new QRegularExpressionValidator(passwordRe, this));
 
     // add data to widget
     for (auto it = modelData.begin(); it != modelData.end(); it++)
@@ -131,12 +125,6 @@ bool CreateNetplaySessionDialog::validate(void)
     if (this->nickNameLineEdit->text().isEmpty() ||
         this->nickNameLineEdit->text().contains(' ') ||
         this->nickNameLineEdit->text().size() > 128)
-    {
-        return false;
-    }
-
-    if (this->sessionNameLineEdit->text().isEmpty() ||
-        this->sessionNameLineEdit->text().size() > 128)
     {
         return false;
     }
@@ -252,20 +240,30 @@ void CreateNetplaySessionDialog::on_nickNameLineEdit_textChanged(void)
     this->validateCreateButton();
 }
 
-void CreateNetplaySessionDialog::on_sessionNameLineEdit_textChanged(void)
-{
-    this->validateCreateButton();
-}
-
-void CreateNetplaySessionDialog::on_passwordLineEdit_textChanged(void)
-{
-    this->validateCreateButton();
-}
-
 void CreateNetplaySessionDialog::on_romListWidget_OnRomChanged(bool valid)
 {
     this->validateCreateButton();
 }
+
+QString CreateNetplaySessionDialog::generateRandomHexChar() {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 15);
+
+    std::stringstream ss;
+    for (int i = 0; i < 8; ++i) {
+        int randomNum = dis(gen);
+        if (randomNum < 10) {
+            ss << randomNum;
+        } else {
+            ss << static_cast<char>('a' + (randomNum - 10));
+        }
+    }
+
+    QString randomRoomName = QString::fromStdString(ss.str());
+    return randomRoomName;
+}
+
 
 void CreateNetplaySessionDialog::accept()
 {
@@ -295,15 +293,16 @@ void CreateNetplaySessionDialog::accept()
 
     QJsonObject json;
     QJsonObject session;
-    session.insert("room_name", this->sessionNameLineEdit->text());
-    session.insert("password", this->passwordLineEdit->text());
+    session.insert("room_name", generateRandomHexChar());
+    session.insert("password", "MPN");
     session.insert("MD5", romData.MD5);
     session.insert("game_name", this->getGameName(romData.GoodName, romData.File));
-    session.insert("features",  jsonFeatures);
+    session.insert("features", jsonFeatures);
     json.insert("type", "request_create_room");
     json.insert("player_name", this->nickNameLineEdit->text());
     json.insert("room", session);
     NetplayCommon::AddCommonJson(json);
 
     this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
+    }
 }

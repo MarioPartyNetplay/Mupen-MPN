@@ -123,6 +123,12 @@ else()
     add_executable(RMG ${RMG_SOURCES})
 endif()
 
+set_target_properties(RMG PROPERTIES OUTPUT_NAME "Mupen-MPN")
+
+add_dependencies(RMG 
+    imgui
+)
+
 target_link_libraries(RMG 
     RMG-Core
     imgui
