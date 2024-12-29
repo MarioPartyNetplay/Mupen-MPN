@@ -215,6 +215,7 @@ void NetplaySessionBrowserDialog::on_webSocket_textMessageReceived(QString messa
         }
         else
         {
+            this->sessionBrowserWidget->Reset();
             QtMessageBox::Error(this, "Server Error", json.value("message").toString());
         }
     }
@@ -376,12 +377,12 @@ void NetplaySessionBrowserDialog::accept()
 
     QJsonObject json;
     QJsonObject session;
-    json.insert("type", "request_join_room");
-    json.insert("player_name", this->nickNameLineEdit->text());
     session.insert("port", sessionData.Port);
     session.insert("password", "MPN");
     session.insert("MD5", QString::fromStdString(md5));
 
+    json.insert("type", "request_join_room");
+    json.insert("player_name", this->nickNameLineEdit->text());
     json.insert("room", session);
     NetplayCommon::AddCommonJson(json);
 
