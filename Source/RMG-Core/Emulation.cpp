@@ -15,6 +15,7 @@
 #include "Emulation.hpp"
 #include "RomHeader.hpp"
 #include "m64p/Api.hpp"
+#include "GDBStub.hpp"
 #include "Plugins.hpp"
 #include "Netplay.hpp"
 #include "Cheats.hpp"
@@ -146,13 +147,22 @@ static void apply_pif_rom_settings(void)
 // Exported Functions
 //
 
-bool CoreStartEmulation(std::filesystem::path n64rom, std::filesystem::path n64ddrom, 
-    std::string address, int port, int player)
+#include <iostream>
+bool CoreStartEmulation(std::filesystem::path n64rom, std::filesystem::path n64ddrom, std::string address, int port, int player)
 {
     std::string error;
     m64p_error  m64p_ret;
     bool        netplay_ret = false;
     CoreRomType type;
+
+    // TODO: don't hardcode it here
+    // the overlay will be copied later here
+    CoreSettingsSetValue(SettingsID::CoreOverlay_EnableDebugger, true);
+
+    if (!CoreGDBStubInit(5001))
+    {
+        return false;
+    }
 
     if (!CoreOpenRom(n64rom))
     {
@@ -249,6 +259,8 @@ bool CoreStartEmulation(std::filesystem::path n64rom, std::filesystem::path n64d
         CoreShutdownNetplay();
     }
 #endif // NETPLAY
+
+    CoreGDBStubShutdown();
 
     CoreClearCheats();
     CoreDetachPlugins();
