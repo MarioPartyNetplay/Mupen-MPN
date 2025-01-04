@@ -148,6 +148,11 @@ D1113FD4 5440
 D110D432 0048
 8110D434 2400 
 
+$Board: Chilly Waters - Always Climb Slope
+Note= By: gamemasterplc.
+D111C51C 0000
+811183B4 2400
+
 $Board: Chilly Waters - No Ice Slip
 Note= By: gamemasterplc.
 D1118AD6 60C2
