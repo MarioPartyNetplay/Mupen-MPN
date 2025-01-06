@@ -7,7 +7,7 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-#include "Settings/Settings.hpp"
+#include "Settings.hpp"
 #include "DiscordRpc.hpp"
 #include "RomSettings.hpp"
 #include "RomHeader.hpp"
@@ -68,11 +68,11 @@ void CoreDiscordRpcUpdate(bool inGame)
         {
             largeImageKey = "box-mp1";
         }
-        elif (romHeader.GameID == "NMWE")
+        if (romHeader.GameID == "NMWE")
         {
             largeImageKey = "box-mp2";
         }
-        elif (romHeader.GameID == "NMVE")
+        if (romHeader.GameID == "NMVE")
         {
             largeImageKey = "box-mp3";
         }

@@ -87,7 +87,7 @@ static l_Setting get_setting(SettingsID settingId)
         setting = {SETTING_SECTION_GUI, "StatusbarMessageDuration", 3};
         break;
     case SettingsID::GUI_PauseEmulationOnFocusLoss:
-        setting = {SETTING_SECTION_GUI, "PauseEmulationOnFocusLoss", true};
+        setting = {SETTING_SECTION_GUI, "PauseEmulationOnFocusLoss", false};
         break;
     case SettingsID::GUI_ResumeEmulationOnFocus:
         setting = {SETTING_SECTION_GUI, "ResumeEmulationOnFocus", true};
