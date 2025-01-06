@@ -148,6 +148,11 @@ D1113FD4 5440
 D110D432 0048
 8110D434 2400 
 
+$Board: Chilly Waters - Always Climb Slope
+Note= By: gamemasterplc.
+D111C51C 0000
+811183B4 2400
+
 $Board: Chilly Waters - No Ice Slip
 Note= By: gamemasterplc.
 D1118AD6 60C2
@@ -803,6 +808,36 @@ Note= By: gamemasterplc.
 5A 90 Turns
 5F 95 Turns
 63 99 Turns
+
+$Mechanics - No Coin Hidden Blocks
+Note= By: Tabtha, Airsola.
+D10CE202 0048
+800CE1C4 00FF
+D10CE202 0049
+800CE1C4 00FF
+D10CE202 004A
+800CE1C4 00FF
+D10CE202 004B
+800CE1C4 00FF
+D10CE202 004C
+800CE1C4 00FF
+D10CE202 004D
+800CE1C4 00FF
+
+$Mechanics - No Item Hidden Blocks
+Note= By: Tabtha, Airsola.
+D10CE202 0048
+800CC4E4 00FF
+D10CE202 0049
+800CC4E4 00FF
+D10CE202 004A
+800CC4E4 00FF
+D10CE202 004B
+800CC4E4 00FF
+D10CE202 004C
+800CC4E4 00FF
+D10CE202 004D
+800CC4E4 00FF
 
 $Mechanics - No Star Hidden Blocks
 Note= By: Airsola.

@@ -13,6 +13,11 @@ Note=By: gamemasterplc.
 D1107336 1CBB
 811072A0 2400
 
+$aQOL - Display Super Hard on Boards
+Note=By: gamemasterplc
+D110300A 1D91
+8110300E 0004
+
 $aQOL - Faster Map Scrolling
 Note=By: Rain.
 8106793E 40E0
@@ -611,6 +616,10 @@ Note=By: Rain.
 5A 90 Coins
 5F 95 Coins
 63 99 Coins
+
+$Mechanics - No Hidden Blocks
+Note=By: gamemasterplc
+810FD418 FFFF
 
 $Mechanics - No Star Hidden Blocks
 Note=By: Airsola.
