@@ -7,7 +7,8 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-#define CORE_INTERNAL
+#include "Settings/Settings.hpp"
+#include "DiscordRpc.hpp"
 #include "RomSettings.hpp"
 #include "DiscordRpc.hpp"
 #include "RomHeader.hpp"
@@ -30,7 +31,7 @@ CORE_EXPORT void CoreDiscordRpcInit(void)
         return;
     }
 
-    Discord_Initialize("801450412280119356", nullptr, 0, "");
+    Discord_Initialize("888655408623943731", nullptr, 0, "");
 }
 
 CORE_EXPORT void CoreDiscordRpcShutdown(void)
@@ -43,6 +44,7 @@ CORE_EXPORT void CoreDiscordRpcUpdate(bool inGame)
     std::string smallImageKey;
     std::string largeImageKey;
     std::string details;
+    std::string largeImageName;
 
     if (!CoreSettingsGetBoolValue(SettingsID::GUI_DiscordRpc))
     {
@@ -61,9 +63,30 @@ CORE_EXPORT void CoreDiscordRpcUpdate(bool inGame)
             return;
         }
 
-        smallImageKey = "rmg-icon";
+        smallImageKey = "rmg";
         largeImageKey = romHeader.Name;
-        details = romSettings.GoodName;
+        largeImageName = romSettings.GoodName;
+
+        if (romHeader.GameID == "CLBE")
+        {
+            largeImageKey = "box-mp1";
+        }
+        elif (romHeader.GameID == "NMWE")
+        {
+            largeImageKey = "box-mp2";
+        }
+        elif (romHeader.GameID == "NMVE")
+        {
+            largeImageKey = "box-mp3";
+        }
+        else
+        {
+            // Construct the URL for the thumbnail image
+            std::string baseUrl = "https://thumbnails.libretro.com/Nintendo%20-%20Nintendo%2064/Named_Boxarts/";
+            std::string goodName = romSettings.GoodName;
+            std::string imageUrl = baseUrl + goodName + ".png";
+            largeImageKey = imageUrl;
+        }
 
         // replace ' ' with '_' and replace '&' with '_'
         // also tolower the entire string
@@ -73,7 +96,7 @@ CORE_EXPORT void CoreDiscordRpcUpdate(bool inGame)
     }
     else
     {
-        largeImageKey = "rmg-icon";
+        largeImageKey = "rmg";
         details = "Not in-game";
     }
 
@@ -81,8 +104,7 @@ CORE_EXPORT void CoreDiscordRpcUpdate(bool inGame)
     memset(&discordPresence, 0, sizeof(discordPresence));
     discordPresence.smallImageKey = smallImageKey.c_str();
     discordPresence.largeImageKey = largeImageKey.c_str();
-    discordPresence.largeImageText = "Rosalie's Mupen GUI";
-    discordPresence.details = details.c_str();
+    discordPresence.largeImageText = largeImageName.c_str();
     discordPresence.startTimestamp = time(nullptr);
 
     Discord_UpdatePresence(&discordPresence);

@@ -19,4 +19,6 @@ void CoreDiscordRpcShutdown(void);
 // updates the state of the discord rpc library
 void CoreDiscordRpcUpdate(bool inGame);
 
+std::string urlEncode(const std::string &value);
+
 #endif // CORE_DISCORDRPC_HPP
