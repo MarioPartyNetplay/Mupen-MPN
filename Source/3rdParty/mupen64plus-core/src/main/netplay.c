@@ -350,8 +350,17 @@ static uint32_t netplay_get_input(uint8_t control_id)
     //buffer_size is the local buffer size
     if (l_player_lag[control_id] > 0 && buffer_size(control_id) > l_buffer_target)
     {
-        l_canFF = 1;
-        main_core_state_set(M64CORE_SPEED_LIMITER, 0);
+        // Instead of allowing fast-forward, reduce the speed factor for other players
+        for (int i = 0; i < 4; ++i)
+        {
+            if (i != control_id && l_player_lag[i] < l_player_lag[control_id])
+            {
+                // Reduce the speed factor for other players
+                main_speeddown(99); // Reduce speed by 99%
+            }
+        }
+        main_core_state_set(M64CORE_SPEED_LIMITER, 1);
+        l_canFF = 0;
     }
     else
     {
