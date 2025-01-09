@@ -111,7 +111,9 @@ void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
     else if (type == "reply_motd")
     {
         QString message = "<b>Notice:</b> <div style='text-align:center;'>Servers are funded by Tabitha! Use this <a href='https://ko-fi.com/tabithahanegan'>link</a> to help fund the process.</div>";
+        QString message2 = "<b>Notice:</b> <div style='text-align:center;'>Please set up your cheats before participating in a NetPlay session. Cheats do not sync if configured in-game or while in the lobby.</div>";
         this->chatPlainTextEdit->appendHtml(message);
+        this->chatPlainTextEdit->appendHtml(message2);
         this->chatPlainTextEdit->setTextInteractionFlags(Qt::TextBrowserInteraction);
     }
 }
