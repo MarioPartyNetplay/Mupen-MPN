@@ -15,7 +15,6 @@
 #include "Emulation.hpp"
 #include "RomHeader.hpp"
 #include "m64p/Api.hpp"
-#include "GDBStub.hpp"
 #include "Plugins.hpp"
 #include "Netplay.hpp"
 #include "Cheats.hpp"
@@ -159,11 +158,6 @@ bool CoreStartEmulation(std::filesystem::path n64rom, std::filesystem::path n64d
     // the overlay will be copied later here
     CoreSettingsSetValue(SettingsID::CoreOverlay_EnableDebugger, true);
 
-    if (!CoreGDBStubInit(5001))
-    {
-        return false;
-    }
-
     if (!CoreOpenRom(n64rom))
     {
         return false;
@@ -259,9 +253,6 @@ bool CoreStartEmulation(std::filesystem::path n64rom, std::filesystem::path n64d
         CoreShutdownNetplay();
     }
 #endif // NETPLAY
-
-    CoreGDBStubShutdown();
-
     CoreClearCheats();
     CoreDetachPlugins();
     CoreCloseRom();
