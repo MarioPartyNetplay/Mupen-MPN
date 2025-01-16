@@ -347,6 +347,10 @@ EXPORT m64p_error CALL CoreDoCommand(m64p_command Command, int ParamInt, void *P
                 return M64ERR_INPUT_INVALID;
             g_media_loader = *(m64p_media_loader*)ParamPtr;
             return M64ERR_SUCCESS;
+        case M64CMD_NETPLAY_SET_INPUT_DELAY:
+            if (ParamInt < 0)
+                return M64ERR_INPUT_INVALID;
+            return netplay_set_input_delay(ParamInt);
         case M64CMD_NETPLAY_INIT:
             if (ParamInt < 1 || ParamPtr == NULL)
                 return M64ERR_INPUT_INVALID;
