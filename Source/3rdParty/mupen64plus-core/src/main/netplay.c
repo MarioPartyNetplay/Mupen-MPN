@@ -49,8 +49,6 @@ static struct controller_input_compat *l_cin_compats;
 static uint8_t l_plugin[4];
 static uint8_t l_buffer_target;
 static uint8_t l_player_lag[4];
-static int input_delay;
-static int controlled_player;
 
 //UDP packet formats
 #define UDP_SEND_KEY_INFO 0
@@ -131,7 +129,6 @@ m64p_error netplay_start(const char* host, int port)
     l_vi_counter = 0;
     l_status = 0;
     l_reg_id = 0;
-    input_delay = -1;
 
     return M64ERR_SUCCESS;
 }
@@ -288,23 +285,21 @@ static void netplay_process()
                     plugin = packet->data[curr];
                     curr += 1;
 
-                    if (input_delay < 0 || player != controlled_player) {
-                        // Ignore inputs from the network for locally controlled players when using input delay.
-                        struct netplay_event* new_event = (struct netplay_event*)malloc(sizeof(struct netplay_event));
-                        new_event->count = count;
-                        new_event->buttons = keys;
-                        new_event->plugin = plugin;
-                        new_event->next = l_cin_compats[player].event_first;
-                        l_cin_compats[player].event_first = new_event;
-                    }
+                    //insert new event at beginning of linked list
+                    struct netplay_event* new_event = (struct netplay_event*)malloc(sizeof(struct netplay_event));
+                    new_event->count = count;
+                    new_event->buttons = keys;
+                    new_event->plugin = plugin;
+                    new_event->next = l_cin_compats[player].event_first;
+                    l_cin_compats[player].event_first = new_event;
+                }
                 break;
             default:
                 DebugMessage(M64MSG_ERROR, "Netplay: received unknown message from server");
-                break;
-            }
+            break;
         }
-        SDLNet_FreePacket(packet);
     }
+    SDLNet_FreePacket(packet);
 }
 
 static int netplay_ensure_valid(uint8_t control_id)
@@ -388,34 +383,6 @@ static uint32_t netplay_get_input(uint8_t control_id)
 
 static void netplay_send_input(uint8_t control_id, uint32_t keys)
 {
-    if (input_delay > 0 && control_id == controlled_player)
-    {
-        // Store the input in the linked list in addition to sending it to the server.
-        // This lets us avoid waiting on a local input to arrive from the server before
-        // it can be used, which can improve performance.
-        struct netplay_event* new_event = (struct netplay_event*)malloc(sizeof(struct netplay_event));
-        new_event->count = l_cin_compats[control_id].netplay_count + input_delay;
-        new_event->buttons = keys;
-        new_event->plugin = l_plugin[control_id];
-        new_event->next = l_cin_compats[control_id].event_first;
-        l_cin_compats[control_id].event_first = new_event;
-
-        if (l_cin_compats[control_id].netplay_count == 0)
-        {
-            // Duplicate the first inputs to cover the initial input delay
-            // during startup of the game. Otherwise the inputs for frame zero
-            // would never be in the linked list
-            for (int i = 0; i < input_delay; i++)
-            {
-                struct netplay_event* new_event = (struct netplay_event*)malloc(sizeof(struct netplay_event));
-                new_event->count = i;
-                new_event->buttons = keys;
-                new_event->plugin = l_plugin[control_id];
-                new_event->next = l_cin_compats[control_id].event_first;
-                l_cin_compats[control_id].event_first = new_event;
-            }
-        }
-    }
     UDPpacket *packet = SDLNet_AllocPacket(11);
     packet->data[0] = UDP_SEND_KEY_INFO;
     packet->data[1] = control_id; //player number
@@ -430,7 +397,6 @@ static void netplay_send_input(uint8_t control_id, uint32_t keys)
 uint8_t netplay_register_player(uint8_t player, uint8_t plugin, uint8_t rawdata, uint32_t reg_id)
 {
     l_reg_id = reg_id;
-    controlled_player = player;
     char output_data[8];
     output_data[0] = TCP_REGISTER_PLAYER;
     output_data[1] = player; //player number we'd like to register
@@ -446,12 +412,6 @@ uint8_t netplay_register_player(uint8_t player, uint8_t plugin, uint8_t rawdata,
         recv += SDLNet_TCP_Recv(l_tcpSocket, &response[recv], 2 - recv);
     l_buffer_target = response[1]; //local buffer size target
     return response[0];
-}
-
-m64p_error netplay_set_input_delay(int _input_delay)
-{
-    input_delay = _input_delay;
-    return M64ERR_SUCCESS;
 }
 
 int netplay_lag()
