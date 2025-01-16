@@ -289,19 +289,13 @@ static void netplay_process()
                     curr += 1;
 
                     if (input_delay < 0 || player != controlled_player) {
+                        // Ignore inputs from the network for locally controlled players when using input delay.
                         struct netplay_event* new_event = (struct netplay_event*)malloc(sizeof(struct netplay_event));
                         new_event->count = count;
-                            struct netplay_event* new_event = (struct netplay_event*)malloc(sizeof(struct netplay_event));
                         new_event->buttons = keys;
-                            new_event->count = count;
                         new_event->plugin = plugin;
-                            new_event->buttons = keys;
                         new_event->next = l_cin_compats[player].event_first;
-                            new_event->plugin = plugin;
                         l_cin_compats[player].event_first = new_event;
-                            new_event->next = l_cin_compats[player].event_first;
-                            l_cin_compats[player].event_first = new_event;
-                        }
                     }
                 break;
             default:
