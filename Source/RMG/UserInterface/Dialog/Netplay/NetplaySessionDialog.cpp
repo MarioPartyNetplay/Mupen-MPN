@@ -87,8 +87,8 @@ NetplaySessionDialog::~NetplaySessionDialog(void)
 
 void NetplaySessionDialog::onBufferSizeChanged(int value)
 {
-    QString message = QString("Buffer size changed to: %1").arg(value);
-    this->chatPlainTextEdit->appendPlainText(message);
+    QString message = QString("<b>Buffer</b>: Changed the buffer to %1").arg(value);
+    this->chatPlainTextEdit->appendHtml(message);
         
     // Send the updated buffer size to the server
     QJsonObject json;
@@ -131,7 +131,7 @@ void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
     }
     else if (type == "reply_chat_message")
     {
-        this->chatPlainTextEdit->appendHtml(json.value("message").toString());
+        this->chatPlainTextEdit->appendHtml(json.value("message").toUtf8());
     }
     else if (type == "reply_begin_game")
     {
