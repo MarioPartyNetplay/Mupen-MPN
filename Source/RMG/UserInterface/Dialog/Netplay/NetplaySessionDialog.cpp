@@ -131,7 +131,7 @@ void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
     }
     else if (type == "reply_chat_message")
     {
-        this->chatPlainTextEdit->appendPlainText(json.value("message").toString());
+        this->chatPlainTextEdit->appendHtml(json.value("message").toString());
     }
     else if (type == "reply_begin_game")
     {
