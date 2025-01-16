@@ -7,8 +7,13 @@
 #include <QMessageBox>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QSpinBox>
+#include <QLabel>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
 
 #include <RMG-Core/Core.hpp>
+#include <RMG-Core/m64p/Api.hpp>
 
 using namespace UserInterface::Dialog;
 using namespace Utilities;
@@ -61,10 +66,30 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, QWebSocket* webSocke
     QPushButton* startButton = this->buttonBox->button(QDialogButtonBox::Ok);
     startButton->setText("Start");
     startButton->setEnabled(false);
+
+    // Connect the bufferSpinBox valueChanged signal to a slot if needed
+    connect(this->bufferSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &NetplaySessionDialog::onBufferSizeChanged);
+
 }
 
 NetplaySessionDialog::~NetplaySessionDialog(void)
 {
+}
+
+void NetplaySessionDialog::onBufferSizeChanged(int value)
+{
+    // Set the input delay using the Mupen64Plus API
+    m64p_error result = m64p::Core.DoCommand(M64CMD_NETPLAY_SET_INPUT_DELAY, value, nullptr);
+
+    if (result != M64ERR_SUCCESS) {
+        // Create the message to log in the chat
+        QString message = QString("Failed to set input delay: %1").arg(result);
+        this->chatPlainTextEdit->appendPlainText(message);
+    } else {
+        // Log the successful change in buffer size
+        QString message = QString("Buffer size changed to: %1").arg(value);
+        this->chatPlainTextEdit->appendPlainText(message);
+    }
 }
 
 void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)

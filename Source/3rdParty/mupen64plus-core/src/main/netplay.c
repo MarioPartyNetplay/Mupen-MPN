@@ -301,9 +301,10 @@ static void netplay_process()
             default:
                 DebugMessage(M64MSG_ERROR, "Netplay: received unknown message from server");
                 break;
+            }
         }
+        SDLNet_FreePacket(packet);
     }
-    SDLNet_FreePacket(packet);
 }
 
 static int netplay_ensure_valid(uint8_t control_id)
