@@ -140,9 +140,9 @@ void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
     }
     else if (type == "reply_motd")
     {
-        QString message = "<b>Notice 1:</b>Servers are funded by Tabitha! Use this <a href='https://ko-fi.com/tabithahanegan'>link</a> to help fund the process.</div>";
-        QString message2 = "<b>Notice 2:</b>Please set up your cheats before participating in a NetPlay session. Cheats do not sync if configured in-game or while in the lobby.</div>";
-        QString message3 = "<b>Notice 3:</b>Buffer can only be set before your game starts, sorry for the inconvience.</div>";
+        QString message = "<b>Notice 1: </b>Servers are funded by Tabitha! Use this <a href='https://ko-fi.com/tabithahanegan'>link</a> to help fund the process.</div>";
+        QString message2 = "<b>Notice 2: </b>Please set up your cheats before participating in a NetPlay session. Cheats do not sync if configured in-game or while in the lobby.</div>";
+        QString message3 = "<b>Notice 3: </b>Buffer can only be set before your game starts, sorry for the inconvience.</div>";
         this->chatPlainTextEdit->appendHtml(message);
         this->chatPlainTextEdit->appendHtml(message2);
         this->chatPlainTextEdit->appendHtml(message3);
