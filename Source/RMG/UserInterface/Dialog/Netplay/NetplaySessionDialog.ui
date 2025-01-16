@@ -111,27 +111,35 @@
      </item>
     </layout>
    </item>
-   <item>
+    <item>
     <layout class="QHBoxLayout" name="horizontalLayout_5">
      <item>
-      <widget class="QLabel" name="bufferLabel">
-       <property name="text">
-        <string>Buffer Size:</string>
-       </property>
-      </widget>
+      <layout class="QVBoxLayout">
+       <item>
+        <widget class="QLabel" name="bufferLabel">
+         <property name="text">
+          <string>Buffer Size:</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
      </item>
      <item>
-      <widget class="QSpinBox" name="bufferSpinBox">
-       <property name="minimum">
-        <number>1</number>
-       </property>
-       <property name="maximum">
-        <number>35</number>
-       </property>
-       <property name="value">
-        <number>5</number>
-       </property>
-      </widget>
+      <layout class="QVBoxLayout">
+       <item>
+        <widget class="QSpinBox" name="bufferSpinBox">
+         <property name="minimum">
+          <number>1</number>
+         </property>
+         <property name="maximum">
+          <number>35</number>
+         </property>
+         <property name="value">
+          <number>5</number>
+         </property>
+        </widget>
+       </item>
+      </layout>
      </item>
     </layout>
    </item>

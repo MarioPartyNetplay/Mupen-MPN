@@ -32,6 +32,15 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, QWebSocket* webSocke
     this->sessionName = session.value("room_name").toString();
     this->sessionFile = sessionFile;
 
+    // Check if the current user is the host
+    bool isHost = (this->nickName == session.value("features").toObject().value("host_name").toString());
+
+    // Hide bufferSpinBox and its label if not host
+    if (!isHost) {
+        this->bufferSpinBox->setVisible(false);
+        this->bufferLabel->setVisible(false);
+    }
+
     // Store cheats
     QJsonObject featuresObject = session.value("features").toObject();
     QString cheatsString = featuresObject.value("cheats").toString();
@@ -67,7 +76,7 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, QWebSocket* webSocke
     startButton->setText("Start");
     startButton->setEnabled(false);
 
-    // Connect the bufferSpinBox valueChanged signal to a slot if needed
+    emit this->bufferSpinBox->valueChanged(5);
     connect(this->bufferSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &NetplaySessionDialog::onBufferSizeChanged);
 
 }
@@ -78,18 +87,14 @@ NetplaySessionDialog::~NetplaySessionDialog(void)
 
 void NetplaySessionDialog::onBufferSizeChanged(int value)
 {
-    // Set the input delay using the Mupen64Plus API
-    m64p_error result = m64p::Core.DoCommand(M64CMD_NETPLAY_SET_INPUT_DELAY, value, nullptr);
-
-    if (result != M64ERR_SUCCESS) {
-        // Create the message to log in the chat
-        QString message = QString("Failed to set input delay: %1").arg(result);
-        this->chatPlainTextEdit->appendPlainText(message);
-    } else {
-        // Log the successful change in buffer size
-        QString message = QString("Buffer size changed to: %1").arg(value);
-        this->chatPlainTextEdit->appendPlainText(message);
-    }
+    QString message = QString("Buffer size changed to: %1").arg(value);
+    this->chatPlainTextEdit->appendPlainText(message);
+        
+    // Send the updated buffer size to the server
+    QJsonObject json;
+    json.insert("type", "update_buffer_size");
+    json.insert("buffer_size", value);
+    this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
 }
 
 void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
