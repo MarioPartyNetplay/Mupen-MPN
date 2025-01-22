@@ -222,7 +222,7 @@ m64p_error open_rom(const unsigned char* romimage, unsigned int size)
         else
         {
             /* There's no way to guess the save type, but 4K EEPROM is better than nothing */
-            ROM_SETTINGS.savetype = SAVETYPE_EEPROM_4K;
+            ROM_SETTINGS.savetype = SAVETYPE_EEPROM_16K;
         }
     }
 
