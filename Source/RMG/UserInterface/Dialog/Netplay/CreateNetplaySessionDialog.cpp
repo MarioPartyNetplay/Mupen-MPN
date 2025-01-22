@@ -78,6 +78,7 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, QWebSock
     {
         QNetworkAccessManager* networkAccessManager = new QNetworkAccessManager(this);
         connect(networkAccessManager, &QNetworkAccessManager::finished, this, &CreateNetplaySessionDialog::on_networkAccessManager_Finished);
+        networkAccessManager->setTransferTimeout(15000);
         networkAccessManager->get(QNetworkRequest(QUrl(serverUrl)));
     }
 }
@@ -117,6 +118,7 @@ QString CreateNetplaySessionDialog::getGameName(QString goodName, QString file)
 bool CreateNetplaySessionDialog::validate(void)
 {
     if (this->nickNameLineEdit->text().isEmpty() ||
+        this->nickNameLineEdit->text().contains(' ') ||
         this->nickNameLineEdit->text().size() > 128)
     {
         return false;

@@ -36,6 +36,7 @@ class NetplaySessionDialog : public QDialog, private Ui::NetplaySessionDialog
     QString sessionName;
     int sessionPort = -1;
     int sessionNumber = -1;
+    bool started = false;
 
   	QWebSocket* webSocket;
     QJsonArray cheats; 
@@ -48,6 +49,7 @@ class NetplaySessionDialog : public QDialog, private Ui::NetplaySessionDialog
     void on_sendPushButton_clicked(void);
 
   	void accept(void) Q_DECL_OVERRIDE;
+    void reject(void) Q_DECL_OVERRIDE;
 
   signals:
     void OnPlayGame(QString file, QString address, int port, int player, QJsonArray cheats);

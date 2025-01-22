@@ -7,12 +7,12 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef CORE_UNZIP_HPP
-#define CORE_UNZIP_HPP
+#ifndef CORE_STRING_HPP
+#define CORE_STRING_HPP
 
-#include <filesystem>
+#include <string>
 
-// attempts to unzip the file to path
-bool CoreUnzip(std::filesystem::path file, std::filesystem::path path);
+// returns lowercase string
+std::string CoreLowerString(std::string str);
 
-#endif // CORE_UNZIP_HPP
+#endif // CORE_STRING_HPP

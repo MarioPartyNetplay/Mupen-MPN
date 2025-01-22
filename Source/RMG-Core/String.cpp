@@ -7,21 +7,24 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-#ifndef CORE_FILE_HPP
-#define CORE_FILE_HPP
+#include "String.hpp"
 
-#ifdef CORE_INTERNAL
+#include <algorithm>
 
-#include <filesystem>
-#include <vector>
+//
+// Exported Function
+//
 
-// attempts to read the file into the buffer
-bool CoreReadFile(std::filesystem::path file, std::vector<char>& outBuffer);
+std::string CoreLowerString(std::string str)
+{
+	std::string resultString = str;
 
-// attempts to write the buffer to file
-bool CoreWriteFile(std::filesystem::path file, std::vector<char>& buffer);
+    std::transform(resultString.begin(), resultString.end(), resultString.begin(), 
+        [](unsigned char c)
+        { 
+            return std::tolower(c); 
+        }
+    );
 
-
-#endif // CORE_INTERNAL
-
-#endif // CORE_FILE_HPP
+    return resultString;
+}
