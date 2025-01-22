@@ -1221,7 +1221,7 @@ void MainWindow::checkForUpdates(bool silent, bool force)
 #endif // UPDATER
 
 #ifdef NETPLAY
-void MainWindow::showNetplaySessionBrowser(QWebSocket* webSocket, QJsonObject json, QString sessionFile)
+void MainWindow::showNetplaySessionBrowser(QWebSocket* webSocket, QJsonObject json, QString sessionFile, QJsonArray cheats)
 {
     if (this->netplaySessionDialog != nullptr)
     {
@@ -1229,7 +1229,7 @@ void MainWindow::showNetplaySessionBrowser(QWebSocket* webSocket, QJsonObject js
         this->netplaySessionDialog = nullptr;
     }
     
-    this->netplaySessionDialog = new Dialog::NetplaySessionDialog(this, webSocket, json, sessionFile);
+    this->netplaySessionDialog = new Dialog::NetplaySessionDialog(this, webSocket, json, sessionFile, cheats);
     connect(this->netplaySessionDialog, &Dialog::NetplaySessionDialog::OnPlayGame, this, &MainWindow::on_Netplay_PlayGame);
     connect(this->netplaySessionDialog, &Dialog::NetplaySessionDialog::rejected, this, &MainWindow::on_NetplaySessionBrowser_rejected);
     this->netplaySessionDialog->show();
