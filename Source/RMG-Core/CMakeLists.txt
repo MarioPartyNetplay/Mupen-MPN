@@ -38,23 +38,24 @@ set(RMG_CORE_SOURCES
     Directories.cpp
     MediaLoader.cpp
     Screenshot.cpp
-    Utils/File.cpp
     RomHeader.cpp
     Emulation.cpp
     SaveState.cpp
     Callback.cpp
     Settings.cpp
+    Archive.cpp
     Netplay.cpp
     GDBStub.cpp
     Plugins.cpp
     Version.cpp
     Cheats.cpp
+    String.cpp
     Volume.cpp
     VidExt.cpp
     Video.cpp
     Error.cpp
-    Unzip.cpp
     Core.cpp
+    File.cpp
     Key.cpp
     Rom.cpp
 )

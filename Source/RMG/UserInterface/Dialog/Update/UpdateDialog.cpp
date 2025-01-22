@@ -9,6 +9,7 @@
  */
 #include "UpdateDialog.hpp"
 #include "DownloadUpdateDialog.hpp"
+#include "Utilities/QtMessageBox.hpp"
 
 #include <QFileInfo>
 #include <QPushButton>
@@ -21,6 +22,7 @@
 #include <QProcess>
 
 using namespace UserInterface::Dialog;
+using namespace Utilities;
 
 UpdateDialog::UpdateDialog(QWidget *parent, QJsonObject jsonObject, bool forced) : QDialog(parent)
 {
@@ -74,14 +76,16 @@ void UpdateDialog::accept(void)
     {
         QJsonObject object = value.toObject();
 
-        QString filename = object.value("name").toString();
-        QString url      = object.value("browser_download_url").toString();
+        QString filename      = object.value("name").toString();
+        QString lowerFilename = filename.toLower();
+        QString url           = object.value("browser_download_url").toString();
 
 #ifdef _WIN32
         if (this->isWin32Setup)
         {
-            if (filename.contains("Windows64") &&
-                filename.contains("Setup"))
+            if (lowerFilename.contains("windows64") &&
+                lowerFilename.contains("setup") &&
+                lowerFilename.endsWith(".exe"))
             {
                 filenameToDownload = filename;
                 urlToDownload = QUrl(url);
@@ -90,8 +94,9 @@ void UpdateDialog::accept(void)
         }
         else
         {
-            if (filename.contains("Windows64") &&
-                filename.contains("Portable"))
+            if (lowerFilename.contains("windows64") &&
+                lowerFilename.contains("portable") &&
+                lowerFilename.endsWith(".exe"))
             {
                 filenameToDownload = filename;
                 urlToDownload = QUrl(url);
@@ -99,14 +104,22 @@ void UpdateDialog::accept(void)
             }
         }
 #else
-        if (filename.contains("Linux64") &&
-            filename.contains("Portable"))
+        if (lowerFilename.contains("linux64") &&
+            lowerFilename.contains("portable") &&
+            lowerFilename.endsWith(".appimage"))
         {
             filenameToDownload = filename;
             urlToDownload = QUrl(url);
             break;
         }
 #endif // _WIN32
+    }
+
+    if (filenameToDownload.isEmpty())
+    {
+        QtMessageBox::Error(this, "Failed to find update file");
+        QDialog::reject();
+        return;
     }
 
     this->url = urlToDownload;

@@ -1,11 +1,11 @@
-#!/usr/bin/env bash
-set -e
-
+#!/usr/bin/env sh
+[ -f "$APPIMAGE".stylesheet ] && APPIMAGE_QT_THEME="$APPIMAGE.stylesheet"
+[ -f "$APPIMAGE_QT_THEME" ] && set -- "$@" "-stylesheet" "$APPIMAGE_QT_THEME"
 cur_dir="$(readlink -f "$(dirname "$0")")"
 
-exec "$cur_dir/usr/bin/RMG" \
-            --lib-path="$cur_dir/usr/lib/RMG" \
-            --core-path="$cur_dir/usr/lib/RMG/Core" \
-            --plugin-path="$cur_dir/usr/lib/RMG/Plugin" \
-            --shared-data-path="$cur_dir/usr/share/RMG" \
-            "$@"
+exec "$cur_dir/bin/RMG" \
+		--lib-path="$cur_dir/shared/lib/RMG" \
+		--core-path="$cur_dir/shared/lib/RMG/Core" \
+		--plugin-path="$cur_dir/shared/lib/RMG/Plugin" \
+		--shared-data-path="$cur_dir/share/RMG" \
+		"$@"
