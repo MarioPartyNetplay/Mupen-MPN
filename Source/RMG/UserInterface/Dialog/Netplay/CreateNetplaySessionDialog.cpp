@@ -123,7 +123,6 @@ QString CreateNetplaySessionDialog::getGameName(QString goodName, QString file)
 bool CreateNetplaySessionDialog::validate(void)
 {
     if (this->nickNameLineEdit->text().isEmpty() ||
-        this->nickNameLineEdit->text().contains(' ') ||
         this->nickNameLineEdit->text().size() > 128)
     {
         return false;
