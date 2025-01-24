@@ -12,6 +12,7 @@
 
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QComboBox>
 #include <QString>
 
 #include <RMG-Core/m64p/api/m64p_types.h>
@@ -27,6 +28,9 @@ namespace NetplayCommon
 
     // Retrieves RSP and GFX plugin names
     QList<QString> GetPluginNames(QString md5QString);
+
+    // Restores previously selected server
+    void RestoreSelectedServer(QComboBox* comboBox);
 }
 
 m64p_error loadROM(QString filename);

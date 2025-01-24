@@ -164,6 +164,13 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
     this->coreCallBacks->Stop();
 
+#ifdef NETPLAY
+    if (this->netplaySessionDialog != nullptr)
+    {
+        this->netplaySessionDialog->close();
+    }
+#endif // NETPLAY
+
     this->logDialog.close();
 
     while (this->emulationThread->isRunning())
@@ -1231,7 +1238,7 @@ void MainWindow::showNetplaySessionBrowser(QWebSocket* webSocket, QJsonObject js
     
     this->netplaySessionDialog = new Dialog::NetplaySessionDialog(this, webSocket, json, sessionFile, cheats);
     connect(this->netplaySessionDialog, &Dialog::NetplaySessionDialog::OnPlayGame, this, &MainWindow::on_Netplay_PlayGame);
-    connect(this->netplaySessionDialog, &Dialog::NetplaySessionDialog::rejected, this, &MainWindow::on_NetplaySessionBrowser_rejected);
+    connect(this->netplaySessionDialog, &Dialog::NetplaySessionDialog::rejected, this, &MainWindow::on_NetplaySessionDialog_rejected);
     this->netplaySessionDialog->show();
 
     // force refresh of actions
@@ -2279,7 +2286,7 @@ void MainWindow::on_Netplay_PlayGame(QString file, QString address, int port, in
     this->launchEmulationThread(file, address, port, player, cheats);
 }
 
-void MainWindow::on_NetplaySessionBrowser_rejected()
+void MainWindow::on_NetplaySessionDialog_rejected()
 {
 #ifdef NETPLAY
     bool isRunning = CoreIsEmulationRunning();

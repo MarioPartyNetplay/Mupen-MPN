@@ -160,10 +160,13 @@ static l_Setting get_setting(SettingsID settingId)
         break;
 
     case SettingsID::Netplay_Nickname:
-        setting = {SETTING_SECTION_NETPLAY, "Nickname", "MPN Player"};
+        setting = {SETTING_SECTION_NETPLAY, "Nickname", std::string("MPN Player")};
         break;
     case SettingsID::Netplay_ServerJsonUrl:
-        setting = {SETTING_SECTION_NETPLAY, "ServerJsonUrl", "https://mariopartynetplay.netlify.app/servers.json"};
+        setting = {SETTING_SECTION_NETPLAY, "ServerJsonUrl", std::string("https://mariopartynetplay.netlify.app/servers.json")};
+        break;
+    case SettingsID::Netplay_SelectedServer:
+        setting = {SETTING_SECTION_NETPLAY, "SelectedServer", std::string("")};
         break;
 
     case SettingsID::Core_GFX_Plugin:
