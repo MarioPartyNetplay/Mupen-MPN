@@ -238,6 +238,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 
     void on_Netplay_PlayGame(QString file, QString address, int port, int player, QJsonArray cheats);
     void on_NetplaySessionBrowser_rejected(void);
+    void on_NetplaySessionDialog_rejected(void);
 
   public slots:
 
