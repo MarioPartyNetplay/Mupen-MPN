@@ -139,3 +139,17 @@ m64p_error loadROM(QString filename)
 
     return M64ERR_SUCCESS;
 }
+void NetplayCommon::RestoreSelectedServer(QComboBox* comboBox)
+{
+    QString server = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_SelectedServer));
+    if (server.isEmpty())
+    {
+        return;
+    }
+
+    int index = comboBox->findText(server);
+    if (index >= 0)
+    {
+        comboBox->setCurrentIndex(index);
+    }
+}

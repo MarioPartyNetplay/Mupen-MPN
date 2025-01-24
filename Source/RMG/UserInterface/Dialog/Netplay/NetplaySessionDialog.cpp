@@ -21,6 +21,7 @@ using namespace Utilities;
 NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, QWebSocket* webSocket, QJsonObject json, QString sessionFile, QJsonArray cheats) : QDialog(parent)
 {
     this->setupUi(this);
+    this->setWindowFlags(this->windowFlags() | Qt::WindowMinimizeButtonHint);
 
     this->webSocket = webSocket;
     this->cheats = cheats;
