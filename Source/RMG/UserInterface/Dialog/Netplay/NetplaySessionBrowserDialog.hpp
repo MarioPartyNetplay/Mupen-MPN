@@ -36,7 +36,6 @@ class NetplaySessionBrowserDialog : public QDialog, private Ui::NetplaySessionBr
 
     QJsonObject GetSessionJson(void);
     QString     GetSessionFile(void);
-    QJsonArray  GetSessionCheats();
 
   private:
   	QWebSocket* webSocket;

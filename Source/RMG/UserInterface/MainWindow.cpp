@@ -53,8 +53,8 @@
 #include <QStatusBar>
 #include <QMenuBar>
 #include <QString>
-#include <QTimer>
 #include <QThread>
+#include <QTimer>
 #include <cmath>
 #include <QUrl>
 
@@ -603,7 +603,7 @@ void MainWindow::connectEmulationThreadSignals(void)
             Qt::BlockingQueuedConnection);
 }
 
-void MainWindow::launchEmulationThread(QString cartRom, QString address, int port, int player, QJsonArray cheats)
+void MainWindow::launchEmulationThread(QString cartRom, QString address, int port, int player)
 {
     CoreSettingsSave();
 
@@ -621,15 +621,6 @@ void MainWindow::launchEmulationThread(QString cartRom, QString address, int por
 
     
     this->launchEmulationThread(cartRom, "", false, -1, true);
-    
-    QThread::sleep(2); // Sleep for 2 seconds before launching the emulation thread
-
-    // Convert QJsonArray to QJsonObject
-    QJsonObject cheatsObject;
-    cheatsObject["custom"] = cheats;  // Wrap the array in an object
-
-    this->emulationThread->ApplyCheatsNetplay(cheatsObject);
-
 }
 
 void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool refreshRomListAfterEmulation, int slot, bool netplay)
@@ -1228,7 +1219,7 @@ void MainWindow::checkForUpdates(bool silent, bool force)
 #endif // UPDATER
 
 #ifdef NETPLAY
-void MainWindow::showNetplaySessionBrowser(QWebSocket* webSocket, QJsonObject json, QString sessionFile, QJsonArray cheats)
+void MainWindow::showNetplaySessionBrowser(QWebSocket* webSocket, QJsonObject json, QString sessionFile)
 {
     if (this->netplaySessionDialog != nullptr)
     {
@@ -1236,7 +1227,7 @@ void MainWindow::showNetplaySessionBrowser(QWebSocket* webSocket, QJsonObject js
         this->netplaySessionDialog = nullptr;
     }
     
-    this->netplaySessionDialog = new Dialog::NetplaySessionDialog(this, webSocket, json, sessionFile, cheats);
+    this->netplaySessionDialog = new Dialog::NetplaySessionDialog(this, webSocket, json, sessionFile);
     connect(this->netplaySessionDialog, &Dialog::NetplaySessionDialog::OnPlayGame, this, &MainWindow::on_Netplay_PlayGame);
     connect(this->netplaySessionDialog, &Dialog::NetplaySessionDialog::rejected, this, &MainWindow::on_NetplaySessionDialog_rejected);
     this->netplaySessionDialog->show();
@@ -1964,7 +1955,7 @@ void MainWindow::on_Action_Netplay_CreateSession(void)
     int ret = dialog.exec();
     if (ret == QDialog::Accepted)
     {
-        this->showNetplaySessionBrowser(&webSocket, dialog.GetSessionJson(), dialog.GetSessionFile(), QJsonArray());
+        this->showNetplaySessionBrowser(&webSocket, dialog.GetSessionJson(), dialog.GetSessionFile());
     }
 #endif // NETPLAY
 }
@@ -1978,8 +1969,7 @@ void MainWindow::on_Action_Netplay_JoinSession(void)
     int ret = dialog.exec();
     if (ret == QDialog::Accepted)
     {
-        QJsonArray cheats = dialog.GetSessionCheats();  // Retrieve cheats
-        this->showNetplaySessionBrowser(&webSocket, dialog.GetSessionJson(), dialog.GetSessionFile(), cheats);
+        Dialog::NetplaySessionDialog sessionDialog(this, &webSocket, dialog.GetSessionJson(), dialog.GetSessionFile());
     }
 #endif // NETPLAY
 }
@@ -2281,9 +2271,9 @@ void MainWindow::on_RomBrowser_Cheats(QString file)
     }
 }
 
-void MainWindow::on_Netplay_PlayGame(QString file, QString address, int port, int player, QJsonArray cheats)
+void MainWindow::on_Netplay_PlayGame(QString file, QString address, int port, int player)
 {
-    this->launchEmulationThread(file, address, port, player, cheats);
+    this->launchEmulationThread(file, address, port, player);
 }
 
 void MainWindow::on_NetplaySessionDialog_rejected()

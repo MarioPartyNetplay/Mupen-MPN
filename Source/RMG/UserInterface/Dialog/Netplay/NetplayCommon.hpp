@@ -11,7 +11,6 @@
 #define NETPLAYCOMMON_HPP
 
 #include <QJsonObject>
-#include <QJsonArray>
 #include <QComboBox>
 #include <QString>
 

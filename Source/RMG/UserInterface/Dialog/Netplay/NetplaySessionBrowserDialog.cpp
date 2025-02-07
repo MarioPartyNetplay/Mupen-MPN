@@ -398,18 +398,3 @@ void NetplaySessionBrowserDialog::accept()
 
     this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
 }
-
-QJsonArray NetplaySessionBrowserDialog::GetSessionCheats()
-{
-    QJsonArray cheatsArray;
-    // Implement logic to retrieve cheats from the host
-    // Example: Parse the session JSON to extract cheats
-    QJsonObject session = this->sessionJson.value("room").toObject();
-    QJsonObject featuresObject = session.value("features").toObject();
-    QString cheatsString = featuresObject.value("cheats").toString();
-    QJsonDocument cheatsDoc = QJsonDocument::fromJson(cheatsString.toUtf8());
-    if (cheatsDoc.isArray()) {
-        cheatsArray = cheatsDoc.array();
-    }
-    return cheatsArray;
-}

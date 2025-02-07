@@ -20,7 +20,6 @@
 #include <QPushButton>
 #include <QJsonObject>
 #include <QFileInfo>
-#include <QJsonArray>
 
 #include <RMG-Core/Core.hpp>
 #include <RMG-Core/m64p/Api.hpp>
@@ -277,14 +276,6 @@ void CreateNetplaySessionDialog::accept()
             jsonFeatures.insert("gfx_plugin", plugins[1]);
             jsonFeatures.insert("host_name", this->nickNameLineEdit->text());
 
-            // Retrieve and format cheats
-            QJsonArray cheatsArray = GetSessionCheats();
-            if (!cheatsArray.isEmpty()) {
-                QJsonDocument cheatsDoc(cheatsArray);
-                QString cheatsArrayString = cheatsDoc.toJson(QJsonDocument::Compact);
-                jsonFeatures.insert("cheats", cheatsArrayString);
-            }
-
             m64p::Core.DoCommand(M64CMD_ROM_CLOSE, 0, nullptr);
 
             QJsonObject json;
@@ -302,45 +293,4 @@ void CreateNetplaySessionDialog::accept()
             this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
         }
     }
-}
-
-QJsonArray CreateNetplaySessionDialog::GetSessionCheats()
-{
-    std::vector<CoreCheat> coreCheats;
-    QJsonArray cheatsArray;
-
-    if (CoreGetCurrentCheats(coreCheats)) {
-        for (const auto& cheat : coreCheats) {
-            if (CoreIsCheatEnabled(cheat)) {
-                for (const auto& code : cheat.CheatCodes) {
-                    QString codeStr = FormatCheatCode(cheat, code);
-                    if (!codeStr.isEmpty()) {
-                        cheatsArray.append(codeStr);
-                    }
-                }
-            }
-        }
-    }
-
-    return cheatsArray;
-}
-
-QString CreateNetplaySessionDialog::FormatCheatCode(const CoreCheat& cheat, const CoreCheatCode& code)
-{
-    QString codeStr;
-    if (code.UseOptions) {
-        CoreCheatOption currentOption;
-        if (CoreGetCheatOption(cheat, currentOption)) {
-            QString codeValueString = QString("%1").arg(code.Value, 4, 16, QChar('0')).toUpper();
-            QString optionValueString = QString("%1").arg(currentOption.Value, code.OptionSize * 2, 16, QChar('0')).toUpper();
-
-            if (optionValueString.size() == code.OptionSize * 2) {
-                codeValueString.replace(code.OptionIndex * 2, code.OptionSize * 2, optionValueString);
-                codeStr = QString("%1 %2").arg(code.Address, 8, 16, QChar('0')).arg(codeValueString).toUpper();
-            }
-        }
-    } else {
-        codeStr = QString("%1 %2").arg(code.Address, 8, 16, QChar('0')).arg(code.Value, 4, 16, QChar('0')).toUpper();
-    }
-    return codeStr;
 }
