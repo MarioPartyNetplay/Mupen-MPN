@@ -8,11 +8,11 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "RomSearcherThread.hpp"
-#include "RMG-Core/Rom.hpp"
 
-#include <QDir>
-#include <QDirIterator>
+#include <RMG-Core/CachedRomHeaderAndSettings.hpp>
+
 #include <QElapsedTimer>
+#include <QDirIterator>
 
 using namespace Thread;
 
@@ -57,13 +57,10 @@ void RomSearcherThread::run(void)
 {
     this->stop = false;
     this->searchDirectory(this->directory);
-    return;
 }
 
 void RomSearcherThread::searchDirectory(QString directory)
 {
-    QDir dir(directory);
-
     QStringList filter;
     filter << "*.N64";
     filter << "*.Z64";
@@ -102,27 +99,7 @@ void RomSearcherThread::searchDirectory(QString directory)
     {
         QString file = roms.at(i);
 
-        if (CoreHasRomHeaderAndSettingsCached(file.toStdU32String()))
-        { // found cache entry
-            ret = CoreGetCachedRomHeaderAndSettings(file.toStdU32String(), type, header, settings);
-        }
-        else
-        { // no cache entry
-            // open rom, retrieve rom settings, header & type
-            ret = CoreOpenRom(file.toStdU32String()) &&
-                CoreGetCurrentRomSettings(settings) && 
-                CoreGetCurrentRomHeader(header) &&
-                CoreGetRomType(type);
-            // always close the ROM,
-            // even when retrieving rom info failed
-            ret = CoreCloseRom() && ret;
-            if (ret)
-            { // add to cache when everything succeeded
-                CoreAddCachedRomHeaderAndSettings(file.toStdU32String(), type, header, settings);
-            }
-        }
-
-        if (ret)
+        if (CoreGetCachedRomHeaderAndSettings(file.toStdU32String(), type, header, settings))
         {
             data.push_back(
             {

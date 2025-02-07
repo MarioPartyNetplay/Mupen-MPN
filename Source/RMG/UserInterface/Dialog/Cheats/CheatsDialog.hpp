@@ -10,10 +10,9 @@
 #ifndef CHEATSDIALOG_HPP
 #define CHEATSDIALOG_HPP
 
-#include <QWidget>
+#include <QJsonArray>
 #include <QDialog>
-
-#include <RMG-Core/Core.hpp>
+#include <QWidget>
 
 #include "ui_CheatsDialog.h"
 
@@ -26,20 +25,21 @@ class CheatsDialog : public QDialog, private Ui::CheatsDialog
     Q_OBJECT
 
   public:
-    CheatsDialog(QWidget *parent);
+    CheatsDialog(QWidget *parent, QString file = "", bool netplay = false, QJsonArray cheatsJson = {});
     ~CheatsDialog(void);
 
     bool HasFailed(void);
+    QJsonArray GetJson(void);
+
 
   private:
     bool needCloseRom = false;
     bool failedToParseCheats = false;
+    bool netplay = false;
+    QJsonArray cheatsJson;
+    QString file;
 
     void loadCheats(void);
-    
-    QTreeWidgetItem* findItem(QStringList sections, int size, QString itemText);
-
-    QString getTreeWidgetItemTextFromCheat(CoreCheat cheat);
 
   private slots:
     void on_cheatsTreeWidget_itemChanged(QTreeWidgetItem *item, int column);

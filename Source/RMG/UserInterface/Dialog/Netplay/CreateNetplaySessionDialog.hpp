@@ -12,6 +12,7 @@
 
 #include <QNetworkReply>
 #include <QJsonObject>
+#include <QTimerEvent>
 #include <QWebSocket>
 #include <QUdpSocket>
 #include <QDialog>
@@ -19,7 +20,7 @@
 
 #include "ui_CreateNetplaySessionDialog.h"
 
-#include <RMG-Core/Core.hpp>
+#include <RMG-Core/RomSettings.hpp>
 
 namespace UserInterface
 {
@@ -40,6 +41,8 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
   	QWebSocket* webSocket;
     QUdpSocket broadcastSocket;
 
+    int pingTimerId = -1;
+
   	QJsonObject sessionJson;
     QString sessionFile;
 
@@ -49,8 +52,12 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
     bool validate(void);
     void validateCreateButton(void);
 
+  protected:
+    void timerEvent(QTimerEvent *event) Q_DECL_OVERRIDE;
+
   private slots:
   	void on_webSocket_textMessageReceived(QString message);
+    void on_webSocket_pong(quint64 elapsedTime, const QByteArray&);
     void on_broadcastSocket_readyRead(void);
     void on_networkAccessManager_Finished(QNetworkReply* reply);
 

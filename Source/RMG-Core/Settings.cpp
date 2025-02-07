@@ -11,12 +11,13 @@
 
 #include "Directories.hpp"
 #include "Version.hpp"
-#include "m64p/Api.hpp"
 #include "Error.hpp"
+
+#include "m64p/Api.hpp"
 #include "m64p/api/m64p_types.h"
 
-#include <sstream>
 #include <algorithm>
+#include <sstream>
 #include <variant>
 
 //
@@ -545,9 +546,6 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::RomBrowser_ColumnSizes:
         setting = {SETTING_SECTION_ROMBROWSER, "ColumnSizes", std::string("-1;-1;-1;-1;-1;-1;-1;-1;-1;")};
         break;
-    case SettingsID::RomBrowser_SortAfterSearch:
-        setting = {SETTING_SECTION_ROMBROWSER, "SortAfterSearch", true};
-        break;
     case SettingsID::RomBrowser_ViewMode:
         setting = {SETTING_SECTION_ROMBROWSER, "ViewMode", 0};
         break;
@@ -646,6 +644,12 @@ static l_Setting get_setting(SettingsID settingId)
         break;
     case SettingsID::Input_DeviceNum:
         setting = {"", "DeviceNum"};
+        break;
+    case SettingsID::Input_DevicePath:
+        setting = {"", "DevicePath"};
+        break;
+    case SettingsID::Input_DeviceSerial:
+        setting = {"", "DeviceSerial"};
         break;
     case SettingsID::Input_Deadzone:
         setting = {"", "Deadzone"};

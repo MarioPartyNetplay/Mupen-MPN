@@ -9,9 +9,8 @@
  */
 #include "CreateNetplaySessionDialog.hpp"
 #include "NetplayCommon.hpp"
-
-#include "NetplayCommon.hpp"
 #include "Utilities/QtMessageBox.hpp"
+#include "NetplayCommon.hpp"
 
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
@@ -23,6 +22,7 @@
 
 #include <RMG-Core/Core.hpp>
 #include <RMG-Core/m64p/Api.hpp>
+#include <RMG-Core/Settings.hpp>
 
 #include <random>
 
@@ -42,6 +42,7 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, QWebSock
     // prepare web socket
     this->webSocket = webSocket;
     connect(this->webSocket, &QWebSocket::textMessageReceived, this, &CreateNetplaySessionDialog::on_webSocket_textMessageReceived);
+    connect(this->webSocket, &QWebSocket::pong, this, &CreateNetplaySessionDialog::on_webSocket_pong);
 
     // prepare broadcast
     broadcastSocket.bind(QHostAddress(QHostAddress::AnyIPv4), 0);
@@ -80,6 +81,8 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, QWebSock
         networkAccessManager->setTransferTimeout(15000);
         networkAccessManager->get(QNetworkRequest(QUrl(serverUrl)));
     }
+
+    this->pingTimerId = this->startTimer(2000);
 }
 
 CreateNetplaySessionDialog::~CreateNetplaySessionDialog(void)
@@ -143,6 +146,17 @@ void CreateNetplaySessionDialog::validateCreateButton(void)
     createButton->setEnabled(this->validate());
 }
 
+void CreateNetplaySessionDialog::timerEvent(QTimerEvent* event)
+{
+    if (event->timerId() == this->pingTimerId)
+    {
+        if (this->webSocket->isValid())
+        {
+            this->webSocket->ping();
+        }
+    }
+}
+
 void CreateNetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
 {
     QJsonDocument jsonDocument = QJsonDocument::fromJson(message.toUtf8());
@@ -161,6 +175,11 @@ void CreateNetplaySessionDialog::on_webSocket_textMessageReceived(QString messag
             this->validateCreateButton();
         }
     }
+}
+
+void CreateNetplaySessionDialog::on_webSocket_pong(quint64 elapsedTime, const QByteArray&)
+{
+    this->pingLineEdit->setText(QString::number(elapsedTime) + " ms");
 }
 
 void CreateNetplaySessionDialog::on_broadcastSocket_readyRead()
@@ -211,6 +230,8 @@ void CreateNetplaySessionDialog::on_serverComboBox_currentIndexChanged(int index
     {
         return;
     }
+
+    this->pingLineEdit->setText("Calculating...");
 
     QString address = this->serverComboBox->itemData(index).toString();
     this->webSocket->open(QUrl(address));

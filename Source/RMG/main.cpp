@@ -9,12 +9,11 @@
  */
 #include <UserInterface/MainWindow.hpp>
 
-#include <QApplication>
 #include <QCommandLineParser>
+#include <QApplication>
 #include <QFile>
 #include <QDir>
 
-#include <RMG-Core/Core.hpp>
 #include <iostream>
 #include <cstdlib>
 
@@ -22,55 +21,28 @@
 #include <signal.h>
 #endif
 
+#include <RMG-Core/Directories.hpp>
+#include <RMG-Core/Version.hpp>
+
 //
 // Local Functions
 //
 
-void message_handler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
+static void message_handler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
 {
-    QByteArray localMsg = msg.toLocal8Bit();
-    bool showDebugQtMessages = false;
-
-    const char* env = std::getenv("RMG_SHOW_DEBUG_QT_MESSAGES");
-    showDebugQtMessages = env != nullptr && std::string(env) == "1";
-
-    std::string typeString;
-
-    switch (type)
+    // personally I think that there should be a better
+    // way to silence these warnings because I'd rather
+    // not change the names of all custom signal/slot implementations,
+    // it'd cause the code to be very inconsistent naming-wise
+    if (type == QtWarningMsg && msg.startsWith("QMetaObject::connectSlotsByName:"))
     {
-    case QtDebugMsg:
-        if (!showDebugQtMessages)
-        {
-            return;
-        }
-        typeString = "[QT DEBUG] ";
-        break;
-    case QtWarningMsg:
-        if (!showDebugQtMessages)
-        {
-            return;
-        }
-        typeString = "[QT WARNING] ";
-        break;
-    case QtInfoMsg:
-        if (!showDebugQtMessages)
-        {
-            return;
-        }
-        typeString = "[QT INFO] ";
-        break;
-    case QtCriticalMsg:
-        typeString = "[QT CRITICAL] ";
-        break;
-    case QtFatalMsg:
-        typeString = "[QT FATAL] ";
-        break;
+        return;
     }
 
-    std::cerr << typeString << localMsg.constData() << std::endl;
+    std::cerr << msg.toStdString() << std::endl;
 }
 
-void signal_handler(int sig)
+static void signal_handler(int sig)
 {
     QGuiApplication::quit();
 }
@@ -95,16 +67,12 @@ int main(int argc, char **argv)
     // it works on KDE plasma and sway (on 2023-07-26),
     // but i.e doesn't work on GNOME wayland or labwc, 
     // so to compromise the situation, we'll force xwayland
-    // unless RMG_WAYLAND is set to 1, which'll force wayland
+    // unless RMG_ALLOW_WAYLAND is set to 1, which'll allow wayland
     // as qt platform, so users can experiment with the
     // wayland support themselves
-    const char* wayland = std::getenv("RMG_WAYLAND");
-    if (wayland != nullptr &&
-        std::string(wayland) == "1")
-    {
-        setenv("QT_QPA_PLATFORM", "wayland", 1);
-    }
-    else
+    const char* allow_wayland = std::getenv("RMG_ALLOW_WAYLAND");
+    if (allow_wayland == nullptr ||
+        std::string(allow_wayland) != "1")
     {
         setenv("QT_QPA_PLATFORM", "xcb", 1);
     }

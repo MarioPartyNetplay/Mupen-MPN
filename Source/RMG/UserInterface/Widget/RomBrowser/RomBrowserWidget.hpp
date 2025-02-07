@@ -18,17 +18,17 @@
 #include "RomBrowserLoadingWidget.hpp"
 #include "RomBrowserEmptyWidget.hpp"
 
-#include <QHeaderView>
-#include <QList>
 #include <QStandardItemModel>
-#include <QString>
-#include <QTableView>
-#include <QMenu>
-#include <QMap>
-#include <QAction>
+#include <QStackedWidget>
 #include <QGridLayout>
 #include <QListWidget>
-#include <QStackedWidget>
+#include <QHeaderView>
+#include <QTableView>
+#include <QAction>
+#include <QString>
+#include <QList>
+#include <QMenu>
+#include <QMap>
 
 // forward declaration of internal struct
 struct RomBrowserModelData;
@@ -69,9 +69,7 @@ class RomBrowserWidget : public QStackedWidget
 
     QElapsedTimer romSearcherTimer;
     Thread::RomSearcherThread* romSearcherThread = nullptr;
-
-    bool sortRomResults = false;
-    
+  
     int listViewSortSection = 0;
     int listViewSortOrder = 0;
 
