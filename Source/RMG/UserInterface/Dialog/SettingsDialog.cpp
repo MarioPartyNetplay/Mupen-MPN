@@ -7,21 +7,25 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-#include "SettingsDialog.hpp"
-#include "OnScreenDisplay.hpp"
-#include "UserInterface/Widget/KeybindButton.hpp"
 #include "UserInterface/Dialog/Netplay/NetplayCommon.hpp"
+#include "UserInterface/Widget/KeybindButton.hpp"
 #include "Utilities/QtMessageBox.hpp"
+#include "OnScreenDisplay.hpp"
+#include "SettingsDialog.hpp"
 
 #include <QRegularExpressionValidator>
-#include <QRegularExpression>
 #include <QCryptographicHash>
+#include <QRegularExpression>
 #include <QFileDialog>
 #include <QColorDialog>
 #include <QDirIterator>
 #include <QLabel>
 
-#include <RMG-Core/Core.hpp>
+#include <RMG-Core/Directories.hpp>
+#include <RMG-Core/Emulation.hpp>
+#include <RMG-Core/Settings.hpp>
+#include <RMG-Core/Error.hpp>
+#include <RMG-Core/Rom.hpp>
 
 using namespace UserInterface::Dialog;
 using namespace Utilities;
@@ -486,7 +490,6 @@ void SettingsDialog::loadInterfaceEmulationSettings(void)
 void SettingsDialog::loadInterfaceRomBrowserSettings(void)
 {
     this->searchSubDirectoriesCheckbox->setChecked(CoreSettingsGetBoolValue(SettingsID::RomBrowser_Recursive));
-    this->sortRomBrowserResultsCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::RomBrowser_SortAfterSearch));
     this->romSearchLimitSpinBox->setValue(CoreSettingsGetIntValue(SettingsID::RomBrowser_MaxItems));
 }
 
@@ -670,7 +673,6 @@ void SettingsDialog::loadDefaultInterfaceEmulationSettings(void)
 void SettingsDialog::loadDefaultInterfaceRomBrowserSettings(void)
 {
     this->searchSubDirectoriesCheckbox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::RomBrowser_Recursive));
-    this->sortRomBrowserResultsCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::RomBrowser_SortAfterSearch));
     this->romSearchLimitSpinBox->setValue(CoreSettingsGetDefaultIntValue(SettingsID::RomBrowser_MaxItems));
 }
 
@@ -906,7 +908,6 @@ void SettingsDialog::saveInterfaceEmulationSettings(void)
 void SettingsDialog::saveInterfaceRomBrowserSettings(void)
 {
     CoreSettingsSetValue(SettingsID::RomBrowser_Recursive, this->searchSubDirectoriesCheckbox->isChecked());
-    CoreSettingsSetValue(SettingsID::RomBrowser_SortAfterSearch, this->sortRomBrowserResultsCheckBox->isChecked());
     CoreSettingsSetValue(SettingsID::RomBrowser_MaxItems, this->romSearchLimitSpinBox->value());
 }
 
@@ -1081,8 +1082,8 @@ void SettingsDialog::commonHotkeySettings(SettingsDialogAction action)
         {
         default:
         case SettingsDialogAction::ConnectSignals:
-            connect(keybinding.button, &KeybindButton::on_KeybindButton_KeybindingChanged, this, &SettingsDialog::on_KeybindButton_KeybindingChanged);
-            connect(keybinding.button, &KeybindButton::on_KeybindButton_Clicked, this, &SettingsDialog::on_KeybindButton_Clicked);
+            connect(keybinding.button, &KeybindButton::KeybindingChanged, this, &SettingsDialog::on_KeybindButton_KeybindingChanged);
+            connect(keybinding.button, &KeybindButton::Clicked, this, &SettingsDialog::on_KeybindButton_Clicked);
             break;
         case SettingsDialogAction::LoadSettings:
             keybinding.button->SetText(QString::fromStdString(CoreSettingsGetStringValue(keybinding.settingId)));

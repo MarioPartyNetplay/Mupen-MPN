@@ -29,6 +29,7 @@
 #endif // NETPLAY
 #include "UserInterface/EventFilter.hpp"
 #include "Utilities/QtKeyToSdl2Key.hpp"
+#include "Utilities/QtMessageBox.hpp"
 #include "OnScreenDisplay.hpp"
 #include "Callbacks.hpp"
 #include "VidExt.hpp"
@@ -57,6 +58,23 @@
 #include <QTimer>
 #include <cmath>
 #include <QUrl>
+
+#include <RMG-Core/CachedRomHeaderAndSettings.hpp>
+#include <RMG-Core/SpeedLimiter.hpp>
+#include <RMG-Core/Directories.hpp>
+#include <RMG-Core/SpeedFactor.hpp>
+#include <RMG-Core/Screenshot.hpp>
+#include <RMG-Core/Emulation.hpp>
+#include <RMG-Core/SaveState.hpp>
+#include <RMG-Core/Settings.hpp>
+#include <RMG-Core/Netplay.hpp>
+#include <RMG-Core/Version.hpp>
+#include <RMG-Core/Cheats.hpp>
+#include <RMG-Core/Volume.hpp>
+#include <RMG-Core/Error.hpp>
+#include <RMG-Core/Video.hpp>
+#include <RMG-Core/Core.hpp>
+#include <RMG-Core/Key.hpp>
 
 using namespace UserInterface;
 
@@ -430,6 +448,20 @@ void MainWindow::showErrorMessage(QString text, QString details, bool force)
     msgBox->setText(text);
     msgBox->setDetailedText(details);
     msgBox->addButton(QMessageBox::Ok);
+
+    // expand details by default
+    if (!details.isEmpty())
+    {
+        for (const auto& button : msgBox->buttons())
+        {
+            if (msgBox->buttonRole(button) == QMessageBox::ActionRole)
+            {
+                button->click();
+                break;
+            }
+        }
+    }
+
     msgBox->show();
 
     this->ui_MessageBoxList.append(msgBox);
@@ -826,6 +858,7 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
 #ifdef NETPLAY
     this->action_Netplay_CreateSession->setEnabled(!inEmulation && this->netplaySessionDialog == nullptr);
     this->action_Netplay_JoinSession->setEnabled(!inEmulation && this->netplaySessionDialog == nullptr);
+    this->action_Netplay_ViewSession->setEnabled(inEmulation && this->netplaySessionDialog != nullptr);
 #endif // NETPLAY
 
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_IncreaseVolume));
@@ -1165,6 +1198,7 @@ void MainWindow::connectActionSignals(void)
 
     connect(this->action_Netplay_CreateSession, &QAction::triggered, this, &MainWindow::on_Action_Netplay_CreateSession);
     connect(this->action_Netplay_JoinSession, &QAction::triggered, this, &MainWindow::on_Action_Netplay_JoinSession);
+    connect(this->action_Netplay_ViewSession, &QAction::triggered, this, &MainWindow::on_Action_Netplay_ViewSession);
 
     connect(this->action_Help_Github, &QAction::triggered, this, &MainWindow::on_Action_Help_Github);
     connect(this->action_Help_About, &QAction::triggered, this, &MainWindow::on_Action_Help_About);
@@ -1470,7 +1504,7 @@ void MainWindow::on_networkAccessManager_Finished(QNetworkReply* reply)
     {
         if (!this->ui_SilentUpdateCheck)
         {
-            this->showErrorMessage("You're already on the latest version");
+            Utilities::QtMessageBox::Info(this, "You're already on the latest version");
         }
         return;
     }
@@ -1974,6 +2008,17 @@ void MainWindow::on_Action_Netplay_JoinSession(void)
 #endif // NETPLAY
 }
 
+void MainWindow::on_Action_Netplay_ViewSession(void)
+{
+#ifdef NETPLAY
+    if (this->netplaySessionDialog != nullptr &&
+        this->netplaySessionDialog->isHidden())
+    {
+        this->netplaySessionDialog->show();
+    }
+#endif
+}
+
 void MainWindow::on_Action_Help_Github(void)
 {
     QDesktopServices::openUrl(QUrl("https://github.com/MarioPartyNetplay/Mupen-MPN"));
@@ -2142,30 +2187,13 @@ void MainWindow::on_RomBrowser_RomInformation(QString file)
         this->ui_Widget_RomBrowser->StopRefreshRomList();
     }
 
+    CoreRomType romType;
     CoreRomHeader romHeader;
     CoreRomSettings romSettings;
 
-    if (!CoreOpenRom(file.toStdU32String()))
+    if (!CoreGetCachedRomHeaderAndSettings(file.toStdU32String(), romType, romHeader, romSettings))
     {
-        this->showErrorMessage("CoreOpenRom() Failed", QString::fromStdString(CoreGetError()));
-        return;
-    }
-
-    if (!CoreGetCurrentRomHeader(romHeader))
-    {
-        this->showErrorMessage("CoreGetCurrentRomHeader() Failed", QString::fromStdString(CoreGetError()));
-        return;
-    }
-
-    if (!CoreGetCurrentRomSettings(romSettings))
-    {
-        this->showErrorMessage("CoreGetCurrentRomSettings() Failed", QString::fromStdString(CoreGetError()));
-        return;
-    }
-
-    if (!CoreCloseRom())
-    {
-        this->showErrorMessage("CoreCloseRom() Failed", QString::fromStdString(CoreGetError()));
+        this->showErrorMessage("CoreGetCachedRomHeaderAndSettings() Failed", QString::fromStdString(CoreGetError()));
         return;
     }
 
@@ -2247,22 +2275,10 @@ void MainWindow::on_RomBrowser_Cheats(QString file)
         this->ui_Widget_RomBrowser->StopRefreshRomList();
     }
 
-    if (!CoreOpenRom(file.toStdU32String()))
-    {
-        this->showErrorMessage("CoreOpenRom() Failed", QString::fromStdString(CoreGetError()));
-        return;
-    }
-
-    Dialog::CheatsDialog dialog(this);
+    Dialog::CheatsDialog dialog(this, file);
     if (!dialog.HasFailed())
     {
         dialog.exec();
-    }
-
-    if (!CoreCloseRom())
-    {
-        this->showErrorMessage("CoreCloseRom() Failed", QString::fromStdString(CoreGetError()));
-        return;
     }
 
     if (isRefreshingRomList)

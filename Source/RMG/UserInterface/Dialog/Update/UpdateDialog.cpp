@@ -11,15 +11,17 @@
 #include "DownloadUpdateDialog.hpp"
 #include "Utilities/QtMessageBox.hpp"
 
-#include <QFileInfo>
-#include <QPushButton>
-#include <QJsonArray>
-#include <QDesktopServices>
 #include <QNetworkAccessManager>
+#include <QDesktopServices>
 #include <QNetworkReply>
 #include <QTemporaryDir>
-#include <QFile>
+#include <QPushButton>
+#include <QJsonArray>
+#include <QFileInfo>
 #include <QProcess>
+#include <QFile>
+
+#include <RMG-Core/Settings.hpp>
 
 using namespace UserInterface::Dialog;
 using namespace Utilities;
@@ -96,7 +98,7 @@ void UpdateDialog::accept(void)
         {
             if (lowerFilename.contains("windows64") &&
                 lowerFilename.contains("portable") &&
-                lowerFilename.endsWith(".exe"))
+                lowerFilename.endsWith(".zip"))
             {
                 filenameToDownload = filename;
                 urlToDownload = QUrl(url);

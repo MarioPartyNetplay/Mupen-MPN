@@ -11,14 +11,12 @@
 #include "Directories.hpp"
 #include "RomSettings.hpp"
 #include "RomHeader.hpp"
-#include "Error.hpp"
+#include "File.hpp"
 
-#include "osal/osal_files.hpp"
-
-#include <cstring>
-#include <vector>
-#include <fstream>
 #include <algorithm>
+#include <cstring>
+#include <fstream>
+#include <vector>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -42,9 +40,9 @@
 #define REGION_LEN 18
 
 #ifdef _WIN32
-#define CACHE_FILE_MAGIC "RMGCoreHeaderAndSettingsCacheWindows_06"
+#define CACHE_FILE_MAGIC "RMGCoreHeaderAndSettingsCacheWindows_07"
 #else // Linux
-#define CACHE_FILE_MAGIC "RMGCoreHeaderAndSettingsCacheLinux_06"
+#define CACHE_FILE_MAGIC "RMGCoreHeaderAndSettingsCacheLinux_07"
 #endif // _WIN32
 #define CACHE_FILE_ITEMS_MAX 10000
 
@@ -55,7 +53,7 @@
 struct l_CacheEntry
 {
     std::filesystem::path fileName;
-    osal_files_file_time  fileTime;
+    CoreFileTime fileTime;
 
     CoreRomType     type;
     CoreRomHeader   header;
@@ -78,7 +76,7 @@ static std::filesystem::path get_cache_file_name()
     std::filesystem::path file;
 
     file = CoreGetUserCacheDirectory();
-    file += OSAL_FILES_DIR_SEPERATOR_STR;
+    file += CORE_DIR_SEPERATOR_STR;
     file += "RomHeaderAndSettingsCache.cache";
 
     return file;
@@ -86,7 +84,7 @@ static std::filesystem::path get_cache_file_name()
 
 static std::vector<l_CacheEntry>::iterator get_cache_entry_iter(std::filesystem::path file, bool checkFileTime = true)
 {
-    osal_files_file_time fileTime = osal_files_get_file_time(file);
+    CoreFileTime fileTime = CoreGetFileTime(file);
 
     auto predicate = [file, fileTime, checkFileTime](const auto& entry)
     {
@@ -161,6 +159,7 @@ void CoreReadRomHeaderAndSettingsCache(void)
         cacheEntry.header.Region = std::string(regionBuf);
         FREAD(cacheEntry.header.CRC1);
         FREAD(cacheEntry.header.CRC2);
+        FREAD(cacheEntry.header.CountryCode);
         // (partial) settings
         FREAD(size);
         FREAD_STR(goodNameBuf, size);
@@ -248,6 +247,7 @@ bool CoreSaveRomHeaderAndSettingsCache(void)
         FWRITE_STR(regionBuf, size);
         FWRITE(cacheEntry.header.CRC1);
         FWRITE(cacheEntry.header.CRC2);
+        FWRITE(cacheEntry.header.CountryCode);
         // (partial) settings
         size = cacheEntry.settings.GoodName.size();
         FWRITE(size);
@@ -263,17 +263,35 @@ bool CoreSaveRomHeaderAndSettingsCache(void)
     return true;
 }
 
-bool CoreHasRomHeaderAndSettingsCached(std::filesystem::path file)
-{
-    return get_cache_entry_iter(file) != l_CacheEntries.end();
-}
-
 bool CoreGetCachedRomHeaderAndSettings(std::filesystem::path file, CoreRomType& type, CoreRomHeader& header, CoreRomSettings& settings)
 {
+    bool ret = false;
     auto iter = get_cache_entry_iter(file);
     if (iter == l_CacheEntries.end())
     {
-        return false;
+        // when we haven't found a cached entry,
+        // we're gonna attempt to retrieve the
+        // rom header and settings and add it
+        // to the cache
+        ret = CoreOpenRom(file) &&
+                CoreGetRomType(type) &&
+                CoreGetCurrentRomHeader(header) &&
+                CoreGetCurrentDefaultRomSettings(settings);
+        // always close ROM
+        if (CoreHasRomOpen() && !CoreCloseRom())
+        {
+            ret = false;
+        }
+        // attempt to add it to the cache, when we've retrieved 
+        // the info successfully
+        if (ret)
+        {
+            return CoreAddCachedRomHeaderAndSettings(file, type, header, settings);
+        }
+        else
+        {
+            return false;
+        }
     }
 
     type     = (*iter).type;
@@ -299,7 +317,7 @@ bool CoreAddCachedRomHeaderAndSettings(std::filesystem::path file, CoreRomType t
     }
 
     cacheEntry.fileName = file;
-    cacheEntry.fileTime = osal_files_get_file_time(file);
+    cacheEntry.fileTime = CoreGetFileTime(file);
     cacheEntry.type     = type;
     cacheEntry.header   = header;
     cacheEntry.settings = settings;
@@ -338,10 +356,11 @@ bool CoreUpdateCachedRomHeaderAndSettings(std::filesystem::path file)
     if (/* rom type */
         cachedEntry.type != type ||
         /* header */
-        cachedEntry.header.Name   != header.Name   ||
-        cachedEntry.header.Region != header.Region ||
-        cachedEntry.header.CRC1   != header.CRC1   ||
-        cachedEntry.header.CRC2   != header.CRC2   ||
+        cachedEntry.header.Name        != header.Name   ||
+        cachedEntry.header.Region      != header.Region ||
+        cachedEntry.header.CRC1        != header.CRC1   ||
+        cachedEntry.header.CRC2        != header.CRC2   ||
+        cachedEntry.header.CountryCode != header.CountryCode ||
         /* settings */
         cachedEntry.settings.MD5      != settings.MD5 ||
         cachedEntry.settings.GoodName != settings.GoodName)

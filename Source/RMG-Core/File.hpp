@@ -13,10 +13,15 @@
 #include <filesystem>
 #include <vector>
 
+typedef uint64_t CoreFileTime;
+
 // attempts to read the file into the buffer
 bool CoreReadFile(std::filesystem::path file, std::vector<char>& outBuffer);
 
 // attempts to write the buffer to file
 bool CoreWriteFile(std::filesystem::path file, std::vector<char>& buffer);
+
+// attempts to retrieve the file time
+CoreFileTime CoreGetFileTime(std::filesystem::path file);
 
 #endif // CORE_FILE_HPP

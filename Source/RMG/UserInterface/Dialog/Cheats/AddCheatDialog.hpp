@@ -13,7 +13,7 @@
 #include <QWidget>
 #include <QDialog>
 
-#include <RMG-Core/Core.hpp>
+#include <RMG-Core/Cheats.hpp>
 
 #include "ui_AddCheatDialog.h"
 
@@ -26,7 +26,7 @@ class AddCheatDialog : public QDialog, private Ui::AddCheatDialog
     Q_OBJECT
 
   public:
-    AddCheatDialog(QWidget *parent);
+    AddCheatDialog(QWidget *parent, QString file);
     ~AddCheatDialog(void);
 
     // enables edit mode & sets cheat
@@ -35,6 +35,7 @@ class AddCheatDialog : public QDialog, private Ui::AddCheatDialog
   private:
     bool updateMode = false;
     CoreCheat oldCheat;
+    QString file;
 
     void setPlainTextEditLines(QPlainTextEdit* plainTextEdit, std::vector<std::string> lines);
     bool validate(void);

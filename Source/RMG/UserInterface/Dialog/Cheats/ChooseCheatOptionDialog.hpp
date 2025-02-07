@@ -10,10 +10,11 @@
 #ifndef CHOOSECHEATOPTIONDIALOG_HPP
 #define CHOOSECHEATOPTIONDIALOG_HPP
 
-#include <QWidget>
+#include <QJsonArray>
 #include <QDialog>
+#include <QWidget>
 
-#include <RMG-Core/Core.hpp>
+#include <RMG-Core/Cheats.hpp>
 
 #include "ui_ChooseCheatOptionDialog.h"
 
@@ -26,15 +27,20 @@ class ChooseCheatOptionDialog : public QDialog, private Ui::ChooseCheatOptionDia
     Q_OBJECT
 
   private:
+    QString file;
     CoreCheat cheat;
+    bool netplay;
+    QJsonArray cheatsJson;
 
   public:
-    ChooseCheatOptionDialog(CoreCheat cheat, QWidget *parent);
+    ChooseCheatOptionDialog(QWidget *parent, QString file, CoreCheat cheat, bool netplay, QJsonArray cheatsJson);
     ~ChooseCheatOptionDialog(void);
+
+    QJsonArray GetJson(void);
 
   private slots:
     void on_cheatOptionsTreeWidget_itemChanged(QTreeWidgetItem *item, int column);
-    void on_buttonBox_clicked(QAbstractButton *button);
+    void accept(void) Q_DECL_OVERRIDE;
 };
 } // namespace Dialog
 } // namespace UserInterface

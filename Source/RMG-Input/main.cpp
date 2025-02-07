@@ -11,17 +11,32 @@
 #define M64P_PLUGIN_PROTOTYPES 1
 #define INPUT_PLUGIN_API_VERSION 0x020100
 
-#include <UserInterface/MainDialog.hpp>
-#include "Thread/SDLThread.hpp"
-#include "Thread/HotkeysThread.hpp"
+#include "UserInterface/MainDialog.hpp"
 #include "Utilities/InputDevice.hpp"
+#include "Thread/HotkeysThread.hpp"
+#include "Thread/SDLThread.hpp"
 #include "common.hpp"
 #include "main.hpp"
 #ifdef VRU
 #include "VRU.hpp"
 #endif // VRU
 
-#include <RMG-Core/Core.hpp>
+#define M64P_PLUGIN_PROTOTYPES 1
+#include <RMG-Core/m64p/api/m64p_common.h>
+#include <RMG-Core/m64p/api/m64p_plugin.h>
+#include <RMG-Core/m64p/api/m64p_custom.h>
+#include <RMG-Core/m64p/api/m64p_types.h>
+
+#include <RMG-Core/SpeedLimiter.hpp>
+#include <RMG-Core/Directories.hpp>
+#include <RMG-Core/SpeedFactor.hpp>
+#include <RMG-Core/Screenshot.hpp>
+#include <RMG-Core/Emulation.hpp>
+#include <RMG-Core/SaveState.hpp>
+#include <RMG-Core/Settings.hpp>
+#include <RMG-Core/Netplay.hpp>
+#include <RMG-Core/Cheats.hpp>
+#include <RMG-Core/Video.hpp>
 
 #include <QGuiApplication>
 #include <QApplication>
@@ -72,6 +87,8 @@ struct InputProfile
 
     // input device information
     std::string DeviceName;
+    std::string DevicePath;
+    std::string DeviceSerial;
     int DeviceNum = -1;
     std::chrono::time_point<std::chrono::high_resolution_clock> LastDeviceCheckTime = std::chrono::high_resolution_clock::now();
 
@@ -294,6 +311,8 @@ static void load_settings(void)
         profile->DeadzoneValue = CoreSettingsGetIntValue(SettingsID::Input_Deadzone, section);
         profile->ControllerPak = (N64ControllerPak)CoreSettingsGetIntValue(SettingsID::Input_Pak, section);
         profile->DeviceName = CoreSettingsGetStringValue(SettingsID::Input_DeviceName, section);
+        profile->DevicePath = CoreSettingsGetStringValue(SettingsID::Input_DevicePath, section);
+        profile->DeviceSerial = CoreSettingsGetStringValue(SettingsID::Input_DeviceSerial, section);
         profile->DeviceNum = CoreSettingsGetIntValue(SettingsID::Input_DeviceNum, section);
         profile->GameboyRom = CoreSettingsGetStringValue(SettingsID::Input_GameboyRom, section);
         profile->GameboySave = CoreSettingsGetStringValue(SettingsID::Input_GameboySave, section);
@@ -564,7 +583,7 @@ static void open_controllers(void)
 
         if (profile->DeviceNum != (int)InputDeviceType::Keyboard)
         {
-            profile->InputDevice.OpenDevice(profile->DeviceName, profile->DeviceNum);
+            profile->InputDevice.OpenDevice(profile->DeviceName, profile->DevicePath, profile->DeviceSerial, profile->DeviceNum);
         }
     }
 }
@@ -970,11 +989,6 @@ EXPORT m64p_error CALL PluginStartup(m64p_dynlib_handle CoreLibHandle, void *Con
         return M64ERR_ALREADY_INIT;
     }
 
-    if (!CoreInit(CoreLibHandle))
-    {
-        return M64ERR_SYSTEM_FAIL;
-    }
-
     // setup debug callback
     l_DebugCallback    = DebugCallback;
     l_DebugCallContext = Context;
@@ -1236,7 +1250,7 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
 
             if (!profile->InputDevice.HasOpenDevice() || !profile->InputDevice.IsAttached())
             {
-                profile->InputDevice.OpenDevice(profile->DeviceName, profile->DeviceNum);
+                profile->InputDevice.OpenDevice(profile->DeviceName, profile->DevicePath, profile->DeviceSerial, profile->DeviceNum);
             }
         }
     }

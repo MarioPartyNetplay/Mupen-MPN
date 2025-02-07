@@ -8,13 +8,22 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #define CORE_INTERNAL
-#include "Core.hpp"
+#include "CachedRomHeaderAndSettings.hpp"
+#include "Directories.hpp"
+#include "MediaLoader.hpp"
 #ifdef DISCORD_RPC
 #include "DiscordRpc.hpp"
 #endif // DISCORD_RPC
-#include "osal/osal_dynlib.hpp"
+#include "Callback.hpp"
+#include "Settings.hpp"
+#include "Library.hpp"
+#include "Plugins.hpp"
+#include "Error.hpp"
+#include "Core.hpp"
+
 #include "m64p/Api.hpp"
 #include "m64p/api/version.h"
+
 #include <filesystem>
 #include <string>
 #include <cstring>
@@ -23,20 +32,20 @@
 // Local Variables
 //
 
-static osal_dynlib_lib_handle l_CoreLibHandle;
+static CoreLibraryHandle l_CoreLibHandle;
 static char l_CoreContextString[20];
 
 //
 // Local Functions
 //
 
-std::filesystem::path find_core_lib(void)
+static std::filesystem::path find_core_lib(void)
 {
     for (const auto& entry : std::filesystem::recursive_directory_iterator(CoreGetCoreDirectory()))
     {
         std::filesystem::path path = entry.path();
         if (path.has_extension() && 
-            path.extension() == OSAL_DYNLIB_LIB_EXT_STR)
+            path.extension() == CORE_LIBRARY_EXT_STR)
         {
             return path;
         }
@@ -45,7 +54,7 @@ std::filesystem::path find_core_lib(void)
     return std::filesystem::path();
 }
 
-bool config_override_user_dirs(void)
+static bool config_override_user_dirs(void)
 {
     std::string error;
     m64p_error  ret;
@@ -95,11 +104,11 @@ bool CoreInit(void)
         return false;
     }
 
-    l_CoreLibHandle = osal_dynlib_open(core_file);
+    l_CoreLibHandle = CoreOpenLibrary(core_file);
     if (l_CoreLibHandle == nullptr)
     {
-        error = "osal_dynlib_open Failed: ";
-        error += osal_dynlib_strerror();
+        error = "CoreOpenLibrary Failed: ";
+        error += CoreGetLibraryError();
         CoreSetError(error);
         return false;
     }
@@ -179,30 +188,6 @@ bool CoreInit(void)
     return true;
 }
 
-bool CoreInit(m64p_dynlib_handle handle)
-{
-    std::string error;
-    bool ret = false;
-
-    ret = m64p::Core.IsHooked() || m64p::Core.Hook(handle);
-    if (!ret)
-    {
-        error = m64p::Core.GetLastError();
-        CoreSetError(error);
-        return false;
-    }
-
-    ret = m64p::Config.IsHooked() || m64p::Config.Hook(handle);
-    if (!ret)
-    {
-        error = m64p::Config.GetLastError();
-        CoreSetError(error);
-        return false;
-    }
-
-    return true;
-}
-
 void CoreShutdown(void)
 {
     CorePluginsShutdown();
@@ -216,5 +201,5 @@ void CoreShutdown(void)
     m64p::Core.Unhook();
     m64p::Config.Unhook();
 
-    osal_dynlib_close(l_CoreLibHandle);
+    CoreCloseLibrary(l_CoreLibHandle);
 }
