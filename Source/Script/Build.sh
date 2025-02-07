@@ -16,7 +16,7 @@ fi
 
 if [[ $(uname -s) = *MINGW64* ]]
 then
-    generator="MSYS Makefiles"
+    generator="Ninja"
 fi
 
 mkdir -p "$build_dir"

@@ -112,6 +112,7 @@ void NetplaySessionDialog::onBufferSizeChanged(int value)
     json.insert("type", "update_buffer_size");
     json.insert("buffer_size", value);
     this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
+}
 
 bool NetplaySessionDialog::getCheats(std::vector<CoreCheat>& cheats, QJsonArray& cheatsArray)
 {
