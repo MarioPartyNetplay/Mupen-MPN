@@ -8,7 +8,6 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "NetplaySessionBrowserDialog.hpp"
-#include "NetplaySessionPasswordDialog.hpp"
 #include "Utilities/QtMessageBox.hpp"
 #include "NetplayCommon.hpp"
 
