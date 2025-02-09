@@ -35,7 +35,7 @@ void NetplayCommon::AddCommonJson(QJsonObject& json)
     json.insert("emulator", "RMG");
     json.insert("auth", QString(hash.result().toHex()));
     json.insert("authTime", QString(currentTime));
-    json.insert("netplay_version", "MPNServer-1");
+    json.insert("netplay_version", 17);
 }
 
 QList<QString> NetplayCommon::GetPluginNames(QString md5QString)
