@@ -161,7 +161,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 #endif // UPDATER
 
 #ifdef NETPLAY
-    void showNetplaySessionBrowser(QWebSocket* webSocket, QJsonObject json, QString sessionFile);
+    void showNetplaySessionDialog(QWebSocket* webSocket, QJsonObject json, QString sessionFile);
 #endif // NETPLAY
   protected:
     void timerEvent(QTimerEvent *event) Q_DECL_OVERRIDE;
@@ -213,7 +213,6 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 
     void on_Action_Netplay_CreateSession(void);
     void on_Action_Netplay_JoinSession(void);
-    void on_Action_Netplay_ViewSession(void);
 
     void on_Action_Help_Github(void);
     void on_Action_Help_Discord(void);

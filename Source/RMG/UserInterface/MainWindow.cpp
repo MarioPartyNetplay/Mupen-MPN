@@ -1251,7 +1251,7 @@ void MainWindow::checkForUpdates(bool silent, bool force)
 #endif // UPDATER
 
 #ifdef NETPLAY
-void MainWindow::showNetplaySessionBrowser(QWebSocket* webSocket, QJsonObject json, QString sessionFile)
+void MainWindow::showNetplaySessionDialog(QWebSocket* webSocket, QJsonObject json, QString sessionFile)
 {
     if (this->netplaySessionDialog != nullptr)
     {
@@ -1987,7 +1987,7 @@ void MainWindow::on_Action_Netplay_CreateSession(void)
     int ret = dialog.exec();
     if (ret == QDialog::Accepted)
     {
-        this->showNetplaySessionBrowser(&webSocket, dialog.GetSessionJson(), dialog.GetSessionFile());
+        this->showNetplaySessionDialog(&webSocket, dialog.GetSessionJson(), dialog.GetSessionFile());
     }
 #endif // NETPLAY
 }
@@ -2001,20 +2001,9 @@ void MainWindow::on_Action_Netplay_JoinSession(void)
     int ret = dialog.exec();
     if (ret == QDialog::Accepted)
     {
-        Dialog::NetplaySessionDialog sessionDialog(this, &webSocket, dialog.GetSessionJson(), dialog.GetSessionFile());
+        this->showNetplaySessionDialog(&webSocket, dialog.GetSessionJson(), dialog.GetSessionFile());
     }
 #endif // NETPLAY
-}
-
-void MainWindow::on_Action_Netplay_ViewSession(void)
-{
-#ifdef NETPLAY
-    if (this->netplaySessionDialog != nullptr &&
-        this->netplaySessionDialog->isHidden())
-    {
-        this->netplaySessionDialog->show();
-    }
-#endif
 }
 
 void MainWindow::on_Action_Help_Github(void)
