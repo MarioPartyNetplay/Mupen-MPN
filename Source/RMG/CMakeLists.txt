@@ -98,8 +98,6 @@ if (NETPLAY)
         UserInterface/Dialog/Netplay/NetplaySessionBrowserDialog.ui
         UserInterface/Dialog/Netplay/NetplaySessionDialog.cpp
         UserInterface/Dialog/Netplay/NetplaySessionDialog.ui
-        UserInterface/Dialog/Netplay/NetplaySessionPasswordDialog.cpp
-        UserInterface/Dialog/Netplay/NetplaySessionPasswordDialog.ui
         UserInterface/Widget/Netplay/NetplaySessionBrowserWidget.cpp
         UserInterface/Widget/Netplay/NetplaySessionBrowserLoadingWidget.cpp
         UserInterface/Widget/Netplay/NetplaySessionBrowserEmptyWidget.cpp
