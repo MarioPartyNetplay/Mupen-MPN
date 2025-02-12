@@ -345,6 +345,17 @@ static uint32_t netplay_get_input(uint8_t control_id)
     netplay_process();
     netplay_request_input(control_id);
 
+    if (l_player_lag[control_id] > 0)
+    {
+        l_canFF = 1;
+        main_core_state_set(M64CORE_SPEED_LIMITER, 0);
+    }
+    else
+    {
+        main_core_state_set(M64CORE_SPEED_LIMITER, 1);
+        l_canFF = 0;
+    }
+
     if (netplay_ensure_valid(control_id))
     {
         //We grab the event from the linked list, the delete it once it has been used
