@@ -344,7 +344,7 @@
      uint32_t keys;
      netplay_process();
      netplay_request_input(control_id);
-
+     buffer_size(control_id)
  
      if (netplay_ensure_valid(control_id))
      {
@@ -568,9 +568,9 @@
      {
          reg_id = SDLNet_Read32(&input_data[curr]);
          curr += 4;
-
-        Controls[i].Type = CONT_TYPE_STANDARD; //make sure VRU is disabled
-
+ 
+         Controls[i].Type = CONT_TYPE_STANDARD; //make sure VRU is disabled
+ 
          if (reg_id == 0) //No one registered to control this player
          {
              Controls[i].Present = 0;

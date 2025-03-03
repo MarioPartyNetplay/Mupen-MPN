@@ -45,6 +45,7 @@ cp "$path/libjpeg-8.dll"       "$bin_dir/"
 
 touch $bin_dir/portable.txt
 cp -r "../../Data/Games" "$bin_dir/"
+cp -r "../../Data/Config" "$bin_dir/Config"
 
 # remove *.a files
 find "$bin_dir/" -name '*.a' -delete
