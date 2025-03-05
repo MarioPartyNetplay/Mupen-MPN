@@ -344,7 +344,7 @@
      uint32_t keys;
      netplay_process();
      netplay_request_input(control_id);
-     buffer_size(control_id)
+     buffer_size(control_id);
  
      if (netplay_ensure_valid(control_id))
      {
