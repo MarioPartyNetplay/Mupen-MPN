@@ -766,7 +766,19 @@
      this->action_System_GSButton->setShortcut(QKeySequence(keyBinding));
      keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Exit));
      this->action_System_Exit->setShortcut(QKeySequence(keyBinding));
- 
+     
+     // MPN
+     this->action_System_StartRom2->setShortcut(QKeySequence(keyBinding));
+     this->action_System_StartRom2->setEnabled(!inEmulation);
+     this->action_System_StartRom3->setShortcut(QKeySequence(keyBinding));
+     this->action_System_StartRom3->setEnabled(!inEmulation);
+     this->action_System_Screenshot2->setEnabled(inEmulation);
+     this->action_System_Screenshot2->setShortcut(QKeySequence(keyBinding));
+     this->action_View_Fullscreen2->setEnabled(inEmulation);
+     this->action_View_Fullscreen2->setShortcut(QKeySequence(keyBinding));
+     this->action_View_RefreshRoms2->setEnabled(!inEmulation);
+     this->action_View_RefreshRoms2->setShortcut(QKeySequence(keyBinding));
+     
      // configure keybindings for speed factor
      QAction* speedActions[] =
      {
@@ -1136,7 +1148,7 @@
      connect(this->action_System_StartRom, &QAction::triggered, this, &MainWindow::on_Action_System_OpenRom);
      connect(this->action_System_OpenCombo, &QAction::triggered, this, &MainWindow::on_Action_System_OpenCombo);
      connect(this->action_System_Exit, &QAction::triggered, this, &MainWindow::on_Action_System_Exit);
- 
+     connect(this->action_System_StartRom2, &QAction::triggered, this, &MainWindow::on_Action_System_OpenRom);
      connect(this->action_System_Shutdown, &QAction::triggered, this, &MainWindow::on_Action_System_Shutdown);
      connect(this->action_System_SoftReset, &QAction::triggered, this, &MainWindow::on_Action_System_SoftReset);
      connect(this->action_System_HardReset, &QAction::triggered, this, &MainWindow::on_Action_System_HardReset);
@@ -1150,14 +1162,15 @@
      connect(this->action_System_Load, &QAction::triggered, this, &MainWindow::on_Action_System_Load);
      connect(this->action_System_Cheats, &QAction::triggered, this, &MainWindow::on_Action_System_Cheats);
      connect(this->action_System_GSButton, &QAction::triggered, this, &MainWindow::on_Action_System_GSButton);
- 
+     connect(this->action_System_Screenshot2, &QAction::triggered, this, &MainWindow::on_Action_System_Screenshot);
      connect(this->action_Settings_Graphics, &QAction::triggered, this, &MainWindow::on_Action_Settings_Graphics);
      connect(this->action_Settings_Audio, &QAction::triggered, this, &MainWindow::on_Action_Settings_Audio);
      connect(this->action_Settings_Rsp, &QAction::triggered, this, &MainWindow::on_Action_Settings_Rsp);
-     connect(this->action_Settings_Input, &QAction::triggered, this,
-             &MainWindow::on_Action_Settings_Input);
+     connect(this->action_Settings_Input, &QAction::triggered, this, &MainWindow::on_Action_Settings_Input);
+     connect(this->action_Settings_Input2, &QAction::triggered, this, &MainWindow::on_Action_Settings_Input);
      connect(this->action_Settings_Settings, &QAction::triggered, this, &MainWindow::on_Action_Settings_Settings);
- 
+     connect(this->action_Settings_Settings2, &QAction::triggered, this, &MainWindow::on_Action_Settings_Settings);
+     connect(this->action_Settings_Graphics2, &QAction::triggered, this, &MainWindow::on_Action_Settings_Graphics);
      connect(this->action_View_Toolbar, &QAction::toggled, this, &MainWindow::on_Action_View_Toolbar);
      connect(this->action_View_StatusBar, &QAction::toggled, this, &MainWindow::on_Action_View_StatusBar);
      connect(this->action_View_GameList, &QAction::toggled, this, &MainWindow::on_Action_View_GameList);
@@ -1167,7 +1180,9 @@
      connect(this->action_View_RefreshRoms, &QAction::triggered, this, &MainWindow::on_Action_View_RefreshRoms);
      connect(this->action_View_ClearRomCache, &QAction::triggered, this, &MainWindow::on_Action_View_ClearRomCache);
      connect(this->action_View_Log, &QAction::triggered, this, &MainWindow::on_Action_View_Log);
- 
+     connect(this->action_View_Fullscreen2, &QAction::triggered, this, &MainWindow::on_Action_View_Fullscreen);
+     connect(this->action_View_RefreshRoms2, &QAction::triggered, this, &MainWindow::on_Action_View_RefreshRoms);
+
      connect(this->action_Netplay_CreateSession, &QAction::triggered, this, &MainWindow::on_Action_Netplay_CreateSession);
      connect(this->action_Netplay_BrowseSessions, &QAction::triggered, this, &MainWindow::on_Action_Netplay_BrowseSessions);
  
@@ -1970,6 +1985,16 @@
  void MainWindow::on_Action_Help_Github(void)
  {
      QDesktopServices::openUrl(QUrl("https://github.com/Rosalie241/RMG"));
+ }
+
+ void MainWindow::on_Action_Help_Github(void)
+ {
+     QDesktopServices::openUrl(QUrl("https://github.com/MarioPartyNetplay/Mupen-MPN"));
+ }
+ 
+ void MainWindow::on_Action_Help_Discord(void)
+ {
+     QDesktopServices::openUrl(QUrl("https://discord.gg/marioparty"));
  }
  
  void MainWindow::on_Action_Help_About(void)

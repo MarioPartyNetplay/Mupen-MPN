@@ -196,6 +196,9 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     void on_Action_System_GSButton(void);
     void on_Action_System_Exit(void);
 
+    // MPN
+
+
     void on_Action_Settings_Graphics(void);
     void on_Action_Settings_Audio(void);
     void on_Action_Settings_Rsp(void);
@@ -218,7 +221,8 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     void on_Action_Help_Github(void);
     void on_Action_Help_About(void);
     void on_Action_Help_Update(void);
-
+    void on_Action_Help_Discord(void);
+    
     void on_Action_Audio_IncreaseVolume(void);
     void on_Action_Audio_DecreaseVolume(void);
     void on_Action_Audio_ToggleVolumeMute(void);
