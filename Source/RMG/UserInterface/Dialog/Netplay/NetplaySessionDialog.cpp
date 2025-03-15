@@ -7,328 +7,417 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-#include "UserInterface/Dialog/Cheats/CheatsCommon.hpp"
-#include "UserInterface/Dialog/Cheats/CheatsDialog.hpp"
-#include "Utilities/QtMessageBox.hpp"
-#include "NetplaySessionDialog.hpp"
-#include "NetplayCommon.hpp"
-
-#include <QJsonDocument>
-#include <QPushButton>
-#include <QMessageBox>
-#include <QJsonObject>
-#include <QJsonArray>
-#include <QSpinBox>
-#include <QLabel>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-
-#include <RMG-Core/Error.hpp>
-#include <RMG-Core/Rom.hpp>
-#include <RMG-Core/Core.hpp>
-#include <RMG-Core/m64p/Api.hpp>
-
-using namespace UserInterface::Dialog;
-using namespace Utilities;
-
-NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, QWebSocket* webSocket, QJsonObject json, QString sessionFile) : QDialog(parent)
-{
-    this->setupUi(this);
-    this->setWindowIcon(QIcon(":Resource/RMG.png"));
-    this->setWindowFlags(this->windowFlags() | Qt::WindowMinimizeButtonHint);
-
-    this->webSocket = webSocket;
-
-    QJsonObject session = json.value("room").toObject();
-
-    this->sessionJson = json.value("room").toObject();
-    this->nickName    = json.value("player_name").toString();
-    this->sessionPort = session.value("port").toInt();
-    this->sessionName = session.value("room_name").toString();
-    this->sessionFile = sessionFile;
-
-    this->sessionNameLineEdit->setText(this->sessionName);
-    this->gameNameLineEdit->setText(session.value("game_name").toString());
-
-    connect(this->webSocket, &QWebSocket::textMessageReceived, this, &NetplaySessionDialog::on_webSocket_textMessageReceived);
-
-    // reset json objects
-    session = {};
-    json    = {};
-
-    // request server motd
-    json.insert("type", "request_motd");
-    json.insert("room_name", this->sessionName);
-    NetplayCommon::AddCommonJson(json);
-    webSocket->sendTextMessage(QJsonDocument(json).toJson());
-
-    // request players
-    json = {};
-    session.insert("port", this->sessionPort);
-    json.insert("type", "request_players");
-    json.insert("room", session);
-    NetplayCommon::AddCommonJson(json);
-    webSocket->sendTextMessage(QJsonDocument(json).toJson());
-
-    QPushButton* startButton = this->buttonBox->button(QDialogButtonBox::Ok);
-    startButton->setText("Start");
-    startButton->setEnabled(false);
-
-    QPushButton* cheatsButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults);
-    cheatsButton->setText("Cheats");
-    cheatsButton->setIcon(QIcon::fromTheme("code-box-line"));
-
-    this->updateCheatsTreeWidget();
-
-}
-
-NetplaySessionDialog::~NetplaySessionDialog(void)
-{
-    if (this->webSocket->isValid())
-    {
-        this->webSocket->close();
-    }
-}
-
-bool NetplaySessionDialog::getCheats(std::vector<CoreCheat>& cheats, QJsonArray& cheatsArray)
-{
-    QJsonObject session  = this->sessionJson;
-    QJsonObject features = session.value("features").toObject();
-    QString cheatJson    = features["cheats"].toString();
-
-    if (cheatJson.isEmpty())
-    {
-        return false;
-    }
-
-    QJsonDocument cheatDocument = QJsonDocument::fromJson(cheatJson.toUtf8());
-    cheatsArray = cheatDocument.array();
-
-    if (!CheatsCommon::ParseCheatJson(cheatsArray, cheats))
-    {
-        QString error = "Failed to parse cheats json: " + QString(cheatDocument.toJson());
-        QtMessageBox::Error(this, "CheatsCommon::ParseCheatJson() Failed", error);
-        return false;
-    }
-
-    return true;
-}
-
-bool NetplaySessionDialog::applyCheats(void)
-{
-    std::vector<CoreCheat> cheats;
-    QJsonArray cheatsArray;
-
-    if (!this->getCheats(cheats, cheatsArray))
-    {
-        return false;
-    }
-
-    if (!CoreSetNetplayCheats(cheats))
-    {
-        QtMessageBox::Error(this, "CoreSetNetplayCheats() Failed", QString::fromStdString(CoreGetError()));
-        return false;
-    }
-
-    return true;
-}
-
-void NetplaySessionDialog::updateCheatsTreeWidget(void)
-{
-    std::vector<CoreCheat> cheats;
-    QJsonArray cheatsArray;
-
-    if (!this->getCheats(cheats, cheatsArray))
-    {
-        // always clear UI on failure
-        this->cheatsTreeWidget->clear();
-        return;
-    }
-
-    CheatsCommon::AddCheatsToTreeWidget(true, cheatsArray, this->sessionFile, cheats, this->cheatsTreeWidget, true);    
-}
-
-void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
-{
-    QJsonDocument jsonDocument = QJsonDocument::fromJson(message.toUtf8());
-    QJsonObject json = jsonDocument.object();
-    QString     type = json.value("type").toString();
-
-    if (type == "reply_players")
-    {
-        if (json.contains("player_names"))
-        {
-            this->listWidget->clear();
-            QString name;
-            QJsonArray names = json.value("player_names").toArray();
-            for (int i = 0; i < 4; i++)
-            {
-                name = names.at(i).toString();
-
-                // add read-only item to UI
-                QListWidgetItem* item = new QListWidgetItem();
-                item->setText(name);
-                item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
-                this->listWidget->addItem(item);
-
-                if (!name.isEmpty())
-                {
-                    bool nameMatch = this->nickName == name;
-                    if (nameMatch)
-                    {
-                        this->sessionNumber = i + 1;
-                    }
-                    if (!this->started && i == 0)
-                    {
-                        QPushButton* startButton = this->buttonBox->button(QDialogButtonBox::Ok);
-                        QPushButton* cheatsButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults);
-                        startButton->setEnabled(nameMatch);
-                        cheatsButton->setEnabled(nameMatch);
-                    }
-                }
-            }
-        }
-    }
-    else if (type == "reply_chat_message")
-    {
-        this->chatPlainTextEdit->appendPlainText(json.value("message").toString());
-    }
-    else if (type == "reply_begin_game")
-    {
-        if (json.value("accept").toInt() == 0)
-        {
-            this->started = true;
-            this->applyCheats();
-            emit OnPlayGame(this->sessionFile, this->webSocket->peerAddress().toString(), this->sessionPort, this->sessionNumber);
-        }
-        else
-        {
-            // allow user to try again
-            QPushButton* startButton = this->buttonBox->button(QDialogButtonBox::Ok);
-            QPushButton* cheatsButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults);
-            startButton->setEnabled(true);
-            cheatsButton->setEnabled(true);
-
-            QtMessageBox::Error(this, "Server Error", json.value("message").toString());
-        }
-    }
-    else if (type == "reply_motd")
-    {
-        QString message = "<b>Notice:</b> <div style='text-align:center;'>Servers are funded by Tabitha! Use this <a href='https://ko-fi.com/tabithahanegan'>link</a> to help fund the process.</div>";
-        QString message2 = "<b>Notice:</b> <div style='text-align:center;'>Please set up your cheats before participating in a NetPlay session. Cheats do not sync if configured in-game or while in the lobby.</div>";
-        this->chatPlainTextEdit->appendHtml(message);
-        this->chatPlainTextEdit->appendHtml(message2);
-        this->chatPlainTextEdit->setTextInteractionFlags(Qt::TextBrowserInteraction);
-    }
-    else if (type == "reply_edit_room")
-    {
-        if (json.value("accept").toInt() == 0)
-        {
-            this->sessionJson = json.value("room").toObject();
-            this->updateCheatsTreeWidget();
-        }
-        else
-        {
-            QtMessageBox::Error(this, "Server Error", json.value("message").toString());
-        }
-    }
-}
-
-void NetplaySessionDialog::on_chatLineEdit_textChanged(QString text)
-{
-    this->sendPushButton->setEnabled(!text.startsWith(' ') && !text.trimmed().isEmpty() && text.size() <= 256);
-    this->sendPushButton->setDefault(this->sendPushButton->isEnabled());
-}
-
-void NetplaySessionDialog::on_sendPushButton_clicked(void)
-{
-    QJsonObject json;
-    QJsonObject session;
-    session.insert("port", this->sessionPort);
-    json.insert("type", "request_chat_message");
-    json.insert("player_name", this->nickName);
-    json.insert("message", this->chatLineEdit->text());
-    json.insert("room", session);
-    NetplayCommon::AddCommonJson(json);
-
-    this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
-    this->chatLineEdit->clear();
-}
-
-void NetplaySessionDialog::on_buttonBox_clicked(QAbstractButton* button)
-{
-    QPushButton* pushButton = (QPushButton*)button;
-    QPushButton* cheatsButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults);
-
-    if (pushButton == cheatsButton)
-    {
-        QString cheatsJson = this->sessionJson.value("features").toObject().value("cheats").toString();
-        QJsonDocument cheatsDocument = QJsonDocument::fromJson(cheatsJson.toUtf8());
-
-        // show cheats dialog to user
-        Dialog::CheatsDialog dialog(this, this->sessionFile, true, cheatsDocument.array());
-        dialog.exec();
-
-        // request an update to the existing session with the new cheats
-        cheatsDocument.setArray(dialog.GetJson());
-        QJsonObject session = this->sessionJson;
-        QJsonObject features = session.value("features").toObject();
-        if (!cheatsDocument.array().empty())
-        { // only add cheats object when it's not empty
-            features["cheats"] = QString(cheatsDocument.toJson(QJsonDocument::Compact));
-        }
-        else
-        { // else remove it
-            features.remove("cheats");
-        }
-        session.insert("features", features);
-
-        // only request update when needed
-        if (this->sessionJson != session)
-        {
-            QJsonObject json;
-            json.insert("type", "request_edit_room");
-            json.insert("player_name", this->nickName);
-            json.insert("room", session);
-            NetplayCommon::AddCommonJson(json);
-
-            this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
-        }
-    }
-}
-
-void NetplaySessionDialog::accept()
-{
-    QPushButton* startButton = this->buttonBox->button(QDialogButtonBox::Ok);
-    QPushButton* cheatsButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults);
-    startButton->setEnabled(false);
-    cheatsButton->setEnabled(false);
-
-    QJsonObject json;
-    QJsonObject session;
-    session.insert("port", this->sessionPort);
-    json.insert("type", "request_begin_game");
-    json.insert("room", session);
-    NetplayCommon::AddCommonJson(json);
-
-    this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
-}
-
-void NetplaySessionDialog::reject(void)
-{
-    // when we're in-game we should keep
-    // the dialog alive so that the player
-    // can re-open the dialog and continue chatting
-    if (this->started)
-    {
-        this->hide();
-        return;
-    }
-
-    if (this->webSocket->isValid())
-    {
-        this->webSocket->close();
-    }
-
-    QDialog::reject();
-}
+ #include "NetplaySessionBrowserDialog.hpp"
+ #include "Utilities/QtMessageBox.hpp"
+ #include "NetplayCommon.hpp"
+ 
+ #include <QRegularExpressionValidator>
+ #include <QRegularExpression>
+ #include <QNetworkDatagram>
+ #include <QJsonDocument>
+ #include <QInputDialog>
+ #include <QPushButton>
+ #include <QFileDialog>
+ #include <QJsonObject>
+ #include <QJsonArray>
+ 
+ #include <RMG-Core/Settings.hpp>
+ #include <RMG-Core/Rom.hpp>
+ 
+ using namespace UserInterface::Dialog;
+ using namespace Utilities;
+ 
+ //
+ // Exported Functions
+ //
+ 
+ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, QWebSocket* webSocket, QMap<QString, CoreRomSettings> modelData) : QDialog(parent)
+ {
+     this->setupUi(this);
+ 
+     // prepare web socket
+     this->webSocket = webSocket;
+     connect(this->webSocket, &QWebSocket::connected, this, &NetplaySessionBrowserDialog::on_webSocket_connected);
+     connect(this->webSocket, &QWebSocket::disconnected, this, &NetplaySessionBrowserDialog::on_webSocket_disconnected);
+     connect(this->webSocket, &QWebSocket::textMessageReceived, this, &NetplaySessionBrowserDialog::on_webSocket_textMessageReceived);
+     connect(this->webSocket, &QWebSocket::pong, this, &NetplaySessionBrowserDialog::on_webSocket_pong);
+ 
+     // copy rom data for later
+     this->romData = modelData;
+ 
+     // prepare broadcast
+     broadcastSocket.bind(QHostAddress(QHostAddress::AnyIPv4), 0);
+     connect(&this->broadcastSocket, &QUdpSocket::readyRead, this, &NetplaySessionBrowserDialog::on_broadcastSocket_readyRead);
+     QByteArray multirequest;
+     multirequest.append(1);
+     broadcastSocket.writeDatagram(multirequest, QHostAddress::Broadcast, 45000);
+ 
+     // change ok button name
+     QPushButton* joinButton = this->buttonBox->button(QDialogButtonBox::Ok);
+     joinButton->setText("Join");
+     joinButton->setEnabled(false);
+ 
+     // change restore defaults button name
+     QPushButton* refreshButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults);
+     refreshButton->setText("Refresh");
+     refreshButton->setIcon(QIcon::fromTheme("refresh-line"));
+     refreshButton->setEnabled(false);
+ 
+     // set validator for nickname
+     QRegularExpression re(NETPLAYCOMMON_NICKNAME_REGEX);
+     this->nickNameLineEdit->setValidator(new QRegularExpressionValidator(re, this));
+     this->nickNameLineEdit->setText(QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_Nickname)));
+ 
+     // request server list
+     QString serverUrl = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_ServerJsonUrl));
+     if (!serverUrl.isEmpty() && QUrl(serverUrl).isValid())
+     {
+         QNetworkAccessManager* networkAccessManager = new QNetworkAccessManager(this);
+         connect(networkAccessManager, &QNetworkAccessManager::finished, this, &NetplaySessionBrowserDialog::on_networkAccessManager_Finished);
+         networkAccessManager->setTransferTimeout(15000);
+         networkAccessManager->get(QNetworkRequest(QUrl(serverUrl)));
+     }
+ 
+     this->validateJoinButton();
+ 
+     this->pingTimerId = this->startTimer(2000);
+ }
+ 
+ NetplaySessionBrowserDialog::~NetplaySessionBrowserDialog(void)
+ {
+     QString nickname = this->nickNameLineEdit->text();
+     if (!nickname.isEmpty())
+     {
+         CoreSettingsSetValue(SettingsID::Netplay_Nickname, nickname.toStdString());
+     }
+ 
+     QString server = this->serverComboBox->currentText();
+     if (!server.isEmpty())
+     {
+         CoreSettingsSetValue(SettingsID::Netplay_SelectedServer, server.toStdString());
+     }
+ }
+ 
+ QJsonObject NetplaySessionBrowserDialog::GetSessionJson(void)
+ {
+     return this->sessionJson;
+ }
+ 
+ QString NetplaySessionBrowserDialog::GetSessionFile(void)
+ {
+     return this->sessionFile;
+ }
+ 
+ QString NetplaySessionBrowserDialog::showROMDialog(QString name, QString md5)
+ {
+     QString title = "Open " + name;
+     QString file = QFileDialog::getOpenFileName(this, title, "", "N64 ROMs (*.n64 *.z64 *.v64 *.zip *.7z)");
+     CoreRomSettings romSettings;
+ 
+     if (!file.isEmpty())
+     {
+         if (!CoreOpenRom(file.toStdU32String()) ||
+             !CoreGetCurrentRomSettings(romSettings))
+         {
+             CoreCloseRom();
+             return "";
+         }
+ 
+         CoreCloseRom();
+ 
+         if (md5.toStdString() != romSettings.MD5)
+         {
+             QString details = "Expected MD5: " + md5 + "\n";
+             details        += "Received MD5: " + QString::fromStdString(romSettings.MD5);
+             QtMessageBox::Error(this, "Incorrect ROM Selected", details);
+             return "";
+         }
+     }
+ 
+     return file;
+ }
+ 
+ bool NetplaySessionBrowserDialog::validate(void)
+ {
+     if (this->nickNameLineEdit->text().isEmpty() ||
+         this->nickNameLineEdit->text().size() > 128)
+     {
+         return false;
+     }
+ 
+     if (!this->sessionBrowserWidget->IsCurrentSessionValid() ||
+         this->serverComboBox->count() == 0)
+     {
+         return false;
+     }
+ 
+     return true;
+ }
+ 
+ void NetplaySessionBrowserDialog::validateJoinButton(void)
+ {
+     QPushButton* joinButton = this->buttonBox->button(QDialogButtonBox::Ok);
+     joinButton->setEnabled(this->validate());
+ }
+ 
+ void NetplaySessionBrowserDialog::timerEvent(QTimerEvent *event)
+ {
+     if (event->timerId() == this->pingTimerId)
+     {
+         if (this->webSocket->isValid())
+         {
+             this->webSocket->ping();
+         }
+     }
+ }
+ 
+ void NetplaySessionBrowserDialog::on_webSocket_connected(void)
+ {
+     if (!this->webSocket->isValid())
+     {
+         QtMessageBox::Error(this, "Server Error", "Connection Failed");
+         return;
+     }
+ 
+     // disable refresh button while refreshing
+     QPushButton* refreshButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults);
+     refreshButton->setEnabled(false);
+ 
+     // disable join button while refreshing
+     QPushButton* joinButton = this->buttonBox->button(QDialogButtonBox::Ok);
+     joinButton->setEnabled(false);
+ 
+     // clear sessions
+     this->sessionBrowserWidget->StartRefresh();
+ 
+     // request session list from server
+     QJsonObject json;
+     json.insert("type", "request_get_rooms");
+     NetplayCommon::AddCommonJson(json);
+ 
+     this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
+ }
+ 
+ void NetplaySessionBrowserDialog::on_webSocket_textMessageReceived(QString message)
+ {
+     QJsonDocument jsonDocument = QJsonDocument::fromJson(message.toUtf8());
+     QJsonObject json = jsonDocument.object();
+ 
+     QString type = json.value("type").toString();
+ 
+     if (type == "reply_get_rooms")
+     {
+         if (json.value("accept").toInt() == 0)
+         {
+             QJsonArray  sessions = json.value("rooms").toArray();
+             QJsonObject session;
+             for (int i = 0; i < sessions.size(); i++)
+             {
+                 session = sessions.at(i).toObject();
+ 
+                 this->sessionBrowserWidget->AddSessionData(session.value("features").toObject().value("host_name").toString(),
+                                                             session.value("game_name").toString(), 
+                                                             session.value("MD5").toString(), 
+                                                             session.value("protected").toBool(),
+                                                             session.value("port").toInt(),
+                                                             session.value("features").toObject().value("cpu_emulator").toString(),
+                                                             session.value("features").toObject().value("rsp_plugin").toString(),
+                                                             session.value("features").toObject().value("gfx_plugin").toString());
+             }
+ 
+             // we're done refreshing the sessions
+             this->sessionBrowserWidget->RefreshDone();
+         }
+         else
+         {
+             this->sessionBrowserWidget->Reset();
+             QtMessageBox::Error(this, "Server Error", json.value("message").toString());
+         }
+     }
+     else if (type == "reply_join_room")
+     {
+         if (json.value("accept").toInt() == 0)
+         {
+             this->sessionJson = json;
+             QDialog::accept();
+         }
+         else
+         {
+             QtMessageBox::Error(this, "Server Error", json.value("message").toString());
+             this->validateJoinButton();
+         }
+     }
+ }
+ 
+ void NetplaySessionBrowserDialog::on_webSocket_pong(quint64 elapsedTime, const QByteArray&)
+ {
+     this->pingLineEdit->setText(QString::number(elapsedTime) + " ms");
+ }
+ 
+ void NetplaySessionBrowserDialog::on_webSocket_disconnected()
+ {
+     this->sessionBrowserWidget->Reset();
+ }
+ 
+ void NetplaySessionBrowserDialog::on_broadcastSocket_readyRead(void)
+ {
+     while (this->broadcastSocket.hasPendingDatagrams())
+     {
+         QNetworkDatagram datagram = this->broadcastSocket.receiveDatagram();
+         QByteArray incomingData = datagram.data();
+         QJsonDocument json_doc  = QJsonDocument::fromJson(incomingData);
+         QJsonObject json        = json_doc.object();
+         QStringList servers     = json.keys();
+ 
+         for (int i = 0; i < servers.size(); i++)
+         {
+             this->serverComboBox->addItem(servers.at(i), json.value(servers.at(i)).toString());
+         }
+     }
+ 
+     NetplayCommon::RestoreSelectedServer(this->serverComboBox);
+ }
+ 
+ void NetplaySessionBrowserDialog::on_networkAccessManager_Finished(QNetworkReply* reply)
+ {
+     if (reply->error())
+     {
+         this->sessionBrowserWidget->Reset();
+         QtMessageBox::Error(this, "Server Error", "Failed to retrieve server list json: " + reply->errorString());
+         reply->deleteLater();
+         return;
+     }
+ 
+     QJsonDocument jsonDocument = QJsonDocument::fromJson(reply->readAll());
+     QJsonObject jsonObject     = jsonDocument.object();
+     QStringList jsonServers    = jsonObject.keys();
+ 
+     for (int i = 0; i < jsonServers.size(); i++)
+     {
+         this->serverComboBox->addItem(jsonServers.at(i), jsonObject.value(jsonServers.at(i)).toString());
+     }
+ 
+     reply->deleteLater();
+ 
+     NetplayCommon::RestoreSelectedServer(this->serverComboBox);
+ }
+ 
+ void NetplaySessionBrowserDialog::on_serverComboBox_currentIndexChanged(int index)
+ {
+     QPushButton* refreshButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults);
+     refreshButton->setEnabled(index != -1);
+ 
+     if (index == -1)
+     {
+         return;
+     }
+ 
+     this->pingLineEdit->setText("Calculating...");
+ 
+     this->sessionBrowserWidget->StartRefresh();
+ 
+     QString address = this->serverComboBox->itemData(index).toString();
+     this->webSocket->open(QUrl(address));
+ }
+ 
+ void NetplaySessionBrowserDialog::on_sessionBrowserWidget_OnSessionChanged(bool valid)
+ {
+     this->validateJoinButton();
+ }
+ 
+ void NetplaySessionBrowserDialog::on_sessionBrowserWidget_OnRefreshDone(void)
+ {
+     QPushButton* refreshButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults);
+     refreshButton->setEnabled(true);
+     this->validateJoinButton();
+ }
+ 
+ void NetplaySessionBrowserDialog::on_nickNameLineEdit_textChanged()
+ {
+     this->validateJoinButton();
+ }
+ 
+ void NetplaySessionBrowserDialog::on_buttonBox_clicked(QAbstractButton* button)
+ {
+     // refresh session list when refresh button has been pressed
+     if (button == this->buttonBox->button(QDialogButtonBox::RestoreDefaults))
+     {
+         this->on_webSocket_connected();
+     }
+ }
+ 
+ void NetplaySessionBrowserDialog::accept()
+ {
+     if (!this->webSocket->isValid())
+     {
+         QtMessageBox::Error(this, "Server Error", "Connection Failed");
+         return;
+     }
+ 
+     // retrieve session data
+     NetplaySessionData sessionData;
+     if (!this->sessionBrowserWidget->GetCurrentSession(sessionData))
+     {
+         return;
+     }
+ 
+     // disable join button while we're processing the request
+     QPushButton* joinButton = this->buttonBox->button(QDialogButtonBox::Ok);
+     joinButton->setEnabled(false);
+ 
+     // ensure features match to what we currently have
+     QList<QString> pluginNames = NetplayCommon::GetPluginNames(sessionData.MD5);
+     QString details;
+     if (sessionData.RspPlugin != pluginNames[0])
+     {
+         details  = "Expected RSP Plugin: " + sessionData.RspPlugin + "\n";
+         details += "Current  RSP Plugin: " + pluginNames[0];
+         QtMessageBox::Error(this, "RSP Plugin Mismatch", details);
+         joinButton->setEnabled(true);
+         return;
+     }
+     if (sessionData.GfxPlugin != pluginNames[1])
+     {
+         details  = "Expected GFX Plugin: " + sessionData.GfxPlugin + "\n";
+         details += "Current  GFX Plugin: " + pluginNames[1];
+         QtMessageBox::Error(this, "GFX Plugin Mismatch", details);
+         joinButton->setEnabled(true);
+         return;
+     }
+ 
+ 
+     // attempt to find ROM from the ROM browser data
+     std::string md5 = sessionData.MD5.toStdString();
+     for (auto it = this->romData.begin(); it != this->romData.end(); it++)
+     {
+         if (it.value().MD5 == md5)
+         {
+             this->sessionFile = it.key();
+             break;
+         }
+     }
+ 
+     // show ROM dialog when we haven't found the ROM
+     if (this->sessionFile.isEmpty())
+     {
+         this->sessionFile = this->showROMDialog(sessionData.GameName, sessionData.MD5);
+         if (this->sessionFile.isEmpty())
+         {
+             joinButton->setEnabled(true);
+             return;
+         }
+     }
+ 
+     QJsonObject json;
+     QJsonObject session;
+     session.insert("port", sessionData.Port);
+     session.insert("password", "MPN");
+     session.insert("MD5", QString::fromStdString(md5));
+ 
+     json.insert("type", "request_join_room");
+     json.insert("player_name", this->nickNameLineEdit->text());
+     json.insert("room", session);
+     NetplayCommon::AddCommonJson(json);
+ 
+     this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
+ }
