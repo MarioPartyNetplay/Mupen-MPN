@@ -1980,12 +1980,6 @@
      }
  #endif // NETPLAY
  }
- 
- 
- void MainWindow::on_Action_Help_Github(void)
- {
-     QDesktopServices::openUrl(QUrl("https://github.com/Rosalie241/RMG"));
- }
 
  void MainWindow::on_Action_Help_Github(void)
  {
