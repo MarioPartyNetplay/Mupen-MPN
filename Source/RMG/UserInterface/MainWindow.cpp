@@ -1995,7 +1995,7 @@
 
  void MainWindow::on_Action_Help_Boards(void)
  {
-     QProcess::startDetached("Plugins/Hooks/BoardDownloaderMPN.exe");opServices::openUrl(QUrl("https://discord.gg/marioparty"));
+     QProcess::startDetached("Plugins/Hooks/BoardDownloaderMPN.exe");
  }
  
  void MainWindow::on_Action_Help_About(void)
