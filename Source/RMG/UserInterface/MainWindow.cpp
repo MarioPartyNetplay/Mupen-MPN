@@ -1191,7 +1191,7 @@
      connect(this->action_Help_About, &QAction::triggered, this, &MainWindow::on_Action_Help_About);
      connect(this->action_Help_Update, &QAction::triggered, this, &MainWindow::on_Action_Help_Update);
      connect(this->action_Help_Boards, &QAction::triggered, this, &MainWindow::on_Action_Help_Boards);
-
+     connect(this->action_Help_Discord, &QAction::triggered, this, &MainWindow::on_Action_Help_Discord);
      connect(this->action_Audio_IncreaseVolume, &QAction::triggered, this, &MainWindow::on_Action_Audio_IncreaseVolume);
      connect(this->action_Audio_DecreaseVolume, &QAction::triggered, this, &MainWindow::on_Action_Audio_DecreaseVolume);
      connect(this->action_Audio_ToggleVolumeMute, &QAction::triggered, this, &MainWindow::on_Action_Audio_ToggleVolumeMute);
