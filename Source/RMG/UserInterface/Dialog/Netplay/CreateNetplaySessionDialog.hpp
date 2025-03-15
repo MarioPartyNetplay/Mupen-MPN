@@ -47,7 +47,6 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
     QString sessionFile;
 
     QString getGameName(QString goodName, QString file);
-    QString FormatCheatCode(const CoreCheat& cheat, const CoreCheatCode& code);
     QString generateRandomHexChar();
     
     bool validate(void);

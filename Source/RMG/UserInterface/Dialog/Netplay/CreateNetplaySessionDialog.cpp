@@ -284,14 +284,12 @@ void CreateNetplaySessionDialog::accept()
 
     this->sessionFile = romData.File;
 
+    QList<QString> plugins = NetplayCommon::GetPluginNames(romData.MD5);
+    
     QJsonObject jsonFeatures;
     jsonFeatures.insert("rsp_plugin", plugins[0]);
     jsonFeatures.insert("gfx_plugin", plugins[1]);
     jsonFeatures.insert("host_name", this->nickNameLineEdit->text());
-
-    QJsonObject jsonFeatures;
-    jsonFeatures.insert("rsp_plugin", plugins[0]);
-    jsonFeatures.insert("gfx_plugin", plugins[1]);
 
     QJsonObject json;
     QJsonObject session;
@@ -306,5 +304,4 @@ void CreateNetplaySessionDialog::accept()
     NetplayCommon::AddCommonJson(json);
 
     this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
-    }
 }

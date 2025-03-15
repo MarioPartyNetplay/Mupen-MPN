@@ -190,7 +190,7 @@
     <addaction name="separator"/>
     <addaction name="action_System_StartRom3"/>
     <addaction name="action_Netplay_CreateSession"/>
-    <addaction name="action_Netplay_JoinSession"/>
+    <addaction name="action_Netplay_BrowseSessions"/>
     <addaction name="separator"/>
     <addaction name="action_View_Fullscreen2"/>
     <addaction name="action_System_Screenshot2"/>
@@ -717,7 +717,7 @@
      <string>&amp;Host</string>
     </property>
    </action>
-   <action name="action_Netplay_JoinSession">
+   <action name="action_Netplay_BrowseSessions">
     <property name="icon">
      <iconset theme="online-play-mpn"/>
     </property>

@@ -28,6 +28,7 @@
 // minizip includes
 #include <unzip.h>
 #include <zlib.h>
+#include <limits.h>
 
 //
 // Local Defines
