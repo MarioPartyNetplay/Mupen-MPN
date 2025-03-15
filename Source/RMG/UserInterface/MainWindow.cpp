@@ -53,7 +53,7 @@
  #include <QTimer>
  #include <cmath>
  #include <QUrl>
- 
+ #include <QProcess>
  #include <RMG-Core/CachedRomHeaderAndSettings.hpp>
  #include <RMG-Core/SpeedLimiter.hpp>
  #include <RMG-Core/Directories.hpp>
@@ -1040,7 +1040,8 @@
          this->action_View_Fullscreen, this->action_View_RefreshRoms,
          this->action_View_Log,
          // Help actions
-         this->action_Help_Github, this->action_Help_About,
+         this->action_Help_Github, this->action_Help_About, this->action_Help_Github,
+         this->action_Help_Boards
      });
  
      // configure save slot actions
@@ -1189,7 +1190,8 @@
      connect(this->action_Help_Github, &QAction::triggered, this, &MainWindow::on_Action_Help_Github);
      connect(this->action_Help_About, &QAction::triggered, this, &MainWindow::on_Action_Help_About);
      connect(this->action_Help_Update, &QAction::triggered, this, &MainWindow::on_Action_Help_Update);
- 
+     connect(this->action_Help_Boards, &QAction::triggered, this, &MainWindow::on_Action_Help_Boards);
+
      connect(this->action_Audio_IncreaseVolume, &QAction::triggered, this, &MainWindow::on_Action_Audio_IncreaseVolume);
      connect(this->action_Audio_DecreaseVolume, &QAction::triggered, this, &MainWindow::on_Action_Audio_DecreaseVolume);
      connect(this->action_Audio_ToggleVolumeMute, &QAction::triggered, this, &MainWindow::on_Action_Audio_ToggleVolumeMute);
@@ -1989,6 +1991,11 @@
  void MainWindow::on_Action_Help_Discord(void)
  {
      QDesktopServices::openUrl(QUrl("https://discord.gg/marioparty"));
+ }
+
+ void MainWindow::on_Action_Help_Boards(void)
+ {
+     QProcess::startDetached("Plugins/Hooks/BoardDownloaderMPN.exe");opServices::openUrl(QUrl("https://discord.gg/marioparty"));
  }
  
  void MainWindow::on_Action_Help_About(void)

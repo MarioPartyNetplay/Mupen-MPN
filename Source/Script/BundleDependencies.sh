@@ -44,7 +44,9 @@ cp "$path/libssl-3-x64.dll"    "$bin_dir/"
 cp "$path/libjpeg-8.dll"       "$bin_dir/"
 
 touch $bin_dir/portable.txt
+cp -r "../../Data/Cheats" "$bin_dir/"
 cp -r "../../Data/Games" "$bin_dir/"
+cp -r "../../Data/BoardDownloaderMPN.exe" "$bin_dir/Plugin/Boards/"
 
 # remove *.a files
 find "$bin_dir/" -name '*.a' -delete
