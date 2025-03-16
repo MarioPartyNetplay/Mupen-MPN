@@ -556,7 +556,7 @@
     <property name="text">
      <string>&amp;Board Downloader</string>
     </property>
-   </board>
+   </action>
    <action name="action_Help_About">
     <property name="icon">
      <iconset theme="information-line"/>
