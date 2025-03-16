@@ -216,6 +216,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 
     void on_Action_Help_Github(void);
     void on_Action_Help_Discord(void);
+    vodi on_Action_Help_Boards(void);
     void on_Action_Help_About(void);
     void on_Action_Help_Update(void);
 
