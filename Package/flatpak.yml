@@ -79,11 +79,4 @@ modules:
       - -DUSE_ANGRYLION=ON
     sources:
       - type: git
-        url: https://github.com/Rosalie241/RMG.git
-        tag: v0.7.7
-        commit: ad3973998ff737f1fb9f688dca9c377755f6d134
-        x-checker-data:
-          is-main-source: true
-          type: git
-          tag-pattern: ^(v[\d.]+)$
-      - cargo-sources.json
+        url: https://github.com/MarioPartyNetplay/Mupen-MPN.git
