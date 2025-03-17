@@ -71,6 +71,11 @@ modules:
 
   - name: RMG-MPN
     buildsystem: cmake-ninja
+    post-install:
+      - desktop-file-edit --set-key=Exec --set-value='/app/bin/Mupen-MPN'
+        /app/share/applications/mupen-mpn.desktop
+      - desktop-file-edit --set-key=Name --set-value='Mupen MPN'
+        /app/share/applications/mupen-mpn.desktop
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
       - -DPORTABLE_INSTALL=OFF
