@@ -1541,8 +1541,9 @@ void MainWindow::on_networkAccessManager_Finished(QNetworkReply* reply)
     {
         return;
     }
-#endif
 }
+#endif
+
 
 void MainWindow::on_Action_System_OpenRom(void)
 {
