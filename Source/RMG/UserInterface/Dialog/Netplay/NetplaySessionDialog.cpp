@@ -105,8 +105,7 @@ NetplaySessionDialog::~NetplaySessionDialog(void)
 void NetplaySessionDialog::onBufferSizeChanged(int value)
 {
     QString message = QString("<b>Buffer</b>: Changed the buffer to %1").arg(value);
-    this->chatPlainTextEdit->appendHtml(message);
-        
+    this->chatPlainTextEdit->append(message);
     // Send the updated buffer size to the server
     QJsonObject json;
     json.insert("type", "update_buffer_size");
@@ -215,7 +214,7 @@ void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
     }
     else if (type == "reply_chat_message")
     {
-        this->chatPlainTextEdit->appendHtml(json.value("message").toString());
+        this->chatPlainTextEdit->append(json.value("message").toString());
     }
     else if (type == "reply_begin_game")
     {
@@ -238,8 +237,9 @@ void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
     }
     else if (type == "reply_motd")
     {
-        QString message = "<b>Notice 1: </b>Servers are funded by Tabitha! Use this <a href='https://ko-fi.com/tabithahanegan'>link</a> to help fund the process.</div>";
-        this->chatPlainTextEdit->appendHtml(message);
+        QString message = "<b>Notice: </b>Servers are funded by BisectHosting! Use this <a href='https://www.bisecthosting.com/endangerednayla'>link</a> for 25% of your own VPS or Game Server.</div>";
+        this->chatPlainTextEdit->append(message);
+        this->chatPlainTextEdit->setOpenExternalLinks(true);
         this->chatPlainTextEdit->setTextInteractionFlags(Qt::TextBrowserInteraction);
     }
     else if (type == "reply_edit_room")
