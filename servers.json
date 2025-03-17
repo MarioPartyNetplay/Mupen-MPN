@@ -2,5 +2,6 @@
 	"Buffalo (New York)": "ws://50.20.251.212:26980",
 	"Dallas (Texas)": "ws://216.225.150.202:27140",
 	"Seattle (Washington)": "ws://74.217.200.24:27015",
-	"Amsterdam (Netherlands)": "ws://192.135.116.52:26945"
+	"Amsterdam (Netherlands)": "ws://192.135.116.52:26945",
+	"São Paulo (Brazil)": "ws://162.33.25.96:26915"
 }
