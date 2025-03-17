@@ -20,6 +20,7 @@
 #include "UserInterface/Dialog/Update/DownloadUpdateDialog.hpp"
 #include "UserInterface/Dialog/Update/InstallUpdateDialog.hpp"
 #include "UserInterface/Dialog/Update/UpdateDialog.hpp"
+#include "UserInterface/Dialog/Update/HttpRequest.hpp"
 #endif // UPDATER
 #ifdef NETPLAY
 #include "Dialog/Netplay/NetplaySessionBrowserDialog.hpp"
