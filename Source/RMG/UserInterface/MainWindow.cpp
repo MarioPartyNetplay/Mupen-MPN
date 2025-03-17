@@ -1220,12 +1220,7 @@ void MainWindow::checkForUpdates(bool silent, bool force)
     }
 
     // only check for updates on the stable versions unless forced
-    QString currentVersion = QString::fromStdString(CoreGetVersion());
-    if (!force && currentVersion.size() != 6)
-    {
-        return;
-    }
-
+    QString currentVersion = QString::fromStdString(VERSION_HASH);
     QString dateTimeFormat = "dd-MM-yyyy_hh:mm";
     QString lastUpdateCheckDateTimeString = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::GUI_LastUpdateCheck));
     QDateTime lastUpdateCheckDateTime = QDateTime::fromString(lastUpdateCheckDateTimeString, dateTimeFormat);
@@ -1509,7 +1504,7 @@ void MainWindow::on_networkAccessManager_Finished(QNetworkReply* reply)
     }
 
     QJsonObject jsonObject = jsonDoc.object();
-    QString currentVersion = QString::fromStdString(CoreGetVersion());
+    QString currentVersion = QString::fromStdString(VERSION_HASH);
     QString latestVersion = jsonObject.value("tag_name").toString();
 
     if (currentVersion == latestVersion)
