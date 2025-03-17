@@ -6,7 +6,7 @@ add-build-extensions:
   org.freedesktop.Sdk.Extension.rust-stable:
     version: '24.08'
     remove-after-build: true
-command: RMG
+command: Mupen-MPN
 finish-args:
   - --socket=x11
   - --socket=pulseaudio
