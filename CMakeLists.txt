@@ -4,7 +4,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 option(PORTABLE_INSTALL "Portable Installation" ON)
-option(UPDATER          "Enables updater" ${WIN32})
+option(UPDATER          "Enables updater" ON)
 option(APPIMAGE_UPDATER "Enables AppImage updater" OFF)
 option(DISCORD_RPC      "Enables Discord Rich Presence" ON)
 option(DRAG_DROP        "Enables drag and drop" ON)
@@ -13,7 +13,7 @@ option(VRU              "Enables VRU support in RMG-Input" OFF)
 option(USE_CCACHE       "Enables usage of ccache when ccache has been found" ON)
 option(USE_LTO          "Enables building with LTO/IPO when compiler supports it" ON)
 option(NO_ASM           "Disables the usage of assembly in the mupen64plus-core" OFF)
-option(NO_RUST          "Disables the building of rust subprojects" ${UNIX})
+option(NO_RUST          "Disables the building of rust subprojects" OFF)
 option(USE_LIBFMT       "Enables usage of libfmt instead of detecting whether std::format is supported" OFF)
 option(USE_ANGRYLION    "Enables building angrylion-rdp-plus which uses a non-GPL compliant license" OFF)
 
