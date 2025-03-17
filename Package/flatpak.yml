@@ -69,7 +69,7 @@ modules:
               stable-only: true
               url-template: https://github.com/libusb/libusb/archive/refs/tags/v$version.tar.gz
 
-  - name: RMG
+  - name: RMG-MPN
     buildsystem: cmake-ninja
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
