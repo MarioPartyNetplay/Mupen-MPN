@@ -2022,7 +2022,7 @@ void MainWindow::on_Action_Help_Github(void)
 
 void MainWindow::on_Action_Help_Boards(void)
 {
-    QProcess::startDetached("Plugins/Hooks/BoardDownloaderMPN.exe");
+    QProcess::startDetached("Plugin/Hooks/BoardDownloaderMPN.exe");
 }
 
 void MainWindow::on_Action_Help_Discord(void)
