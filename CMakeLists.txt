@@ -205,7 +205,7 @@ install(FILES ${MUPEN64PLUS_PLUGIN_GFX_GLIDEN64}
 )
 
 if (INSTALL_DESKTOP_FILE)
-    install(FILES Package/com.github.Rosalie241.RMG.desktop
+    install(FILES Package/com.github.Rosalie241.RMG-MPN.desktop
         DESTINATION ${DESKTOP_INSTALL_PATH}
     )
     install(FILES Package/com.github.Rosalie241.RMG.svg
