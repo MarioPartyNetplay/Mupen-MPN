@@ -20,7 +20,6 @@
 #include "UserInterface/Dialog/Update/DownloadUpdateDialog.hpp"
 #include "UserInterface/Dialog/Update/InstallUpdateDialog.hpp"
 #include "UserInterface/Dialog/Update/UpdateDialog.hpp"
-#include "UserInterface/Dialog/Update/HttpRequest.hpp"
 #endif // UPDATER
 #ifdef NETPLAY
 #include "Dialog/Netplay/NetplaySessionBrowserDialog.hpp"
@@ -1250,7 +1249,7 @@ void MainWindow::checkForUpdates(bool silent, bool force)
     QNetworkAccessManager* networkAccessManager = new QNetworkAccessManager(this);
     connect(networkAccessManager, &QNetworkAccessManager::finished, this, &MainWindow::on_networkAccessManager_Finished);
     networkAccessManager->setTransferTimeout(15000);
-    networkAccessManager->get(QNetworkRequest(QUrl("https://api.github.com/repos/MarioPartyNetplay/RMG-MPN/releases/latest")));
+    networkAccessManager->get(QNetworkRequest(QUrl("https://api.github.com/repos/MarioPartyNetplay/Mupen-MPN/releases/latest")));
 }
 #endif // UPDATER
 
@@ -1483,39 +1482,67 @@ void MainWindow::on_QGuiApplication_applicationStateChanged(Qt::ApplicationState
 #ifdef UPDATER
 void MainWindow::on_networkAccessManager_Finished(QNetworkReply* reply)
 {
-    Common::HttpRequest httpRequest;
-
-    // Make the GET request
-    auto response = httpRequest.Get("https://api.github.com/repos/MarioPartyNetplay/Mupen-MPN/releases/latest");
-
-    if (response)
+    if (!reply)
     {
-        // Access the underlying vector and convert it to QByteArray
-        QByteArray responseData(reinterpret_cast<const char*>(response->data()), response->size());
+        QMessageBox::critical(this, tr("Error"), tr("Invalid network reply."));
+        return;
+    }
 
-        // Parse the JSON response
-        QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
-        QJsonObject jsonObject = jsonDoc.object();
-      
-        QString currentVersion = QString::fromStdString(Common::GetScmRevStr());
-        QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
-
-        if (currentVersion != latestVersion)
+    if (reply->error())
+    {
+        if (!this->ui_SilentUpdateCheck)
         {
-          // Create and show the UpdateDialog with the fetched data
-          bool forced = false; // Set this based on your logic
-          UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
-          SetQWidgetWindowDecorations(&updater);
-          updater.exec();
+            this->showErrorMessage("Failed to check for updates", reply->errorString());
         }
+        reply->deleteLater();
+        return;
     }
-    else
+
+    QByteArray responseData = reply->readAll();
+    reply->deleteLater();
+
+    QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+    if (jsonDoc.isNull() || !jsonDoc.isObject())
     {
-        // Handle error
-        QMessageBox::critical(this, tr("Error"), tr("Failed to fetch update information."));
+        QMessageBox::critical(this, tr("Error"), tr("Invalid JSON response."));
+        return;
     }
+
+    QJsonObject jsonObject = jsonDoc.object();
+    QString currentVersion = QString::fromStdString(CoreGetVersion());
+    QString latestVersion = jsonObject.value("tag_name").toString();
+
+    if (currentVersion == latestVersion)
+    {
+        if (!this->ui_SilentUpdateCheck)
+        {
+            Utilities::QtMessageBox::Info(this, "You're already on the latest version");
+        }
+        return;
+    }
+
+    // Prompt user with update dialog
+    UserInterface::Dialog::UpdateDialog updateDialog(this, jsonObject, !this->ui_SilentUpdateCheck);
+    if (updateDialog.exec() != QDialog::Accepted)
+    {
+        return;
+    }
+
+    // Start the update download process
+    DownloadUpdateDialog downloadUpdateDialog(this, updateDialog.GetUrl(), updateDialog.GetFileName());
+    if (downloadUpdateDialog.exec() != QDialog::Accepted)
+    {
+        return;
+    }
+
+    // Proceed to installation
+    InstallUpdateDialog installUpdateDialog(this, QCoreApplication::applicationDirPath(), downloadUpdateDialog.GetTempDirectory(), downloadUpdateDialog.GetFileName());
+    if (installUpdateDialog.exec() != QDialog::Accepted)
+    {
+        return;
+    }
+#endif
 }
-#endif // UPDATER
 
 void MainWindow::on_Action_System_OpenRom(void)
 {

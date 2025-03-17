@@ -145,10 +145,10 @@
     <addaction name="action_Help_Github"/>
     <addaction name="action_Help_Discord"/>
     <addaction name="separator"/>
-    <addaction name="action_Help_Update"/>
     <addaction name="separator"/>
     <addaction name="action_Help_Boards"/>
     <addaction name="separator"/>
+    <addaction name="action_Help_Update"/>
     <addaction name="action_Help_About"/>
    </widget>
    <addaction name="menuSystem"/>

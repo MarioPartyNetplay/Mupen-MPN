@@ -8,6 +8,9 @@
 #include <QDialog>
 #include <QString>
 #include <QProgressBar>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QFile>
 
 class DownloadUpdateDialog : public QDialog
 {
@@ -16,15 +19,18 @@ class DownloadUpdateDialog : public QDialog
 public:
     explicit DownloadUpdateDialog(QWidget* parent, const QString& url, const QString& filename);
     ~DownloadUpdateDialog();
-
+    QString GetTempDirectory() const { return temporaryDirectory; }
+    QString GetFileName() const { return filename; }
 public slots:
-    void updateProgress(qint64 size, qint64 total);
-    void handleError(const QString& errorMsg); // Ensure this is declared
+    void updateProgress(qint64 bytesReceived, qint64 bytesTotal);
+    void handleError(QNetworkReply::NetworkError error);
     void onDownloadFinished();
 
 private:
-    QString filename; // Ensure this is declared as a private member
+    QString filename;
     QProgressBar* progressBar;
     QString installationDirectory;
     QString temporaryDirectory;
+    QNetworkAccessManager* networkAccessManager;
+    QFile file;
 };

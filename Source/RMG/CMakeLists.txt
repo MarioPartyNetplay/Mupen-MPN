@@ -83,8 +83,6 @@ if (UPDATER)
         UserInterface/Dialog/Update/UpdateDialog.cpp
         UserInterface/Dialog/Update/DownloadUpdateDialog.cpp
         UserInterface/Dialog/Update/InstallUpdateDialog.cpp
-        UserInterface/Dialog/Update/HttpRequest.cpp
-        UserInterface/Dialog/Update/DownloadWorker.cpp
     )
 endif(UPDATER)
 

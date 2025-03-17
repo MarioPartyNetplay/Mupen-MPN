@@ -38,6 +38,8 @@ private:
 public:
     explicit UpdateDialog(QWidget *parent, QJsonObject jsonObject, bool forced);
     ~UpdateDialog();
+    QString GetUrl() const { return url; }
+    QString GetFileName() const { return filename; }
     
 private slots:
     void accept(void) Q_DECL_OVERRIDE;

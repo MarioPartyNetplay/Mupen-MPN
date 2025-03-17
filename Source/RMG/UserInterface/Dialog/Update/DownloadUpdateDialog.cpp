@@ -1,10 +1,7 @@
-/*
-*  Dolphin for Mario Party Netplay
-*  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
-*/
-
 #include "DownloadUpdateDialog.hpp"
 #include "InstallUpdateDialog.hpp"
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
 #include <QMessageBox>
 #include <QFile>
 #include <QVBoxLayout>
@@ -13,89 +10,80 @@
 #include <QString>
 #include <QLabel>
 #include <QThread>
-#include "DownloadWorker.hpp"
 
-// Constructor implementation
 DownloadUpdateDialog::DownloadUpdateDialog(QWidget* parent, const QString& url, const QString& filename)
-    : QDialog(parent), filename(filename)
+    : QDialog(parent), filename(filename), networkAccessManager(new QNetworkAccessManager(this))
 {
-    // Create UI components
     setWindowTitle(QStringLiteral("Downloading %1").arg(this->filename));
     QVBoxLayout* layout = new QVBoxLayout(this);
     
-    // Create and add label
     QLabel* label = new QLabel(QStringLiteral("Downloading %1...").arg(this->filename), this);
     layout->addWidget(label);
     
-    // Create and add progress bar
     progressBar = new QProgressBar(this);
     layout->addWidget(progressBar);
     
-    // Set the layout for the dialog
     setLayout(layout);
+    setMinimumSize(300, 100);
     
-    // Set a minimum size for the dialog
-    setMinimumSize(300, 100); // Adjust size as needed
-
-    // Create the worker and thread
     temporaryDirectory = QDir::tempPath();
-    DownloadWorker* worker = new DownloadWorker(url, (temporaryDirectory + QDir::separator() + filename));
-    QThread* thread = new QThread;
-
-    // Move the worker to the thread
-    worker->moveToThread(thread);
-
-    // Connect signals and slots
-    connect(thread, &QThread::started, worker, &DownloadWorker::startDownload, Qt::UniqueConnection);
-    connect(worker, &DownloadWorker::progressUpdated, this, &DownloadUpdateDialog::updateProgress, Qt::UniqueConnection);
-    connect(worker, &DownloadWorker::finished, thread, &QThread::quit, Qt::UniqueConnection);
-    connect(worker, &DownloadWorker::finished, worker, &DownloadWorker::deleteLater, Qt::UniqueConnection);
-    connect(worker, &DownloadWorker::finished, this, &DownloadUpdateDialog::onDownloadFinished, Qt::UniqueConnection);
-    connect(worker, &DownloadWorker::finished, this, &DownloadUpdateDialog::accept, Qt::UniqueConnection);
-    connect(worker, &DownloadWorker::errorOccurred, this, &DownloadUpdateDialog::handleError, Qt::UniqueConnection);
-    connect(thread, &QThread::finished, thread, &QThread::deleteLater, Qt::UniqueConnection);
-
-    // Start the thread
-    thread->start();
-
-    this->exec(); // Show the dialog
+    file.setFileName(temporaryDirectory + QDir::separator() + filename);
+    
+    QNetworkRequest request(url);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    
+    QNetworkReply* reply = networkAccessManager->get(request);
+    
+    connect(reply, &QNetworkReply::downloadProgress, this, &DownloadUpdateDialog::updateProgress);
+    connect(reply, &QNetworkReply::finished, this, &DownloadUpdateDialog::onDownloadFinished);
+    connect(reply, &QNetworkReply::errorOccurred, this, &DownloadUpdateDialog::handleError);
 }
 
-// Destructor implementation
 DownloadUpdateDialog::~DownloadUpdateDialog()
 {
 }
 
-// Handle errors
-void DownloadUpdateDialog::handleError(const QString& errorMsg)
+void DownloadUpdateDialog::handleError(QNetworkReply::NetworkError error)
 {
-    QMessageBox::critical(this, tr("Error"), errorMsg);
+    QNetworkReply* reply = qobject_cast<QNetworkReply*>(sender());
+    if (reply) {
+        QMessageBox::critical(this, tr("Error"), tr("Download failed: %1").arg(reply->errorString()));
+        reply->deleteLater();
+    }
     reject();
 }
 
 void DownloadUpdateDialog::onDownloadFinished()
 {
-    // Use QCoreApplication to get the application's directory path
-    #ifdef _WIN32
-    installationDirectory = QCoreApplication::applicationDirPath(); // Set the installation directory
-    #endif
-    #ifdef __APPLE__
-    installationDirectory = QCoreApplication::applicationDirPath() + QStringLiteral("/../../../");
-    #endif
+    QNetworkReply* reply = qobject_cast<QNetworkReply*>(sender());
+    if (!reply) return;
 
-    // Use QStandardPaths to get the system's temporary directory
-    temporaryDirectory = QDir::tempPath();
+    if (reply->error() == QNetworkReply::NoError) {
+        if (file.open(QIODevice::WriteOnly)) {
+            file.write(reply->readAll());
+            file.close();
+        }
+        
+        #ifdef _WIN32
+        installationDirectory = QCoreApplication::applicationDirPath();
+        #endif
+        #ifdef __APPLE__
+        installationDirectory = QCoreApplication::applicationDirPath() + QStringLiteral("/../../../");
+        #endif
+        
+        temporaryDirectory = QDir::tempPath();
+        InstallUpdateDialog* installDialog = new InstallUpdateDialog(this, installationDirectory, temporaryDirectory, this->filename);
+        installDialog->exec();
+        accept();
+    }
 
-    InstallUpdateDialog* installDialog =
-        new InstallUpdateDialog(this, installationDirectory, temporaryDirectory, this->filename);
-    installDialog->exec(); // Show the installation dialog modally
-
-    accept();
+    reply->deleteLater();
 }
 
-void DownloadUpdateDialog::updateProgress(qint64 size, qint64 total)
+void DownloadUpdateDialog::updateProgress(qint64 bytesReceived, qint64 bytesTotal)
 {
-    progressBar->setMaximum(total);
-    progressBar->setMinimum(0);
-    progressBar->setValue(size);
+    if (bytesTotal > 0) {
+        progressBar->setMaximum(bytesTotal);
+        progressBar->setValue(bytesReceived);
+    }
 }

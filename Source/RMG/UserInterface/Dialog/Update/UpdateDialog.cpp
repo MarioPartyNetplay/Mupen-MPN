@@ -10,6 +10,7 @@
 #include <QPushButton>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QMessageBox>
 #include <QDesktopServices>
 #include <QTemporaryDir>
 #include <QFile>
@@ -100,6 +101,12 @@ void UpdateDialog::accept()
             break;
         }
         #endif
+    }
+
+    if (urlToDownload.isEmpty() || !urlToDownload.startsWith("http"))
+    {
+        QMessageBox::critical(this, tr("Error"), tr("No valid download URL found."));
+        return;
     }
 
     this->url = urlToDownload;
