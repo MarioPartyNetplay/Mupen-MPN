@@ -13,7 +13,7 @@ finish-args:
   - --share=ipc
   - --share=network
   - --device=all
-  - --filesystem=xdg-pictures/RMG:rw
+  - --filesystem=host:ro
 cleanup:
   - /lib/pkgconfig
   - /lib/*.la
