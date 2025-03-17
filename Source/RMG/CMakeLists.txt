@@ -81,11 +81,10 @@ set(RMG_SOURCES
 if (UPDATER)
     list(APPEND RMG_SOURCES
         UserInterface/Dialog/Update/UpdateDialog.cpp
-        UserInterface/Dialog/Update/UpdateDialog.ui
         UserInterface/Dialog/Update/DownloadUpdateDialog.cpp
-        UserInterface/Dialog/Update/DownloadUpdateDialog.ui
         UserInterface/Dialog/Update/InstallUpdateDialog.cpp
-        UserInterface/Dialog/Update/InstallUpdateDialog.ui
+        UserInterface/Dialog/Update/HttpRequest.cpp
+        UserInterface/Dialog/Update/DownloadWorker.cpp
     )
 endif(UPDATER)
 

@@ -1,130 +1,110 @@
 /*
- * Rosalie's Mupen GUI - https://github.com/Rosalie241/RMG
- *  Copyright (C) 2020 Rosalie Wanders <rosalie@mailbox.org>
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 3.
- *  You should have received a copy of the GNU General Public License
- *  along with this program. If not, see <https://www.gnu.org/licenses/>.
- */
+*  Dolphin for Mario Party Netplay
+*  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
+*/
+
 #include "UpdateDialog.hpp"
 #include "DownloadUpdateDialog.hpp"
-#include "Utilities/QtMessageBox.hpp"
 
-#include <QNetworkAccessManager>
-#include <QDesktopServices>
-#include <QNetworkReply>
-#include <QTemporaryDir>
+#include <QFileInfo>
 #include <QPushButton>
 #include <QJsonArray>
-#include <QFileInfo>
-#include <QProcess>
+#include <QJsonObject>
+#include <QDesktopServices>
+#include <QTemporaryDir>
 #include <QFile>
-
-#include <RMG-Core/Settings.hpp>
+#include <QSysInfo>
+#include <QProcess>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QWidget>
+#include <QLabel>
+#include <QTextEdit>
+#include <QDialogButtonBox>
 
 using namespace UserInterface::Dialog;
-using namespace Utilities;
 
-UpdateDialog::UpdateDialog(QWidget *parent, QJsonObject jsonObject, bool forced) : QDialog(parent)
+UpdateDialog::UpdateDialog(QWidget *parent, QJsonObject jsonObject, bool forced) 
+    : QDialog(parent)
 {
-    this->setupUi(this);
-
     this->jsonObject = jsonObject;
 
-    this->label->setText(jsonObject.value("tag_name").toString() + " Available");
-    this->textEdit->setText(jsonObject.value("body").toString());
+    // Create UI components
+    QVBoxLayout* mainLayout = new QVBoxLayout(this);
+    
+    // Create and set up the label
+    label = new QLabel(this);
+    QString tagName = jsonObject.value(QStringLiteral("tag_name")).toString();
+    label->setText(QStringLiteral("%1 Available").arg(tagName));
+    mainLayout->addWidget(label);
 
-    // change ok button text to 'Update'
-    QPushButton* button = this->buttonBox->button(QDialogButtonBox::Ok);
-    button->setText("Update");
+    // Create and set up the text edit
+    textEdit = new QTextEdit(this);
+    #ifdef __APPLE__ or _WIN32
+    textEdit->setText(jsonObject.value(QStringLiteral("body")).toString());
+    #else
+    textEdit->setText(QStringLiteral("Auto Updater is not supported on your platform.\nPlease use your package manager to update."));
+    #endif
+    textEdit->setReadOnly(true);
+    mainLayout->addWidget(textEdit);
 
-    // don't show the 'Don't check for updates again' checkbox,
-    // when the user requested we check for updates
-    this->disableUpdateCheckCheckBox->setHidden(forced);
+    // Create and set up the button box
+    buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    QPushButton* updateButton = buttonBox->button(QDialogButtonBox::Ok);
+    updateButton->setText(QStringLiteral("Update"));
+    mainLayout->addWidget(buttonBox);
+
+    // Connect signals
+    connect(buttonBox, &QDialogButtonBox::accepted, this, &UpdateDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, this, &UpdateDialog::reject);
+
+    // Set the layout
+    setLayout(mainLayout);
+    setWindowTitle(QStringLiteral("Update Available"));
+    resize(400, 300);
 }
 
-UpdateDialog::~UpdateDialog(void)
+UpdateDialog::~UpdateDialog()
 {
 }
 
-void UpdateDialog::on_disableUpdateCheckCheckBox_stateChanged(int state)
+void UpdateDialog::accept()
 {
-    CoreSettingsSetValue(SettingsID::GUI_CheckForUpdates, (state == Qt::Unchecked));
-    CoreSettingsSave();
-}
-
-QString UpdateDialog::GetFileName(void)
-{
-    return this->filename;
-}
-
-QUrl UpdateDialog::GetUrl(void)
-{
-    return this->url;
-}
-
-void UpdateDialog::accept(void)
-{
-    QJsonArray jsonArray = jsonObject["assets"].toArray();
+    QJsonArray jsonArray = jsonObject[QStringLiteral("assets")].toArray();
     QString filenameToDownload;
-    QUrl urlToDownload;
-
-#ifdef _WIN32
-    this->isWin32Setup = QFile::exists("unins000.exe") && QFile::exists("unins000.dat");
-#endif // _WIN32
+    QString urlToDownload;
 
     for (const QJsonValue& value : jsonArray)
     {
         QJsonObject object = value.toObject();
 
-        QString filename      = object.value("name").toString();
-        QString lowerFilename = filename.toLower();
-        QString url           = object.value("browser_download_url").toString();
+        QString filenameBlob = object.value(QStringLiteral("name")).toString();
+        QString downloadUrl(object.value(QStringLiteral("browser_download_url")).toString());
 
-#ifdef _WIN32
-        if (this->isWin32Setup)
+        #ifdef _WIN32
+        if (filenameBlob.contains(QStringLiteral("win32")) || 
+            filenameBlob.contains(QStringLiteral("windows")) || 
+            filenameBlob.contains(QStringLiteral("win64")))
         {
-            if (lowerFilename.contains("windows64") &&
-                lowerFilename.contains("setup") &&
-                lowerFilename.endsWith(".exe"))
-            {
-                filenameToDownload = filename;
-                urlToDownload = QUrl(url);
-                break;
-            }
-        }
-        else
-        {
-            if (lowerFilename.contains("windows64") &&
-                lowerFilename.contains("portable") &&
-                lowerFilename.endsWith(".zip"))
-            {
-                filenameToDownload = filename;
-                urlToDownload = QUrl(url);
-                break;
-            }
-        }
-#else
-        if (lowerFilename.contains("linux64") &&
-            lowerFilename.contains("portable") &&
-            lowerFilename.endsWith(".appimage"))
-        {
-            filenameToDownload = filename;
-            urlToDownload = QUrl(url);
+            filenameToDownload = filenameBlob;
+            urlToDownload = downloadUrl;
             break;
         }
-#endif // _WIN32
-    }
-
-    if (filenameToDownload.isEmpty())
-    {
-        QtMessageBox::Error(this, "Failed to find update file");
-        QDialog::reject();
-        return;
+        #endif
+        #ifdef __APPLE__
+        if (filenameBlob.contains(QStringLiteral("darwin")) || 
+            filenameBlob.contains(QStringLiteral("macOS")))
+        {
+            filenameToDownload = filenameBlob;
+            urlToDownload = downloadUrl;
+            break;
+        }
+        #endif
     }
 
     this->url = urlToDownload;
     this->filename = filenameToDownload;
     QDialog::accept();
+
+    DownloadUpdateDialog downloadDialog(this, urlToDownload, filenameToDownload);
 }

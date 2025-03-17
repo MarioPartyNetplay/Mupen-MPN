@@ -1,171 +1,262 @@
 /*
- * Rosalie's Mupen GUI - https://github.com/Rosalie241/RMG
- *  Copyright (C) 2020 Rosalie Wanders <rosalie@mailbox.org>
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 3.
- *  You should have received a copy of the GNU General Public License
- *  along with this program. If not, see <https://www.gnu.org/licenses/>.
- */
-#include "InstallUpdateDialog.hpp"
-#include "Utilities/QtMessageBox.hpp"
+*  Dolphin for Mario Party Netplay
+*  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
+*/
 
-#include <QTextStream>
+#include "InstallUpdateDialog.hpp"
+#include <QCoreApplication>
 #include <QProcess>
 #include <QDir>
-
-#include <RMG-Core/Directories.hpp>
+#include <QTextStream>
+#include <QVBoxLayout>
+#include <QDialog>
+#include <QLabel>
+#include <QProgressBar>
+#include <QMessageBox>
 #include <RMG-Core/Archive.hpp>
-#include <RMG-Core/Error.hpp>
 
-using namespace UserInterface::Dialog;
-using namespace Utilities;
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#endif
 
-InstallUpdateDialog::InstallUpdateDialog(QWidget *parent, QString installationDirectory, QString temporaryDirectory, QString filename) : QDialog(parent)
+// Constructor implementation
+InstallUpdateDialog::InstallUpdateDialog(QWidget *parent, QString installationDirectory, QString temporaryDirectory, QString filename)
+    : QDialog(parent), // Only pass the parent
+      installationDirectory(installationDirectory),
+      temporaryDirectory(temporaryDirectory),
+      filename(filename) // Initialize member variables
 {
-    this->setupUi(this);
+    setWindowTitle(QStringLiteral("Installing %1...").arg(this->filename));
+    
+    // Create UI components
+    QVBoxLayout* layout = new QVBoxLayout(this);
+    label = new QLabel(QStringLiteral("Installing %1...").arg(this->filename), this);
+    progressBar = new QProgressBar(this);
 
-    this->installationDirectory = installationDirectory;
-    this->temporaryDirectory = temporaryDirectory;
-    this->filename = filename;
-    this->startTimer(100);
+    // Set up the layout
+    layout->addWidget(label);
+    layout->addWidget(progressBar);
+
+    setLayout(layout);
+
+    startTimer(100);
 }
 
+// Destructor implementation
 InstallUpdateDialog::~InstallUpdateDialog(void)
 {
 }
 
-void InstallUpdateDialog::install(void)
+void InstallUpdateDialog::install()
 {
-    QString fullFilePath;
-    fullFilePath = this->temporaryDirectory;
-    fullFilePath += "/" + this->filename;   
+  QString fullFilePath = this->temporaryDirectory + QDir::separator() + this->filename;
+  
+  #ifdef __APPLE__
+  QString appPath = QCoreApplication::applicationDirPath() + QStringLiteral("/../../../"); // Set the installation directory
+  #else
+  QString appPath = QCoreApplication::applicationDirPath();
+  #endif
 
-    QString appPath = QCoreApplication::applicationDirPath();
-    QString appPid  = QString::number(QCoreApplication::applicationPid());
-    QString logPath = QString::fromStdU32String(CoreGetUserCacheDirectory().u32string()) + "/updater.log";
+  QString appPid = QString::number(QCoreApplication::applicationPid());
+  // Convert paths to native format
+  this->temporaryDirectory = QDir::toNativeSeparators(this->temporaryDirectory);
+  fullFilePath = QDir::toNativeSeparators(fullFilePath);
+  appPath = QDir::toNativeSeparators(appPath);
 
+  if (this->filename.endsWith(QStringLiteral(".exe")))
+  {
+    this->label->setText(QStringLiteral("Executing %1...").arg(this->filename));
 
-    // convert paths to use the right path seperator
-    this->temporaryDirectory = QDir::toNativeSeparators(this->temporaryDirectory);
-    fullFilePath             = QDir::toNativeSeparators(fullFilePath);
-    appPath                  = QDir::toNativeSeparators(appPath);
-    logPath                  = QDir::toNativeSeparators(logPath);
+#ifdef _WIN32
+    QStringList scriptLines = {
+        QStringLiteral("@echo off"),
+        QStringLiteral("("),
+        QStringLiteral("   echo == Attempting to kill PID ") + appPid,
+        QStringLiteral("   taskkill /F /PID:") + appPid,
+        QStringLiteral("   echo == Attempting to start '") + fullFilePath + QStringLiteral("'"),
+        QStringLiteral("   \"") + fullFilePath +
+            QStringLiteral(
+                "\" /CLOSEAPPLICATIONS /NOCANCEL /MERGETASKS=\"!desktopicon\" /SILENT /DIR=\"") +
+            appPath + QStringLiteral("\""),
+        QStringLiteral(")"),
+        QStringLiteral("IF NOT ERRORLEVEL 0 ("),
+        QStringLiteral("   start \"\" cmd /c \"echo Update failed, check the log for more "
+                       "information && pause\""),
+        QStringLiteral(")"),
+        QStringLiteral("rmdir /S /Q \"") + this->temporaryDirectory + QStringLiteral("\""),
+        QStringLiteral("exit") + QStringLiteral("\""),
 
-    // remove log file when it exists
-    QFile qLogFile(logPath);
-    if (qLogFile.exists())
-    {
-        qLogFile.remove();
-    }
-
-    QString outputToLogLine = " >> \"" + logPath + "\" 2>&1";
-
-    if (this->filename.endsWith(".exe"))
-    {
-        this->label->setText("Executing " + this->filename + "...");
-        QStringList scriptLines =
-        {
-            "@echo off",
-            "(",
-            "   echo == Attemping to kill PID " + appPid + outputToLogLine,
-            "   taskkill /F /PID:"              + appPid + outputToLogLine,
-            "   echo == Attemping to start \'" + fullFilePath + "\'"                                    + outputToLogLine,
-            "   \"" + fullFilePath + "\" /CLOSEAPPLICATIONS /NOCANCEL /MERGETASKS=\"!desktopicon\"  /SILENT /DIR=\"" + appPath + "\"" + outputToLogLine,
-            ")",
-            "IF NOT ERRORLEVEL 0 (",
-            "   start \"\" cmd /c \"echo Rosalie's Mupen GUI failed to update, check the updater.log file in the user cache directory for more information && pause\"",
-            ")",
-            // remove temporary directory at last
-            "rmdir /S /Q \"" + this->temporaryDirectory + "\"",
-        };
-        this->writeAndRunScript(scriptLines);
-        this->accept();
-        return;
-    }
-
-    this->label->setText("Extracting " + this->filename + "...");
-    this->progressBar->setValue(50);
-
-    QDir dir(this->temporaryDirectory);
-    if (!dir.mkdir("extract"))
-    {
-        QtMessageBox::Error(this, "QDir::mkdir() Failed", "");
-        this->reject();
-        return;
-    }
-
-    QString extractDirectory;
-    extractDirectory = this->temporaryDirectory;
-    extractDirectory += "/extract";
-
-    if (!CoreUnzip(fullFilePath.toStdU32String(), extractDirectory.toStdU32String()))
-    {
-        QtMessageBox::Error(this, "CoreUnzip() Failed", QString::fromStdString(CoreGetError()));
-        this->reject();
-        return;
-    }
-
-    this->label->setText("Executing update script...");
-    this->progressBar->setValue(100);
-
-    extractDirectory = QDir::toNativeSeparators(extractDirectory);
-
-    QStringList scriptLines = 
-    {
-        "@echo off",
-        "(",
-        "   echo == Attempting to remove \'" + fullFilePath + "\'" + outputToLogLine,
-        "   del /F /Q \""                    + fullFilePath + "\"" + outputToLogLine,
-        "   echo == Attemping to kill PID " + appPid               + outputToLogLine,
-        "   taskkill /F /PID:"              + appPid               + outputToLogLine,
-        "   echo == Attemping to copy \'" + extractDirectory + "\' to \'" + appPath + "\'"  + outputToLogLine,
-        "   xcopy /S /Y /I \""            + extractDirectory + "\\*\" \"" + appPath + "\""  + outputToLogLine,
-        "   echo == Attemping to start \'" + appPath + "\\RMG.exe\'"           + outputToLogLine,
-        "   start \"\" \""                 + appPath + "\\RMG.exe\""           + outputToLogLine,
-        ")",
-        "IF NOT ERRORLEVEL 0 (",
-        "   start \"\" cmd /c \"echo Rosalie's Mupen GUI failed to update, check the updater.log file in the user cache directory for more information && pause\"",
-        ")",
-        // remove temporary directory at last
-        "rmdir /S /Q \"" + this->temporaryDirectory + "\"",
     };
     this->writeAndRunScript(scriptLines);
+    this->accept();
+#endif
+    return;
+  }
+
+  this->label->setText(QStringLiteral("Extracting %1...").arg(this->filename));
+  this->progressBar->setValue(50);
+
+  QString extractDirectory = this->temporaryDirectory + QDir::separator() + QStringLiteral("Mupen-MPN");
+
+  // Hack to remove stuck directory
+  QDir extractDirectoryHack(extractDirectory);
+  if (extractDirectoryHack.exists()) {
+    extractDirectoryHack.removeRecursively();
+  }
+
+  // Ensure the extract directory exists before attempting to unzip
+  QDir dir(this->temporaryDirectory);
+  if (!QDir(extractDirectory).exists())
+  {
+    if (!dir.mkdir(QStringLiteral("Mupen-MPN")))
+    {
+      QMessageBox::critical(this, QStringLiteral("Error"),
+                            QStringLiteral("Failed to create extract directory."));
+      this->reject();
+      return;
+    }
+  }
+
+  // Attempt to unzip files into the extract directory
+  if (!CoreUnzip(fullFilePath.toStdString(), extractDirectory.toStdString()))
+  {
+    QMessageBox::critical(this, QStringLiteral("Error"),
+                          QStringLiteral("Unzip failed: Unable to extract files."));
+    this->reject();
+    return;
+  }
+
+  this->label->setText(QStringLiteral("Executing update script..."));
+  this->progressBar->setValue(100);
+
+  extractDirectory = QDir::toNativeSeparators(extractDirectory);
+
+#ifdef __APPLE__
+  QStringList scriptLines = {
+      QStringLiteral("#!/bin/bash"),
+      QStringLiteral("echo '== Terminating application with PID ") + appPid + QStringLiteral("'"),
+      QStringLiteral("kill -9 ") + appPid,
+      QStringLiteral("echo '== Removing old application files'"),
+      QStringLiteral("rm -f \"") + appPath + QStringLiteral("\""),
+      QStringLiteral("echo '== Copying new files to ") + appPath + QStringLiteral("'"),
+      QStringLiteral("cp -r \"") + extractDirectory + QStringLiteral("/\"* \"") + appPath +
+          QStringLiteral("\""),
+      QStringLiteral("echo '== Launching the updated application'"),
+      QStringLiteral("open \"") + appPath + QStringLiteral("/Mupen-MPN.app\""),
+      QStringLiteral("echo '== Cleaning up temporary files'"),
+      QStringLiteral("rm -rf \"") + this->temporaryDirectory + QStringLiteral("\""),
+      QStringLiteral("exit 0")};
+  this->writeAndRunScript(scriptLines);
+#endif
+
+#ifdef _WIN32
+  QStringList scriptLines = {
+      QStringLiteral("@echo off"),
+      QStringLiteral("("),
+      QStringLiteral("   echo == Attempting to remove '") + fullFilePath + QStringLiteral("'"),
+      QStringLiteral("   del /F /Q \"") + fullFilePath + QStringLiteral("\""),
+      QStringLiteral("   echo == Attempting to kill PID ") + appPid,
+      QStringLiteral("   taskkill /F /PID:") + appPid,
+      QStringLiteral("   echo == Attempting to copy '") + extractDirectory +
+          QStringLiteral("' to '") + appPath + QStringLiteral("'"),
+      QStringLiteral("   xcopy /S /Y /I \"") + extractDirectory + QStringLiteral("\\*\" \"") +
+          appPath + QStringLiteral("\""),
+      QStringLiteral("   echo == Attempting to start '") + appPath +
+          QStringLiteral("\\Mupen-MPN.exe'"),
+      QStringLiteral("   start \"\" \"") + appPath + QStringLiteral("\\Mupen-MPN.exe\""),
+      QStringLiteral(")"),
+      QStringLiteral("IF NOT ERRORLEVEL 0 ("),
+      QStringLiteral("   start \"\" cmd /c \"echo Update failed && pause\""),
+      QStringLiteral(")"),
+      QStringLiteral("rmdir /S /Q \"") + this->temporaryDirectory + QStringLiteral("\""),
+      QStringLiteral("exit") + QStringLiteral("\""),
+
+  };
+  this->writeAndRunScript(scriptLines);
+#endif
 }
+
 
 void InstallUpdateDialog::writeAndRunScript(QStringList stringList)
 {
-    QString scriptPath;
-    scriptPath = this->temporaryDirectory;
-    scriptPath += "/update.bat";
+#ifdef __APPLE__
+  QString scriptPath = this->temporaryDirectory + QStringLiteral("/update.sh");
+#else
+  QString scriptPath = this->temporaryDirectory + QStringLiteral("/update.bat");
+#endif
 
-    QFile scriptFile(scriptPath);
-    if (!scriptFile.open(QIODevice::WriteOnly | QIODevice::Text))
-    {
-        QtMessageBox::Error(this, "QFile::open() Failed", "");
-        return;
-    }
+  QFile scriptFile(scriptPath);
+  if (!scriptFile.open(QIODevice::WriteOnly | QIODevice::Text))
+  {
+    QMessageBox::critical(this, tr("Error"),
+                          tr("Failed to open file for writing: %1").arg(filename));
+    return;
+  }
 
-    QTextStream textStream(&scriptFile);
+  QTextStream textStream(&scriptFile);
 
-    // write script to file
-    for (const QString& str : stringList)
-    {
-        textStream << str << "\n";
-    }
+#ifdef __APPLE__
+  // macOS: Write shell script
+  textStream << QStringLiteral("#!/bin/bash\n");
+#else
+  // Windows: Write batch script
+  textStream << QStringLiteral("@echo off\n");
+#endif
 
-    scriptFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
-    scriptFile.close();
+  for (const QString& str : stringList)
+  {
+    textStream << str << "\n";
+  }
 
-    this->launchProcess(scriptPath, {});
+#ifdef __APPLE__
+  scriptFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                            QFileDevice::ExeOwner);
+#else
+  scriptFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+#endif
+  scriptFile.close();
+
+  this->launchProcess(scriptPath, {});
 }
 
 void InstallUpdateDialog::launchProcess(QString file, QStringList arguments)
 {
+#ifdef _WIN32
+    #include <windows.h>
+    #include <QMessageBox>
+
+    QString argumentsString = arguments.join(QStringLiteral(" "));
+    std::wstring fileW = file.toStdWString();
+    std::wstring argumentsW = argumentsString.toStdWString();
+
+    SHELLEXECUTEINFO sei = {0};
+    sei.cbSize = sizeof(SHELLEXECUTEINFO);
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NO_CONSOLE;
+    sei.hwnd = nullptr;
+    sei.lpVerb = L"runas"; // Request admin privileges
+    sei.lpFile = fileW.c_str(); // Path to batch file
+    sei.lpParameters = argumentsW.c_str(); // Arguments
+    sei.lpDirectory = nullptr;
+    sei.nShow = SW_HIDE; // Hide the window
+
+    if (ShellExecuteEx(&sei)) {
+        WaitForSingleObject(sei.hProcess, INFINITE);
+        CloseHandle(sei.hProcess);
+    }
+    
+    if (!ShellExecuteEx(&sei))
+    {
+        QMessageBox::critical(nullptr, QStringLiteral("Error"), QStringLiteral("Failed to launch %1 as administrator.").arg(file));
+    }
+#else
+    #include <QProcess>
+    
     QProcess process;
     process.setProgram(file);
     process.setArguments(arguments);
     process.startDetached();
+#endif
 }
 
 void InstallUpdateDialog::timerEvent(QTimerEvent *event)

@@ -1,47 +1,30 @@
 /*
- * Rosalie's Mupen GUI - https://github.com/Rosalie241/RMG
- *  Copyright (C) 2020 Rosalie Wanders <rosalie@mailbox.org>
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 3.
- *  You should have received a copy of the GNU General Public License
- *  along with this program. If not, see <https://www.gnu.org/licenses/>.
- */
-#ifndef DOWNLOADUPDATEDIALOG_HPP
-#define DOWNLOADUPDATEDIALOG_HPP
+*  Dolphin for Mario Party Netplay
+*  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
+*/
 
-#include <QWidget>
+#pragma once
+
 #include <QDialog>
-#include <QJsonObject>
-#include <QNetworkReply>
+#include <QString>
+#include <QProgressBar>
 
-#include "ui_DownloadUpdateDialog.h"
-
-namespace UserInterface
-{
-namespace Dialog
-{
-class DownloadUpdateDialog : public QDialog, private Ui::DownloadUpdateDialog
+class DownloadUpdateDialog : public QDialog
 {
     Q_OBJECT
 
-  private:
-    QNetworkReply *reply;
+public:
+    explicit DownloadUpdateDialog(QWidget* parent, const QString& url, const QString& filename);
+    ~DownloadUpdateDialog();
+
+public slots:
+    void updateProgress(qint64 size, qint64 total);
+    void handleError(const QString& errorMsg); // Ensure this is declared
+    void onDownloadFinished();
+
+private:
+    QString filename; // Ensure this is declared as a private member
+    QProgressBar* progressBar;
+    QString installationDirectory;
     QString temporaryDirectory;
-    QString filename;
-
-  public:
-    DownloadUpdateDialog(QWidget *parent, QUrl url, QString filename);
-    ~DownloadUpdateDialog(void);
-
-    QString GetTempDirectory(void);
-    QString GetFileName(void);
-
-  private slots:
-    void on_reply_downloadProgress(qint64 size, qint64 total);
-    void on_reply_finished(void);
 };
-} // namespace Dialog
-} // namespace UserInterface
-
-#endif // DOWNLOADUPDATEDIALOG_HPP

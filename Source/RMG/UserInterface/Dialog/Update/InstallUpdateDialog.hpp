@@ -1,48 +1,39 @@
 /*
- * Rosalie's Mupen GUI - https://github.com/Rosalie241/RMG
- *  Copyright (C) 2020 Rosalie Wanders <rosalie@mailbox.org>
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 3.
- *  You should have received a copy of the GNU General Public License
- *  along with this program. If not, see <https://www.gnu.org/licenses/>.
- */
-#ifndef INSTALLUPDATEDIALOG_HPP
-#define INSTALLUPDATEDIALOG_HPP
+*  Dolphin for Mario Party Netplay
+*  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
+*/
 
-#include <QWidget>
 #include <QDialog>
+#include <QString>
+#include <QLabel>
+#include <QProgressBar>
 
-#include <RMG-Core/Core.hpp>
+// Forward declarations
+QT_BEGIN_NAMESPACE
+class QString;
+class QLabel;
+class QProgressBar;
+QT_END_NAMESPACE
 
-#include "ui_InstallUpdateDialog.h"
-
-namespace UserInterface
-{
-namespace Dialog
-{
-class InstallUpdateDialog : public QDialog, private Ui::InstallUpdateDialog
+class InstallUpdateDialog : public QDialog 
 {
     Q_OBJECT
 
-  private:
-    QString installationDirectory;
-    QString temporaryDirectory;
-    QString filename;
+public:
+    InstallUpdateDialog(QWidget *parent, QString installationDirectory, QString temporaryDirectory, QString filename);
+    ~InstallUpdateDialog();
 
     void install(void);
 
+private:
+    QString installationDirectory;
+    QString temporaryDirectory;    
+    QString filename;              
+    QLabel* label;                
+    QProgressBar* progressBar;     
+
     void writeAndRunScript(QStringList stringList);
     void launchProcess(QString file, QStringList arguments);
-
-  protected:
-    void timerEvent(QTimerEvent *) Q_DECL_OVERRIDE;
-
-  public:
-    InstallUpdateDialog(QWidget *parent, QString installationDirectory, QString temporaryDirectory, QString filename);
-    ~InstallUpdateDialog(void);
+    void timerEvent(QTimerEvent* event);
+    bool unzipFile(const std::string& zipFilePath, const std::string& destDir);
 };
-} // namespace Dialog
-} // namespace UserInterface
-
-#endif // INSTALLUPDATEDIALOG_HPP

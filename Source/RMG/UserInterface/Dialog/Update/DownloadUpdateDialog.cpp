@@ -1,136 +1,101 @@
 /*
- * Rosalie's Mupen GUI - https://github.com/Rosalie241/RMG
- *  Copyright (C) 2020 Rosalie Wanders <rosalie@mailbox.org>
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 3.
- *  You should have received a copy of the GNU General Public License
- *  along with this program. If not, see <https://www.gnu.org/licenses/>.
- */
+*  Dolphin for Mario Party Netplay
+*  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
+*/
+
 #include "DownloadUpdateDialog.hpp"
-#include "Utilities/QtMessageBox.hpp"
-
-#include <QNetworkAccessManager>
-#include <QDesktopServices>
-#include <QNetworkRequest>
-#include <QNetworkReply>
-#include <QTemporaryDir>
-#include <QPushButton>
-#include <QFileInfo>
-#include <QProcess>
+#include "InstallUpdateDialog.hpp"
+#include <QMessageBox>
 #include <QFile>
+#include <QVBoxLayout>
+#include <QCoreApplication>
+#include <QDir>
+#include <QString>
+#include <QLabel>
+#include <QThread>
+#include "DownloadWorker.hpp"
 
-using namespace UserInterface::Dialog;
-using namespace Utilities;
-
-DownloadUpdateDialog::DownloadUpdateDialog(QWidget *parent, QUrl url, QString filename) : QDialog(parent)
+// Constructor implementation
+DownloadUpdateDialog::DownloadUpdateDialog(QWidget* parent, const QString& url, const QString& filename)
+    : QDialog(parent), filename(filename)
 {
-    this->setupUi(this);
+    // Create UI components
+    setWindowTitle(QStringLiteral("Downloading %1").arg(this->filename));
+    QVBoxLayout* layout = new QVBoxLayout(this);
+    
+    // Create and add label
+    QLabel* label = new QLabel(QStringLiteral("Downloading %1...").arg(this->filename), this);
+    layout->addWidget(label);
+    
+    // Create and add progress bar
+    progressBar = new QProgressBar(this);
+    layout->addWidget(progressBar);
+    
+    // Set the layout for the dialog
+    setLayout(layout);
+    
+    // Set a minimum size for the dialog
+    setMinimumSize(300, 100); // Adjust size as needed
 
-    this->filename = filename;
-    this->label->setText("Downloading " + filename + "...");
+    // Create the worker and thread
+    temporaryDirectory = QDir::tempPath();
+    DownloadWorker* worker = new DownloadWorker(url, (temporaryDirectory + QDir::separator() + filename));
+    QThread* thread = new QThread;
 
-    QNetworkAccessManager* networkAccessManager = new QNetworkAccessManager(this);
-    QNetworkRequest request(url);
-    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    // Move the worker to the thread
+    worker->moveToThread(thread);
 
-    this->reply = networkAccessManager->get(request);
-    connect(reply, &QNetworkReply::downloadProgress, this, &DownloadUpdateDialog::on_reply_downloadProgress);
-    connect(reply, &QNetworkReply::finished, this, &DownloadUpdateDialog::on_reply_finished);
+    // Connect signals and slots
+    connect(thread, &QThread::started, worker, &DownloadWorker::startDownload, Qt::UniqueConnection);
+    connect(worker, &DownloadWorker::progressUpdated, this, &DownloadUpdateDialog::updateProgress, Qt::UniqueConnection);
+    connect(worker, &DownloadWorker::finished, thread, &QThread::quit, Qt::UniqueConnection);
+    connect(worker, &DownloadWorker::finished, worker, &DownloadWorker::deleteLater, Qt::UniqueConnection);
+    connect(worker, &DownloadWorker::finished, this, &DownloadUpdateDialog::onDownloadFinished, Qt::UniqueConnection);
+    connect(worker, &DownloadWorker::finished, this, &DownloadUpdateDialog::accept, Qt::UniqueConnection);
+    connect(worker, &DownloadWorker::errorOccurred, this, &DownloadUpdateDialog::handleError, Qt::UniqueConnection);
+    connect(thread, &QThread::finished, thread, &QThread::deleteLater, Qt::UniqueConnection);
+
+    // Start the thread
+    thread->start();
+
+    this->exec(); // Show the dialog
 }
 
-DownloadUpdateDialog::~DownloadUpdateDialog(void)
+// Destructor implementation
+DownloadUpdateDialog::~DownloadUpdateDialog()
 {
 }
 
-QString DownloadUpdateDialog::GetTempDirectory(void)
+// Handle errors
+void DownloadUpdateDialog::handleError(const QString& errorMsg)
 {
-    return this->temporaryDirectory;
+    QMessageBox::critical(this, tr("Error"), errorMsg);
+    reject();
 }
 
-QString DownloadUpdateDialog::GetFileName(void)
+void DownloadUpdateDialog::onDownloadFinished()
 {
-    return this->filename;
+    // Use QCoreApplication to get the application's directory path
+    #ifdef _WIN32
+    installationDirectory = QCoreApplication::applicationDirPath(); // Set the installation directory
+    #endif
+    #ifdef __APPLE__
+    installationDirectory = QCoreApplication::applicationDirPath() + QStringLiteral("/../../../");
+    #endif
+
+    // Use QStandardPaths to get the system's temporary directory
+    temporaryDirectory = QDir::tempPath();
+
+    InstallUpdateDialog* installDialog =
+        new InstallUpdateDialog(this, installationDirectory, temporaryDirectory, this->filename);
+    installDialog->exec(); // Show the installation dialog modally
+
+    accept();
 }
 
-void DownloadUpdateDialog::on_reply_downloadProgress(qint64 size, qint64 total)
+void DownloadUpdateDialog::updateProgress(qint64 size, qint64 total)
 {
-    this->progressBar->setMaximum(total);
-    this->progressBar->setMinimum(0);
-    this->progressBar->setValue(size);
+    progressBar->setMaximum(total);
+    progressBar->setMinimum(0);
+    progressBar->setValue(size);
 }
-
-void DownloadUpdateDialog::on_reply_finished(void)
-{
-    if (this->reply->error())
-    {
-        QtMessageBox::Error(this, "Failed to download update file", this->reply->errorString());
-        this->reply->deleteLater();
-        this->reject();
-        return;
-    }
-
-    QString filePath;
-
-#ifndef APPIMAGE_UPDATER
-    QTemporaryDir temporaryDir;
-    temporaryDir.setAutoRemove(false);
-    if (!temporaryDir.isValid())
-    {
-        QtMessageBox::Error(this, "Failed to create temporary directory", "");
-        this->reply->deleteLater();
-        this->reject();
-        return;
-    }
-
-    this->temporaryDirectory = temporaryDir.path();
-    filePath = temporaryDir.filePath(this->filename);
-#else
-    const char* appImageEnv = std::getenv("APPIMAGE");
-    if (appImageEnv == nullptr ||
-        !QFile(appImageEnv).exists()) 
-    {
-        QtMessageBox::Error(this, "APPIMAGE variable is empty or invalid", "");
-        this->reply->deleteLater();
-        this->reject();
-        return;
-    }
-
-    filePath = appImageEnv;
-    filePath += ".update";
-#endif // APPIMAGE_UPDATER
-
-    QFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-    {
-        QtMessageBox::Error(this, "QFile::open() Failed", "");
-        this->reply->deleteLater();
-        this->reject();
-        return;
-    }
-
-    file.write(this->reply->readAll());
-#ifdef APPIMAGE_UPDATER
-    file.setPermissions(QFile(appImageEnv).permissions());
-#endif // APPIMAGE_UPDATER
-    file.close();
-
-#ifdef APPIMAGE_UPDATER
-    int ret = std::rename(filePath.toStdString().c_str(), appImageEnv);
-    if (ret != 0)
-    {
-        QtMessageBox::Error(this, "std::rename() Failed", QString(strerror(errno)));
-        this->reply->deleteLater();
-        this->reject();
-        return;
-    }
-
-    QProcess process;
-    process.setProgram(appImageEnv);
-    process.startDetached();
-#endif // APPIMAGE_UPDATER
-
-    this->reply->deleteLater();
-    this->accept();
-}
-
