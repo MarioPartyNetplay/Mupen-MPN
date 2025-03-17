@@ -56,6 +56,17 @@ jobs:
       - name: Build RMG
         run: ./Source/Script/Build.sh Release
         shell: msys2 {0}
+      - name: Trusted Signing
+        uses: azure/trusted-signing-action@v0.5.1
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: https://eus.codesigning.azure.net/
+          trusted-signing-account-name: TabithaHanegan
+          certificate-profile-name: vscx-certificate-profile
+          files-folder: Bin/Release/
+          files-folder-filter: exe,dll
       - name: Upload RMG
         uses: actions/upload-artifact@v4
         with:
