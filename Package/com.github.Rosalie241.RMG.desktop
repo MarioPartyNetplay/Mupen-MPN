@@ -2,8 +2,8 @@
 Type=Application
 Name=Mupen-MPN
 Comment=An easy to use & cross-platform mupen64plus front-end written in C++ & Qt
-Exec=RMG %f
-TryExec=RMG
+Exec=Mupen-MPN %f
+TryExec=Mupen-MPN
 Icon=com.github.Rosalie241.RMG
 Terminal=false
 Categories=Game;Emulator;Qt;
