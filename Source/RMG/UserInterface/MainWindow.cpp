@@ -1482,60 +1482,37 @@ void MainWindow::on_QGuiApplication_applicationStateChanged(Qt::ApplicationState
 #ifdef UPDATER
 void MainWindow::on_networkAccessManager_Finished(QNetworkReply* reply)
 {
-    if (reply->error())
+    Common::HttpRequest httpRequest;
+
+    // Make the GET request
+    auto response = httpRequest.Get("https://api.github.com/repos/MarioPartyNetplay/Mupen-MPN/releases/latest");
+
+    if (response)
     {
-        if (!this->ui_SilentUpdateCheck)
+        // Access the underlying vector and convert it to QByteArray
+        QByteArray responseData(reinterpret_cast<const char*>(response->data()), response->size());
+
+        // Parse the JSON response
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+        QJsonObject jsonObject = jsonDoc.object();
+      
+        QString currentVersion = QString::fromStdString(Common::GetScmRevStr());
+        QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
+
+        if (currentVersion != latestVersion)
         {
-            this->showErrorMessage("Failed to check for updates", reply->errorString());
+          // Create and show the UpdateDialog with the fetched data
+          bool forced = false; // Set this based on your logic
+          UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
+          SetQWidgetWindowDecorations(&updater);
+          updater.exec();
         }
-        reply->deleteLater();
-        return;
     }
-
-    QJsonDocument jsonDocument = QJsonDocument::fromJson(reply->readAll());
-    QJsonObject jsonObject = jsonDocument.object();
-
-    QString currentVersion = QString::fromStdString(CoreGetVersion());
-    QString latestVersion = jsonObject.value("tag_name").toString();
-
-    reply->deleteLater();
-
-    // do nothing when versions match
-    if (currentVersion == latestVersion)
+    else
     {
-        if (!this->ui_SilentUpdateCheck)
-        {
-            Utilities::QtMessageBox::Info(this, "You're already on the latest version");
-        }
-        return;
+        // Handle error
+        QMessageBox::critical(this, tr("Error"), tr("Failed to fetch update information."));
     }
-
-    int ret = 0;
-
-    Dialog::UpdateDialog updateDialog(this, jsonObject, !this->ui_SilentUpdateCheck);
-    ret = updateDialog.exec();
-    if (ret != QDialog::Accepted)
-    {
-        return;
-    }
-
-    Dialog::DownloadUpdateDialog downloadUpdateDialog(this, updateDialog.GetUrl(), updateDialog.GetFileName());
-    ret = downloadUpdateDialog.exec();
-    if (ret != QDialog::Accepted)
-    {
-        return;
-    }
-
-#ifdef APPIMAGE_UPDATER
-    this->on_Action_System_Exit();
-#else // normal updater
-    Dialog::InstallUpdateDialog installUpdateDialog(this, QCoreApplication::applicationDirPath(), downloadUpdateDialog.GetTempDirectory(), downloadUpdateDialog.GetFileName());
-    ret = installUpdateDialog.exec();
-    if (ret != QDialog::Accepted)
-    {
-        return;
-    }
-#endif // APPIMAGE_UPDATER
 }
 #endif // UPDATER
 
