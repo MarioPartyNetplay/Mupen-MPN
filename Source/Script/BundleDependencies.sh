@@ -46,6 +46,7 @@ cp "$path/libjpeg-8.dll"       "$bin_dir/"
 touch $bin_dir/portable.txt
 cp -r "../../Data/Games" "$bin_dir/"
 cp -r "../../Data/Config" "$bin_dir/Config"
+\cp -r "../../Data/Saves" "$bin_dir/Saves"
 cp -r "../../Data/BoardDownloaderMPN.exe" "$bin_dir/Plugin/Hooks/"
 
 # remove *.a files
