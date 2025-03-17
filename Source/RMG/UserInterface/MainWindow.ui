@@ -147,6 +147,8 @@
     <addaction name="separator"/>
     <addaction name="action_Help_Update"/>
     <addaction name="separator"/>
+    <addaction name="action_Help_Boards"/>
+    <addaction name="separator"/>
     <addaction name="action_Help_About"/>
    </widget>
    <addaction name="menuSystem"/>
@@ -545,6 +547,14 @@
     </property>
     <property name="text">
      <string>&amp;Discord Server</string>
+    </property>
+   </action>
+   <action name="action_Help_Boards">
+    <property name="icon">
+     <iconset theme="settings-3-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Board Downloader</string>
     </property>
    </action>
    <action name="action_Help_About">

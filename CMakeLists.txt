@@ -13,7 +13,7 @@ option(VRU              "Enables VRU support in RMG-Input" OFF)
 option(USE_CCACHE       "Enables usage of ccache when ccache has been found" ON)
 option(USE_LTO          "Enables building with LTO/IPO when compiler supports it" ON)
 option(NO_ASM           "Disables the usage of assembly in the mupen64plus-core" OFF)
-option(NO_RUST          "Disables the building of rust subprojects" OFF)
+option(NO_RUST          "Disables the building of rust subprojects" ${UNIX})
 option(USE_LIBFMT       "Enables usage of libfmt instead of detecting whether std::format is supported" OFF)
 option(USE_ANGRYLION    "Enables building angrylion-rdp-plus which uses a non-GPL compliant license" OFF)
 
@@ -187,15 +187,7 @@ file(GLOB CUSTOM_CHEAT_FILES ${CMAKE_SOURCE_DIR}/Data/Cheats/Custom/*.cht)
 install(FILES ${GENERATED_CHEAT_FILES} ${CUSTOM_CHEAT_FILES}
     DESTINATION ${DATA_INSTALL_PATH}/Cheats
 )
-install(FILES ${MUPEN64PLUS_PLUGIN_RSP_CXD4}
-    DESTINATION ${PLUGIN_INSTALL_PATH}/RSP
-    PERMISSIONS ${LIB_PERMISSIONS}
-)
 install(FILES ${MUPEN64PLUS_PLUGIN_RSP_HLE}
-    DESTINATION ${PLUGIN_INSTALL_PATH}/RSP
-    PERMISSIONS ${LIB_PERMISSIONS}
-)
-install(FILES ${MUPEN64PLUS_PLUGIN_RSP_PARALLEL}
     DESTINATION ${PLUGIN_INSTALL_PATH}/RSP
     PERMISSIONS ${LIB_PERMISSIONS}
 )
@@ -207,20 +199,7 @@ install(FILES ${MUPEN64PLUS_PLUGIN_INPUT_GCA}
     DESTINATION ${PLUGIN_INSTALL_PATH}/Input
     PERMISSIONS ${LIB_PERMISSIONS}
 )
-if (USE_ANGRYLION)
-    install(FILES ${MUPEN64PLUS_PLUGIN_GFX_ANGRYLION}
-        DESTINATION ${PLUGIN_INSTALL_PATH}/GFX
-        PERMISSIONS ${LIB_PERMISSIONS}
-    )
-endif(USE_ANGRYLION)
 install(FILES ${MUPEN64PLUS_PLUGIN_GFX_GLIDEN64}
-    DESTINATION ${PLUGIN_INSTALL_PATH}/GFX
-    PERMISSIONS ${LIB_PERMISSIONS}
-)
-install(FILES ${MUPEN64PLUS_PLUGIN_GFX_GLIDEN64_DATA}
-    DESTINATION ${PLUGIN_INSTALL_PATH}/GFX
-)
-install(FILES ${MUPEN64PLUS_PLUGIN_GFX_PARALLEL}
     DESTINATION ${PLUGIN_INSTALL_PATH}/GFX
     PERMISSIONS ${LIB_PERMISSIONS}
 )

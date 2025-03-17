@@ -58,6 +58,7 @@
 #include <QTimer>
 #include <cmath>
 #include <QUrl>
+#include <QProcess>
 
 #include <RMG-Core/CachedRomHeaderAndSettings.hpp>
 #include <RMG-Core/SpeedLimiter.hpp>
@@ -1047,7 +1048,8 @@ void MainWindow::configureActions(void)
         this->action_View_Fullscreen, this->action_View_RefreshRoms,
         this->action_View_Log,
         // Help actions
-        this->action_Help_Github, this->action_Help_Discord, this->action_Help_About,
+        this->action_Help_Github, this->action_Help_Discord,
+        this->action_Help_About, this->action_Help_Boards
     });
 
     // configure save slot actions
@@ -1202,6 +1204,7 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_Help_About, &QAction::triggered, this, &MainWindow::on_Action_Help_About);
     connect(this->action_Help_Update, &QAction::triggered, this, &MainWindow::on_Action_Help_Update);
     connect(this->action_Help_Discord, &QAction::triggered, this, &MainWindow::on_Action_Help_Discord);
+    connect(this->action_Help_Boards, &QAction::triggered, this, &MainWindow::on_Action_Help_Boards);
 
     connect(this->action_Audio_IncreaseVolume, &QAction::triggered, this, &MainWindow::on_Action_Audio_IncreaseVolume);
     connect(this->action_Audio_DecreaseVolume, &QAction::triggered, this, &MainWindow::on_Action_Audio_DecreaseVolume);
@@ -2009,6 +2012,11 @@ void MainWindow::on_Action_Netplay_JoinSession(void)
 void MainWindow::on_Action_Help_Github(void)
 {
     QDesktopServices::openUrl(QUrl("https://github.com/MarioPartyNetplay/Mupen-MPN"));
+}
+
+void MainWindow::on_Action_Help_Boards(void)
+{
+    QProcess::startDetached("Plugins/Hooks/BoardDownloaderMPN.exe");
 }
 
 void MainWindow::on_Action_Help_Discord(void)
