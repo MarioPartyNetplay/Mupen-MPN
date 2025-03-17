@@ -35,8 +35,8 @@ do
 	copyForOBJ "$file"
 done
 
-windeployqt-qt6 --exclude-plugins qpdf,qwebp,qgif,qjpeg,qtga,qtuiotouchplugin,qglib,qtiff,qmng,qwbmp,qjp2 \
-				--no-translations "$exe" --plugindir "$bin_dir/QtPlugins/plugins"
+windeployqt-qt6 --exclude-plugins qpdf,qwebp,qgif,qjpeg,qtga,qtuiotouchplugin,qglib,qtiff,qmng,qwbmp,qjp2 --no-translations "$exe" --plugindir "$bin_dir/QtPlugins/plugins"
+echo -e "[Paths]\nPrefix = QtPlugins/\nPlugins = plugins" >  "$bin_dir/qt.conf"
 
 # needed by Qt at runtime
 cp "$path/libcrypto-3-x64.dll" "$bin_dir/"
