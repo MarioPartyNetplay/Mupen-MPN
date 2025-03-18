@@ -134,8 +134,8 @@ if (APPLE)
     target_link_libraries(RMG-Core
         "-framework Foundation"
         ${CORESERVICES_FRAMEWORK}
-        "-framework Foundation"
-	"-liconv"
+        "-framework CoreFoundation"
+        "-liconv"
         objc
     )
 endif()
