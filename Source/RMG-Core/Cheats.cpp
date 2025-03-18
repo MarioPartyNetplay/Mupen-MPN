@@ -99,7 +99,7 @@ static std::filesystem::path get_cheat_file_name(CoreRomHeader romHeader, CoreRo
     // Check if the good name is available
     if (!romHeader.Name.empty())
     {
-        cheatFileName = std::format("{}.cht", romHeader.Name);
+        cheatFileName = fmt_string("{}.cht", romHeader.Name);
     }
 
     return cheatFileName;
