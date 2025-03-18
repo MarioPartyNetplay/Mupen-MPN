@@ -24,6 +24,7 @@
 #elif __APPLE__
 #include <sys/syslimits.h>
 #include <unistd.h>
+#include <mach-o/dyld.h>
 #endif // _WIN32
 
 //
@@ -38,6 +39,11 @@ static std::filesystem::path l_SharedDataPathOverride;
 //
 // Local Functions
 //
+
+#ifdef __APPLE__
+#define CORE_INSTALL_DATADIR "/Library/Application Support"
+#define CORE_INSTALL_LIBDIR "/Library/Application Support"
+#endif
 
 #ifdef PORTABLE_INSTALL
 static std::filesystem::path get_exe_directory(void)
@@ -60,7 +66,8 @@ static std::filesystem::path get_exe_directory(void)
     }
 #elif __APPLE__
     uint32_t size = PATH_MAX;
-    if (_NSGetExecutablePath(buffer, &size) != 0)
+    if (
+        (buffer, &size) != 0)
     {
         std::cerr << "get_exe_directory: _NSGetExecutablePath() Failed!" << std::endl;
         std::terminate();
@@ -181,7 +188,7 @@ std::filesystem::path CoreGetLibraryDirectory(void)
     if (!l_LibraryPathOverride.empty())
         return l_LibraryPathOverride.make_preferred();
 
-    return CORE_INSTALL_LIBDIR "/RMG";
+    return std::filesystem::path(CORE_INSTALL_LIBDIR) / "RMG";
 }
 
 std::filesystem::path CoreGetCoreDirectory(void)
@@ -279,7 +286,7 @@ std::filesystem::path CoreGetSharedDataDirectory() {
     if (!l_SharedDataPathOverride.empty())
         return l_SharedDataPathOverride.make_preferred();
 
-    return CORE_INSTALL_DATADIR "/RMG";
+    return std::filesystem::path(CORE_INSTALL_DATADIR) / "RMG";
 }
 
 std::filesystem::path CoreGetDefaultSaveDirectory() {
@@ -313,5 +320,3 @@ void CoreSetLibraryPathOverride(std::filesystem::path path) {
 void CoreSetSharedDataPathOverride(std::filesystem::path path) {
     l_SharedDataPathOverride = std::move(path);
 }
-
-

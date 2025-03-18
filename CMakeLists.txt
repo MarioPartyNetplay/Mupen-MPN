@@ -84,11 +84,6 @@ if (NOT PORTABLE_INSTALL AND WIN32)
     set(PORTABLE_INSTALL ON)
 endif()
 
-if (PORTABLE_INSTALL AND APPLE)
-    message(WARNING "Portable build is not supported on macOS.")
-    set(PORTABLE_INSTALL OFF)
-endif()
-
 if (NOT PORTABLE_INSTALL AND UPDATER AND NOT APPIMAGE_UPDATER)
     message(WARNING "Not-Portable builds don't support the updater, disabling UPDATER")
     set(UPDATER OFF)
