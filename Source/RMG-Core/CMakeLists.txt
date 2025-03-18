@@ -50,7 +50,6 @@ set(RMG_CORE_SOURCES
     Archive.cpp
     Library.cpp
     Netplay.cpp
-    GDBStub.cpp
     Plugins.cpp
     Version.cpp
     Cheats.cpp
@@ -131,8 +130,12 @@ if (DISCORD_RPC)
 endif(DISCORD_RPC)
 
 if (APPLE)
+    find_library(CORESERVICES_FRAMEWORK CoreServices)
     target_link_libraries(RMG-Core
         "-framework Foundation"
+        ${CORESERVICES_FRAMEWORK}
+        "-framework Foundation"
+	"-liconv"
         objc
     )
 endif()
