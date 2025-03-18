@@ -434,7 +434,8 @@ typedef enum {
 
 typedef enum {
   M64P_RENDER_OPENGL = 0,
-  M64P_RENDER_VULKAN
+  M64P_RENDER_VULKAN = 1,
+  M64P_RENDER_MOLTENVK = 2,
 } m64p_render_mode;
 
 typedef struct {
