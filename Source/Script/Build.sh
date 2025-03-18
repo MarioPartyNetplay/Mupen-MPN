@@ -1,4 +1,20 @@
 #!/usr/bin/env bash
+# Check if the system is macOS
+if [[ "$(uname)" == "Darwin" ]]; then
+    alias nproc="sysctl -n hw.logicalcpu"
+    export CXXFLAGS='-stdlib=libc++'
+    export LDFLAGS='-mmacosx-version-min=14.0'
+    export CMAKE_SYSROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/"
+    export PATH="/usr/local/opt/qt@5/bin:$PATH"
+    export PATH="/usr/local/opt/libiconv/bin:$PATH"
+    export PATH="/usr/local/opt/sdl2/bin:$PATH"
+    export LIBRARY_PATH="/usr/local/opt/minizip/lib:$LIBRARY_PATH"
+    export LIBRARY_PATH="/usr/local/opt/sdl2/lib:$LIBRARY_PATH"
+    export LIBRARY_PATH="/usr/local/opt/sdl2_net/lib:$LIBRARY_PATH"
+    export LIBRARY_PATH="/usr/local/opt/speexdsp/lib:$LIBRARY_PATH"
+    export LIBRARY_PATH="/usr/local/opt/libsamplerate/lib:$LIBRARY_PATH"
+fi
+
 set -ex
 script_dir="$(dirname "$0")"
 toplvl_dir="$(realpath "$script_dir/../../")"
