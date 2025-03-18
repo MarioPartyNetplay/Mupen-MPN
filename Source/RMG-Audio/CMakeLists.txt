@@ -3,6 +3,10 @@
 #
 project(RMG-Audio)
 
+#if (APPLE)
+LINK_DIRECTORIES(/usr/local/lib)
+#endif
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
