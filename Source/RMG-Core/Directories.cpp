@@ -27,6 +27,10 @@
 #include <mach-o/dyld.h>
 #endif // _WIN32
 
+#ifdef __APPLE__
+#define CORE_INSTALL_DATADIR "/Library/Frameworks"
+#endif
+
 //
 // Local Variables
 //
@@ -39,11 +43,6 @@ static std::filesystem::path l_SharedDataPathOverride;
 //
 // Local Functions
 //
-
-#ifdef __APPLE__
-#define CORE_INSTALL_DATADIR "/Library/Application Support"
-#define CORE_INSTALL_LIBDIR "/Library/Application Support"
-#endif
 
 #ifdef PORTABLE_INSTALL
 static std::filesystem::path get_exe_directory(void)
@@ -66,8 +65,7 @@ static std::filesystem::path get_exe_directory(void)
     }
 #elif __APPLE__
     uint32_t size = PATH_MAX;
-    if (
-        (buffer, &size) != 0)
+    if (_NSGetExecutablePath(buffer, &size) != 0)
     {
         std::cerr << "get_exe_directory: _NSGetExecutablePath() Failed!" << std::endl;
         std::terminate();
@@ -111,7 +109,7 @@ static std::filesystem::path get_appdata_directory(std::filesystem::path directo
     return appdataDirectory / "MupenMPN" / directory;
 }
 #else
-static std::filesystem::path get_var_directory(const std::string& var, const std::string& append, 
+static std::filesystem::path get_var_directory(const std::string& var, const std::string& append,
                                               const std::string& fallbackVar, const std::string& fallbackAppend)
 {
     const char* env = std::getenv(var.c_str());
@@ -134,7 +132,7 @@ static std::filesystem::path get_var_directory(const std::string& var, const std
 
 bool CoreCreateDirectories(void)
 {
-    std::filesystem::path directories[] = 
+    std::filesystem::path directories[] =
     {
         CoreGetUserConfigDirectory(),
         CoreGetUserDataDirectory(),
@@ -188,7 +186,11 @@ std::filesystem::path CoreGetLibraryDirectory(void)
     if (!l_LibraryPathOverride.empty())
         return l_LibraryPathOverride.make_preferred();
 
-    return std::filesystem::path(CORE_INSTALL_LIBDIR) / "RMG";
+#ifdef __APPLE__
+    return get_exe_directory();
+#else
+    return CORE_INSTALL_LIBDIR "/RMG";
+#endif
 }
 
 std::filesystem::path CoreGetCoreDirectory(void)
@@ -286,7 +288,7 @@ std::filesystem::path CoreGetSharedDataDirectory() {
     if (!l_SharedDataPathOverride.empty())
         return l_SharedDataPathOverride.make_preferred();
 
-    return std::filesystem::path(CORE_INSTALL_DATADIR) / "RMG";
+    return CORE_INSTALL_DATADIR "/RMG";
 }
 
 std::filesystem::path CoreGetDefaultSaveDirectory() {

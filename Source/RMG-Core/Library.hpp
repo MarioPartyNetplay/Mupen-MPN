@@ -18,11 +18,18 @@
 typedef HMODULE CoreLibraryHandle;
 typedef FARPROC CoreLibrarySymbol;
 #define CORE_LIBRARY_EXT_STR ".dll"
-#else // Unix
-typedef void*   CoreLibraryHandle;
-typedef void*   CoreLibrarySymbol;
+#elif __APPLE__
+#include <dlfcn.h>
+typedef void* CoreLibraryHandle;
+typedef void* CoreLibrarySymbol;
+#define CORE_LIBRARY_EXT_STR ".dylib"
+#else // Unix/Linux
+#include <dlfcn.h>
+typedef void* CoreLibraryHandle;
+typedef void* CoreLibrarySymbol;
 #define CORE_LIBRARY_EXT_STR ".so"
 #endif // _WIN32
+
 
 // returns library handle for given filename,
 // return nullptr when invalid library
