@@ -56,12 +56,7 @@ int main(int argc, char **argv)
     // install message handler
     qInstallMessageHandler(message_handler);
 
-#ifndef _WIN32
-    // on Linux we need to install signal handlers,
-    // so we can exit cleanly when the user presses
-    // i.e control+c
-    signal(SIGINT,  signal_handler);
-    signal(SIGTERM, signal_handler);
+
 
     // on Linux, wayland works only on some compositors,
     // it works on KDE plasma and sway (on 2023-07-26),
@@ -98,7 +93,7 @@ int main(int argc, char **argv)
     // ensure that the desktop file is correctly
     // specified, else the window icon will be
     // the generic wayland icon on wayland
-    QGuiApplication::setDesktopFileName("com.github.Rosalie241.RMG");
+    QGuiApplication::setDesktopFileName("com.github.Rosalie241.RMG-MPN");
 #endif
 
     QApplication app(argc, argv);
