@@ -242,7 +242,7 @@ std::filesystem::path CoreGetSaveStateDirectory() {
 #endif
 }
 
-std::filesystem::path CoreGetUserCacheDirectory() {
+std::filesystem::path CoreGetDefaultUserCacheDirectory() {
 #if defined(__APPLE__)
     return get_var_directory("XDG_CACHE_HOME", "/Mupen-MPN/cache", "HOME", "/Library/Caches/Mupen-MPN");
 #else
@@ -250,7 +250,7 @@ std::filesystem::path CoreGetUserCacheDirectory() {
 #endif
 }
 
-std::filesystem::path CoreGetScreenshotDirectory() {
+std::filesystem::path CoreGetDefaultScreenshotDirectory() {
 #if defined(__APPLE__)
     return get_var_directory("XDG_PICTURES_DIR", "/Mupen-MPN/screenshots", "HOME", "/Library/Pictures/Mupen-MPN");
 #else
