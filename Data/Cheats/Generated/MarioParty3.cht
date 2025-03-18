@@ -1098,6 +1098,24 @@ D10CE202 0020
 $Minigame: Tidal Toss - No 3P Movement/Water Doesn't Push
 Note= By: gamemasterplc, Rain, Airsola.
 D110AD62 A18C
+8110AD20 0000
+D1109998 4500
+81109998 1000
+
+$Minigame: Tidal Toss - Small Waves Removed
+Note= By: Airsola.
+D10CE202 000A
+8110AC00 4040
+D10CE202 000A
+8110AC02 0000
+
+$Minigame: Tidal Toss - Faster Waves
+Note= By: Airsola.
+D10CE202 000A
+8110AC08 4060
+D10CE202 000A
+8110AC0A 0000
+Cheat58_N=By Airsola
 
 $Minigame: Treadmill Grill - 60 Second Timer
 Note= By: Airsola.
