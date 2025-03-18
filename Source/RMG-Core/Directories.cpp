@@ -218,5 +218,49 @@ std::filesystem::path CoreGetDefaultUserDataDirectory(void)
 #endif
 }
 
-// Similar adjustments for CoreGetUserCacheDirectory, CoreGetSaveDirectory, CoreGetSaveStateDirectory, CoreGetScreenshotDirectory
+std::filesystem::path CoreGetSaveDirectory() {
+#if defined(__APPLE__)
+    return get_var_directory("XDG_SAVE_HOME", "/Mupen-MPN/saves", "HOME", "/Library/Application Support/Mupen-MPN/saves");
+#else
+    return get_var_directory("XDG_SAVE_HOME", "/Mupen-MPN/saves", "HOME", "/.local/share/Mupen-MPN/saves");
+#endif
+}
 
+std::filesystem::path CoreGetUserDataDirectory() {
+#if defined(__APPLE__)
+    return get_var_directory("XDG_DATA_HOME", "/Mupen-MPN", "HOME", "/Library/Application Support/Mupen-MPN");
+#else
+    return get_var_directory("XDG_DATA_HOME", "/Mupen-MPN", "HOME", "/.local/share/Mupen-MPN");
+#endif
+}
+
+std::filesystem::path CoreGetSaveStateDirectory() {
+#if defined(__APPLE__)
+    return get_var_directory("XDG_STATE_HOME", "/Mupen-MPN/savestates", "HOME", "/Library/Application Support/Mupen-MPN/savestates");
+#else
+    return get_var_directory("XDG_STATE_HOME", "/Mupen-MPN/savestates", "HOME", "/.local/share/Mupen-MPN/savestates");
+#endif
+}
+
+std::filesystem::path CoreGetUserCacheDirectory() {
+#if defined(__APPLE__)
+    return get_var_directory("XDG_CACHE_HOME", "/Mupen-MPN/cache", "HOME", "/Library/Caches/Mupen-MPN");
+#else
+    return get_var_directory("XDG_CACHE_HOME", "/Mupen-MPN/cache", "HOME", "/.cache/Mupen-MPN");
+#endif
+}
+
+std::filesystem::path CoreGetScreenshotDirectory() {
+#if defined(__APPLE__)
+    return get_var_directory("XDG_PICTURES_DIR", "/Mupen-MPN/screenshots", "HOME", "/Library/Pictures/Mupen-MPN");
+#else
+    return get_var_directory("XDG_PICTURES_DIR", "/Mupen-MPN/screenshots", "HOME", "/.local/share/Mupen-MPN/screenshots");
+#endif
+}
+
+std::filesystem::path CoreGetSharedDataDirectory() {
+    if (!l_SharedDataPathOverride.empty())
+        return l_SharedDataPathOverride.make_preferred();
+
+    return CORE_INSTALL_DATADIR "/RMG";
+}
