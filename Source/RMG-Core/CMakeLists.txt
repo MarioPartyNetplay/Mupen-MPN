@@ -5,9 +5,9 @@ project(RMG-Core)
 
 set(CMAKE_CXX_STANDARD 20)
 
-#if (APPLE)
+if (APPLE)
 LINK_DIRECTORIES(/usr/local/lib)
-#endif
+endif(APPLE)
 
 # RMG-Core needs LTO disabled for windows
 # else linking fails
