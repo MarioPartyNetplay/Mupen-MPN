@@ -56,45 +56,31 @@ int main(int argc, char **argv)
     // install message handler
     qInstallMessageHandler(message_handler);
 
+#ifndef _WIN32
+    signal(SIGINT,  signal_handler);
+    signal(SIGTERM, signal_handler);
 
-
-    // on Linux, wayland works only on some compositors,
-    // it works on KDE plasma and sway (on 2023-07-26),
-    // but i.e doesn't work on GNOME wayland or labwc, 
-    // so to compromise the situation, we'll force xwayland
-    // unless RMG_ALLOW_WAYLAND is set to 1, which'll allow wayland
-    // as qt platform, so users can experiment with the
-    // wayland support themselves
+#if defined(__linux__)
     const char* allow_wayland = std::getenv("RMG_ALLOW_WAYLAND");
-    if (allow_wayland == nullptr ||
-        std::string(allow_wayland) != "1")
+    if (allow_wayland == nullptr || std::string(allow_wayland) != "1")
     {
         setenv("QT_QPA_PLATFORM", "xcb", 1);
     }
 
-    // on Linux, Qt on some distributions
-    // fails to load libvulkan, so to fix that
-    // we'll help out and tell it about libvulkan.so.1,
-    // but we wont overwrite the variable value if it
-    // already contains one, the user might set it
-    // to a custom value themselves
     setenv("QT_VULKAN_LIB", "libvulkan.so.1", 0);
+#endif
 
-    // ensure the default OpenGL format
-    // doesn't have vsync enabled by default,
-    // only needed for linux (for now)
-    // and ensure OpenGL 3.3 is specified by default (for wayland)
     QSurfaceFormat format = QSurfaceFormat::defaultFormat();
     format.setSwapInterval(0);
     format.setMajorVersion(3);
     format.setMinorVersion(3);
     QSurfaceFormat::setDefaultFormat(format);
 
-    // ensure that the desktop file is correctly
-    // specified, else the window icon will be
-    // the generic wayland icon on wayland
-    QGuiApplication::setDesktopFileName("com.github.Rosalie241.RMG-MPN");
+#if defined(__APPLE__)
+    QGuiApplication::setDesktopFileName("com.github.Rosalie241.RMG");
 #endif
+#endif
+
 
     QApplication app(argc, argv);
 
