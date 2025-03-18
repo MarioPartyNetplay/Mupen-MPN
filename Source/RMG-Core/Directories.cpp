@@ -264,3 +264,20 @@ std::filesystem::path CoreGetSharedDataDirectory() {
 
     return CORE_INSTALL_DATADIR "/RMG";
 }
+
+std::filesystem::path CoreGetDefaultSaveDirectory() {
+#if defined(__APPLE__)
+    return get_var_directory("XDG_SAVE_HOME", "/Mupen-MPN/saves", "HOME", "/Library/Application Support/Mupen-MPN/saves");
+#else
+    return get_var_directory("XDG_SAVE_HOME", "/Mupen-MPN/saves", "HOME", "/.local/share/Mupen-MPN/saves");
+#endif
+}
+
+std::filesystem::path CoreGetDefaultSaveStateDirectory() {
+#if defined(__APPLE__)
+    return get_var_directory("XDG_STATE_HOME", "/Mupen-MPN/savestates", "HOME", "/Library/Application Support/Mupen-MPN/savestates");
+#else
+    return get_var_directory("XDG_STATE_HOME", "/Mupen-MPN/savestates", "HOME", "/.local/share/Mupen-MPN/savestates");
+#endif
+}
+
