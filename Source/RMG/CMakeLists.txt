@@ -5,6 +5,10 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+#if (APPLE)
+LINK_DIRECTORIES(/usr/local/lib)
+#endif
+
 find_package(Qt6 COMPONENTS Gui Widgets Core REQUIRED)
 
 if (PORTABLE_INSTALL)

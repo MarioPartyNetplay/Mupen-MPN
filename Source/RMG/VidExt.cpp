@@ -22,6 +22,8 @@
 #include <QThread>
 #include <QScreen>
 
+#include <vulkan/vulkan.h>
+
 //
 // Local Variables
 //
@@ -92,8 +94,20 @@ static m64p_error VidExt_InitWithRenderMode(m64p_render_mode RenderMode)
             l_SurfaceFormat.setMinorVersion(0);
         }
     }
+    else if (RenderMode == M64P_RENDER_VULKAN || RenderMode == M64P_RENDER_VULKAN)
+    {
+        if (!l_VulkanInstance.create())
+        {
+            CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to create Vulkan instance");
+            return M64ERR_SYSTEM_FAIL;
+        }
+        (*l_VulkanWidget)->setVulkanInstance(&l_VulkanInstance);
+    }
 
-    l_EmuThread->on_VidExt_Init(RenderMode == M64P_RENDER_OPENGL ? VidExtRenderMode::OpenGL : VidExtRenderMode::Vulkan);
+    l_EmuThread->on_VidExt_Init(
+            RenderMode == M64P_RENDER_OPENGL ? VidExtRenderMode::OpenGL :
+            RenderMode == M64P_RENDER_VULKAN ? VidExtRenderMode::Vulkan :
+                                VidExtRenderMode::MoltenVk);
 
     return M64ERR_SUCCESS;
 }
@@ -398,36 +412,29 @@ static uint32_t VidExt_GLGetDefaultFramebuffer(void)
 
 static m64p_error VidExt_VK_GetSurface(void** Surface, void* Instance)
 {
-    if (l_RenderMode != M64P_RENDER_VULKAN)
+    if (l_RenderMode != M64P_RENDER_VULKAN && l_RenderMode != M64P_RENDER_MOLTENVK)
     {
         return M64ERR_INVALID_STATE;
     }
 
-    // we don't support receiving a null handle
-    // for the VkInstance
     if ((VkInstance)Instance == VK_NULL_HANDLE)
-    {
         return M64ERR_UNSUPPORTED;
-    }
 
-    // use VkInstance from plugin
-    // when we don't have a VkInstance yet
     if (l_VulkanInstance.vkInstance() == VK_NULL_HANDLE)
     {
         l_VulkanInstance.setVkInstance((VkInstance)Instance);
         if (!l_VulkanInstance.create())
         {
-            CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to create vulkan instance");
+            CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to create Vulkan instance");
             return M64ERR_SYSTEM_FAIL;
         }
         (*l_VulkanWidget)->setVulkanInstance(&l_VulkanInstance);
     }
 
-    // attempt to retrieve vulkan surface for window
     VkSurfaceKHR vulkanSurface = QVulkanInstance::surfaceForWindow((*l_VulkanWidget));
     if (vulkanSurface == VK_NULL_HANDLE)
     {
-        CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to retrieve vulkan surface for window");
+        CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to retrieve Vulkan surface");
         return M64ERR_SYSTEM_FAIL;
     }
 
@@ -460,7 +467,7 @@ static m64p_error VidExt_VK_GetInstanceExtensions(const char** Extensions[], uin
 // Exported Functions
 //
 
-bool SetupVidExt(Thread::EmulationThread* emuThread, UserInterface::MainWindow* mainWindow, 
+bool SetupVidExt(Thread::EmulationThread* emuThread, UserInterface::MainWindow* mainWindow,
     UserInterface::Widget::OGLWidget** oglWidget, UserInterface::Widget::VKWidget** vulkanWidget)
 {
     l_EmuThread    = emuThread;
