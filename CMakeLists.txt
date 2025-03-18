@@ -80,8 +80,13 @@ if (NOT USE_LIBFMT)
 endif(NOT USE_LIBFMT)
 
 if (NOT PORTABLE_INSTALL AND WIN32)
-    message(WARNING "Not-Portable build not supported on windows, re-enabling PORTABLE_INSTALL!")
+    message(WARNING "Not-Portable build not supported on Windows, re-enabling PORTABLE_INSTALL!")
     set(PORTABLE_INSTALL ON)
+endif()
+
+if (PORTABLE_INSTALL AND APPLE)
+    message(WARNING "Portable build is not supported on macOS.")
+    set(PORTABLE_INSTALL OFF)
 endif()
 
 if (NOT PORTABLE_INSTALL AND UPDATER AND NOT APPIMAGE_UPDATER)
