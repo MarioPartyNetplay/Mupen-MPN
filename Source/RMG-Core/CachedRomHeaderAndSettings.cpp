@@ -20,6 +20,8 @@
 
 #ifdef _WIN32
 #include <Windows.h>
+#elif __APPLE__
+#include <limits.h>
 #else // Linux
 #include <linux/limits.h>
 #endif // _WIN32
