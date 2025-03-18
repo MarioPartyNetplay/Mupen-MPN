@@ -298,3 +298,20 @@ std::filesystem::path CoreGetDefaultSaveStateDirectory() {
 #endif
 }
 
+void CoreSetCorePathOverride(std::filesystem::path path) {
+    l_CorePathOverride = std::move(path);
+}
+
+void CoreSetPluginPathOverride(std::filesystem::path path) {
+    l_PluginPathOverride = std::move(path);
+}
+
+void CoreSetLibraryPathOverride(std::filesystem::path path) {
+    l_LibraryPathOverride = std::move(path);
+}
+
+void CoreSetSharedDataPathOverride(std::filesystem::path path) {
+    l_SharedDataPathOverride = std::move(path);
+}
+
+
