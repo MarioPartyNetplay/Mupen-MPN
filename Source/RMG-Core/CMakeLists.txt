@@ -5,9 +5,9 @@ project(RMG-Core)
 
 set(CMAKE_CXX_STANDARD 20)
 
-if (APPLE)
+#if (APPLE)
 LINK_DIRECTORIES(/usr/local/lib)
-endif(APPLE)
+#endif
 
 # RMG-Core needs LTO disabled for windows
 # else linking fails
@@ -129,6 +129,13 @@ if (DISCORD_RPC)
     )
     add_dependencies(RMG-Core discord-rpc)
 endif(DISCORD_RPC)
+
+if (APPLE)
+    target_link_libraries(RMG-Core
+        "-framework Foundation"
+        objc
+    )
+endif()
 
 target_include_directories(RMG-Core PRIVATE 
     ${CMAKE_CURRENT_BINARY_DIR}
