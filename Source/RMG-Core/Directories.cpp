@@ -258,6 +258,23 @@ std::filesystem::path CoreGetDefaultScreenshotDirectory() {
 #endif
 }
 
+std::filesystem::path CoreGetUserCacheDirectory() {
+#if defined(__APPLE__)
+    return get_var_directory("XDG_CACHE_HOME", "/Mupen-MPN/cache", "HOME", "/Library/Caches/Mupen-MPN");
+#else
+    return get_var_directory("XDG_CACHE_HOME", "/Mupen-MPN/cache", "HOME", "/.cache/Mupen-MPN");
+#endif
+}
+
+std::filesystem::path CoreGetScreenshotDirectory() {
+#if defined(__APPLE__)
+    return get_var_directory("XDG_PICTURES_DIR", "/Mupen-MPN/screenshots", "HOME", "/Library/Pictures/Mupen-MPN");
+#else
+    return get_var_directory("XDG_PICTURES_DIR", "/Mupen-MPN/screenshots", "HOME", "/.local/share/Mupen-MPN/screenshots");
+#endif
+}
+
+
 std::filesystem::path CoreGetSharedDataDirectory() {
     if (!l_SharedDataPathOverride.empty())
         return l_SharedDataPathOverride.make_preferred();
