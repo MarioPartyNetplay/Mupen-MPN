@@ -37,17 +37,11 @@ fi
 
 mkdir -p "$build_dir"
 
-if [[ "$(uname)" == "Darwin" ]]; then
-    cmake -S "$toplvl_dir" -B "$build_dir" \
-    -DCMAKE_BUILD_TYPE="$build_config" \
-    -DPORTABLE_INSTALL=OFF -DUSE_ANGRYLION=ON \
-    -G "$generator"
-else
-    cmake -S "$toplvl_dir" -B "$build_dir" \
+
+cmake -S "$toplvl_dir" -B "$build_dir" \
     -DCMAKE_BUILD_TYPE="$build_config" \
     -DPORTABLE_INSTALL=ON -DUSE_ANGRYLION=ON \
     -G "$generator"
-fi
 
 cmake --build "$build_dir" --parallel "$threads"
 
