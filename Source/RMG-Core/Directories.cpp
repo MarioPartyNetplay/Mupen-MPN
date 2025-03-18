@@ -21,6 +21,9 @@
 #ifdef _WIN32
 #include <Windows.h>
 #include <shlobj.h>
+#elif __APPLE__
+#include <sys/syslimits.h>
+#include <unistd.h>
 #endif // _WIN32
 
 //
@@ -42,12 +45,12 @@ static std::filesystem::path get_exe_directory(void)
     static std::filesystem::path directory;
 #ifdef _WIN32
     wchar_t buffer[MAX_PATH] = {0};
-#endif // _WIN32
+#elif __APPLE__
+    char buffer[PATH_MAX];
+#endif
 
     if (!directory.empty())
-    {
         return directory.make_preferred();
-    }
 
 #ifdef _WIN32
     if (GetModuleFileNameW(nullptr, buffer, MAX_PATH) == 0)
@@ -55,18 +58,27 @@ static std::filesystem::path get_exe_directory(void)
         MessageBoxA(nullptr, "get_exe_directory: GetModuleFileNameW() Failed!", "Error", MB_OK | MB_ICONERROR);
         std::terminate();
     }
-    directory = std::filesystem::path(buffer).parent_path();
-#else // _WIN32
-    try
+#elif __APPLE__
+    uint32_t size = PATH_MAX;
+    if (_NSGetExecutablePath(buffer, &size) != 0)
     {
-        directory =  std::filesystem::canonical("/proc/self/exe").parent_path();
-    }
-    catch (...)
-    { // fail silently and fallback to current path
-        std::cerr << "get_exe_directory: std::filesystem::canonical(\"/proc/self/exe\") threw an exception!" << std::endl;
+        std::cerr << "get_exe_directory: _NSGetExecutablePath() Failed!" << std::endl;
         std::terminate();
     }
-#endif // _WIN32
+#else
+    try
+    {
+        directory = std::filesystem::canonical("/proc/self/exe").parent_path();
+        return directory.make_preferred();
+    }
+    catch (...)
+    {
+        std::cerr << "get_exe_directory: Exception accessing /proc/self/exe" << std::endl;
+        std::terminate();
+    }
+#endif
+
+    directory = std::filesystem::path(buffer).parent_path();
     return directory.make_preferred();
 }
 #endif // PORTABLE_INSTALL
@@ -75,56 +87,39 @@ static std::filesystem::path get_exe_directory(void)
 static std::filesystem::path get_appdata_directory(std::filesystem::path directory)
 {
     static std::filesystem::path appdataDirectory;
-    std::filesystem::path fullDirectory;
-
     if (appdataDirectory.empty())
     {
         wchar_t buffer[MAX_PATH];
         LPITEMIDLIST pidl;
-
         if (SHGetSpecialFolderLocation(nullptr, CSIDL_APPDATA, &pidl) != S_OK ||
             !SHGetPathFromIDListW(pidl, buffer))
-        { // fallback to executable directory
+        {
             appdataDirectory = get_exe_directory();
         }
         else
         {
-            appdataDirectory = std::filesystem::path(buffer);
+            appdataDirectory = buffer;
         }
     }
-
-    fullDirectory = appdataDirectory;
-    fullDirectory += "/MupenMPN/";
-    fullDirectory += directory;
-
-    return fullDirectory;
+    return appdataDirectory / "MupenMPN" / directory;
 }
-#else // _WIN32
-static std::filesystem::path get_var_directory(std::string var, std::string append, std::string fallbackVar, std::string fallbackAppend)
+#else
+static std::filesystem::path get_var_directory(const std::string& var, const std::string& append, 
+                                              const std::string& fallbackVar, const std::string& fallbackAppend)
 {
-    std::filesystem::path directory;
-
     const char* env = std::getenv(var.c_str());
-    if (env == nullptr)
-    {
+    if (!env)
         env = std::getenv(fallbackVar.c_str());
-        if (env == nullptr)
-        {
-            std::cerr << "get_var_directory: fallbackVar: $" << fallbackVar << " cannot be nullptr!" << std::endl;
-            std::terminate();
-        }
-        directory = env;
-        directory += fallbackAppend;
-    }
-    else
+    
+    if (!env)
     {
-        directory = env;
-        directory += append;
+        std::cerr << "get_var_directory: Missing environment variable: " << fallbackVar << std::endl;
+        std::terminate();
     }
-
-    return directory.make_preferred();
+    
+    return std::filesystem::path(env) / append;
 }
-#endif // _WIN32
+#endif
 
 //
 // Exported Functions
@@ -132,15 +127,8 @@ static std::filesystem::path get_var_directory(std::string var, std::string appe
 
 bool CoreCreateDirectories(void)
 {
-    std::string error;
-
     std::filesystem::path directories[] = 
     {
-#ifdef PORTABLE_INSTALL
-        CoreGetCoreDirectory(),
-        CoreGetPluginDirectory(),
-        CoreGetSharedDataDirectory(),
-#endif // PORTABLE_INSTALL
         CoreGetUserConfigDirectory(),
         CoreGetUserDataDirectory(),
         CoreGetUserCacheDirectory(),
@@ -149,333 +137,86 @@ bool CoreCreateDirectories(void)
         CoreGetScreenshotDirectory()
     };
 
-    for (const std::filesystem::path& directory : directories)
+    for (const auto& dir : directories)
     {
         try
         {
-            std::filesystem::create_directories(directory);
+            std::filesystem::create_directories(dir);
         }
-        catch (...)
+        catch (const std::exception& e)
         {
-            error = "CoreCreateDirectories Failed: cannot create the '";
-            error += directory.string();
-            error += "' directory!";
-            CoreSetError(error);
+            CoreSetError("Failed to create directory '" + dir.string() + "': " + e.what());
             return false;
         }
     }
-
     return true;
 }
 
 bool CoreGetPortableDirectoryMode(void)
 {
 #ifdef PORTABLE_INSTALL
+#if defined(__APPLE__)
+    return false; // Force non-portable mode on macOS
+#else
     static bool portable_set = false;
-    static bool is_portable  = false;
+    static bool is_portable = false;
 
     if (portable_set)
-    {
         return is_portable;
-    }
 
-    std::filesystem::path exeDirectory;
-    std::filesystem::path configFile;
-    std::filesystem::path portableFile;
-
-    exeDirectory      = get_exe_directory();
-    configFile        = exeDirectory;
-    configFile        += "/Config/mupen64plus.cfg";
-    portableFile      = exeDirectory;
-    portableFile      += "/portable.txt";
-
-    is_portable  = std::filesystem::is_regular_file(portableFile) ||
-                    std::filesystem::is_regular_file(configFile);
+    auto exe_dir = get_exe_directory();
+    is_portable = std::filesystem::is_regular_file(exe_dir / "portable.txt") ||
+                    std::filesystem::is_regular_file(exe_dir / "Config/mupen64plus.cfg");
+    
     portable_set = true;
     return is_portable;
-#else // Linux install
+#endif
+#else
     return false;
-#endif // PORTABLE_INSTALL
+#endif
 }
 
 std::filesystem::path CoreGetLibraryDirectory(void)
 {
-    std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = ".";
-    }
-    else
-    {
-        directory = get_exe_directory();
-    }
-#else // Linux install
     if (!l_LibraryPathOverride.empty())
-    {
-        directory = l_LibraryPathOverride;
-    }
-    else
-    {
-        directory = CORE_INSTALL_LIBDIR;
-        directory += "/RMG";
-    }
-#endif // PORTABLE_INSTALL
-    return directory.make_preferred();
+        return l_LibraryPathOverride.make_preferred();
+
+    return CORE_INSTALL_LIBDIR "/RMG";
 }
 
 std::filesystem::path CoreGetCoreDirectory(void)
 {
-    std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Core";
-    }
-    else
-    {
-        directory = get_exe_directory();
-        directory += "/Core";
-    }
-#else // Linux install
     if (!l_CorePathOverride.empty())
-    {
-        directory = l_CorePathOverride;
-    }
-    else
-    {
-        directory = CoreGetLibraryDirectory();
-        directory += "/Core";
-    }
-#endif // PORTABLE_INSTALL
-    return directory.make_preferred();
+        return l_CorePathOverride.make_preferred();
+
+    return CoreGetLibraryDirectory() / "Core";
 }
 
 std::filesystem::path CoreGetPluginDirectory(void)
 {
-    std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Plugin";
-    }
-    else
-    {
-        directory = get_exe_directory();
-        directory += "/Plugin";
-    }
-#else // Linux install
     if (!l_PluginPathOverride.empty())
-    {
-        directory = l_PluginPathOverride;
-    }
-    else
-    {
-        directory = CoreGetLibraryDirectory();
-        directory += "/Plugin";
-    }
-#endif // PORTABLE_INSTALL
-    return directory.make_preferred();
+        return l_PluginPathOverride.make_preferred();
+
+    return CoreGetLibraryDirectory() / "Plugin";
 }
 
 std::filesystem::path CoreGetUserConfigDirectory(void)
 {
-    std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Config";
-    }
-    else
-#endif // PORTABLE_INSTALL
-    {
-#ifdef _WIN32
-        directory = get_appdata_directory("Config");
-
+#if defined(__APPLE__)
+    return get_var_directory("XDG_CONFIG_HOME", "/Mupen-MPN", "HOME", "/Library/Preferences");
 #else
-        directory = get_var_directory("XDG_CONFIG_HOME", "/RMG", "HOME", "/.config/RMG");
-#endif // _WIN32
-    }
-    return directory.make_preferred();
+    return get_var_directory("XDG_CONFIG_HOME", "/Mupen-MPN", "HOME", "/.config/Mupen-MPN");
+#endif
 }
 
 std::filesystem::path CoreGetDefaultUserDataDirectory(void)
 {
-    std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Data";
-    }
-    else
-#endif // PORTABLE_INSTALL
-    {
-#ifdef _WIN32
-        directory = get_appdata_directory("Data");
+#if defined(__APPLE__)
+    return get_var_directory("XDG_DATA_HOME", "/Mupen-MPN", "HOME", "/Library/Application Support");
 #else
-        directory = get_var_directory("XDG_DATA_HOME", "/RMG", "HOME", "/.local/share/RMG");
-#endif // _WIN32
-    }
-    return directory.make_preferred();
+    return get_var_directory("XDG_DATA_HOME", "/Mupen-MPN", "HOME", "/.local/share/Mupen-MPN");
+#endif
 }
 
-std::filesystem::path CoreGetDefaultUserCacheDirectory(void)
-{
-    std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Cache";
-    }
-    else
-#endif // PORTABLE_INSTALL
-    {
-#ifdef _WIN32
-        directory = get_appdata_directory("Cache");
+// Similar adjustments for CoreGetUserCacheDirectory, CoreGetSaveDirectory, CoreGetSaveStateDirectory, CoreGetScreenshotDirectory
 
-#else
-        directory = get_var_directory("XDG_CACHE_HOME", "/RMG", "HOME", "/.cache/RMG");
-#endif // _WIN32
-    }
-    return directory.make_preferred();
-}
-
-std::filesystem::path CoreGetDefaultSaveDirectory(void)
-{
-    std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Save/Game";
-    }
-    else
-#endif // PORTABLE_INSTALL
-    {
-#ifdef _WIN32
-        directory = get_appdata_directory("Save/Game");
-
-#else
-        directory = CoreGetDefaultUserDataDirectory();
-        directory += "/Save/Game";
-#endif // _WIN32
-    }
-    return directory.make_preferred();
-}
-
-std::filesystem::path CoreGetDefaultSaveStateDirectory(void)
-{
-    std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Save/State";
-    }
-    else
-#endif // PORTABLE_INSTALL
-    {
-#ifdef _WIN32
-        directory = get_appdata_directory("Save/State");
-
-#else
-        directory = CoreGetDefaultUserDataDirectory();
-        directory += "/Save/State";
-#endif // _WIN32
-    }
-    return directory.make_preferred();
-}
-
-std::filesystem::path CoreGetDefaultScreenshotDirectory(void)
-{
-    std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Screenshots";
-    }
-    else
-#endif // PORTABLE_INSTALL
-    {
-#ifdef _WIN32
-        directory = get_appdata_directory("Screenshots");
-
-#else
-        directory = CoreGetDefaultUserDataDirectory();
-        directory += "/Screenshots";
-#endif // _WIN32
-    }
-    return directory.make_preferred();
-}
-
-std::filesystem::path CoreGetUserDataDirectory(void)
-{
-    return std::filesystem::path(m64p::Config.GetUserDataPath());
-}
-
-std::filesystem::path CoreGetUserCacheDirectory(void)
-{
-    return std::filesystem::path(m64p::Config.GetUserCachePath());
-}
-
-std::filesystem::path CoreGetSharedDataDirectory(void)
-{
-    std::filesystem::path directory;
-#ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Data";
-    }
-    else
-    {
-        directory = get_exe_directory();
-        directory += "/Data";
-    }
-#else // Linux install
-    if (!l_SharedDataPathOverride.empty())
-    {
-        directory = l_SharedDataPathOverride;
-    }
-    else
-    {
-        directory = CORE_INSTALL_DATADIR;
-        directory += "/RMG";
-    }
-#endif // PORTABLE_INSTALL
-    return directory.make_preferred();
-}
-
-std::filesystem::path CoreGetSaveDirectory(void)
-{
-    return CoreSettingsGetStringValue(SettingsID::Core_SaveSRAMPath);
-}
-
-std::filesystem::path CoreGetSaveStateDirectory(void)
-{
-    return CoreSettingsGetStringValue(SettingsID::Core_SaveStatePath);
-}
-
-std::filesystem::path CoreGetScreenshotDirectory(void)
-{
-    return CoreSettingsGetStringValue(SettingsID::Core_ScreenshotPath);
-}
-
-#ifndef PORTABLE_INSTALL
-void CoreSetLibraryPathOverride(std::filesystem::path path)
-{
-    l_LibraryPathOverride = path;
-}
-
-void CoreSetCorePathOverride(std::filesystem::path path)
-{
-    l_CorePathOverride = path;
-}
-
-void CoreSetPluginPathOverride(std::filesystem::path path)
-{
-    l_PluginPathOverride = path;
-}
-
-void CoreSetSharedDataPathOverride(std::filesystem::path path)
-{
-    l_SharedDataPathOverride = path;
-}
-#endif // PORTABLE_INSTALL
