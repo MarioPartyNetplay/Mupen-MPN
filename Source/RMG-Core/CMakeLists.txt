@@ -13,7 +13,15 @@ endif(WIN32)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
+
 pkg_check_modules(MINIZIP REQUIRED minizip)
+if (MINIZIP_FOUND)
+    message(STATUS "Found Minizip: ${MINIZIP_LIBRARIES}")
+else()
+    set(MINIZIP_INCLUDE_DIRS /usr/local/include)
+    set(MINIZIP_LIBRARIES /usr/local/lib/libminizip.dylib)
+endif()
+
 if (WIN32)
     pkg_check_modules(ICONV REQUIRED iconv)
 endif(WIN32)
