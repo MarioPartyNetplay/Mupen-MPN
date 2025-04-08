@@ -239,19 +239,20 @@
  
  static void netplay_process()
  {
-     //In this function we process data we have received from the server
+     // In this function, we process data we have received from the server
      UDPpacket *packet = SDLNet_AllocPacket(512);
      uint32_t curr, count, keys;
      uint8_t plugin, player, current_status;
-     while (SDLNet_UDP_Recv(l_udpSocket, packet) == 1)
+     int inputs_received[4] = {0, 0, 0, 0}; // Track inputs received for each player
+     int all_inputs_received = 0;
+
+     while (!all_inputs_received && SDLNet_UDP_Recv(l_udpSocket, packet) == 1)
      {
          switch (packet->data[0])
          {
              case UDP_RECEIVE_KEY_INFO:
              case UDP_RECEIVE_KEY_INFO_GRATUITOUS:
                  player = packet->data[1];
-                 //current_status is a status update from the server
-                 //it will let us know if another player has disconnected, or the games have desynced
                  current_status = packet->data[2];
                  if (packet->data[0] == UDP_RECEIVE_KEY_INFO)
                      l_player_lag[player] = packet->data[3];
@@ -267,36 +268,46 @@
                      l_status = current_status;
                  }
                  curr = 5;
-                 //this loop processes input data from the server, inserting new events into the linked list for each player
-                 //it skips events that we have already recorded, or if we receive data for an event that has already happened
                  for (uint8_t i = 0; i < packet->data[4]; ++i)
                  {
                      count = SDLNet_Read32(&packet->data[curr]);
                      curr += 4;
- 
-                     if (((count - l_cin_compats[player].netplay_count) > (UINT32_MAX / 2)) || (check_valid(player, count))) //event doesn't need to be recorded
+
+                     if (((count - l_cin_compats[player].netplay_count) > (UINT32_MAX / 2)) || (check_valid(player, count)))
                      {
                          curr += 5;
                          continue;
                      }
- 
+
                      keys = SDLNet_Read32(&packet->data[curr]);
                      curr += 4;
                      plugin = packet->data[curr];
                      curr += 1;
- 
-                     //insert new event at beginning of linked list
+
                      struct netplay_event* new_event = (struct netplay_event*)malloc(sizeof(struct netplay_event));
                      new_event->count = count;
                      new_event->buttons = keys;
                      new_event->plugin = plugin;
                      new_event->next = l_cin_compats[player].event_first;
                      l_cin_compats[player].event_first = new_event;
+
+                     inputs_received[player] = 1; // Mark input as received for this player
                  }
                  break;
              default:
                  DebugMessage(M64MSG_ERROR, "Netplay: received unknown message from server");
                  break;
+         }
+
+         // Check if inputs from all players are received
+         all_inputs_received = 1;
+         for (int i = 0; i < 4; ++i)
+         {
+             if (l_netplay_control[i] != -1 && !inputs_received[i])
+             {
+                 all_inputs_received = 0;
+                 break;
+             }
          }
      }
      SDLNet_FreePacket(packet);
