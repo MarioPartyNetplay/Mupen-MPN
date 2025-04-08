@@ -1,5 +1,7 @@
 # CMake build directory
 Build/
+build/
+bin/
 Bin/
 # Clangd cache
 .cache/
@@ -23,3 +25,4 @@ Package/AppImage/sharun
 # 3rdParty Build
 Source/3rdParty/mupen64plus-core/src/asm_defines/asm_defines_gas.h
 Source/3rdParty/mupen64plus-core/src/asm_defines/asm_defines_nasm.h
+Source/RMG-Core/VersionHash.hpp
