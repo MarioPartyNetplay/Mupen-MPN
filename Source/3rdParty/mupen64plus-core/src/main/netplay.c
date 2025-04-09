@@ -316,20 +316,25 @@
  static int netplay_ensure_valid(uint8_t control_id)
  {
      //This function makes sure we have data for a certain event
-     //If we don't have the data, it will create a new thread that will request the data
      if (check_valid(control_id, l_cin_compats[control_id].netplay_count))
          return 1;
- 
+
      if (l_udpChannel == -1)
          return 0;
- 
-     SDL_Thread* thread = SDL_CreateThread(netplay_require_response, "Netplay key request", &control_id);
- 
+
+     uint32_t timeout = SDL_GetTicks() + 10000;
      while (!check_valid(control_id, l_cin_compats[control_id].netplay_count) && l_udpChannel != -1)
+     {
+         if (SDL_GetTicks() > timeout)
+         {
+             l_udpChannel = -1;
+             return 0;
+         }
+         netplay_request_input(control_id);
          netplay_process();
-     int success;
-     SDL_WaitThread(thread, &success);
-     return success;
+         SDL_Delay(5);
+     }
+     return 1;
  }
  
  static void netplay_delete_event(struct netplay_event* current, uint8_t control_id)
