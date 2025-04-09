@@ -54,6 +54,7 @@ void netplay_read_registration(struct controller_input_compat* cin_compats);
 void netplay_update_input(struct pif* pif);
 m64p_error netplay_send_config(char* data, int size);
 m64p_error netplay_receive_config(char* data, int size);
+void netplay_get_emulation_speed();
 
 #else
 
