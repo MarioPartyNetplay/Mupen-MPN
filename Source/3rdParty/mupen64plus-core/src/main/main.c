@@ -972,7 +972,19 @@ static void apply_speed_limiter(void)
 
     // calculate frame duration based upon ROM setting (50/60hz) and mupen64plus speed adjustment
     const double VILimitMilliseconds = 1000.0 / g_dev.vi.expected_refresh_rate;
-    const double SpeedFactorMultiple = defaultSpeedFactor/l_SpeedFactor;
+    double SpeedFactorMultiple;
+    
+    if (netplay_is_init())
+    {
+        // Use netplay speed control when in netplay mode
+        SpeedFactorMultiple = defaultSpeedFactor / netplay_get_emulation_speed();
+    }
+    else
+    {
+        // Use normal speed control otherwise
+        SpeedFactorMultiple = defaultSpeedFactor / l_SpeedFactor;
+    }
+    
     const double AdjustedLimit = VILimitMilliseconds * SpeedFactorMultiple;
 
     //if this is the first time or we are resuming from pause
@@ -1013,7 +1025,7 @@ static void apply_speed_limiter(void)
         totalVIs += (unsigned long)(minSleepNeeded/AdjustedLimit);
     }
 
-    if(l_MainSpeedLimit && sleepTime > 0 && sleepTime < maxSleepNeeded*SpeedFactorMultiple)
+    if((l_MainSpeedLimit || netplay_is_init()) && sleepTime > 0 && sleepTime < maxSleepNeeded*SpeedFactorMultiple)
     {
         while(sleepTime >= 0) {
             SDL_Delay((unsigned int) sleepTime);
@@ -1023,7 +1035,6 @@ static void apply_speed_limiter(void)
             sleepTime = totalElapsedGameTime - elapsedRealTime;
         }
     }
-
 
 #if defined(PROFILE)
     timed_section_end(TIMED_SECTION_IDLE);
