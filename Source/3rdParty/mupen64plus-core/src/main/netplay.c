@@ -218,30 +218,6 @@
      return 0;
  }
  
- static int netplay_ensure_valid(uint8_t control_id)
- {
-     //This function makes sure we have data for a certain event
-     if (check_valid(control_id, l_cin_compats[control_id].netplay_count))
-         return 1;
-
-     if (l_udpChannel == -1)
-         return 0;
-
-     uint32_t timeout = SDL_GetTicks() + 10000;
-     while (!check_valid(control_id, l_cin_compats[control_id].netplay_count) && l_udpChannel != -1)
-     {
-         if (SDL_GetTicks() > timeout)
-         {
-             l_udpChannel = -1;
-             return 0;
-         }
-         netplay_request_input(control_id);
-         netplay_process();
-         SDL_Delay(5);
-     }
-     return 1;
- }
- 
  static void netplay_process()
  {
      // In this function, we process data we have received from the server
@@ -316,6 +292,30 @@
          }
      }
      SDLNet_FreePacket(packet);
+ }
+ 
+ static int netplay_ensure_valid(uint8_t control_id)
+ {
+     //This function makes sure we have data for a certain event
+     if (check_valid(control_id, l_cin_compats[control_id].netplay_count))
+         return 1;
+
+     if (l_udpChannel == -1)
+         return 0;
+
+     uint32_t timeout = SDL_GetTicks() + 10000;
+     while (!check_valid(control_id, l_cin_compats[control_id].netplay_count) && l_udpChannel != -1)
+     {
+         if (SDL_GetTicks() > timeout)
+         {
+             l_udpChannel = -1;
+             return 0;
+         }
+         netplay_request_input(control_id);
+         netplay_process();
+         SDL_Delay(5);
+     }
+     return 1;
  }
  
  static void netplay_delete_event(struct netplay_event* current, uint8_t control_id)
