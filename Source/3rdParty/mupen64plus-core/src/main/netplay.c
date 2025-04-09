@@ -49,6 +49,7 @@
  static uint8_t l_plugin[4];
  static uint8_t l_buffer_target;
  static uint8_t l_player_lag[4];
+ static uint8_t l_emulation_speed = 100; // 100% normal speed
 
  static void netplay_process(void);
 
@@ -236,7 +237,41 @@
                  player = packet->data[1];
                  current_status = packet->data[2];
                  if (packet->data[0] == UDP_RECEIVE_KEY_INFO)
+                 {
+                     // Find the minimum and maximum lag among all players
+                     uint8_t min_lag = 255;
+                     uint8_t max_lag = 0;
+                     for (int i = 0; i < 4; ++i)
+                     {
+                         if (l_netplay_control[i] != -1)
+                         {
+                             if (l_player_lag[i] < min_lag)
+                                 min_lag = l_player_lag[i];
+                             if (l_player_lag[i] > max_lag)
+                                 max_lag = l_player_lag[i];
+                         }
+                     }
+                     
+                     // Calculate lag difference
+                     uint8_t lag_diff = max_lag - min_lag;
+                     
+                     // Adjust emulation speed based on lag difference
+                     if (lag_diff > 10)
+                     {
+                         // Slow down emulation proportionally to the lag difference
+                         // Minimum speed is 50% when lag difference is 20 or more
+                         l_emulation_speed = 100 - ((lag_diff - 10) * 5);
+                         if (l_emulation_speed < 50)
+                             l_emulation_speed = 50;
+                     }
+                     else
+                     {
+                         // Return to normal speed when lag difference is small
+                         l_emulation_speed = 100;
+                     }
+                     
                      l_player_lag[player] = packet->data[3];
+                 }
                  if (current_status != l_status)
                  {
                      if (((current_status & 0x1) ^ (l_status & 0x1)) != 0)
@@ -685,3 +720,9 @@
      else
          return M64ERR_INVALID_STATE;
  }
+
+// Add this function to get the current emulation speed
+uint8_t netplay_get_emulation_speed(void)
+{
+    return l_emulation_speed;
+}
