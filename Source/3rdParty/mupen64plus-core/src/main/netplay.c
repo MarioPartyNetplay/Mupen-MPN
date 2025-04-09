@@ -49,7 +49,9 @@
  static uint8_t l_plugin[4];
  static uint8_t l_buffer_target;
  static uint8_t l_player_lag[4];
- 
+
+ static void netplay_process(void);
+
  //UDP packet formats
  #define UDP_SEND_KEY_INFO 0
  #define UDP_RECEIVE_KEY_INFO 1
