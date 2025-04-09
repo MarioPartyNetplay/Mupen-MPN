@@ -722,7 +722,7 @@
  }
 
 // Add this function to get the current emulation speed
-uint8_t netplay_get_emulation_speed(char void)
+uint8_t netplay_get_emulation_speed(void)
 {
     return l_emulation_speed;
 }
