@@ -243,7 +243,8 @@
                  // Ensure enough frames have passed before attempting rollback
                  if (current_frame > 60) { // Ensure at least one state has been saved
                      DebugMessage(M64MSG_INFO, "Netplay: Rolling back due to received key info");
-                     uint32_t target_frame = current_frame - 60; // Rollback to the last saved state
+                     // Calculate the nearest previous frame that is a multiple of 60
+                     uint32_t target_frame = (current_frame / 60) * 60;
                      if (target_frame > 0) {  // Don't rollback before frame 0
                          netplay_handle_rollback(target_frame);
                      }
