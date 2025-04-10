@@ -749,6 +749,8 @@ uint8_t netplay_get_emulation_speed(void)
 // Function to save the current game state
 void netplay_save_state(uint32_t frame)
 {
+    if (!netplay_is_init())
+        return;
     DebugMessage(M64MSG_INFO, "Netplay: Attempting to save state at frame %u", frame);
     
     struct netplay_state* new_state = malloc(sizeof(struct netplay_state));
@@ -789,6 +791,9 @@ void netplay_save_state(uint32_t frame)
 // Function to handle rollback to a specific frame
 void netplay_handle_rollback(uint32_t target_frame)
 {
+    if (!netplay_is_init())
+        return;
+
     // Find the closest state before the target frame
     struct netplay_state* rollback_state = NULL;
     struct netplay_state* current = saved_states;
@@ -801,14 +806,18 @@ void netplay_handle_rollback(uint32_t target_frame)
     }
 
     if (!rollback_state) {
-        // No suitable state found
+        DebugMessage(M64MSG_ERROR, "Netplay: No suitable state found for rollback to frame %u", target_frame);
         return;
     }
+
+    DebugMessage(M64MSG_INFO, "Netplay: Rolling back to frame %u", rollback_state->frame);
 
     // Set slot to 9 and load the state
     main_state_set_slot(9);
     main_state_load(NULL); // Load state from memory
+
     current_frame = rollback_state->frame;
+    DebugMessage(M64MSG_INFO, "Netplay: Successfully rolled back to frame %u", current_frame);
 }
 
 // Function to get current frame

@@ -1725,7 +1725,10 @@ void MainWindow::on_Action_System_SaveState(void)
     }
     else
     {
-        OnScreenDisplaySetMessage("Saved state to slot: " + std::to_string(CoreGetSaveStateSlot()));
+        if (!CoreHasInitNetplay())
+        {
+            OnScreenDisplaySetMessage("Saved state to slot: " + std::to_string(CoreGetSaveStateSlot()));
+        }
     }
 }
 
@@ -1756,7 +1759,10 @@ void MainWindow::on_Action_System_SaveAs(void)
         }
         else
         {
-            OnScreenDisplaySetMessage("Saved state to: " + QDir::toNativeSeparators(fileName).toStdString());
+            if (!CoreHasInitNetplay())
+            {
+                OnScreenDisplaySetMessage("Saved state to slot: " + std::to_string(CoreGetSaveStateSlot()));
+            }
         }
     }
 
@@ -1777,7 +1783,10 @@ void MainWindow::on_Action_System_LoadState(void)
     }
     else
     {
-        OnScreenDisplaySetMessage("State loaded from slot: " + std::to_string(CoreGetSaveStateSlot()));
+        if (CoreHasInitNetplay())
+        {
+            OnScreenDisplaySetMessage("State loaded from slot: " + std::to_string(CoreGetSaveStateSlot()));
+        }
     }
 }
 

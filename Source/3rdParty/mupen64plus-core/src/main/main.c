@@ -659,9 +659,6 @@ void main_state_inc_slot(void)
 
 void main_state_load(const char *filename)
 {
-    if (netplay_is_init())
-        return;
-
     if (filename == NULL) // Save to slot
         savestates_set_job(savestates_job_load, savestates_type_m64p, NULL);
     else
@@ -670,9 +667,6 @@ void main_state_load(const char *filename)
 
 void main_state_save(int format, const char *filename)
 {
-    if (netplay_is_init())
-        return;
-
     if (filename == NULL) // Save to slot
         savestates_set_job(savestates_job_save, savestates_type_m64p, NULL);
     else // Save to file
