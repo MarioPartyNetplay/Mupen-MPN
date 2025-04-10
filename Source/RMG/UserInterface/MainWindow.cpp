@@ -2759,7 +2759,10 @@ void MainWindow::on_Core_StateCallback(CoreStateCallbackType type, int value)
             }
             else if (!this->ui_ManuallySavedState)
             {
-                OnScreenDisplaySetMessage("Saved state.");
+                if (!CoreHasInitNetplay()) 
+                {
+                    OnScreenDisplaySetMessage("Saved state.");
+                }
             }
 
             // refresh savestate slot times in 1 second,

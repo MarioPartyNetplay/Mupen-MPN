@@ -51,6 +51,7 @@
 #include "savestates.h"
 #include "util.h"
 #include "workqueue.h"
+#include "netplay.h"
 
 enum { GB_CART_FINGERPRINT_SIZE = 0x1c };
 enum { GB_CART_FINGERPRINT_OFFSET = 0x134 };
