@@ -51,6 +51,9 @@
  static uint8_t l_player_lag[4];
  static uint8_t l_emulation_speed = 100; // 100% normal speed
 
+ static struct netplay_state* saved_states = NULL;
+ static uint32_t current_frame = 0;
+
  static void netplay_process(void);
 
  //UDP packet formats
@@ -236,6 +239,7 @@
              case UDP_RECEIVE_KEY_INFO_GRATUITOUS:
                  player = packet->data[1];
                  current_status = packet->data[2];
+                 
                  if (packet->data[0] == UDP_RECEIVE_KEY_INFO)
                  {
                      // Find the minimum and maximum lag among all players
@@ -683,6 +687,13 @@
          netplay_send_raw_input(pif);
          netplay_get_raw_input(pif);
      }
+
+     // Save state every 60 frames (about once per second at 60fps)
+     if (current_frame % 60 == 0) {
+         netplay_save_state(current_frame);
+     }
+
+     current_frame++;
  }
  
  m64p_error netplay_send_config(char* data, int size)
@@ -725,4 +736,120 @@
 uint8_t netplay_get_emulation_speed(void)
 {
     return l_emulation_speed;
+}
+
+// Function to save the current game state
+void netplay_save_state(uint32_t frame)
+{
+    struct netplay_state* new_state = malloc(sizeof(struct netplay_state));
+    if (!new_state) return;
+
+    // Allocate buffer for state data
+    size_t state_size = 1024 * 1024; // Allocate 1MB buffer for state
+    new_state->state_data = malloc(state_size);
+    if (!new_state->state_data) {
+        free(new_state);
+        return;
+    }
+
+    // Set slot to 9 for netplay savestates
+    main_state_set_slot(9);
+    
+    // Save the state
+    main_state_save(0, NULL); // Save state with default format
+
+    // Store the state
+    new_state->frame = frame;
+    new_state->state_size = state_size;
+    new_state->next = saved_states;
+    saved_states = new_state;
+
+    // Clean up old states (keep last 10 states)
+    struct netplay_state* current = saved_states;
+    int count = 0;
+    while (current) {
+        count++;
+        if (count > 10 && current->next) {
+            struct netplay_state* to_delete = current->next;
+            current->next = to_delete->next;
+            free(to_delete->state_data);
+            free(to_delete);
+        }
+        current = current->next;
+    }
+}
+
+// Function to handle rollback to a specific frame
+void netplay_handle_rollback(uint32_t target_frame)
+{
+    // Find the closest state before the target frame
+    struct netplay_state* rollback_state = NULL;
+    struct netplay_state* current = saved_states;
+    while (current) {
+        if (current->frame <= target_frame) {
+            rollback_state = current;
+            break;
+        }
+        current = current->next;
+    }
+
+    if (!rollback_state) {
+        // No suitable state found
+        return;
+    }
+
+    // Set slot to 9 and load the state
+    main_state_set_slot(9);
+    main_state_load(NULL); // Load state from memory
+    current_frame = rollback_state->frame;
+}
+
+// Function to get current frame
+int netplay_get_current_frame(void)
+{
+    return current_frame;
+}
+
+// Function to set current frame
+void netplay_set_frame(uint32_t frame)
+{
+    current_frame = frame;
+}
+
+// Function to clean up saved states
+void netplay_cleanup_states(void)
+{
+    struct netplay_state* current = saved_states;
+    while (current) {
+        struct netplay_state* next = current->next;
+        free(current->state_data);
+        free(current);
+        current = next;
+    }
+    saved_states = NULL;
+}
+
+// Add this to handle rollback messages
+static void handle_rollback_message(const uint8_t* data, size_t size)
+{
+    if (size < sizeof(uint32_t)) return;
+    
+    uint32_t target_frame;
+    memcpy(&target_frame, data, sizeof(uint32_t));
+    
+    netplay_handle_rollback(target_frame);
+}
+
+// Modify the message handling code to handle rollback messages
+static void handle_message(const uint8_t* data, size_t size)
+{
+    if (size < 1) return;
+    
+    uint8_t msg_type = data[0];
+    switch (msg_type) {
+        case NETPLAY_MSG_ROLLBACK:
+            handle_rollback_message(data + 1, size - 1);
+            break;
+        // ... existing message handling ...
+    }
 }

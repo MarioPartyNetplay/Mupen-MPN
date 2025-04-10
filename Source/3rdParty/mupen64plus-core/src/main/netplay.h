@@ -28,6 +28,17 @@
 
 #define NETPLAY_CORE_VERSION 1
 
+// Add new message type for rollback
+#define NETPLAY_MSG_ROLLBACK 0x05
+
+// Structure to hold saved state information
+struct netplay_state {
+    uint32_t frame;          // Frame number this state was saved at
+    uint8_t* state_data;     // The actual state data
+    size_t state_size;       // Size of the state data
+    struct netplay_state* next;  // For linked list of states
+};
+
 struct netplay_event {
     uint32_t buttons;
     uint8_t plugin;
@@ -55,6 +66,13 @@ void netplay_update_input(struct pif* pif);
 m64p_error netplay_send_config(char* data, int size);
 m64p_error netplay_receive_config(char* data, int size);
 uint8_t netplay_get_emulation_speed(void);
+
+// New functions for rollback support
+void netplay_save_state(uint32_t frame);
+void netplay_handle_rollback(uint32_t target_frame);
+void netplay_cleanup_states(void);
+int netplay_get_current_frame(void);
+void netplay_set_frame(uint32_t frame);
 
 #else
 
