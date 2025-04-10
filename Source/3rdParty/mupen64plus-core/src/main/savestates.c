@@ -1508,7 +1508,10 @@ static void savestates_save_m64p_work(struct work_struct *work)
     }
 
     gzclose(f);
-    main_message(M64MSG_STATUS, OSD_BOTTOM_LEFT, "Saved state to: %s", namefrompath(save->filepath));
+    if (!netplay_is_init())
+    {
+        main_message(M64MSG_STATUS, OSD_BOTTOM_LEFT, "Saved state to: %s", namefrompath(save->filepath));
+    }
     free(save->data);
     free(save->filepath);
     free(save);
@@ -2118,8 +2121,11 @@ static int savestates_save_pj64_zip(const struct device* dev, char *filepath)
     if (!savestates_save_pj64(dev, filepath, zipfile, write_data_to_zip))
         goto clean_and_exit;
 
-    main_message(M64MSG_STATUS, OSD_BOTTOM_LEFT, "Saved state to: %s", namefrompath(filepath));
-
+    if (!netplay_is_init())
+    {
+        main_message(M64MSG_STATUS, OSD_BOTTOM_LEFT, "Saved state to: %s", namefrompath(filepath));
+    }
+    
     clean_and_exit:
         if (zipfile != NULL)
         {
@@ -2153,8 +2159,10 @@ static int savestates_save_pj64_unc(const struct device* dev, char *filepath)
         StateChanged(M64CORE_STATE_SAVECOMPLETE, 0);
         return 0;
     }
-
-    main_message(M64MSG_STATUS, OSD_BOTTOM_LEFT, "Saved state to: %s", namefrompath(filepath));
+    if (!netplay_is_init())
+    {
+        main_message(M64MSG_STATUS, OSD_BOTTOM_LEFT, "Saved state to: %s", namefrompath(filepath));
+    }
     fclose(f);
     StateChanged(M64CORE_STATE_SAVECOMPLETE, 1);
     return 1;
