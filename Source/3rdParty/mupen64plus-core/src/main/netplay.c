@@ -744,23 +744,14 @@ void netplay_save_state(uint32_t frame)
     struct netplay_state* new_state = malloc(sizeof(struct netplay_state));
     if (!new_state) return;
 
-    // Allocate buffer for state data
-    size_t state_size = 1024 * 1024; // Allocate 1MB buffer for state
-    new_state->state_data = malloc(state_size);
-    if (!new_state->state_data) {
-        free(new_state);
-        return;
-    }
-
     // Set slot to 9 for netplay savestates
     main_state_set_slot(9);
     
     // Save the state
     main_state_save(0, NULL); // Save state with default format
 
-    // Store the state
+    // Store the state info
     new_state->frame = frame;
-    new_state->state_size = state_size;
     new_state->next = saved_states;
     saved_states = new_state;
 
@@ -772,7 +763,6 @@ void netplay_save_state(uint32_t frame)
         if (count > 10 && current->next) {
             struct netplay_state* to_delete = current->next;
             current->next = to_delete->next;
-            free(to_delete->state_data);
             free(to_delete);
         }
         current = current->next;
@@ -822,7 +812,6 @@ void netplay_cleanup_states(void)
     struct netplay_state* current = saved_states;
     while (current) {
         struct netplay_state* next = current->next;
-        free(current->state_data);
         free(current);
         current = next;
     }
