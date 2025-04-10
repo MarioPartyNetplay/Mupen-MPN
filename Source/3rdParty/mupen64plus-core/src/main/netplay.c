@@ -267,6 +267,14 @@
                          l_emulation_speed = 100 - ((lag_diff - 10) * 5);
                          if (l_emulation_speed < 50)
                              l_emulation_speed = 50;
+
+                         // If lag is too high, rollback to a previous state
+                         DebugMessage(M64MSG_INFO, "Netplay: High lag detected (%u), rolling back", lag_diff);
+                         // Rollback to a state that's lag_diff frames behind
+                         uint32_t target_frame = current_frame - lag_diff;
+                         if (target_frame > 0) {  // Don't rollback before frame 0
+                             netplay_handle_rollback(target_frame);
+                         }
                      }
                      else
                      {
