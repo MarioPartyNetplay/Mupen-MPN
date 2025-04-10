@@ -62,6 +62,9 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, QWebSocket* webSocke
 
     connect(this->webSocket, &QWebSocket::textMessageReceived, this, &NetplaySessionDialog::on_webSocket_textMessageReceived);
 
+    // Load and display cheats
+    updateCheatsTreeWidget();
+
     // reset json objects
     session = {};
     json    = {};
@@ -90,8 +93,6 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, QWebSocket* webSocke
     QPushButton* cheatsButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults);
     cheatsButton->setText("Cheats");
     cheatsButton->setIcon(QIcon::fromTheme("code-box-line"));
-
-    this->updateCheatsTreeWidget();
 }
 
 NetplaySessionDialog::~NetplaySessionDialog(void)
@@ -147,6 +148,7 @@ bool NetplaySessionDialog::applyCheats(void)
         return false;
     }
 
+    // Apply the cheats to the netplay session
     if (!CoreSetNetplayCheats(cheats))
     {
         QtMessageBox::Error(this, "CoreSetNetplayCheats() Failed", QString::fromStdString(CoreGetError()));
@@ -163,12 +165,13 @@ void NetplaySessionDialog::updateCheatsTreeWidget(void)
 
     if (!this->getCheats(cheats, cheatsArray))
     {
-        // always clear UI on failure
+        // Clear the UI on failure
         this->cheatsTreeWidget->clear();
         return;
     }
 
-    CheatsCommon::AddCheatsToTreeWidget(true, cheatsArray, this->sessionFile, cheats, this->cheatsTreeWidget, true);    
+    // Add cheats to the tree widget
+    CheatsCommon::AddCheatsToTreeWidget(true, cheatsArray, this->sessionFile, cheats, this->cheatsTreeWidget, true);
 }
 
 void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
