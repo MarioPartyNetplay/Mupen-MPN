@@ -741,19 +741,27 @@ uint8_t netplay_get_emulation_speed(void)
 // Function to save the current game state
 void netplay_save_state(uint32_t frame)
 {
+    DebugMessage(M64MSG_INFO, "Netplay: Attempting to save state at frame %u", frame);
+    
     struct netplay_state* new_state = malloc(sizeof(struct netplay_state));
-    if (!new_state) return;
+    if (!new_state) {
+        DebugMessage(M64MSG_ERROR, "Netplay: Failed to allocate memory for new state");
+        return;
+    }
 
     // Set slot to 9 for netplay savestates
     main_state_set_slot(9);
     
     // Save the state
+    DebugMessage(M64MSG_INFO, "Netplay: Saving state to slot 9");
     main_state_save(0, NULL); // Save state with default format
 
     // Store the state info
     new_state->frame = frame;
     new_state->next = saved_states;
     saved_states = new_state;
+
+    DebugMessage(M64MSG_INFO, "Netplay: Successfully saved state at frame %u", frame);
 
     // Clean up old states (keep last 10 states)
     struct netplay_state* current = saved_states;
@@ -764,6 +772,7 @@ void netplay_save_state(uint32_t frame)
             struct netplay_state* to_delete = current->next;
             current->next = to_delete->next;
             free(to_delete);
+            DebugMessage(M64MSG_INFO, "Netplay: Cleaned up old state");
         }
         current = current->next;
     }
