@@ -240,50 +240,17 @@
                  player = packet->data[1];
                  current_status = packet->data[2];
                  
-                 if (packet->data[0] == UDP_RECEIVE_KEY_INFO)
-                 {
-                     // Find the minimum and maximum lag among all players
-                     uint8_t min_lag = 255;
-                     uint8_t max_lag = 0;
-                     for (int i = 0; i < 4; ++i)
-                     {
-                         if (l_netplay_control[i] != -1)
-                         {
-                             if (l_player_lag[i] < min_lag)
-                                 min_lag = l_player_lag[i];
-                             if (l_player_lag[i] > max_lag)
-                                 max_lag = l_player_lag[i];
-                         }
+                 // Ensure enough frames have passed before attempting rollback
+                 if (current_frame > 60) { // Ensure at least one state has been saved
+                     DebugMessage(M64MSG_INFO, "Netplay: Rolling back due to received key info");
+                     uint32_t target_frame = current_frame - 60; // Rollback to the last saved state
+                     if (target_frame > 0) {  // Don't rollback before frame 0
+                         netplay_handle_rollback(target_frame);
                      }
-                     
-                     // Calculate lag difference
-                     uint8_t lag_diff = max_lag - min_lag;
-                     
-                     // Adjust emulation speed based on lag difference
-                     if (lag_diff > 10)
-                     {
-                         // Slow down emulation proportionally to the lag difference
-                         // Minimum speed is 50% when lag difference is 20 or more
-                         l_emulation_speed = 100 - ((lag_diff - 10) * 5);
-                         if (l_emulation_speed < 50)
-                             l_emulation_speed = 50;
-
-                         // If lag is too high, rollback to a previous state
-                         DebugMessage(M64MSG_INFO, "Netplay: High lag detected (%u), rolling back", lag_diff);
-                         // Rollback to a state that's lag_diff frames behind
-                         uint32_t target_frame = current_frame - lag_diff;
-                         if (target_frame > 0) {  // Don't rollback before frame 0
-                             netplay_handle_rollback(target_frame);
-                         }
-                     }
-                     else
-                     {
-                         // Return to normal speed when lag difference is small
-                         l_emulation_speed = 100;
-                     }
-                     
-                     l_player_lag[player] = packet->data[3];
                  }
+                 
+                 l_player_lag[player] = packet->data[3];
+                 
                  if (current_status != l_status)
                  {
                      if (((current_status & 0x1) ^ (l_status & 0x1)) != 0)
@@ -754,6 +721,7 @@ void netplay_save_state(uint32_t frame)
     
     struct netplay_state* new_state = malloc(sizeof(struct netplay_state));
     if (!new_state) {
+        DebugMessage(M64MSG_ERROR, "Netplay: Failed to allocate memory for new state");
         return;
     }
 
@@ -761,13 +729,13 @@ void netplay_save_state(uint32_t frame)
     main_state_set_slot(9);
     
     // Save the state
+    DebugMessage(M64MSG_INFO, "Netplay: Saving state at frame %u", frame);
     main_state_save(0, NULL); // Save state with default format
 
     // Store the state info
     new_state->frame = frame;
     new_state->next = saved_states;
     saved_states = new_state;
-
 
     // Clean up old states (keep last 10 states)
     struct netplay_state* current = saved_states;
@@ -778,6 +746,7 @@ void netplay_save_state(uint32_t frame)
             struct netplay_state* to_delete = current->next;
             current->next = to_delete->next;
             free(to_delete);
+            DebugMessage(M64MSG_INFO, "Netplay: Cleaned up old state");
         }
         current = current->next;
     }
@@ -789,10 +758,13 @@ void netplay_handle_rollback(uint32_t target_frame)
     if (!netplay_is_init())
         return;
 
+    DebugMessage(M64MSG_INFO, "Netplay: Attempting to rollback to frame %u", target_frame);
+
     // Find the closest state before the target frame
     struct netplay_state* rollback_state = NULL;
     struct netplay_state* current = saved_states;
     while (current) {
+        DebugMessage(M64MSG_INFO, "Netplay: Checking saved state at frame %u", current->frame);
         if (current->frame <= target_frame) {
             rollback_state = current;
             break;
@@ -801,14 +773,17 @@ void netplay_handle_rollback(uint32_t target_frame)
     }
 
     if (!rollback_state) {
+        DebugMessage(M64MSG_ERROR, "Netplay: No suitable state found for rollback to frame %u", target_frame);
         return;
     }
 
     // Set slot to 9 and load the state
+    DebugMessage(M64MSG_INFO, "Netplay: Rolling back to frame %u", rollback_state->frame);
     main_state_set_slot(9);
     main_state_load(NULL); // Load state from memory
 
     current_frame = rollback_state->frame;
+    DebugMessage(M64MSG_INFO, "Netplay: Successfully rolled back to frame %u", current_frame);
 }
 
 // Function to get current frame
