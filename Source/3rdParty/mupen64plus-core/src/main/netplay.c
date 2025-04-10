@@ -228,7 +228,7 @@
      int inputs_received[4] = {0, 0, 0, 0}; // Track inputs received for each player
      int all_inputs_received = 0;
 
-     while (!all_inputs_received && SDLNet_UDP_Recv(l_udpSocket, packet) == 1)
+     while (SDLNet_UDP_Recv(l_udpSocket, packet) == 1)
      {
          switch (packet->data[0])
          {
