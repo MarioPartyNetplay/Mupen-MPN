@@ -45,7 +45,6 @@ class NetplaySessionDialog : public QDialog, private Ui::NetplaySessionDialog
     bool getCheats(std::vector<CoreCheat>& cheats, QJsonArray& cheatsArray);
     bool applyCheats(void);
     void updateCheatsTreeWidget(void);
-    bool getLocalCheats(std::vector<CoreCheat>& cheats);
 
   private slots:
   	void on_webSocket_textMessageReceived(QString message);
