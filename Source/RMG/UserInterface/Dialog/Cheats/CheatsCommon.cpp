@@ -44,7 +44,12 @@ bool CheatsCommon::IsCheatEnabled(bool netplay, const QJsonArray& json, QString 
     if (netplay)
     {
         int index = find_json_cheat(json, cheat);
-        return index != -1 && json[index].toObject().contains("codes");
+        if (index == -1)
+        {
+            return false;
+        }
+        QJsonObject cheatObject = json[index].toObject();
+        return cheatObject.contains("codes") && !cheatObject["codes"].toArray().isEmpty();
     }
     else
     {

@@ -215,6 +215,9 @@ void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
                     }
                 }
             }
+
+            // Update cheats when players list changes
+            this->updateCheatsTreeWidget();
         }
     }
     else if (type == "reply_chat_message")
@@ -259,6 +262,77 @@ void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
             QtMessageBox::Error(this, "Server Error", json.value("message").toString());
         }
     }
+    else if (type == "reply_join_room")
+    {
+        if (json.value("accept").toInt() == 0)
+        {
+            this->sessionJson = json.value("room").toObject();
+            this->updateCheatsTreeWidget();
+
+            // If we're the host, send our current cheats to sync with new player
+            if (this->nickName == this->sessionJson.value("features").toObject().value("host_name").toString())
+            {
+                std::vector<CoreCheat> localCheats;
+                if (this->getLocalCheats(localCheats))
+                {
+                    QJsonArray localCheatsArray;
+                    for (const CoreCheat& cheat : localCheats)
+                    {
+                        if (!CoreIsCheatEnabled(this->sessionFile.toStdU32String(), cheat))
+                        {
+                            continue;
+                        }
+
+                        QJsonObject cheatObject;
+                        QJsonArray codesArray;
+
+                        for (const auto& cheatCode : cheat.CheatCodes)
+                        {
+                            QJsonObject codeObject;
+                            codeObject["address"] = (qint64)cheatCode.Address;
+                            codeObject["value"] = (qint64)cheatCode.Value;
+                            codeObject["use_option"] = cheatCode.UseOptions;
+                            codeObject["option_index"] = cheatCode.OptionIndex;
+                            codeObject["option_size"] = cheatCode.OptionSize;
+                            codesArray.push_back(codeObject);
+                        }
+
+                        cheatObject["name"] = QString::fromStdString(cheat.Name);
+                        cheatObject["codes"] = codesArray;
+                        cheatObject["has_options"] = cheat.HasOptions;
+
+                        if (cheat.HasOptions)
+                        {
+                            CoreCheatOption option;
+                            if (CoreGetCheatOption(this->sessionFile.toStdU32String(), cheat, option))
+                            {
+                                QJsonObject optionObject;
+                                optionObject["name"] = QString::fromStdString(option.Name);
+                                optionObject["size"] = option.Size;
+                                optionObject["value"] = (qint64)option.Value;
+                                cheatObject["option"] = optionObject;
+                            }
+                        }
+
+                        localCheatsArray.push_back(cheatObject);
+                    }
+
+                    QJsonObject session = this->sessionJson;
+                    QJsonObject features = session.value("features").toObject();
+                    features["cheats"] = QString(QJsonDocument(localCheatsArray).toJson(QJsonDocument::Compact));
+                    session.insert("features", features);
+
+                    QJsonObject updateJson;
+                    updateJson.insert("type", "request_edit_room");
+                    updateJson.insert("player_name", this->nickName);
+                    updateJson.insert("room", session);
+                    NetplayCommon::AddCommonJson(updateJson);
+
+                    this->webSocket->sendTextMessage(QJsonDocument(updateJson).toJson());
+                }
+            }
+        }
+    }
 }
 
 void NetplaySessionDialog::on_chatLineEdit_textChanged(QString text)
@@ -282,6 +356,16 @@ void NetplaySessionDialog::on_sendPushButton_clicked(void)
     this->chatLineEdit->clear();
 }
 
+bool NetplaySessionDialog::getLocalCheats(std::vector<CoreCheat>& cheats)
+{
+    if (!CoreGetCurrentCheats(this->sessionFile.toStdU32String(), cheats))
+    {
+        QtMessageBox::Error(this, "CoreGetCurrentCheats() Failed", QString::fromStdString(CoreGetError()));
+        return false;
+    }
+    return true;
+}
+
 void NetplaySessionDialog::on_buttonBox_clicked(QAbstractButton* button)
 {
     QPushButton* pushButton = (QPushButton*)button;
@@ -289,11 +373,86 @@ void NetplaySessionDialog::on_buttonBox_clicked(QAbstractButton* button)
 
     if (pushButton == cheatsButton)
     {
+        // Get local user cheats
+        std::vector<CoreCheat> localCheats;
+        if (!this->getLocalCheats(localCheats))
+        {
+            return;
+        }
+
+        // Convert local cheats to JSON format
+        QJsonArray localCheatsArray;
+        for (const CoreCheat& cheat : localCheats)
+        {
+            // Only include enabled cheats
+            if (!CoreIsCheatEnabled(this->sessionFile.toStdU32String(), cheat))
+            {
+                continue;
+            }
+
+            QJsonObject cheatObject;
+            QJsonArray codesArray;
+
+            for (const auto& cheatCode : cheat.CheatCodes)
+            {
+                QJsonObject codeObject;
+                codeObject["address"] = (qint64)cheatCode.Address;
+                codeObject["value"] = (qint64)cheatCode.Value;
+                codeObject["use_option"] = cheatCode.UseOptions;
+                codeObject["option_index"] = cheatCode.OptionIndex;
+                codeObject["option_size"] = cheatCode.OptionSize;
+                codesArray.push_back(codeObject);
+            }
+
+            cheatObject["name"] = QString::fromStdString(cheat.Name);
+            cheatObject["codes"] = codesArray;
+            cheatObject["has_options"] = cheat.HasOptions;
+
+            // Add cheat option if it exists and is set
+            if (cheat.HasOptions)
+            {
+                CoreCheatOption option;
+                if (CoreGetCheatOption(this->sessionFile.toStdU32String(), cheat, option))
+                {
+                    QJsonObject optionObject;
+                    optionObject["name"] = QString::fromStdString(option.Name);
+                    optionObject["size"] = option.Size;
+                    optionObject["value"] = (qint64)option.Value;
+                    cheatObject["option"] = optionObject;
+                }
+            }
+
+            localCheatsArray.push_back(cheatObject);
+        }
+
+        // Get existing netplay cheats
         QString cheatsJson = this->sessionJson.value("features").toObject().value("cheats").toString();
         QJsonDocument cheatsDocument = QJsonDocument::fromJson(cheatsJson.toUtf8());
+        QJsonArray existingCheatsArray = cheatsDocument.array();
+
+        // Combine local and existing cheats
+        QJsonArray combinedCheatsArray = localCheatsArray;
+        for (const QJsonValue& existingCheat : existingCheatsArray)
+        {
+            // Only add if not already in local cheats
+            bool found = false;
+            QString existingName = existingCheat.toObject()["name"].toString();
+            for (const QJsonValue& localCheat : localCheatsArray)
+            {
+                if (localCheat.toObject()["name"].toString() == existingName)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                combinedCheatsArray.push_back(existingCheat);
+            }
+        }
 
         // show cheats dialog to user
-        Dialog::CheatsDialog dialog(this, this->sessionFile, true, cheatsDocument.array());
+        Dialog::CheatsDialog dialog(this, this->sessionFile, true, combinedCheatsArray);
         dialog.exec();
 
         // request an update to the existing session with the new cheats
@@ -310,17 +469,18 @@ void NetplaySessionDialog::on_buttonBox_clicked(QAbstractButton* button)
         }
         session.insert("features", features);
 
-        // only request update when needed
-        if (this->sessionJson != session)
-        {
-            QJsonObject json;
-            json.insert("type", "request_edit_room");
-            json.insert("player_name", this->nickName);
-            json.insert("room", session);
-            NetplayCommon::AddCommonJson(json);
+        // Update the session JSON and reload the cheats tree widget
+        this->sessionJson = session;
+        this->updateCheatsTreeWidget();
 
-            this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
-        }
+        // Always send update to server when cheats are modified
+        QJsonObject json;
+        json.insert("type", "request_edit_room");
+        json.insert("player_name", this->nickName);
+        json.insert("room", session);
+        NetplayCommon::AddCommonJson(json);
+
+        this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
     }
 }
 
