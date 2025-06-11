@@ -110,6 +110,11 @@ void NetplaySessionDialog::onBufferSizeChanged(int value)
     QJsonObject json;
     json.insert("type", "update_buffer_size");
     json.insert("buffer_size", value);
+    
+    QJsonObject room;
+    room.insert("port", this->sessionPort);
+    json.insert("room", room);
+    
     this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
 }
 
