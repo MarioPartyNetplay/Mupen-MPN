@@ -48,7 +48,6 @@ class NetplaySessionDialog : public QDialog, private Ui::NetplaySessionDialog
 
   private slots:
   	void on_webSocket_textMessageReceived(QString message);
-    void onBufferSizeChanged(int value); // Declare the slot here
 
     void on_chatLineEdit_textChanged(QString text);
     void on_sendPushButton_clicked(void);

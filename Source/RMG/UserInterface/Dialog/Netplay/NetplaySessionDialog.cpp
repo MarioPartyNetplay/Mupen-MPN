@@ -51,12 +51,6 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, QWebSocket* webSocke
     // Check if the current user is the host
     bool isHost = (this->nickName == session.value("features").toObject().value("host_name").toString());
 
-    // Hide bufferSpinBox and its label if not host
-    if (!isHost) {
-        this->bufferSpinBox->setVisible(false);
-        this->bufferLabel->setVisible(false);
-    }
-
     this->sessionNameLineEdit->setText(this->sessionName);
     this->gameNameLineEdit->setText(session.value("game_name").toString());
 
@@ -84,9 +78,6 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, QWebSocket* webSocke
     startButton->setText("Start");
     startButton->setEnabled(false);
 
-    emit this->bufferSpinBox->valueChanged(5);
-    connect(this->bufferSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &NetplaySessionDialog::onBufferSizeChanged);
-
     QPushButton* cheatsButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults);
     cheatsButton->setText("Cheats");
     cheatsButton->setIcon(QIcon::fromTheme("code-box-line"));
@@ -100,22 +91,6 @@ NetplaySessionDialog::~NetplaySessionDialog(void)
     {
         this->webSocket->close();
     }
-}
-
-void NetplaySessionDialog::onBufferSizeChanged(int value)
-{
-    QString message = QString("<b>Buffer</b>: Changed the buffer to %1").arg(value);
-    this->chatPlainTextEdit->append(message);
-    // Send the updated buffer size to the server
-    QJsonObject json;
-    json.insert("type", "update_buffer_size");
-    json.insert("buffer_size", value);
-    
-    QJsonObject room;
-    room.insert("port", this->sessionPort);
-    json.insert("room", room);
-    
-    this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
 }
 
 bool NetplaySessionDialog::getCheats(std::vector<CoreCheat>& cheats, QJsonArray& cheatsArray)

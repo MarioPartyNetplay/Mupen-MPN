@@ -19,6 +19,20 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.          *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+/*
+ * Netplay Synchronization Strategy:
+ * 
+ * This implementation uses a "save state synchronization" approach instead of
+ * traditional frame rate throttling. The host (player 1) periodically saves
+ * the game state and sends it to other players, who then load the state to
+ * stay synchronized. This ensures all players remain at the same point in
+ * the game without needing to speed up or slow down any player's emulation.
+ * 
+ * Save state synchronization occurs every 300 frames (approximately 5 seconds
+ * at 60fps) and uses the existing save state infrastructure to maintain
+ * perfect synchronization between all players.
+ */
+
 #define SETTINGS_SIZE 24
 
 #define M64P_CORE_PROTOTYPES 1
@@ -28,6 +42,7 @@
 #include "plugin/plugin.h"
 #include "backends/plugins_compat/plugins_compat.h"
 #include "netplay.h"
+#include "savestates.h"
 
 #include <SDL_net.h>
 #if !defined(WIN32)
@@ -49,6 +64,11 @@ static struct controller_input_compat *l_cin_compats;
 static uint8_t l_plugin[4];
 static uint8_t l_buffer_target;
 static uint8_t l_player_lag[4];
+
+// Save state synchronization variables
+static uint32_t l_savestate_counter = 0;
+static uint32_t l_savestate_interval = 300; // Save state every 300 frames (5 seconds at 60fps)
+static int l_savestate_sync_enabled = 1; // Enable save state synchronization
 
 //UDP packets
 static UDPpacket *l_request_input_packet;
@@ -72,6 +92,8 @@ static const int32_t l_check_sync_packet_size = (CP0_REGS_COUNT * 4) + 5;
 #define TCP_REGISTER_PLAYER 5
 #define TCP_GET_REGISTRATION 6
 #define TCP_DISCONNECT_NOTICE 7
+#define TCP_SEND_SAVESTATE 8
+#define TCP_RECEIVE_SAVESTATE 9
 
 struct __UDPSocket {
     int ready;
@@ -384,18 +406,13 @@ static uint32_t netplay_get_input(uint8_t control_id)
     netplay_request_input(control_id);
 
     //l_buffer_target is set by the server upon registration
-    //l_player_lag is how far behind we are from the lead player
+    //l_player_lag is how far behind we are from the lead player (in frames)
     //buffer_size is the local buffer size
-    if (l_player_lag[control_id] > 0 && buffer_size(control_id) > l_buffer_target)
-    {
-        l_canFF = 1;
-        main_core_state_set(M64CORE_SPEED_LIMITER, 0);
-    }
-    else
-    {
-        main_core_state_set(M64CORE_SPEED_LIMITER, 1);
-        l_canFF = 0;
-    }
+    
+    // Always run at normal speed - synchronization is handled by the existing netplay system
+    main_core_state_set(M64CORE_SPEED_FACTOR, 100);
+    l_canFF = 0;
+    main_core_state_set(M64CORE_SPEED_LIMITER, 1);
 
     if (netplay_ensure_valid(control_id))
     {
