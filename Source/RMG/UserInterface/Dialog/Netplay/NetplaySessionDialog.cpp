@@ -10,6 +10,7 @@
 
 #include "UserInterface/Dialog/Cheats/CheatsCommon.hpp"
 #include "UserInterface/Dialog/Cheats/CheatsDialog.hpp"
+#include "UserInterface/Dialog/Cheats/ChooseCheatOptionDialog.hpp"
 #include "Utilities/QtMessageBox.hpp"
 #include "NetplaySessionDialog.hpp"
 #include "NetplayCommon.hpp"
@@ -55,6 +56,10 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, QWebSocket* webSocke
     this->gameNameLineEdit->setText(session.value("game_name").toString());
 
     connect(this->webSocket, &QWebSocket::textMessageReceived, this, &NetplaySessionDialog::on_webSocket_textMessageReceived);
+
+    // Connect cheat tree widget signals for interactive cheat management
+    connect(this->cheatsTreeWidget, &QTreeWidget::itemChanged, this, &NetplaySessionDialog::onCheatItemChanged);
+    connect(this->cheatsTreeWidget, &QTreeWidget::itemDoubleClicked, this, &NetplaySessionDialog::onCheatItemDoubleClicked);
 
     // reset json objects
     session = {};
@@ -148,7 +153,15 @@ void NetplaySessionDialog::updateCheatsTreeWidget(void)
         return;
     }
 
-    CheatsCommon::AddCheatsToTreeWidget(true, cheatsArray, this->sessionFile, cheats, this->cheatsTreeWidget, true);    
+    // Disconnect the signal temporarily to avoid triggering during setup
+    disconnect(this->cheatsTreeWidget, &QTreeWidget::itemChanged, this, &NetplaySessionDialog::onCheatItemChanged);
+    
+    // Use readonly=false to make cheats interactive for the host
+    bool isHost = (this->nickName == this->sessionJson.value("features").toObject().value("host_name").toString());
+    CheatsCommon::AddCheatsToTreeWidget(true, cheatsArray, this->sessionFile, cheats, this->cheatsTreeWidget, !isHost);
+    
+    // Reconnect the signal
+    connect(this->cheatsTreeWidget, &QTreeWidget::itemChanged, this, &NetplaySessionDialog::onCheatItemChanged);
 }
 
 void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
@@ -242,6 +255,12 @@ void NetplaySessionDialog::on_chatLineEdit_textChanged(QString text)
     this->sendPushButton->setDefault(this->sendPushButton->isEnabled());
 }
 
+void NetplaySessionDialog::onBufferSizeChanged(int value)
+{
+    // TODO: Implement buffer size change handling if needed
+    Q_UNUSED(value);
+}
+
 void NetplaySessionDialog::on_sendPushButton_clicked(void)
 {
     QJsonObject json;
@@ -333,4 +352,118 @@ void NetplaySessionDialog::reject(void)
     }
 
     QDialog::reject();
+}
+
+void NetplaySessionDialog::onCheatItemChanged(QTreeWidgetItem* item, int column)
+{
+    if (item == nullptr || item->data(column, Qt::UserRole).isNull())
+    {
+        return;
+    }
+
+    // Only allow the host to modify cheats
+    bool isHost = (this->nickName == this->sessionJson.value("features").toObject().value("host_name").toString());
+    if (!isHost)
+    {
+        return;
+    }
+
+    CoreCheat cheat = item->data(column, Qt::UserRole).value<CoreCheat>();
+    bool enabled = (item->checkState(column) == Qt::CheckState::Checked);
+
+    // Get current cheats JSON from session
+    QString cheatsJson = this->sessionJson.value("features").toObject().value("cheats").toString();
+    QJsonDocument cheatsDocument = QJsonDocument::fromJson(cheatsJson.toUtf8());
+    QJsonArray cheatsArray = cheatsDocument.array();
+
+    // Handle cheats with options
+    if (enabled && cheat.HasOptions && !CheatsCommon::HasCheatOptionSet(true, cheatsArray, this->sessionFile, cheat))
+    {
+        // Reset the checkbox if no option is set
+        item->setCheckState(column, Qt::CheckState::Unchecked);
+        return;
+    }
+
+    // Enable/disable the cheat in the JSON
+    CheatsCommon::EnableCheat(true, cheatsArray, this->sessionFile, cheat, enabled);
+
+    // Update the session JSON
+    QJsonObject session = this->sessionJson;
+    QJsonObject features = session.value("features").toObject();
+    if (!cheatsArray.empty())
+    {
+        features["cheats"] = QString(QJsonDocument(cheatsArray).toJson(QJsonDocument::Compact));
+    }
+    else
+    {
+        features.remove("cheats");
+    }
+    session.insert("features", features);
+    this->sessionJson = session;
+
+    // Send update to server
+    QJsonObject json;
+    json.insert("type", "request_edit_room");
+    json.insert("player_name", this->nickName);
+    json.insert("room", session);
+    NetplayCommon::AddCommonJson(json);
+    this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
+}
+
+void NetplaySessionDialog::onCheatItemDoubleClicked(QTreeWidgetItem* item, int column)
+{
+    if (item == nullptr || item->data(column, Qt::UserRole).isNull())
+    {
+        return;
+    }
+
+    // Only allow the host to modify cheats
+    bool isHost = (this->nickName == this->sessionJson.value("features").toObject().value("host_name").toString());
+    if (!isHost)
+    {
+        return;
+    }
+
+    CoreCheat cheat = item->data(column, Qt::UserRole).value<CoreCheat>();
+    if (!cheat.HasOptions)
+    {
+        return;
+    }
+
+    // Get current cheats JSON
+    QString cheatsJson = this->sessionJson.value("features").toObject().value("cheats").toString();
+    QJsonDocument cheatsDocument = QJsonDocument::fromJson(cheatsJson.toUtf8());
+    QJsonArray cheatsArray = cheatsDocument.array();
+
+    // Show cheat option dialog
+    Dialog::ChooseCheatOptionDialog dialog(this, this->sessionFile, cheat, true, cheatsArray);
+    dialog.exec();
+
+    // Update the cheats array with the new option
+    cheatsArray = dialog.GetJson();
+
+    // Update the session JSON
+    QJsonObject session = this->sessionJson;
+    QJsonObject features = session.value("features").toObject();
+    if (!cheatsArray.empty())
+    {
+        features["cheats"] = QString(QJsonDocument(cheatsArray).toJson(QJsonDocument::Compact));
+    }
+    else
+    {
+        features.remove("cheats");
+    }
+    session.insert("features", features);
+    this->sessionJson = session;
+
+    // Update the tree widget item text
+    item->setText(column, CheatsCommon::GetCheatTreeWidgetItemName(true, cheatsArray, this->sessionFile, cheat));
+
+    // Send update to server
+    QJsonObject json;
+    json.insert("type", "request_edit_room");
+    json.insert("player_name", this->nickName);
+    json.insert("room", session);
+    NetplayCommon::AddCommonJson(json);
+    this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
 }

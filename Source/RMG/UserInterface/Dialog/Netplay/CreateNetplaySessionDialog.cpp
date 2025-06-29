@@ -18,11 +18,13 @@
 #include <QJsonDocument>
 #include <QPushButton>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QFileInfo>
 
 #include <RMG-Core/Core.hpp>
 #include <RMG-Core/m64p/Api.hpp>
 #include <RMG-Core/Settings.hpp>
+#include <RMG-Core/Cheats.hpp>
 
 #include <random>
 
@@ -299,6 +301,57 @@ void CreateNetplaySessionDialog::accept()
             jsonFeatures.insert("rsp_plugin", plugins[0]);
             jsonFeatures.insert("gfx_plugin", plugins[1]);
             jsonFeatures.insert("host_name", this->nickNameLineEdit->text());
+
+            // Include current cheats in the room features
+            std::vector<CoreCheat> currentCheats;
+            if (CoreGetCurrentCheats(this->sessionFile.toStdU32String(), currentCheats))
+            {
+                QJsonArray cheatsArray;
+                for (const CoreCheat& cheat : currentCheats)
+                {
+                    if (CoreIsCheatEnabled(this->sessionFile.toStdU32String(), cheat))
+                    {
+                        QJsonObject cheatObject;
+                        QJsonArray codesArray;
+                        
+                        for (const auto& cheatCode : cheat.CheatCodes)
+                        {
+                            QJsonObject codeObject;
+                            codeObject["address"] = (qint64)cheatCode.Address;
+                            codeObject["value"]   = (qint64)cheatCode.Value;
+                            codeObject["use_option"]   = cheatCode.UseOptions;
+                            codeObject["option_index"] = cheatCode.OptionIndex;
+                            codeObject["option_size"]  = cheatCode.OptionSize;
+                            codesArray.push_back(codeObject);
+                        }
+
+                        cheatObject["name"]        = QString::fromStdString(cheat.Name);
+                        cheatObject["codes"]       = codesArray;
+                        cheatObject["has_options"] = cheat.HasOptions;
+
+                        // Add cheat options if they exist
+                        if (cheat.HasOptions)
+                        {
+                            CoreCheatOption cheatOption;
+                            if (CoreGetCheatOption(this->sessionFile.toStdU32String(), cheat, cheatOption))
+                            {
+                                QJsonObject optionObject;
+                                optionObject["name"]  = QString::fromStdString(cheatOption.Name);
+                                optionObject["size"]  = cheatOption.Size;
+                                optionObject["value"] = (qint64)cheatOption.Value;
+                                cheatObject["option"] = optionObject;
+                            }
+                        }
+
+                        cheatsArray.push_back(cheatObject);
+                    }
+                }
+                
+                if (!cheatsArray.empty())
+                {
+                    jsonFeatures.insert("cheats", QString(QJsonDocument(cheatsArray).toJson(QJsonDocument::Compact)));
+                }
+            }
 
             m64p::Core.DoCommand(M64CMD_ROM_CLOSE, 0, nullptr);
 
