@@ -64,6 +64,27 @@ void CheatsDialog::loadCheats(void)
     }
 
     CheatsCommon::AddCheatsToTreeWidget(this->netplay, this->cheatsJson, this->file, cheats, this->cheatsTreeWidget, false);
+
+    // Auto-select cheats that are already enabled in netplay session
+    if (this->netplay)
+    {
+        for (const CoreCheat& cheat : cheats)
+        {
+            if (CheatsCommon::IsCheatEnabled(this->netplay, this->cheatsJson, this->file, cheat))
+            {
+                // Find the tree widget item for this cheat and ensure it's checked
+                QTreeWidgetItem* item = CheatsCommon::FindTreeWidgetItem(this->cheatsTreeWidget, 
+                    QString::fromStdString(cheat.Name).split("\\"), 
+                    QString::fromStdString(cheat.Name).split("\\").size() - 1, 
+                    CheatsCommon::GetCheatTreeWidgetItemName(this->netplay, this->cheatsJson, this->file, cheat));
+                
+                if (item != nullptr)
+                {
+                    item->setCheckState(0, Qt::CheckState::Checked);
+                }
+            }
+        }
+    }
 }
 
 void CheatsDialog::on_cheatsTreeWidget_itemChanged(QTreeWidgetItem *item, int column)
