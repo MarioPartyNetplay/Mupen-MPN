@@ -26,8 +26,9 @@
 typedef unsigned int uint32_t;
 #ifndef __cplusplus
 #ifndef bool
+#ifndef __cplusplus
 typedef unsigned char bool;
-#endif
+#endif#endif
 #ifndef false
 #define false 0
 #endif
