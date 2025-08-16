@@ -55,6 +55,16 @@ void netplay_update_input(struct pif* pif);
 m64p_error netplay_send_config(char* data, int size);
 m64p_error netplay_receive_config(char* data, int size);
 
+// Enhanced throttling functions
+uint8_t netplay_get_throttle_level(uint8_t player);
+void netplay_reset_throttling(uint8_t player);
+uint8_t netplay_get_buffer_health(uint8_t player);
+uint8_t netplay_get_player_lag(uint8_t player);
+int netplay_has_throttled_players();
+void netplay_get_throttling_stats(uint8_t* throttle_levels, uint8_t* buffer_health, uint8_t* player_lags);
+void netplay_log_throttling_status();
+uint8_t netplay_get_total_throttle_level();
+
 #else
 
 static osal_inline m64p_error netplay_start(const char* host, int port)
@@ -129,6 +139,43 @@ static osal_inline m64p_error netplay_send_config(char* data, int size)
 static osal_inline m64p_error netplay_receive_config(char* data, int size)
 {
     return M64ERR_INCOMPATIBLE;
+}
+
+static osal_inline uint8_t netplay_get_throttle_level(uint8_t player)
+{
+    return 0;
+}
+
+static osal_inline void netplay_reset_throttling(uint8_t player)
+{
+}
+
+static osal_inline uint8_t netplay_get_buffer_health(uint8_t player)
+{
+    return 0;
+}
+
+static osal_inline uint8_t netplay_get_player_lag(uint8_t player)
+{
+    return 0;
+}
+
+static osal_inline int netplay_has_throttled_players()
+{
+    return 0;
+}
+
+static osal_inline void netplay_get_throttling_stats(uint8_t* throttle_levels, uint8_t* buffer_health, uint8_t* player_lags)
+{
+}
+
+static osal_inline void netplay_log_throttling_status()
+{
+}
+
+static osal_inline uint8_t netplay_get_total_throttle_level()
+{
+    return 0;
 }
 
 #endif

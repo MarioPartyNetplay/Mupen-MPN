@@ -47,7 +47,6 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, QWebSocket* webSocke
     this->sessionPort = session.value("port").toInt();
     this->sessionName = session.value("room_name").toString();
     this->sessionFile = sessionFile;
-
     // Check if the current user is the host
     bool isHost = (this->nickName == session.value("features").toObject().value("host_name").toString());
 
@@ -107,13 +106,13 @@ bool NetplaySessionDialog::getCheats(std::vector<CoreCheat>& cheats, QJsonArray&
     QJsonDocument cheatDocument = QJsonDocument::fromJson(cheatJson.toUtf8());
     cheatsArray = cheatDocument.array();
 
+
     if (!CheatsCommon::ParseCheatJson(cheatsArray, cheats))
     {
         QString error = "Failed to parse cheats json: " + QString(cheatDocument.toJson());
         QtMessageBox::Error(this, "CheatsCommon::ParseCheatJson() Failed", error);
         return false;
     }
-
     return true;
 }
 
@@ -137,7 +136,7 @@ bool NetplaySessionDialog::applyCheats(void)
 }
 
 void NetplaySessionDialog::updateCheatsTreeWidget(void)
-{
+{    
     std::vector<CoreCheat> cheats;
     QJsonArray cheatsArray;
 
@@ -146,9 +145,9 @@ void NetplaySessionDialog::updateCheatsTreeWidget(void)
         // always clear UI on failure
         this->cheatsTreeWidget->clear();
         return;
-    }
+    } 
 
-    CheatsCommon::AddCheatsToTreeWidget(true, cheatsArray, this->sessionFile, cheats, this->cheatsTreeWidget, true);    
+    CheatsCommon::AddCheatsToTreeWidget(true, cheatsArray, this->sessionFile, cheats, this->cheatsTreeWidget, true);
 }
 
 void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
@@ -226,6 +225,7 @@ void NetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
     {
         if (json.value("accept").toInt() == 0)
         {
+
             this->sessionJson = json.value("room").toObject();
             this->updateCheatsTreeWidget();
         }
