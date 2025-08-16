@@ -19,6 +19,12 @@ option(USE_ANGRYLION    "Enables building angrylion-rdp-plus which uses a non-GP
 
 project(RMG)
 
+# Add this near the top of your CMakeLists.txt, after project() declaration
+set(CMAKE_C_STANDARD 17)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 17)
+
+
 find_package(Git)
 if (GIT_FOUND)
     execute_process(
