@@ -1,6 +1,8 @@
 #ifndef TXHIRESLOADER_H
 #define TXHIRESLOADER_H
 
+#include <cstdint>
+
 /* support hires textures
  *   0: disable
  *   1: enable
