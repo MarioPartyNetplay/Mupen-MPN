@@ -22,15 +22,18 @@
 /*
  * Netplay Synchronization Strategy:
  * 
- * This implementation uses a "save state synchronization" approach instead of
- * traditional frame rate throttling. The host (player 1) periodically saves
- * the game state and sends it to other players, who then load the state to
- * stay synchronized. This ensures all players remain at the same point in
- * the game without needing to speed up or slow down any player's emulation.
+ * This implementation uses an enhanced throttling system to maintain synchronization
+ * between players. When a player has high buffer health and lag, they are throttled
+ * to prevent slowing down minigames for others.
  * 
- * Save state synchronization occurs every 300 frames (approximately 5 seconds
- * at 60fps) and uses the existing save state infrastructure to maintain
- * perfect synchronization between all players.
+ * The throttling system works as follows:
+ * - Level 0: No throttling (100% speed)
+ * - Level 1: Light throttling (85% speed) - when buffer > target + 3
+ * - Level 2: Medium throttling (65% speed) - when buffer > target + 6 with sustained lag
+ * - Level 3: Heavy throttling (45% speed) - when buffer > target + 10 with sustained lag
+ * 
+ * Throttling is applied when buffer health exceeds target by more than 3 and
+ * gradually reduced when conditions improve.
  */
 
 #define SETTINGS_SIZE 24
@@ -49,6 +52,21 @@
 #include <netinet/ip.h>
 #endif
 
+// Forward declarations for throttling functions
+static void gradual_throttle_reduction(uint8_t control_id);
+static void reset_player_throttling(uint8_t control_id);
+static uint8_t calculate_throttle_level(uint8_t control_id);
+static void update_player_throttling(uint8_t control_id);
+
+// Forward declarations for exported throttling functions
+int netplay_has_throttled_players(void);
+void netplay_log_throttling_status(void);
+uint8_t netplay_get_throttle_level(uint8_t player);
+void netplay_reset_throttling(uint8_t player);
+uint8_t netplay_get_buffer_health(uint8_t player);
+uint8_t netplay_get_player_lag(uint8_t player);
+uint8_t netplay_get_total_throttle_level(void);
+
 static int l_canFF;
 static int l_netplay_controller;
 static int l_netplay_control[4];
@@ -65,10 +83,13 @@ static uint8_t l_plugin[4];
 static uint8_t l_buffer_target;
 static uint8_t l_player_lag[4];
 
-// Save state synchronization variables
-static uint32_t l_savestate_counter = 0;
-static uint32_t l_savestate_interval = 300; // Save state every 300 frames (5 seconds at 60fps)
-static int l_savestate_sync_enabled = 1; // Enable save state synchronization
+// Enhanced throttling variables
+static uint8_t l_player_throttle_level[4];  // Current throttling level for each player (0-3)
+static uint32_t l_player_high_lag_duration[4];  // Duration of sustained high lag for each player
+static uint32_t l_last_throttle_check;  // Last time we checked for throttling
+static const uint32_t THROTTLE_CHECK_INTERVAL = 1000;  // Check every 1000ms
+static const uint32_t HIGH_LAG_THRESHOLD = 3000;  // 3 seconds of high lag before throttling
+static const uint8_t MAX_THROTTLE_LEVEL = 3;  // Maximum throttling level
 
 //UDP packets
 static UDPpacket *l_request_input_packet;
@@ -174,6 +195,8 @@ m64p_error netplay_start(const char* host, int port)
         l_netplay_control[i] = -1;
         l_plugin[i] = 0;
         l_player_lag[i] = 0;
+        l_player_throttle_level[i] = 0;
+        l_player_high_lag_duration[i] = 0;
     }
 
     l_canFF = 0;
@@ -183,6 +206,7 @@ m64p_error netplay_start(const char* host, int port)
     l_vi_counter = 0;
     l_status = 0;
     l_reg_id = 0;
+    l_last_throttle_check = 0;
 
     return M64ERR_SUCCESS;
 }
@@ -251,6 +275,186 @@ static uint8_t buffer_size(uint8_t control_id)
         ++counter;
     }
     return counter;
+}
+
+/*
+ * Enhanced Throttling System
+ * 
+ * This system monitors players with high buffer health and lag to prevent them
+ * from slowing down minigames for others. The throttling works as follows:
+ * 
+ * Throttle Levels (Even More Conservative Spread):
+ * - Level 0: No throttling (100% speed)
+ * - Level 1: Light throttling (85% speed) - when buffer > target + 3
+ * - Level 2: Medium throttling (65% speed) - when buffer > target + 6 with sustained lag
+ * - Level 3: Heavy throttling (45% speed) - when buffer > target + 10 with sustained lag
+ * 
+ * Throttling is applied when:
+ * 1. Buffer health exceeds target by more than 3
+ * 2. Player has sustained lag for more than 3 seconds
+ * 3. Buffer health is critically high (> target + 15)
+ * 
+ * Throttling is gradually reduced when:
+ * 1. Buffer health returns to normal
+ * 2. Player lag is eliminated
+ * 
+ * The system uses both speed limiter and speed factor for smooth throttling.
+ */
+
+static uint8_t calculate_throttle_level(uint8_t control_id)
+{
+    // Calculate throttling level based on buffer health and lag
+    uint8_t buffer_health = buffer_size(control_id);
+    uint8_t player_lag = l_player_lag[control_id];
+    uint8_t throttle_level = 0;
+    
+    // Safety check for valid control_id
+    if (control_id >= 4)
+        return 0;
+    
+    // Base throttling on buffer health exceeding target
+    // Even More Conservative Spread for stable throttling
+    if (buffer_health > l_buffer_target + 3)
+    {
+        throttle_level = 1;  // Level 1: 85% speed
+        
+        // Additional throttling for sustained high lag
+        if (player_lag > 0)
+        {
+            uint32_t current_time = SDL_GetTicks();
+            
+            // Check if we should increase throttling level
+            if (l_player_high_lag_duration[control_id] > HIGH_LAG_THRESHOLD)
+            {
+                // Increase throttling based on how much buffer exceeds target
+                uint8_t buffer_excess = buffer_health - l_buffer_target;
+                if (buffer_excess > 6)
+                    throttle_level = 2;  // Level 2: 65% speed
+                if (buffer_excess > 10)
+                    throttle_level = MAX_THROTTLE_LEVEL;  // Level 3: 45% speed
+            }
+        }
+        
+        // Additional throttling for very high buffer health (emergency throttling)
+        if (buffer_health > l_buffer_target + 15)
+        {
+            throttle_level = MAX_THROTTLE_LEVEL;
+        }
+        
+        // Additional throttling for extremely high buffer health (critical throttling)
+        if (buffer_health > l_buffer_target + 20)
+        {
+            throttle_level = MAX_THROTTLE_LEVEL;
+            DebugMessage(M64MSG_WARNING, "Netplay: Player %d critical buffer health (%d), applying maximum throttling", 
+                       control_id, buffer_health);
+        }
+    }
+    
+    return throttle_level;
+}
+
+static void update_player_throttling(uint8_t control_id)
+{
+    // Safety check for valid control_id
+    if (control_id >= 4)
+        return;
+        
+    uint32_t current_time = SDL_GetTicks();
+    uint8_t buffer_health = buffer_size(control_id);
+    uint8_t player_lag = l_player_lag[control_id];
+    
+    // Check if player has high lag and buffer health
+    if (player_lag > 0 && buffer_health > l_buffer_target)
+    {
+        // Increment high lag duration
+        if (l_player_high_lag_duration[control_id] == 0)
+            l_player_high_lag_duration[control_id] = current_time;
+        else
+            l_player_high_lag_duration[control_id] = current_time - l_player_high_lag_duration[control_id];
+    }
+    else
+    {
+        // Reset high lag duration if conditions improve
+        l_player_high_lag_duration[control_id] = 0;
+    }
+    
+    // Calculate new throttle level
+    uint8_t new_throttle_level = calculate_throttle_level(control_id);
+    
+    // Only update throttling periodically to avoid rapid changes
+    if (current_time - l_last_throttle_check > THROTTLE_CHECK_INTERVAL)
+    {
+        // Check for gradual throttling reduction
+        gradual_throttle_reduction(control_id);
+        
+        // Only log changes in throttling level for debugging
+        if (new_throttle_level != l_player_throttle_level[control_id])
+        {
+            if (new_throttle_level > 0)
+            {
+                DebugMessage(M64MSG_INFO, "Netplay: Player %d throttled to level %d (buffer: %d, lag: %d)", 
+                           control_id, new_throttle_level, buffer_health, player_lag);
+            }
+            else if (l_player_throttle_level[control_id] > 0)
+            {
+                DebugMessage(M64MSG_INFO, "Netplay: Player %d throttling removed (buffer: %d, lag: %d)", 
+                           control_id, buffer_health, player_lag);
+            }
+        }
+        
+        l_player_throttle_level[control_id] = new_throttle_level;
+        l_last_throttle_check = current_time;
+    }
+}
+
+static void gradual_throttle_reduction(uint8_t control_id)
+{
+    // Safety check for valid control_id
+    if (control_id >= 4)
+        return;
+        
+    // Gradually reduce throttling when conditions improve
+    uint8_t current_throttle = l_player_throttle_level[control_id];
+    uint8_t buffer_health = buffer_size(control_id);
+    uint8_t player_lag = l_player_lag[control_id];
+    
+    if (current_throttle > 0)
+    {
+        // Check if conditions are improving
+        if (buffer_health <= l_buffer_target && player_lag == 0)
+        {
+            // Conditions are good, reduce throttling gradually
+            if (current_throttle > 1)
+            {
+                l_player_throttle_level[control_id] = current_throttle - 1;
+                DebugMessage(M64MSG_INFO, "Netplay: Player %d throttling reduced to level %d", 
+                           control_id, l_player_throttle_level[control_id]);
+            }
+            else
+            {
+                // Remove throttling completely
+                l_player_throttle_level[control_id] = 0;
+                DebugMessage(M64MSG_INFO, "Netplay: Player %d throttling removed", control_id);
+            }
+        }
+    }
+}
+
+static void reset_player_throttling(uint8_t control_id)
+{
+    // Safety check for valid control_id
+    if (control_id >= 4)
+        return;
+        
+    // Reset all throttling for a specific player
+    l_player_throttle_level[control_id] = 0;
+    l_player_high_lag_duration[control_id] = 0;
+    
+    // Reset speed controls to normal
+    main_core_state_set(M64CORE_SPEED_LIMITER, 1);
+    main_core_state_set(M64CORE_SPEED_FACTOR, 100);
+    
+    DebugMessage(M64MSG_INFO, "Netplay: Player %d throttling reset", control_id);
 }
 
 static void netplay_request_input(uint8_t control_id)
@@ -409,10 +613,40 @@ static uint32_t netplay_get_input(uint8_t control_id)
     //l_player_lag is how far behind we are from the lead player (in frames)
     //buffer_size is the local buffer size
     
-    // Always run at normal speed - synchronization is handled by the existing netplay system
-    main_core_state_set(M64CORE_SPEED_FACTOR, 100);
-    l_canFF = 0;
-    main_core_state_set(M64CORE_SPEED_LIMITER, 1);
+    // Update throttling calculations
+    update_player_throttling(control_id);
+    
+    // Apply enhanced throttling based on calculated level
+    if (l_player_throttle_level[control_id] > 0)
+    {
+        l_canFF = 1;
+        main_core_state_set(M64CORE_SPEED_LIMITER, 0);
+        
+        // Apply speed factor throttling based on throttle level
+        int speed_factor;
+        switch (l_player_throttle_level[control_id])
+        {
+            case 1:
+                speed_factor = 85;  // 85% speed
+                break;
+            case 2:
+                speed_factor = 65;  // 65% speed
+                break;
+            case 3:
+                speed_factor = 45;  // 45% speed
+                break;
+            default:
+                speed_factor = 100; // 100% speed
+                break;
+        }
+        main_core_state_set(M64CORE_SPEED_FACTOR, speed_factor);
+    }
+    else
+    {
+        main_core_state_set(M64CORE_SPEED_LIMITER, 1);
+        main_core_state_set(M64CORE_SPEED_FACTOR, 100); // Reset to normal speed
+        l_canFF = 0;
+    }
 
     if (netplay_ensure_valid(control_id))
     {
@@ -606,6 +840,12 @@ void netplay_check_sync(struct cp0* cp0)
         }
         l_check_sync_packet->len = l_check_sync_packet_size;
         SDLNet_UDP_Send(l_udpSocket, l_udpChannel, l_check_sync_packet);
+        
+        // Log throttling status every 600 VIs (approximately every 10 seconds)
+        if (netplay_has_throttled_players())
+        {
+            netplay_log_throttling_status();
+        }
     }
 
     ++l_vi_counter;
@@ -751,4 +991,75 @@ m64p_error netplay_receive_config(char* data, int size)
     }
     else
         return M64ERR_INVALID_STATE;
+}
+
+// Enhanced throttling function implementations
+int netplay_has_throttled_players()
+{
+    if (!netplay_is_init())
+        return 0;
+    
+    for (int i = 0; i < 4; ++i)
+    {
+        if (l_player_throttle_level[i] > 0)
+            return 1;
+    }
+    return 0;
+}
+
+void netplay_log_throttling_status()
+{
+    if (!netplay_is_init())
+        return;
+    
+    DebugMessage(M64MSG_INFO, "Netplay: Throttling Status - P1: L%d/B%d/L%d, P2: L%d/B%d/L%d, P3: L%d/B%d/L%d, P4: L%d/B%d/L%d",
+                l_player_throttle_level[0], buffer_size(0), l_player_lag[0],
+                l_player_throttle_level[1], buffer_size(1), l_player_lag[1],
+                l_player_throttle_level[2], buffer_size(2), l_player_lag[2],
+                l_player_throttle_level[3], buffer_size(3), l_player_lag[3]);
+}
+
+uint8_t netplay_get_throttle_level(uint8_t player)
+{
+    if (!netplay_is_init() || player >= 4)
+        return 0;
+    
+    return l_player_throttle_level[player];
+}
+
+void netplay_reset_throttling(uint8_t player)
+{
+    if (!netplay_is_init() || player >= 4)
+        return;
+    
+    reset_player_throttling(player);
+}
+
+uint8_t netplay_get_buffer_health(uint8_t player)
+{
+    if (!netplay_is_init() || player >= 4)
+        return 0;
+    
+    return buffer_size(player);
+}
+
+uint8_t netplay_get_player_lag(uint8_t player)
+{
+    if (!netplay_is_init() || player >= 4)
+        return 0;
+    
+    return l_player_lag[player];
+}
+
+uint8_t netplay_get_total_throttle_level()
+{
+    if (!netplay_is_init())
+        return 0;
+    
+    uint8_t total = 0;
+    for (int i = 0; i < 4; ++i)
+    {
+        total += l_player_throttle_level[i];
+    }
+    return total;
 }
