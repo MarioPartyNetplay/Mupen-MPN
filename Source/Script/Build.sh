@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Check if the system is macOS
-if [[ "$(uname)" == "Darwin" ]]; then
+if [ "$(uname)" = "Darwin" ]; then
     alias nproc="sysctl -n hw.logicalcpu"
     export CXXFLAGS='-stdlib=libc++'
     export LDFLAGS='-mmacosx-version-min=11.0'
@@ -23,17 +23,15 @@ build_dir="$toplvl_dir/Build/$build_config"
 threads="${2:-$(nproc)}"
 generator="Unix Makefiles"
 
-if [[ "$1" = "--help" ]] ||
-    [[ "$1" = "-h" ]]
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]
 then
     echo "$0 [Build Config] [Thread Count]"
     exit
 fi
 
-if [[ $(uname -s) = *MINGW64* ]]
-then
-    generator="Ninja"
-fi
+case "$(uname -s)" in
+    *MINGW64*) generator="Ninja" ;;
+esac
 
 mkdir -p "$build_dir"
 
@@ -45,15 +43,13 @@ cmake -S "$toplvl_dir" -B "$build_dir" \
 
 cmake --build "$build_dir" --parallel "$threads"
 
-if [[ "$build_config" = "Release" ]] ||
-    [[ "$build_config" = "RelWithDebInfo" ]]
+if [ "$build_config" = "Release" ] || [ "$build_config" = "RelWithDebInfo" ]
 then
     cmake --install "$build_dir" --prefix="$toplvl_dir"
 else
     cmake --install "$build_dir" --strip --prefix="$toplvl_dir"
 fi
 
-if [[ $(uname -s) = *MINGW64* ]]
-then
-    cmake --build "$build_dir" --target=bundle_dependencies
-fi
+case "$(uname -s)" in
+    *MINGW64*) cmake --build "$build_dir" --target=bundle_dependencies ;;
+esac
