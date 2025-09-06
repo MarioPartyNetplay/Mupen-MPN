@@ -67,6 +67,7 @@ void netplay_reset_throttling(uint8_t player);
 uint8_t netplay_get_buffer_health(uint8_t player);
 uint8_t netplay_get_player_lag(uint8_t player);
 uint8_t netplay_get_total_throttle_level(void);
+uint8_t netplay_get_buffer_size(uint8_t player);
 
 static int l_canFF;
 static int l_netplay_controller;
@@ -1096,4 +1097,11 @@ uint8_t netplay_get_total_throttle_level()
         total += l_player_throttle_level[i];
     }
     return total;
+}
+
+uint8_t netplay_get_buffer_size(uint8_t player)
+{
+    if (!netplay_is_init() || player >= 4)
+        return 0;
+    return buffer_size(player);
 }
