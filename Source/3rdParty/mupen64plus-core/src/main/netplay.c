@@ -57,6 +57,7 @@ static void gradual_throttle_reduction(uint8_t control_id);
 static void reset_player_throttling(uint8_t control_id);
 static uint8_t calculate_throttle_level(uint8_t control_id);
 static void update_player_throttling(uint8_t control_id);
+static uint8_t get_max_overflow_player(void);
 
 // Forward declarations for exported throttling functions
 int netplay_has_throttled_players(void);
@@ -277,6 +278,23 @@ static uint8_t buffer_size(uint8_t control_id)
     return counter;
 }
 
+// Returns the player index [0..3] whose buffer exceeds target the most
+static uint8_t get_max_overflow_player(void)
+{
+    uint8_t max_player = 0;
+    int max_overflow = (int)buffer_size(0) - (int)l_buffer_target;
+    for (uint8_t i = 1; i < 4; ++i)
+    {
+        int overflow = (int)buffer_size(i) - (int)l_buffer_target;
+        if (overflow > max_overflow)
+        {
+            max_overflow = overflow;
+            max_player = i;
+        }
+    }
+    return max_player;
+}
+
 /*
  * Enhanced Throttling System
  * 
@@ -310,6 +328,13 @@ static uint8_t calculate_throttle_level(uint8_t control_id)
     
     // Safety check for valid control_id
     if (control_id >= 4)
+        return 0;
+    
+    // Identify the player with the maximum buffer overflow.
+    // Do NOT throttle that player; instead throttle others.
+    uint8_t max_player = get_max_overflow_player();
+    int max_overflow = (int)buffer_size(max_player) - (int)l_buffer_target;
+    if (control_id == max_player)
         return 0;
     
     // Base throttling on buffer health exceeding target
@@ -348,6 +373,15 @@ static uint8_t calculate_throttle_level(uint8_t control_id)
             DebugMessage(M64MSG_WARNING, "Netplay: Player %d critical buffer health (%d), applying maximum throttling", 
                        control_id, buffer_health);
         }
+    }
+    
+    // Additionally, if another player has a large overflow, enforce throttling here
+    // so that non-overflow players slow down and allow the worst buffer to drain.
+    if (max_overflow > 3)
+    {
+        if (throttle_level < 1) throttle_level = 1;
+        if (max_overflow > 6 && throttle_level < 2) throttle_level = 2;
+        if (max_overflow > 10 && throttle_level < 3) throttle_level = 3;
     }
     
     return throttle_level;
