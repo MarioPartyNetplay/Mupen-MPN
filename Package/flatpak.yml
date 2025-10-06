@@ -1,4 +1,4 @@
-app-id: com.github.Rosalie241.RMG-MPN
+app-id: org.mariopartynetplay.RMG-MPN
 runtime: org.kde.Platform
 runtime-version: 6.7
 sdk: org.kde.Sdk
@@ -85,3 +85,4 @@ modules:
     sources:
       - type: git
         url: https://github.com/MarioPartyNetplay/Mupen-MPN.git
+
