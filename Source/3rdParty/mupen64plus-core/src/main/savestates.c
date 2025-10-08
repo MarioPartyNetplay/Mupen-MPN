@@ -22,8 +22,13 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.          *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#ifdef USE_SDL3
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_thread.h>
+#else
 #include <SDL.h>
 #include <SDL_thread.h>
+#endif
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -58,7 +63,7 @@ enum { GB_CART_FINGERPRINT_OFFSET = 0x134 };
 enum { DD_DISK_ID_OFFSET = 0x43670 };
 
 static const char* savestate_magic = "M64+SAVE";
-static const int savestate_latest_version = 0x00010900;  /* 1.9 */
+static const int savestate_latest_version = 0x00020000;  /* 2.0 */
 static const unsigned char pj64_magic[4] = { 0xC8, 0xA6, 0xD8, 0x23 };
 
 static savestates_job job = savestates_job_nothing;
@@ -68,7 +73,11 @@ static char *fname = NULL;
 static unsigned int slot = 0;
 static int autoinc_save_slot = 0;
 
+#ifdef USE_SDL3
+static SDL_Mutex *savestates_lock;
+#else
 static SDL_mutex *savestates_lock;
+#endif
 
 struct savestate_work {
     char *filepath;
@@ -552,8 +561,8 @@ static int savestates_load_m64p(struct device* dev, char *filepath)
 
             unsigned int enabled = ALIGNED_GETDATA(curr, uint32_t);
             unsigned int bank = ALIGNED_GETDATA(curr, uint32_t);
-            unsigned int access_mode = ALIGNED_GETDATA(curr, uint32_t);
-            unsigned int access_mode_changed = ALIGNED_GETDATA(curr, uint32_t);
+            unsigned int cart_enabled = ALIGNED_GETDATA(curr, uint32_t);
+            unsigned int reset_state = ALIGNED_GETDATA(curr, uint32_t);
             COPYARRAY(gb_fingerprint, curr, uint8_t, GB_CART_FINGERPRINT_SIZE);
             if (gb_fingerprint[0] != 0) {
                 rom_bank = ALIGNED_GETDATA(curr, uint32_t);
@@ -572,8 +581,8 @@ static int savestates_load_m64p(struct device* dev, char *filepath)
                 /* init transferpak state if enabled and not controlled by input plugin */
                 dev->transferpaks[i].enabled = enabled;
                 dev->transferpaks[i].bank = bank;
-                dev->transferpaks[i].access_mode = access_mode;
-                dev->transferpaks[i].access_mode_changed = access_mode_changed;
+                dev->transferpaks[i].cart_enabled = cart_enabled;
+                dev->transferpaks[i].reset_state = reset_state;
 
                 /* if it holds a valid cartridge init gbcart */
                 if (dev->transferpaks[i].gb_cart != NULL
@@ -697,8 +706,8 @@ static int savestates_load_m64p(struct device* dev, char *filepath)
 
             unsigned int enabled = GETDATA(curr, uint32_t);
             unsigned int bank = GETDATA(curr, uint32_t);
-            unsigned int access_mode = GETDATA(curr, uint32_t);
-            unsigned int access_mode_changed = GETDATA(curr, uint32_t);
+            unsigned int cart_enabled = GETDATA(curr, uint32_t);
+            unsigned int reset_state = GETDATA(curr, uint32_t);
             COPYARRAY(gb_fingerprint, curr, uint8_t, GB_CART_FINGERPRINT_SIZE);
             if (gb_fingerprint[0] != 0) {
                 rom_bank = GETDATA(curr, uint32_t);
@@ -717,8 +726,8 @@ static int savestates_load_m64p(struct device* dev, char *filepath)
                 /* init transferpak state if enabled and not controlled by input plugin */
                 dev->transferpaks[i].enabled = enabled;
                 dev->transferpaks[i].bank = bank;
-                dev->transferpaks[i].access_mode = access_mode;
-                dev->transferpaks[i].access_mode_changed = access_mode_changed;
+                dev->transferpaks[i].cart_enabled = cart_enabled;
+                dev->transferpaks[i].reset_state = reset_state;
 
                 /* if it holds a valid cartridge init gbcart */
                 if (dev->transferpaks[i].gb_cart != NULL
@@ -878,6 +887,14 @@ static int savestates_load_m64p(struct device* dev, char *filepath)
             *r4300_cp0_latch(&dev->r4300.cp0) = GETDATA(curr, uint64_t);
             *r4300_cp2_latch(&dev->r4300.cp2) = GETDATA(curr, uint64_t);
         }
+
+        if (version >= 0x00020000)
+        {
+            /* extra rsp state */
+            dev->sp.rsp_status = GETDATA(curr, uint32_t);
+            dev->sp.first_run = GETDATA(curr, uint32_t);
+            dev->sp.rsp_wait = GETDATA(curr, uint32_t);
+        }
     }
     else
     {
@@ -949,7 +966,6 @@ static int savestates_load_m64p(struct device* dev, char *filepath)
     /* reset fb state */
     poweron_fb(&dev->dp.fb);
 
-    dev->sp.rsp_task_locked = 0;
     dev->r4300.cp0.interrupt_unsafe_state = 0;
 
     *r4300_cp0_last_addr(&dev->r4300.cp0) = *r4300_pc(&dev->r4300);
@@ -1253,7 +1269,6 @@ static int savestates_load_pj64(struct device* dev,
     // No flashram info in pj64 savestate.
     poweron_flashram(&dev->cart.flashram);
 
-    dev->sp.rsp_task_locked = 0;
     dev->r4300.cp0.interrupt_unsafe_state = 0;
 
     /* extra fb state */
@@ -1796,8 +1811,8 @@ static int savestates_save_m64p(const struct device* dev, char *filepath)
     for (i = 0; i < GAME_CONTROLLERS_COUNT; ++i) {
         PUTDATA(curr, uint32_t, dev->transferpaks[i].enabled);
         PUTDATA(curr, uint32_t, dev->transferpaks[i].bank);
-        PUTDATA(curr, uint32_t, dev->transferpaks[i].access_mode);
-        PUTDATA(curr, uint32_t, dev->transferpaks[i].access_mode_changed);
+        PUTDATA(curr, uint32_t, dev->transferpaks[i].cart_enabled);
+        PUTDATA(curr, uint32_t, dev->transferpaks[i].reset_state);
 
         if (dev->transferpaks[i].gb_cart == NULL) {
             uint8_t gb_fingerprint[GB_CART_FINGERPRINT_SIZE];
@@ -1914,6 +1929,11 @@ static int savestates_save_m64p(const struct device* dev, char *filepath)
     /* cp0 and cp2 latch (since 1.9) */
     PUTDATA(curr, uint64_t, *r4300_cp0_latch((struct cp0*)&dev->r4300.cp0));
     PUTDATA(curr, uint64_t, *r4300_cp2_latch((struct cp2*)&dev->r4300.cp2));
+
+    /* rsp state (since 2.0) */
+    PUTDATA(curr, uint32_t, dev->sp.rsp_status);
+    PUTDATA(curr, uint32_t, dev->sp.first_run);
+    PUTDATA(curr, uint32_t, dev->sp.rsp_wait);
 
     init_work(&save->work, savestates_save_m64p_work);
     queue_work(&save->work);

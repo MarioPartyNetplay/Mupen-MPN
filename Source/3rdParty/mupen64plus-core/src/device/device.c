@@ -58,7 +58,7 @@ static void get_pi_dma_handler(struct cart* cart, struct dd_controller* dd, uint
 
     if (address >= MM_CART_ROM) {
         if (address >= MM_CART_DOM3) {
-            /* 0x1fd00000 - 0xffffffff : dom3 addr2, cart rom */
+            /* 0x1fd00000 - 0x7fffffff : dom3 addr2, cart rom */
             RW(cart, cart_dom3);
         }
         else {
@@ -129,6 +129,7 @@ void init_device(struct device* dev,
         { &dev->dd,        dd_mecha_int_handler        }, /* DD MECHA */
         { &dev->dd,        dd_bm_int_handler           }, /* DD BM */
         { &dev->dd,        dd_dv_int_handler           }, /* DD DRIVE */
+        { &dev->sp,        rsp_task_event              },
     };
 
 #define R(x) read_ ## x
@@ -200,7 +201,7 @@ void init_device(struct device* dev,
      * use CART unless DD is plugged and the plugged CART is not a combo media (cart+disk),
      * or rom_size is 0 meaning there's no CART loaded
      */
-    uint8_t media = *((uint8_t*)mem_base_u32(base, MM_CART_ROM) + (0x3b ^ S8));
+    uint8_t media = rom_size == 0 ? 0 : *((uint8_t*)mem_base_u32(base, MM_CART_ROM) + (0x3b ^ S8));
     uint32_t rom_base = (rom_size == 0 || (dd_rom_size > 0 && media != 'C'))
         ? MM_DD_ROM
         : MM_CART_ROM;

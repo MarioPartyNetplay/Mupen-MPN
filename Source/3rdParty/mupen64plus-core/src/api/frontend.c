@@ -24,7 +24,11 @@
  * outside of the core library.
  */
 
+#ifdef USE_SDL3
+#include <SDL3/SDL.h>
+#else
 #include <SDL.h>
+#endif 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -130,6 +134,9 @@ EXPORT m64p_error CALL CoreShutdown(void)
     /* deallocate base memory */
     release_mem_base(g_mem_base);
     g_mem_base = NULL;
+
+    /* deallocate rom memory */
+    release_mem_rom();
 
     l_CoreInit = 0;
     return M64ERR_SUCCESS;

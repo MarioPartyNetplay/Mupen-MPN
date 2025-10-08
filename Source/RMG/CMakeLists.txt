@@ -11,6 +11,10 @@ LINK_DIRECTORIES(/usr/local/lib)
 
 find_package(Qt6 COMPONENTS Gui Widgets Core REQUIRED)
 
+if (NOT WIN32)
+    find_package(Qt6 REQUIRED COMPONENTS DBus)
+endif(NOT WIN32)
+
 if (PORTABLE_INSTALL)
     add_definitions(-DPORTABLE_INSTALL)
 endif(PORTABLE_INSTALL)
@@ -37,8 +41,7 @@ if (NETPLAY)
     add_definitions(-DNETPLAY)
 endif(NETPLAY)
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(SDL2 REQUIRED sdl2)
+find_package(SDL3 REQUIRED)
 
 set(RMG_SOURCES
     UserInterface/MainWindow.cpp
@@ -49,6 +52,7 @@ set(RMG_SOURCES
     UserInterface/Widget/RomBrowser/RomBrowserLoadingWidget.cpp
     UserInterface/Widget/RomBrowser/RomBrowserEmptyWidget.cpp
     UserInterface/Widget/RomBrowser/RomBrowserEmptyWidget.ui
+    UserInterface/Widget/RomBrowser/RomBrowserSearchWidget.cpp
     UserInterface/Widget/Render/DummyWidget.cpp
     UserInterface/Widget/Render/OGLWidget.cpp
     UserInterface/Widget/Render/VKWidget.cpp
@@ -74,7 +78,7 @@ set(RMG_SOURCES
     UserInterface/UIResources.qrc
     Thread/RomSearcherThread.cpp
     Thread/EmulationThread.cpp
-    Utilities/QtKeyToSdl2Key.cpp
+    Utilities/QtKeyToSdl3Key.cpp
     Utilities/QtMessageBox.cpp
     OnScreenDisplay.cpp
     Callbacks.cpp
@@ -126,6 +130,7 @@ add_dependencies(RMG
 
 target_link_libraries(RMG 
     RMG-Core
+    imgui
 )
 
 # needed for dynamically linked RMG-Core
@@ -139,11 +144,14 @@ target_include_directories(RMG PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../
-    ${SDL2_INCLUDE_DIRS}
     ${IMGUI_DIR}
 )
 
 target_link_libraries(RMG Qt6::Gui Qt6::Widgets)
+
+if (NOT WIN32)
+    target_link_libraries(RMG Qt6::DBus)
+endif(NOT WIN32)
 
 if (UPDATER)
     target_link_libraries(RMG Qt6::Network)

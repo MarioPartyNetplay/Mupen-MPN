@@ -3,16 +3,12 @@ name: HLE RSP
 on:
   push:
     paths-ignore:
-      - '**/*.md'
       - '.{gitattributes,gitignore,travis.yml}'
-      - 'appveyor.yml,README'
+      - '*.md,appveyor.yml,README'
   pull_request:
     paths-ignore:
-      - '**/*.md'
       - '.{gitattributes,gitignore,travis.yml}'
-      - 'appveyor.yml,README'
-  schedule:
-    - cron: '30 14 21 * *'
+      - '*.md,appveyor.yml,README'
   workflow_dispatch:
 
 jobs:
@@ -23,61 +19,29 @@ jobs:
       matrix:
         include:
           - cc: GCC
-            platform: x64
-            bits: 64
+            arch: x64
           - cc: GCC
-            platform: x86
-            bits: 32
+            arch: x86
           - cc: Clang
-            platform: x64
-            bits: 64
+            arch: x64
           - cc: Clang
-            platform: x86
-            bits: 32
-    name: Linux / ${{ matrix.cc }} / ${{ matrix.platform }}
-    runs-on: ubuntu-22.04
-    if: (github.event_name == 'schedule' && github.repository == 'mupen64plus/mupen64plus-rsp-hle') || (github.event_name != 'schedule')
+            arch: x86
+    name: Linux / ${{ matrix.cc }} ${{ matrix.arch }}
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Get build dependencies and arrange the environment
         run: |
-          echo "G_REV=$(git rev-parse --short HEAD)" >> "${GITHUB_ENV}"
-          sudo apt-get update
-          sudo apt-get --reinstall -y install gcc-multilib g++-multilib libc6 libc6-dev-i386
-          sudo ldconfig
+          git clone --depth 1 https://github.com/mupen64plus/mupen64plus-core.git ../mupen64plus-core
+          ./../mupen64plus-core/.github/workflows/scripts/ci_install_ubuntu_deps.sh ${{ matrix.arch }} ${{ matrix.cc }}
       - name: Build and related stuff, backup binaries
         run: |
-          if [[ ${{ matrix.bits }} -eq 32 ]]; then export PIC="1" CPU_TUNE="-msse2 -mtune=pentium4"; else CPU_TUNE="-mtune=core2"; fi
-          export OPTFLAGS="-O2 -flto ${CPU_TUNE}"
-          ORIG="$(pwd)"
-          CC="gcc"
-          CXX="g++"
-          if [[ "${{ matrix.cc }}" != "GCC" ]]; then
-            CC="clang"
-            CXX="clang++"
-          fi
-          ${CC} --version
-          echo ""
-          git clone --depth 1 https://github.com/mupen64plus/mupen64plus-core.git ../mupen64plus-core
-          mkdir pkg
-          echo ""
-          echo ":: ${{ matrix.cc }} ${{ matrix.platform }} ::"
-          echo ""
-          make -C projects/unix clean
-          echo ""
-          make CC="${CC}" CXX="${CXX}" BITS="${{ matrix.bits }}" -C projects/unix all -j4
-          echo ""
-          make -C projects/unix install DESTDIR="${ORIG}/pkg/"
-          echo ""
-          ls -gG pkg/usr/local/lib/mupen64plus/*.so
-          echo ""
-          ldd pkg/usr/local/lib/mupen64plus/mupen64plus-rsp-hle.so
-          tar cvzf pkg/mupen64plus-rsp-hle-linux-${{ matrix.platform }}-g${{ env.G_REV }}.tar.gz -C pkg/ "usr"
+          ./../mupen64plus-core/.github/workflows/scripts/ci_build.sh ${{ matrix.arch }} ${{ matrix.cc }} makepkg
       - name: Upload artifact
         if: matrix.cc == 'GCC'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: mupen64plus-rsp-hle-linux-${{ matrix.platform }}-g${{ env.G_REV }}
+          name: ${{ env.PKG_NAME }}
           path: pkg/*.tar.gz
 
   MSYS2:
@@ -86,59 +50,49 @@ jobs:
       matrix:
         include:
           - cc: GCC
-            platform: x64
+            arch: x64
             cross: x86_64
-            bits: 64
+            env: MINGW64
           - cc: GCC
-            platform: x86
+            arch: x86
             cross: i686
-            bits: 32
-    name: Windows / MSYS2 ${{ matrix.cc }} / ${{ matrix.platform }}
-    runs-on: windows-2022
-    if: (github.event_name == 'schedule' && github.repository == 'mupen64plus/mupen64plus-rsp-hle') || (github.event_name != 'schedule')
+            env: MINGW32
+          - cc: GCC
+            arch: x64
+            cross: ucrt-x86_64
+            env: UCRT64
+          - cc: Clang
+            arch: x64
+            cross: clang-x86_64
+            env: CLANG64
+    name: Windows ${{ matrix.arch }} / MSYS2 ${{ matrix.env }} ${{ matrix.cc }}
+    runs-on: windows-2025
     defaults:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW${{ matrix.bits }}
+          msystem: ${{ matrix.env }}
           update: true
           install: >-
             git
             libtool
             make
-            mingw-w64-${{ matrix.cross }}-gcc
             mingw-w64-${{ matrix.cross }}-toolchain
+            mingw-w64-${{ matrix.cross }}-ntldd
       - name: Build and related stuff, backup binaries
         run: |
-          echo "G_REV=$(git rev-parse --short HEAD)" >> "${GITHUB_ENV}"
-          if [[ ${{ matrix.bits }} -eq 32 ]]; then CPU_TUNE="-msse2 -mtune=pentium4"; else CPU_TUNE="-mtune=core2"; fi
-          export OPTFLAGS="-O2 -flto ${CPU_TUNE}"
-          ORIG="$(pwd)"
-          CC="gcc"
-          CXX="g++"
-          ${CC} --version
-          echo ""
           git clone --depth 1 https://github.com/mupen64plus/mupen64plus-core.git ../mupen64plus-core
-          mkdir pkg
-          echo ""
-          echo ":: ${{ matrix.cc }} ${{ matrix.platform }} ::"
-          echo ""
-          make -C projects/unix clean
-          echo ""
-          make CC="${CC}" CXX="${CXX}" BITS="${{ matrix.bits }}" -C projects/unix all -j4
-          echo ""
-          make -C projects/unix install PLUGINDIR="" SHAREDIR="" BINDIR="" MANDIR="" LIBDIR="" APPSDIR="" ICONSDIR="icons" INCDIR="api" LDCONFIG="true" DESTDIR="${ORIG}/pkg/"
-          echo ""
-          ls -gG pkg/*.dll
-          echo ""
-          ldd pkg/mupen64plus-rsp-hle.dll
+          ./../mupen64plus-core/.github/workflows/scripts/ci_build.sh ${{ matrix.arch }} ${{ matrix.cc }}
+      - name: Backup dependencies, etc...
+        run: |
+          ./../mupen64plus-core/.github/workflows/scripts/ci_backup_mingw_deps.sh ${{ matrix.env }}
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: mupen64plus-rsp-hle-msys2-${{ matrix.platform }}-g${{ env.G_REV }}
+          name: ${{ env.PKG_NAME }}
           path: pkg/*
 
   MSVC:
@@ -147,39 +101,31 @@ jobs:
       matrix:
         include:
           - toolset: v143
-            platform: x64
-            vs: 2022
+            arch: x64
+            vs: 2025
           - toolset: v141_xp
-            platform: x86
+            arch: x86
             vs: 2019
-    name: Windows / MSVC with ${{ matrix.toolset }} / ${{ matrix.platform }}
+    name: Windows ${{ matrix.arch }} / MSVC with ${{ matrix.toolset }}
     runs-on: windows-${{ matrix.vs }}
-    if: (github.event_name == 'schedule' && github.repository == 'mupen64plus/mupen64plus-rsp-hle') || (github.event_name != 'schedule')
     defaults:
       run:
         shell: cmd
     steps:
-      - uses: actions/checkout@v3
-      - uses: microsoft/setup-msbuild@v1
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
       - name: Build and related stuff, backup binaries
         run: |
-          for /f "tokens=1" %%R in ('git rev-parse --short HEAD') do echo G_REV=%%R>> "%GITHUB_ENV%"
-          set "ARCH=${{ matrix.platform }}"
-          if [%ARCH%] == [x86] set "ARCH=Win32"
-          echo.
-          msbuild --version
-          echo.
           git clone --depth 1 https://github.com/mupen64plus/mupen64plus-core.git ..\mupen64plus-core
-          md pkg
-          echo.
-          msbuild projects\msvc\mupen64plus-rsp-hle.vcxproj /p:Configuration=Release;Platform=%ARCH%;PlatformToolset=${{ matrix.toolset }}
-          echo.
-          copy "projects\msvc\%ARCH%\Release\mupen64plus-rsp-hle.dll" pkg\
-          dir pkg\*.dll
+          set TOOLSET=${{ matrix.toolset }}
+          .\..\mupen64plus-core\.github\workflows\scripts\ci_msvc_build.cmd ${{ matrix.arch }}
+      - name: Backup dependencies, etc...
+        run: |
+          .\..\mupen64plus-core\.github\workflows\scripts\ci_backup_msvc_deps.cmd ${{ matrix.arch }}
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: mupen64plus-rsp-hle-msvc-${{ matrix.platform }}-g${{ env.G_REV }}
+          name: ${{ env.PKG_NAME }}
           path: pkg/*
 
   Nightly-build:
@@ -187,60 +133,19 @@ jobs:
     if: github.ref_name == 'master'
     needs: [Linux, MSYS2, MSVC]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: binaries
       - name: Get some tools
         run: |
+          git clone --depth 1 https://github.com/mupen64plus/mupen64plus-core.git ../mupen64plus-core
           sudo apt-get update
           sudo apt-get -y install hashdeep
       - name: Creating new artifacts and update nightly-build
         run: |
-          mkdir pkg
-          cd binaries
-          for BIN in *; do
-            cd "${BIN}"
-            if [[ "${BIN:20:4}" == "msys" ]]; then
-              echo ":: Creating ${BIN}.zip"
-              zip -r "../../pkg/${BIN}.zip" *
-            elif [[ "${BIN:20:4}" == "msvc" ]]; then
-              echo ":: Creating ${BIN}.zip"
-              zip -r "../../pkg/${BIN}.zip" *
-            else
-              echo ":: Recovering ${BIN}.tar.gz"
-              mv *.tar.gz ../../pkg/
-            fi
-            cd ..
-          done
-          cd ../pkg
-          echo ""
-          for BIN in *; do
-            ls -gG ${BIN}
-            tigerdeep -lz ${BIN} >> ../${BIN:0:19}.tiger.txt
-            sha256sum ${BIN} >> ../${BIN:0:19}.sha256.txt
-            sha512sum ${BIN} >> ../${BIN:0:19}.sha512.txt
-            b2sum ${BIN} >> ../${BIN:0:19}.blake2.txt
-          done
-          mv ../*.tiger.txt .
-          mv ../*.sha*.txt .
-          mv ../*.blake2.txt .
-          echo ""
-          echo "TIGER:"
-          cat *.tiger.txt
-          echo ""
-          echo "SHA256:"
-          cat *.sha256.txt
-          echo ""
-          echo "SHA512:"
-          cat *.sha512.txt
-          echo ""
-          echo "BLAKE2:"
-          cat *.blake2.txt
-          echo ""
-          git tag -f nightly-build
-          git push -f origin nightly-build
+          ./../mupen64plus-core/.github/workflows/scripts/ci_nightly_artifacts.sh
       - name: Nightly-build
         uses: ncipollo/release-action@v1
         with:
