@@ -80,6 +80,8 @@ uint8_t netplay_get_total_throttle_level();
 // Fair Input Delay Functions
 int core_get_fair_input_delay(void);
 int core_get_input_delay_frames(void);
+void core_set_fair_input_delay(int enabled);
+void core_set_input_delay_frames(int frames);
 
 #else
 

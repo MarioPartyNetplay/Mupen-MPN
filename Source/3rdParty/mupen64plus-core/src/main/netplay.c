@@ -1362,6 +1362,23 @@ int core_get_input_delay_frames(void)
     return l_input_delay_frames;
 }
 
+void core_set_fair_input_delay(int enabled)
+{
+    l_fair_input_delay_enabled = enabled ? 1 : 0;
+    DebugMessage(M64MSG_INFO, "Fair input delay %s", enabled ? "enabled" : "disabled");
+}
+
+void core_set_input_delay_frames(int frames)
+{
+    if (frames < 0 || frames > 10)
+    {
+        DebugMessage(M64MSG_ERROR, "Input delay frames must be between 0 and 10");
+        return;
+    }
+    l_input_delay_frames = frames;
+    DebugMessage(M64MSG_INFO, "Input delay frames set to %d", frames);
+}
+
 uint8_t netplay_get_total_throttle_level()
 {
     if (!netplay_is_init())
