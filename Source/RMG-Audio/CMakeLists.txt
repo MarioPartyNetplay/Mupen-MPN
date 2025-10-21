@@ -27,6 +27,7 @@ set(RMG_AUDIO_SOURCES
     Resamplers/speex.cpp
     Resamplers/resamplers.cpp
     circular_buffer.cpp
+    circular_buffer.hpp
     sdl_backend.cpp
     main.cpp
 )
@@ -47,7 +48,7 @@ target_include_directories(RMG-Audio PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../
-    ${SDL2_INCLUDE_DIRS}
+    ${SDL3_INCLUDE_DIRS}
     ${SPEEX_INCLUDE_DIRS}
     ${SAMPLERATE_INCLUDE_DIRS}
 )

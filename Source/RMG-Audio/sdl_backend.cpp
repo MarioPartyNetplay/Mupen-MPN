@@ -19,8 +19,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.          *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#include <SDL.h>
-#include <SDL_audio.h>
+#include <SDL3/SDL.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,11 +36,11 @@
 #define N64_SAMPLE_BYTES 4
 #define SDL_SAMPLE_BYTES 4
 
-#define SDL_LockAudio() SDL_LockAudioDevice(sdl_backend->device)
-#define SDL_UnlockAudio() SDL_UnlockAudioDevice(sdl_backend->device)
-#define SDL_PauseAudio(A) SDL_PauseAudioDevice(sdl_backend->device, A)
+#define SDL_LockAudio() 
+#define SDL_UnlockAudio() 
+#define SDL_PauseAudio(A) ((A) ? SDL_PauseAudioDevice(sdl_backend->device) : SDL_ResumeAudioDevice(sdl_backend->device))
 #define SDL_CloseAudio() SDL_CloseAudioDevice(sdl_backend->device)
-#define SDL_OpenAudio(A, B) ((sdl_backend->device = SDL_OpenAudioDevice(nullptr, 0, A, B, 0)) - 1)
+#define SDL_OpenAudio(A, B) ((sdl_backend->device = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, A)) == 0 ? -1 : 0)
 struct sdl_backend
 {
     /* Audio Device */
@@ -131,9 +130,13 @@ static void resize_primary_buffer(struct sdl_backend* sdl_backend, size_t new_si
     /* only grows the buffer */
     if (new_size > sdl_backend->primary_buffer.size) {
         SDL_LockAudio();
-        sdl_backend->primary_buffer.data = realloc(sdl_backend->primary_buffer.data, new_size);
-        memset((unsigned char*)sdl_backend->primary_buffer.data + sdl_backend->primary_buffer.size, 0, new_size - sdl_backend->primary_buffer.size);
-        sdl_backend->primary_buffer.size = new_size;
+        if (sdl_backend->primary_buffer.data == nullptr) {
+            init_cbuff(&sdl_backend->primary_buffer, new_size);
+        } else {
+            sdl_backend->primary_buffer.data = realloc(sdl_backend->primary_buffer.data, new_size);
+            memset((unsigned char*)sdl_backend->primary_buffer.data + sdl_backend->primary_buffer.size, 0, new_size - sdl_backend->primary_buffer.size);
+            sdl_backend->primary_buffer.size = new_size;
+        }
         SDL_UnlockAudio();
     }
 }
@@ -151,7 +154,7 @@ static void sdl_init_audio_device(struct sdl_backend* sdl_backend)
 
     sdl_backend->error = 0;
 
-    if (SDL_WasInit(SDL_INIT_AUDIO|SDL_INIT_TIMER) == (SDL_INIT_AUDIO|SDL_INIT_TIMER) )
+    if (SDL_WasInit(SDL_INIT_AUDIO) == SDL_INIT_AUDIO)
     {
         DebugMessage(M64MSG_VERBOSE, "sdl_init_audio_device(): SDL Audio sub-system already initialized.");
 
@@ -160,7 +163,7 @@ static void sdl_init_audio_device(struct sdl_backend* sdl_backend)
     }
     else
     {
-        if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_TIMER) < 0)
+        if (SDL_Init(SDL_INIT_AUDIO) < 0)
         {
             DebugMessage(M64MSG_ERROR, "Failed to initialize SDL audio subsystem.");
             sdl_backend->error = 1;
@@ -182,11 +185,8 @@ static void sdl_init_audio_device(struct sdl_backend* sdl_backend)
 
     memset(&desired, 0, sizeof(desired));
     desired.freq = select_output_frequency(sdl_backend->input_frequency);
-    desired.format = AUDIO_S16SYS;
+    desired.format = SDL_AUDIO_S16;
     desired.channels = 2;
-    desired.samples = sdl_backend->secondary_buffer_size;
-    desired.callback = my_audio_callback;
-    desired.userdata = sdl_backend;
 
     DebugMessage(M64MSG_VERBOSE, "Requesting frequency: %iHz.", desired.freq);
     DebugMessage(M64MSG_VERBOSE, "Requesting format: " AFMT_FMTSPEC ".", AFMT_ARGS(desired.format));
@@ -209,7 +209,7 @@ static void sdl_init_audio_device(struct sdl_backend* sdl_backend)
 
     /* adjust some variables given the obtained audio spec */
     sdl_backend->output_frequency = obtained.freq;
-    sdl_backend->secondary_buffer_size = obtained.samples;
+    sdl_backend->secondary_buffer_size = 1024; // Default buffer size
 
     if (sdl_backend->target < sdl_backend->secondary_buffer_size)
         sdl_backend->target = sdl_backend->secondary_buffer_size;
@@ -231,9 +231,9 @@ static void sdl_init_audio_device(struct sdl_backend* sdl_backend)
     DebugMessage(M64MSG_VERBOSE, "Frequency: %i", obtained.freq);
     DebugMessage(M64MSG_VERBOSE, "Format: " AFMT_FMTSPEC, AFMT_ARGS(obtained.format));
     DebugMessage(M64MSG_VERBOSE, "Channels: %i", obtained.channels);
-    DebugMessage(M64MSG_VERBOSE, "Silence: %i", obtained.silence);
-    DebugMessage(M64MSG_VERBOSE, "Samples: %i", obtained.samples);
-    DebugMessage(M64MSG_VERBOSE, "Size: %i", obtained.size);
+    DebugMessage(M64MSG_VERBOSE, "Silence: 0");
+    DebugMessage(M64MSG_VERBOSE, "Samples: %i", sdl_backend->secondary_buffer_size);
+    DebugMessage(M64MSG_VERBOSE, "Size: %i", sdl_backend->secondary_buffer_size * 4);
 }
 
 static void release_audio_device(struct sdl_backend* sdl_backend)
@@ -244,8 +244,8 @@ static void release_audio_device(struct sdl_backend* sdl_backend)
         SDL_QuitSubSystem(SDL_INIT_AUDIO);
     }
 
-    if (SDL_WasInit(SDL_INIT_TIMER) != 0) {
-        SDL_QuitSubSystem(SDL_INIT_TIMER);
+    if (SDL_WasInit(SDL_INIT_AUDIO) != 0) {
+        SDL_QuitSubSystem(SDL_INIT_AUDIO);
     }
 }
 

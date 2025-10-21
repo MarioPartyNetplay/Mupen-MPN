@@ -113,8 +113,7 @@ if (NETPLAY)
     )
 endif(NETPLAY)
 
-set_source_files_properties(${IMGUI_SOURCES} PROPERTIES GENERATED TRUE)
-list(APPEND RMG_SOURCES ${IMGUI_SOURCES})
+# imgui sources are now handled by the library target
 
 if (CMAKE_BUILD_TYPE MATCHES Release)
     add_executable(RMG WIN32 ${RMG_SOURCES})
@@ -124,9 +123,7 @@ endif()
 
 set_target_properties(RMG PROPERTIES OUTPUT_NAME "Mupen-MPN")
 
-add_dependencies(RMG 
-    imgui
-)
+# imgui is now a proper library target, no dependency needed
 
 target_link_libraries(RMG 
     RMG-Core
@@ -144,7 +141,6 @@ target_include_directories(RMG PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../
-    ${IMGUI_DIR}
 )
 
 target_link_libraries(RMG Qt6::Gui Qt6::Widgets)

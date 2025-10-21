@@ -22,8 +22,8 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.          *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#include <SDL.h>
-#include <SDL_audio.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_audio.h>
 #include <stdio.h>
 #include <stdarg.h>
 
@@ -47,7 +47,7 @@
 #define CONFIG_PARAM_VERSION     1.00
 
 #if SDL_VERSION_ATLEAST(2,0,0)
-#define SDL_MixAudio(A, B, C, D) SDL_MixAudioFormat(A, B, AUDIO_S16SYS, C, D)
+#define SDL_MixAudio(A, B, C, D) SDL_MixAudio(A, B, SDL_AUDIO_S16, C, D)
 #endif
 
 /* local variables */
@@ -65,7 +65,7 @@ static int VolPercent = 80;
 // how much percent to increment/decrement volume by
 static int VolDelta = 5;
 // the actual volume passed into SDL, range of 0..SDL_MIX_MAXVOLUME
-static int VolSDL = SDL_MIX_MAXVOLUME;
+static float VolSDL = 1.0f;
 // Muted or not
 static int VolIsMuted = 0;
 
@@ -74,11 +74,11 @@ static void ApplyVolumeSettings(void)
 {
     if (VolIsMuted)
     {
-        VolSDL = 0;
+        VolSDL = 0.0f;
     }
     else
     {
-        VolSDL = SDL_MIX_MAXVOLUME * VolPercent / 100;
+        VolSDL = (float)VolPercent / 100.0f;
     }
 }
 

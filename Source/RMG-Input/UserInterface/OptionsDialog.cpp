@@ -12,7 +12,7 @@
 #include <QFileDialog>
 #include <QMessageBox>
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 #include <RMG-Core/Emulation.hpp>
 #include <RMG-Core/Settings.hpp>
@@ -21,7 +21,7 @@
 using namespace UserInterface;
 
 OptionsDialog::OptionsDialog(QWidget* parent, OptionsDialogSettings settings,
-                             SDL_Joystick* joystick, SDL_GameController* controller) : QDialog(parent, Qt::WindowSystemMenuHint | Qt::WindowTitleHint)
+                             SDL_Joystick* joystick, SDL_Gamepad* controller) : QDialog(parent, Qt::WindowSystemMenuHint | Qt::WindowTitleHint)
 {
     this->setupUi(this);
 
@@ -128,8 +128,8 @@ void OptionsDialog::on_changeGameboySaveButton_clicked()
 void OptionsDialog::on_testRumbleButton_clicked()
 {
 #if SDL_VERSION_ATLEAST(2,0,18)
-    if ((this->currentJoystick != nullptr   && SDL_JoystickHasRumble(this->currentJoystick) != SDL_TRUE) ||
-        (this->currentController != nullptr && SDL_GameControllerHasRumble(this->currentController) != SDL_TRUE))
+    if ((this->currentJoystick != nullptr) ||
+        (this->currentController != nullptr))
     {
         QMessageBox msgBox(this);
         msgBox.setIcon(QMessageBox::Icon::Critical);
@@ -143,10 +143,10 @@ void OptionsDialog::on_testRumbleButton_clicked()
 
     if (this->currentJoystick != nullptr)
     {
-        SDL_JoystickRumble(this->currentJoystick, 0xFFFF, 0xFFFF, 1500);
+        SDL_RumbleJoystick(this->currentJoystick, 0xFFFF, 0xFFFF, 1500);
     }
     else
     {
-        SDL_GameControllerRumble(this->currentController, 0xFFFF, 0xFFFF, 1500);
+        SDL_RumbleGamepad(this->currentController, 0xFFFF, 0xFFFF, 1500);
     }
 }

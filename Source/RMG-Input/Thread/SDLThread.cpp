@@ -9,7 +9,8 @@
  */
 #include "SDLThread.hpp"
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_oldnames.h>
 
 using namespace Thread;
 
@@ -61,47 +62,54 @@ void SDLThread::run(void)
             case SDLThreadAction::GetInputDevices:
             {
                 // force re-fresh joystick list
-                SDL_JoystickUpdate();
+                SDL_UpdateJoysticks();
 
                 QString name;
                 QString path;
                 QString serial;
 
-                SDL_GameController* controller;
+                SDL_Gamepad* controller;
                 SDL_Joystick* joystick;
 
-                for (int i = 0; i < SDL_NumJoysticks(); i++)
+                int joystickCount;
+                SDL_JoystickID* joystickIDs = SDL_GetJoysticks(&joystickCount);
+                
+                for (int i = 0; i < joystickCount; i++)
                 {
-                    if (SDL_IsGameController(i))
+                    SDL_JoystickID joystickID = joystickIDs[i];
+                    
+                    if (SDL_IsGamepad(joystickID))
                     {
-                        controller = SDL_GameControllerOpen(i);
+                        controller = SDL_OpenGamepad(joystickID);
                         if (controller == nullptr)
                         { // skip invalid controllers
                             continue;
                         }
-                        name = SDL_GameControllerName(controller);
-                        path = SDL_GameControllerPath(controller);
-                        serial = SDL_GameControllerGetSerial(controller);
-                        SDL_GameControllerClose(controller);
+                        name = SDL_GetGamepadName(controller);
+                        path = SDL_GetGamepadPath(controller);
+                        serial = SDL_GetGamepadSerial(controller);
+                        SDL_CloseGamepad(controller);
                     }
                     else
                     {
-                        joystick = SDL_JoystickOpen(i);
+                        joystick = SDL_OpenJoystick(joystickID);
                         if (joystick == nullptr)
                         { // skip invalid joysticks
                             continue;
                         }
-                        name = SDL_JoystickName(joystick);
-                        path = SDL_JoystickPath(joystick);
-                        serial = SDL_JoystickGetSerial(joystick);
-                        SDL_JoystickClose(joystick);
+                        name = SDL_GetJoystickName(joystick);
+                        path = SDL_GetJoystickPath(joystick);
+                        serial = SDL_GetJoystickSerial(joystick);
+                        SDL_CloseJoystick(joystick);
                     }
 
                     if (name != nullptr)
                     {
-                        emit this->OnInputDeviceFound(name, path, serial, i);
+                        emit this->OnInputDeviceFound(name, path, serial, joystickID);
                     }
                 }
+                
+                SDL_free(joystickIDs);
                 this->currentAction = SDLThreadAction::None;
                 emit this->OnDeviceSearchFinished();
             } break;

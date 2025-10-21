@@ -88,6 +88,16 @@ static uint8_t l_plugin[4];
 static uint8_t l_buffer_target;
 static uint8_t l_player_lag[4];
 
+// Socket variables
+static void* l_udpSocket;
+static void* l_tcpSocket;
+#ifdef USE_SDL3NET
+static NET_Address* l_resolvedAddress;
+static int l_resolvedAddressPort;
+#else
+static IPaddress l_resolvedAddress;
+#endif
+
 // Enhanced throttling variables
 static uint8_t l_player_throttle_level[4];  // Current throttling level for each player (0-3)
 static uint32_t l_player_high_lag_duration[4];  // Duration of sustained high lag for each player
@@ -97,10 +107,10 @@ static const uint32_t HIGH_LAG_THRESHOLD = 3000;  // 3 seconds of high lag befor
 static const uint8_t MAX_THROTTLE_LEVEL = 3;  // Maximum throttling level
 
 //UDP packets
-static UDPpacket *l_request_input_packet;
-static UDPpacket *l_send_input_packet;
-static UDPpacket *l_process_packet;
-static UDPpacket *l_check_sync_packet;
+static netplay_udp_packet *l_request_input_packet;
+static netplay_udp_packet *l_send_input_packet;
+static netplay_udp_packet *l_process_packet;
+static netplay_udp_packet *l_check_sync_packet;
 static const int32_t l_check_sync_packet_size = (CP0_REGS_COUNT * 4) + 5;
 
 //UDP packet formats
@@ -132,6 +142,17 @@ struct __UDPSocket {
 
 #define netplay_min(x, y) (x > y ? y : x);
 
+// Compatibility macros for packet data access
+#ifdef USE_SDL3NET
+#define PACKET_DATA(packet) ((packet)->buf)
+#define PACKET_LEN(packet) ((packet)->buflen)
+#define SET_PACKET_LEN(packet, len) ((packet)->buflen = (len))
+#else
+#define PACKET_DATA(packet) ((packet)->data)
+#define PACKET_LEN(packet) ((packet)->len)
+#define SET_PACKET_LEN(packet, len) ((packet)->len = (len))
+#endif
+
 static netplay_udp_packet* alloc_udp_packet(size_t len)
 {
 #ifdef USE_SDL3NET
@@ -139,10 +160,11 @@ static netplay_udp_packet* alloc_udp_packet(size_t len)
     if (packet == NULL)
         return NULL;
 
-    packet->len = 0;
-    packet->maxlen = len;
-    packet->data = malloc(len);
-    if (packet->data == NULL)
+    packet->addr = NULL;
+    packet->port = 0;
+    packet->buf = malloc(len);
+    packet->buflen = len;
+    if (packet->buf == NULL)
     {
         free(packet);
         return NULL;
@@ -159,14 +181,18 @@ static void free_udp_packet(netplay_udp_packet* packet)
 {
     if (packet != NULL)
     {
-#ifndef USE_SDL3NET
-        SDLNet_FreePacket(packet);
-#else
-        if (packet->data != NULL)
+#ifdef USE_SDL3NET
+        if (packet->buf != NULL)
         {
-            free(packet->data);
+            free(packet->buf);
+        }
+        if (packet->addr != NULL)
+        {
+            NET_UnrefAddress(packet->addr);
         }
         free(packet);
+#else
+        SDLNet_FreePacket(packet);
 #endif
     }
 }
@@ -182,9 +208,11 @@ static osal_inline int netplay_recv_udp_packet(void* udpSocket, netplay_udp_pack
 
     if (udpPacket != NULL)
     {
-        int len = netplay_min(packet->maxlen, udpPacket->buflen);
-        memcpy(packet->data, udpPacket->buf, len);
-        packet->len = len;
+        int len = netplay_min(packet->buflen, udpPacket->buflen);
+        memcpy(packet->buf, udpPacket->buf, len);
+        packet->buflen = len;
+        packet->addr = udpPacket->addr;
+        packet->port = udpPacket->port;
         NET_DestroyDatagram(udpPacket);
         return 1;
     }
@@ -198,7 +226,7 @@ static osal_inline int netplay_recv_udp_packet(void* udpSocket, netplay_udp_pack
 static osal_inline void netplay_send_udp_packet(void* udpSocket, netplay_udp_packet* packet)
 {
 #ifdef USE_SDL3NET
-    NET_SendDatagram((NET_DatagramSocket*)udpSocket, l_resolvedAddress, l_resolvedAddressPort, packet->data, packet->len);
+    NET_SendDatagram((NET_DatagramSocket*)udpSocket, l_resolvedAddress, l_resolvedAddressPort, packet->buf, packet->buflen);
 #else
     SDLNet_UDP_Send((UDPsocket)udpSocket, l_udpChannel, packet);
 #endif
@@ -387,30 +415,6 @@ m64p_error netplay_start(const char* host, int port)
         return M64ERR_NO_MEMORY;
     }
 
-    l_request_input_packet = SDLNet_AllocPacket(12);
-    l_send_input_packet = SDLNet_AllocPacket(11);
-    l_process_packet = SDLNet_AllocPacket(512);
-    l_check_sync_packet = SDLNet_AllocPacket(l_check_sync_packet_size);
-    if (l_request_input_packet == NULL ||
-        l_send_input_packet == NULL ||
-        l_process_packet == NULL ||
-        l_check_sync_packet == NULL)
-    {
-        DebugMessage(M64MSG_ERROR, "Netplay: could not allocate UDP packets");
-        SDLNet_UDP_Close(l_udpSocket);
-        l_udpSocket = NULL;
-        SDLNet_TCP_Close(l_tcpSocket);
-        l_tcpSocket = NULL;
-        SDLNet_FreePacket(l_request_input_packet);
-        l_request_input_packet = NULL;
-        SDLNet_FreePacket(l_send_input_packet);
-        l_send_input_packet = NULL;
-        SDLNet_FreePacket(l_process_packet);
-        l_process_packet = NULL;
-        SDLNet_FreePacket(l_check_sync_packet);
-        l_check_sync_packet = NULL;
-        return M64ERR_NO_MEMORY;
-    }
 
     for (int i = 0; i < 4; ++i)
     {
@@ -474,10 +478,10 @@ m64p_error netplay_stop()
         l_udpSocket = NULL;
         l_udpChannel = -1;
 
-        SDLNet_FreePacket(l_request_input_packet);
-        SDLNet_FreePacket(l_send_input_packet);
-        SDLNet_FreePacket(l_process_packet);
-        SDLNet_FreePacket(l_check_sync_packet);
+        free_udp_packet(l_request_input_packet);
+        free_udp_packet(l_send_input_packet);
+        free_udp_packet(l_process_packet);
+        free_udp_packet(l_check_sync_packet);
         l_request_input_packet = NULL;
         l_send_input_packet = NULL;
         l_process_packet = NULL;
@@ -727,14 +731,14 @@ static void reset_player_throttling(uint8_t control_id)
 
 static void netplay_request_input(uint8_t control_id)
 {
-    l_request_input_packet->data[0] = UDP_REQUEST_KEY_INFO;
-    l_request_input_packet->data[1] = control_id; //The player we need input for
-    SDLNet_Write32(l_reg_id, &l_request_input_packet->data[2]); //our registration ID
-    SDLNet_Write32(l_cin_compats[control_id].netplay_count, &l_request_input_packet->data[6]); //the current event count
-    l_request_input_packet->data[10] = l_spectator; //whether we are a spectator
-    l_request_input_packet->data[11] = buffer_size(control_id); //our local buffer size
-    l_request_input_packet->len = 12;
-    SDLNet_UDP_Send(l_udpSocket, l_udpChannel, l_request_input_packet);
+    PACKET_DATA(l_request_input_packet)[0] = UDP_REQUEST_KEY_INFO;
+    PACKET_DATA(l_request_input_packet)[1] = control_id; //The player we need input for
+    netplay_write32(l_reg_id, &PACKET_DATA(l_request_input_packet)[2]); //our registration ID
+    netplay_write32(l_cin_compats[control_id].netplay_count, &PACKET_DATA(l_request_input_packet)[6]); //the current event count
+    PACKET_DATA(l_request_input_packet)[10] = l_spectator; //whether we are a spectator
+    PACKET_DATA(l_request_input_packet)[11] = buffer_size(control_id); //our local buffer size
+    SET_PACKET_LEN(l_request_input_packet, 12);
+    netplay_send_udp_packet(l_udpSocket, l_request_input_packet);
 }
 
 static int check_valid(uint8_t control_id, uint32_t count)
@@ -776,18 +780,18 @@ static void netplay_process()
     //In this function we process data we have received from the server
     uint32_t curr, count, keys;
     uint8_t plugin, player, current_status;
-    while (SDLNet_UDP_Recv(l_udpSocket, l_process_packet) == 1)
+    while (netplay_recv_udp_packet(l_udpSocket, l_process_packet) == 1)
     {
-        switch (l_process_packet->data[0])
+        switch (PACKET_DATA(l_process_packet)[0])
         {
             case UDP_RECEIVE_KEY_INFO:
             case UDP_RECEIVE_KEY_INFO_GRATUITOUS:
-                player = l_process_packet->data[1];
+                player = PACKET_DATA(l_process_packet)[1];
                 //current_status is a status update from the server
                 //it will let us know if another player has disconnected, or the games have desynced
-                current_status = l_process_packet->data[2];
-                if (l_process_packet->data[0] == UDP_RECEIVE_KEY_INFO)
-                    l_player_lag[player] = l_process_packet->data[3];
+                current_status = PACKET_DATA(l_process_packet)[2];
+                if (PACKET_DATA(l_process_packet)[0] == UDP_RECEIVE_KEY_INFO)
+                    l_player_lag[player] = PACKET_DATA(l_process_packet)[3];
                 if (current_status != l_status)
                 {
                     if (((current_status & 0x1) ^ (l_status & 0x1)) != 0)
@@ -802,9 +806,9 @@ static void netplay_process()
                 curr = 5;
                 //this loop processes input data from the server, inserting new events into the linked list for each player
                 //it skips events that we have already recorded, or if we receive data for an event that has already happened
-                for (uint8_t i = 0; i < l_process_packet->data[4]; ++i)
+                for (uint8_t i = 0; i < PACKET_DATA(l_process_packet)[4]; ++i)
                 {
-                    count = SDLNet_Read32(&l_process_packet->data[curr]);
+                    count = netplay_read32(&PACKET_DATA(l_process_packet)[curr]);
                     curr += 4;
 
                     if (((count - l_cin_compats[player].netplay_count) > (UINT32_MAX / 2)) || (check_valid(player, count))) //event doesn't need to be recorded
@@ -813,9 +817,9 @@ static void netplay_process()
                         continue;
                     }
 
-                    keys = SDLNet_Read32(&l_process_packet->data[curr]);
+                    keys = netplay_read32(&PACKET_DATA(l_process_packet)[curr]);
                     curr += 4;
-                    plugin = l_process_packet->data[curr];
+                    plugin = PACKET_DATA(l_process_packet)[curr];
                     curr += 1;
 
                     //insert new event at beginning of linked list
@@ -940,13 +944,13 @@ static uint32_t netplay_get_input(uint8_t control_id)
 
 static void netplay_send_input(uint8_t control_id, uint32_t keys)
 {
-    l_send_input_packet->data[0] = UDP_SEND_KEY_INFO;
-    l_send_input_packet->data[1] = control_id; //player number
-    SDLNet_Write32(l_cin_compats[control_id].netplay_count, &l_send_input_packet->data[2]); // current event count
-    SDLNet_Write32(keys, &l_send_input_packet->data[6]); //key data
-    l_send_input_packet->data[10] = l_plugin[control_id]; //current plugin
-    l_send_input_packet->len = 11;
-    SDLNet_UDP_Send(l_udpSocket, l_udpChannel, l_send_input_packet);
+    PACKET_DATA(l_send_input_packet)[0] = UDP_SEND_KEY_INFO;
+    PACKET_DATA(l_send_input_packet)[1] = control_id; //player number
+    netplay_write32(l_cin_compats[control_id].netplay_count, &PACKET_DATA(l_send_input_packet)[2]); // current event count
+    netplay_write32(keys, &PACKET_DATA(l_send_input_packet)[6]); //key data
+    PACKET_DATA(l_send_input_packet)[10] = l_plugin[control_id]; //current plugin
+    SET_PACKET_LEN(l_send_input_packet, 11);
+    netplay_send_udp_packet(l_udpSocket, l_send_input_packet);
 }
 
 uint8_t netplay_register_player(uint8_t player, uint8_t plugin, uint8_t rawdata, uint32_t reg_id)
@@ -1100,14 +1104,14 @@ void netplay_check_sync(struct cp0* cp0)
     {
         const uint32_t* cp0_regs = r4300_cp0_regs(cp0);
 
-        l_check_sync_packet->data[0] = UDP_SYNC_DATA;
-        SDLNet_Write32(l_vi_counter, &l_check_sync_packet->data[1]); //current VI count
+        PACKET_DATA(l_check_sync_packet)[0] = UDP_SYNC_DATA;
+        netplay_write32(l_vi_counter, &PACKET_DATA(l_check_sync_packet)[1]); //current VI count
         for (int i = 0; i < CP0_REGS_COUNT; ++i)
         {
-            SDLNet_Write32(cp0_regs[i], &l_check_sync_packet->data[(i * 4) + 5]);
+            netplay_write32(cp0_regs[i], &PACKET_DATA(l_check_sync_packet)[(i * 4) + 5]);
         }
-        l_check_sync_packet->len = l_check_sync_packet_size;
-        SDLNet_UDP_Send(l_udpSocket, l_udpChannel, l_check_sync_packet);
+        SET_PACKET_LEN(l_check_sync_packet, l_check_sync_packet_size);
+        netplay_send_udp_packet(l_udpSocket, l_check_sync_packet);
         
         // Log throttling status every 600 VIs (approximately every 10 seconds)
         if (netplay_has_throttled_players())

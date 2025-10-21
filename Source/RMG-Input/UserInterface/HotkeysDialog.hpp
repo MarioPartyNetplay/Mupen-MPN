@@ -13,7 +13,8 @@
 #include <QDialog>
 #include <string>
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_oldnames.h>
 
 #include <RMG-Core/Settings.hpp>
 

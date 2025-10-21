@@ -28,7 +28,7 @@
 
 #endif // NETPLAY
 #include "UserInterface/EventFilter.hpp"
-#include "Utilities/QtKeyToSdl2Key.hpp"
+#include "Utilities/QtKeyToSdl3Key.hpp"
 #include "Utilities/QtMessageBox.hpp"
 #include "OnScreenDisplay.hpp"
 #include "Callbacks.hpp"
@@ -1377,8 +1377,8 @@ void MainWindow::on_EventFilter_KeyPressed(QKeyEvent *event)
         return;
     }
 
-    int key = Utilities::QtKeyToSdl2Key(event->key());
-    int mod = Utilities::QtModKeyToSdl2ModKey(event->modifiers());
+    int key = Utilities::QtKeyToSdl3Key(event->key());
+    int mod = Utilities::QtModKeyToSdl3ModKey(event->modifiers());
 
     CoreSetKeyDown(key, mod);
 }
@@ -1391,8 +1391,8 @@ void MainWindow::on_EventFilter_KeyReleased(QKeyEvent *event)
         return;
     }
 
-    int key = Utilities::QtKeyToSdl2Key(event->key());
-    int mod = Utilities::QtModKeyToSdl2ModKey(event->modifiers());
+    int key = Utilities::QtKeyToSdl3Key(event->key());
+    int mod = Utilities::QtModKeyToSdl3ModKey(event->modifiers());
 
     CoreSetKeyUp(key, mod);
 }

@@ -67,6 +67,21 @@ else()
     set(MAKE_DEBUG "0")
 endif()
 
+# SDL3_net external project - must be defined before mupen64plus-core
+ExternalProject_Add(SDL3_net
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/SDL3_net
+    CONFIGURE_COMMAND ${CMAKE_COMMAND} -S ${CMAKE_CURRENT_SOURCE_DIR}/SDL3_net -B ${CMAKE_CURRENT_BINARY_DIR}/SDL3_net
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+        -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}/SDL3_net/install
+        -DSDL3NET_BUILD_SHARED_LIBS=OFF
+        -DSDL3NET_BUILD_STATIC_LIBS=ON
+        -DSDL3NET_SAMPLES=OFF
+        -DSDL3NET_TESTS=OFF
+    BUILD_COMMAND ${CMAKE_COMMAND} --build ${CMAKE_CURRENT_BINARY_DIR}/SDL3_net --config ${CMAKE_BUILD_TYPE}
+    INSTALL_COMMAND ${CMAKE_COMMAND} --install ${CMAKE_CURRENT_BINARY_DIR}/SDL3_net --config ${CMAKE_BUILD_TYPE}
+    BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/SDL3_net/install/lib/libSDL3_net.a
+)
+
 ExternalProject_Add(mupen64plus-core
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-core/
 
@@ -78,12 +93,16 @@ ExternalProject_Add(mupen64plus-core
         SUBDIR=${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-core/subprojects 
         OSD=0 NEW_DYNAREC=1
         KEYBINDINGS=0 ACCURATE_FPU=1 VULKAN=0 NETPLAY=$<BOOL:${NETPLAY}> 
+        SDL3_CAMERA=1
+        SDLNET_CFLAGS=-I${CMAKE_CURRENT_BINARY_DIR}/SDL3_net/install/include\ -DUSE_SDL3NET
+        SDLNET_LDLIBS=-L${CMAKE_CURRENT_BINARY_DIR}/SDL3_net/install/lib\ -lSDL3_net
         TARGET=${CORE_FILE} DEBUG=${MAKE_DEBUG}
         CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
         OPTFLAGS=${MAKE_OPTFLAGS}
     BUILD_IN_SOURCE False
     BUILD_ALWAYS True
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-core
+    DEPENDS SDL3_net
 
     BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-core/${CORE_FILE}
 )
@@ -248,7 +267,6 @@ if (DISCORD_RPC)
 endif(DISCORD_RPC)
 
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/imgui)
-set(IMGUI_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/imgui/)
 set(IMGUI_SOURCES_IN
     ${IMGUI_DIR}/imgui_draw.cpp
     ${IMGUI_DIR}/imgui_tables.cpp 
@@ -258,24 +276,9 @@ set(IMGUI_SOURCES_IN
     ${IMGUI_DIR}/backends/imgui_impl_opengl3.h 
     ${IMGUI_DIR}/backends/imgui_impl_opengl3_loader.h 
 )
-set(IMGUI_SOURCES_OUT
-    ${IMGUI_BUILD_DIR}/imgui_draw.cpp
-    ${IMGUI_BUILD_DIR}/imgui_tables.cpp
-    ${IMGUI_BUILD_DIR}/imgui_widgets.cpp
-    ${IMGUI_BUILD_DIR}/imgui.cpp
-    ${IMGUI_BUILD_DIR}/imgui_impl_opengl3.cpp
-    ${IMGUI_BUILD_DIR}/imgui_impl_opengl3.h 
-    ${IMGUI_BUILD_DIR}/imgui_impl_opengl3_loader.h 
-)
-ExternalProject_Add(imgui
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/imgui
-
-    CONFIGURE_COMMAND ${CMAKE_COMMAND} -E make_directory ${IMGUI_BUILD_DIR}
-    BUILD_COMMAND ${CMAKE_COMMAND} -E copy ${IMGUI_SOURCES_IN} ${IMGUI_BUILD_DIR}
-    INSTALL_COMMAND ""
-
-    BUILD_BYPRODUCTS ${IMGUI_SOURCES_OUT}
-)
+# Create imgui library target
+add_library(imgui STATIC ${IMGUI_SOURCES_IN})
+target_include_directories(imgui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/imgui)
 
 set(SDL_GAMECONTROLLERDB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/SDL_GameControllerDB)
 set(SDL_GAMECONTROLLERDB_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/SDL_GameControllerDB)
@@ -319,9 +322,14 @@ if (DISCORD_RPC)
     set(DISCORD_RPC_LIB ${BUILD_BYPRODUCTS} PARENT_SCOPE)
 endif(DISCORD_RPC)
 
-ExternalProject_Get_property(imgui BUILD_BYPRODUCTS)
-set(IMGUI_SOURCES ${BUILD_BYPRODUCTS} PARENT_SCOPE)
+# Set SDL3_net properties for parent scope
+set(SDL3_NET_LIB ${CMAKE_CURRENT_BINARY_DIR}/SDL3_net/install/lib/libSDL3_net.a PARENT_SCOPE)
+set(SDL3_NET_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/SDL3_net/install/include PARENT_SCOPE)
+
+# imgui is now a proper library target
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/imgui PARENT_SCOPE)
 
 ExternalProject_Get_property(SDL_GameControllerDB BUILD_BYPRODUCTS)
 set(SDL_GAMECONTROLLERDB ${BUILD_BYPRODUCTS} PARENT_SCOPE)
+
+# SDL3_net properties will be set after the project is defined

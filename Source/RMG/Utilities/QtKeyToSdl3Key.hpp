@@ -14,8 +14,8 @@
 
 namespace Utilities
 {
-int QtKeyToSdl2Key(int key);
-int QtModKeyToSdl2ModKey(Qt::KeyboardModifiers modifiers);
+int QtKeyToSdl3Key(int key);
+int QtModKeyToSdl3ModKey(Qt::KeyboardModifiers modifiers);
 } // namespace Utilities
 
 #endif // QTKEYTOSDL2KEY_HPP

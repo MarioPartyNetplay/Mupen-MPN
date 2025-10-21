@@ -16,7 +16,7 @@ if (WIN32)
 endif(WIN32)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(SDL2 REQUIRED sdl2)
+pkg_check_modules(SDL3 REQUIRED sdl3)
 pkg_check_modules(MINIZIP REQUIRED minizip)
 if (WIN32)
     pkg_check_modules(ICONV REQUIRED iconv)

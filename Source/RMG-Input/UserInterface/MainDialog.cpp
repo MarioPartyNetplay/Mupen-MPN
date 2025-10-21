@@ -9,11 +9,11 @@
  */
 #include "MainDialog.hpp"
 #include "Widget/ControllerWidget.hpp"
-#include "Utilities/QtKeyToSdl2Key.hpp"
+#include "Utilities/QtKeyToSdl3Key.hpp"
 
 #include <RMG-Core/Core.hpp>
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include <QTimer>
 
 Q_DECLARE_METATYPE(SDLDevice);
@@ -142,20 +142,20 @@ void MainDialog::openInputDevice(SDLDevice device)
     }
 
     int controllerMode = CoreSettingsGetIntValue(SettingsID::Input_ControllerMode);
-    if ((controllerMode == 0 && SDL_IsGameController(device.number) == SDL_TRUE) ||
+    if ((controllerMode == 0 && SDL_IsGamepad(device.number) == true) ||
         (controllerMode == 2))
     {
         this->currentJoystick = nullptr;
-        this->currentController = SDL_GameControllerOpen(device.number);
+        this->currentController = SDL_OpenGamepad(device.number);
     }
     else if (controllerMode == 0 || controllerMode == 1)
     {
-        this->currentJoystick = SDL_JoystickOpen(device.number);
+        this->currentJoystick = SDL_OpenJoystick(device.number);
         this->currentController = nullptr;
     }
 
     this->currentDevice = device;
-    joystickId = SDL_JoystickGetDeviceInstanceID(device.number);
+    joystickId = SDL_GetJoystickID(this->currentJoystick);
     controllerWidget->SetCurrentJoystickID(joystickId);
     controllerWidget->SetIsCurrentJoystickGameController(currentController != nullptr);
     controllerWidget->SetCurrentJoystick(this->currentJoystick, this->currentController);
@@ -165,13 +165,13 @@ void MainDialog::closeInputDevice()
 {
     if (this->currentJoystick != nullptr)
     {
-        SDL_JoystickClose(this->currentJoystick);
+        SDL_CloseJoystick(this->currentJoystick);
         this->currentJoystick = nullptr;
     }
 
     if (this->currentController != nullptr)
     {
-        SDL_GameControllerClose(this->currentController);
+        SDL_CloseGamepad(this->currentController);
         this->currentController = nullptr;
     }
 }
@@ -206,8 +206,8 @@ void MainDialog::on_InputPollTimer_triggered()
 
     // check if controller has been disconnected,
     // if so, keep trying to re-open it
-    if ((this->currentJoystick != nullptr && !SDL_JoystickGetAttached(this->currentJoystick)) ||
-        (this->currentController != nullptr && !SDL_GameControllerGetAttached(this->currentController)))
+    if ((this->currentJoystick != nullptr && !SDL_JoystickConnected(this->currentJoystick)) ||
+        (this->currentController != nullptr && !SDL_GamepadConnected(this->currentController)))
     {
         this->closeInputDevice();
         this->openInputDevice(this->currentDevice);
@@ -215,7 +215,7 @@ void MainDialog::on_InputPollTimer_triggered()
 
     // process SDL events
     SDL_Event event;
-    while (SDL_PeepEvents(&event, 1, SDL_GETEVENT, 0, SDL_LASTEVENT) == 1)
+    while (SDL_PeepEvents(&event, 1, SDL_GETEVENT, 0, SDL_EVENT_LAST) == 1)
     {
         controllerWidget->on_MainDialog_SdlEvent(&event);
     }
@@ -352,38 +352,38 @@ void MainDialog::on_SDLThread_DeviceSearchFinished(void)
 
 void MainDialog::on_EventFilter_KeyPressed(QKeyEvent *event)
 {
-    int key = Utilities::QtKeyToSdl2Key(event->key());
-    int mod = Utilities::QtModKeyToSdl2ModKey(event->modifiers());
+    int key = Utilities::QtKeyToSdl3Key(event->key());
+    int mod = Utilities::QtModKeyToSdl3ModKey(event->modifiers());
 
     SDL_KeyboardEvent keyboardEvent;
-    keyboardEvent.state = SDL_PRESSED;
-    keyboardEvent.type = SDL_KEYDOWN;
-    keyboardEvent.keysym.scancode = (SDL_Scancode)key;
-    keyboardEvent.keysym.sym = (SDL_Keycode)key;
-    keyboardEvent.keysym.mod = mod;
+    keyboardEvent.type = SDL_EVENT_KEY_DOWN;
+    keyboardEvent.scancode = (SDL_Scancode)key;
+    keyboardEvent.key = (SDL_Keycode)key;
+    keyboardEvent.mod = mod;
+    keyboardEvent.down = true;
 
     SDL_Event sdlEvent;
     sdlEvent.key = keyboardEvent;
-    sdlEvent.type = SDL_KEYDOWN;
+    sdlEvent.type = SDL_EVENT_KEY_DOWN;
 
     SDL_PeepEvents(&sdlEvent, 1, SDL_ADDEVENT, 0, 0);
 }
 
 void MainDialog::on_EventFilter_KeyReleased(QKeyEvent *event)
 {
-    int key = Utilities::QtKeyToSdl2Key(event->key());
-    int mod = Utilities::QtModKeyToSdl2ModKey(event->modifiers());
+    int key = Utilities::QtKeyToSdl3Key(event->key());
+    int mod = Utilities::QtModKeyToSdl3ModKey(event->modifiers());
 
     SDL_KeyboardEvent keyboardEvent;
-    keyboardEvent.state = SDL_RELEASED;
-    keyboardEvent.type = SDL_KEYUP;
-    keyboardEvent.keysym.scancode = (SDL_Scancode)key;
-    keyboardEvent.keysym.sym = (SDL_Keycode)key;
-    keyboardEvent.keysym.mod = mod;
+    keyboardEvent.type = SDL_EVENT_KEY_UP;
+    keyboardEvent.scancode = (SDL_Scancode)key;
+    keyboardEvent.key = (SDL_Keycode)key;
+    keyboardEvent.mod = mod;
+    keyboardEvent.down = false;
 
     SDL_Event sdlEvent;
     sdlEvent.key = keyboardEvent;
-    sdlEvent.type = SDL_KEYUP;
+    sdlEvent.type = SDL_EVENT_KEY_UP;
 
     SDL_PeepEvents(&sdlEvent, 1, SDL_ADDEVENT, 0, 0);
 }

@@ -13,7 +13,8 @@
 #include <QDialog>
 #include <string>
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_oldnames.h>
 
 #include "ui_OptionsDialog.h"
 
@@ -38,7 +39,7 @@ Q_OBJECT
 
 public:
     OptionsDialog(QWidget *parent, OptionsDialogSettings settings, 
-                  SDL_Joystick* joystick, SDL_GameController* controller);
+                  SDL_Joystick* joystick, SDL_Gamepad* controller);
 
     OptionsDialogSettings GetSettings();
 
@@ -49,7 +50,7 @@ private:
     OptionsDialogSettings settings;
 
     SDL_Joystick* currentJoystick         = nullptr;
-    SDL_GameController* currentController = nullptr;
+    SDL_Gamepad* currentController = nullptr;
 
     void setIconsForEmulationInfoText(void);
     void hideEmulationInfoText(void);

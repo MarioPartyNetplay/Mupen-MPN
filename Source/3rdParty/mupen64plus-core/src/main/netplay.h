@@ -26,6 +26,18 @@
 #include "device/pif/pif.h"
 #include "main/util.h"
 
+#ifdef M64P_NETPLAY
+#ifdef USE_SDL3NET
+#include <SDL3_net/SDL_net.h>
+// Typedef for UDP packet structure - SDL3_net uses NET_Datagram instead of UDPpacket
+typedef NET_Datagram netplay_udp_packet;
+#else
+#include <SDL_net.h>
+// Typedef for UDP packet structure
+typedef UDPpacket netplay_udp_packet;
+#endif
+#endif
+
 #define NETPLAY_CORE_VERSION 1
 
 struct netplay_event {
