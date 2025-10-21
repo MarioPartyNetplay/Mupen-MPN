@@ -21,4 +21,10 @@ bool CoreHasInitNetplay(void);
 // attempts to shutdown netplay
 bool CoreShutdownNetplay(void);
 
+// Fair Input Delay Functions
+bool CoreSetFairInputDelay(bool enabled);
+bool CoreGetFairInputDelay(void);
+bool CoreSetInputDelayFrames(int frames);
+int CoreGetInputDelayFrames(void);
+
 #endif // CORE_NETPLAY_HPP

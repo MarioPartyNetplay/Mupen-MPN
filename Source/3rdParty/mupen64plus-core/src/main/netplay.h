@@ -77,6 +77,10 @@ void netplay_get_throttling_stats(uint8_t* throttle_levels, uint8_t* buffer_heal
 void netplay_log_throttling_status();
 uint8_t netplay_get_total_throttle_level();
 
+// Fair Input Delay Functions
+int core_get_fair_input_delay(void);
+int core_get_input_delay_frames(void);
+
 #else
 
 static osal_inline m64p_error netplay_start(const char* host, int port)

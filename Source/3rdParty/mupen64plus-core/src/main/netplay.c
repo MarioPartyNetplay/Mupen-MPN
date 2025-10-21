@@ -885,39 +885,64 @@ static uint32_t netplay_get_input(uint8_t control_id)
     //l_player_lag is how far behind we are from the lead player (in frames)
     //buffer_size is the local buffer size
     
-    // Update throttling calculations
-    update_player_throttling(control_id);
+    // Check if fair input delay is enabled
+    extern int core_get_fair_input_delay(void);
+    extern int core_get_input_delay_frames(void);
     
-    // Apply enhanced throttling based on calculated level
-    if (l_player_throttle_level[control_id] > 0)
+    if (core_get_fair_input_delay())
     {
-        l_canFF = 1;
-        main_core_state_set(M64CORE_SPEED_LIMITER, 0);
+        // Fair Input Delay Mode: All players wait for the same input delay
+        int fair_delay_frames = core_get_input_delay_frames();
         
-        // Apply speed factor throttling based on throttle level
-        int speed_factor;
-        switch (l_player_throttle_level[control_id])
+        // Disable throttling in fair input delay mode
+        main_core_state_set(M64CORE_SPEED_LIMITER, 1);
+        main_core_state_set(M64CORE_SPEED_FACTOR, 100);
+        l_canFF = 0;
+        
+        // Wait for fair delay frames before processing input
+        if (buffer_size(control_id) < fair_delay_frames)
         {
-            case 1:
-                speed_factor = 85;  // 85% speed
-                break;
-            case 2:
-                speed_factor = 65;  // 65% speed
-                break;
-            case 3:
-                speed_factor = 45;  // 45% speed
-                break;
-            default:
-                speed_factor = 100; // 100% speed
-                break;
+            // Not enough input buffer, return neutral input
+            return 0;
         }
-        main_core_state_set(M64CORE_SPEED_FACTOR, speed_factor);
     }
     else
     {
-        main_core_state_set(M64CORE_SPEED_LIMITER, 1);
-        main_core_state_set(M64CORE_SPEED_FACTOR, 100); // Reset to normal speed
-        l_canFF = 0;
+        // Original throttling system
+        // Update throttling calculations
+        update_player_throttling(control_id);
+        
+        // Apply enhanced throttling based on calculated level
+        if (l_player_throttle_level[control_id] > 0)
+        {
+            l_canFF = 1;
+            main_core_state_set(M64CORE_SPEED_LIMITER, 0);
+            
+            // Apply speed factor throttling based on throttle level
+            int speed_factor;
+            switch (l_player_throttle_level[control_id])
+            {
+                case 1:
+                    speed_factor = 85;  // 85% speed
+                    break;
+                case 2:
+                    speed_factor = 65;  // 65% speed
+                    break;
+                case 3:
+                    speed_factor = 45;  // 45% speed
+                    break;
+                default:
+                    speed_factor = 100; // 100% speed
+                    break;
+            }
+            main_core_state_set(M64CORE_SPEED_FACTOR, speed_factor);
+        }
+        else
+        {
+            main_core_state_set(M64CORE_SPEED_LIMITER, 1);
+            main_core_state_set(M64CORE_SPEED_FACTOR, 100); // Reset to normal speed
+            l_canFF = 0;
+        }
     }
 
     if (netplay_ensure_valid(control_id))
@@ -1321,6 +1346,20 @@ uint8_t netplay_get_player_lag(uint8_t player)
         return 0;
     
     return l_player_lag[player];
+}
+
+// Fair Input Delay Implementation
+static int l_fair_input_delay_enabled = 0;
+static int l_input_delay_frames = 7; // Default 7 frames delay
+
+int core_get_fair_input_delay(void)
+{
+    return l_fair_input_delay_enabled;
+}
+
+int core_get_input_delay_frames(void)
+{
+    return l_input_delay_frames;
 }
 
 uint8_t netplay_get_total_throttle_level()

@@ -46,6 +46,8 @@ enum class SettingsID
     Netplay_Nickname,
     Netplay_ServerJsonUrl,
     Netplay_SelectedServer,
+    Netplay_FairInputDelay,
+    Netplay_InputDelayFrames,
 
     // Core Plugin Settings
     Core_GFX_Plugin,

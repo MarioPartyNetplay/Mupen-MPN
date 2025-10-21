@@ -13,6 +13,7 @@
 #endif // _WIN32
 #include "Netplay.hpp"
 #include "Error.hpp"
+#include "Settings.hpp"
 
 #include "m64p/Api.hpp"
 
@@ -110,5 +111,47 @@ bool CoreShutdownNetplay(void)
     return true;
 #else
     return false;
+#endif // NETPLAY
+}
+
+bool CoreSetFairInputDelay(bool enabled)
+{
+#ifdef NETPLAY
+    return CoreSettingsSetValue(SettingsID::Netplay_FairInputDelay, enabled);
+#else
+    return false;
+#endif // NETPLAY
+}
+
+bool CoreGetFairInputDelay(void)
+{
+#ifdef NETPLAY
+    return CoreSettingsGetBoolValue(SettingsID::Netplay_FairInputDelay);
+#else
+    return false;
+#endif // NETPLAY
+}
+
+bool CoreSetInputDelayFrames(int frames)
+{
+#ifdef NETPLAY
+    if (frames < 0 || frames > 10) // Reasonable range for input delay
+    {
+        CoreSetError("Input delay frames must be between 0 and 10");
+        return false;
+    }
+    
+    return CoreSettingsSetValue(SettingsID::Netplay_InputDelayFrames, frames);
+#else
+    return false;
+#endif // NETPLAY
+}
+
+int CoreGetInputDelayFrames(void)
+{
+#ifdef NETPLAY
+    return CoreSettingsGetIntValue(SettingsID::Netplay_InputDelayFrames);
+#else
+    return 0;
 #endif // NETPLAY
 }
