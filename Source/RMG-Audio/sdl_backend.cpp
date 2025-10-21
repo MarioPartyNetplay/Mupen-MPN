@@ -148,43 +148,43 @@ static unsigned int select_output_frequency(unsigned int input_frequency)
     else { return 44100; }
 }
 
-static void sdl_init_audio_device(struct sdl_backend* sdl_backend)
+static void sdl_init_audio_device(struct sdl_backend* backend)
 {
     SDL_AudioSpec desired, obtained;
 
-    sdl_backend->error = 0;
+    backend->error = 0;
 
     if (SDL_WasInit(SDL_INIT_AUDIO) == SDL_INIT_AUDIO)
     {
         DebugMessage(M64MSG_VERBOSE, "sdl_init_audio_device(): SDL Audio sub-system already initialized.");
 
-        SDL_PauseAudio(1);
-        SDL_CloseAudio();
+        SDL_PauseAudioDevice(backend->device);
+        SDL_CloseAudioDevice(backend->device);
     }
     else
     {
         if (SDL_Init(SDL_INIT_AUDIO) < 0)
         {
             DebugMessage(M64MSG_ERROR, "Failed to initialize SDL audio subsystem.");
-            sdl_backend->error = 1;
+            backend->error = 1;
             return;
         }
     }
 
-    sdl_backend->paused_for_sync = 1;
+    backend->paused_for_sync = 1;
 
     /* reload these because they gets re-assigned from SDL data below, and sdl_init_audio_device can be called more than once */
-    sdl_backend->primary_buffer_size = CoreSettingsGetIntValue(SettingsID::Audio_PrimaryBufferSize);
-    sdl_backend->target = CoreSettingsGetIntValue(SettingsID::Audio_PrimaryBufferTarget);
-    sdl_backend->secondary_buffer_size = CoreSettingsGetIntValue(SettingsID::Audio_SecondaryBufferSize);
+    backend->primary_buffer_size = CoreSettingsGetIntValue(SettingsID::Audio_PrimaryBufferSize);
+    backend->target = CoreSettingsGetIntValue(SettingsID::Audio_PrimaryBufferTarget);
+    backend->secondary_buffer_size = CoreSettingsGetIntValue(SettingsID::Audio_SecondaryBufferSize);
 
     DebugMessage(M64MSG_INFO,    "Initializing SDL audio subsystem...");
-    DebugMessage(M64MSG_VERBOSE, "Primary buffer: %i output samples.", (uint32_t) sdl_backend->primary_buffer_size);
-    DebugMessage(M64MSG_VERBOSE, "Primary target fullness: %i output samples.", (uint32_t) sdl_backend->target);
-    DebugMessage(M64MSG_VERBOSE, "Secondary buffer: %i output samples.", (uint32_t) sdl_backend->secondary_buffer_size);
+    DebugMessage(M64MSG_VERBOSE, "Primary buffer: %i output samples.", (uint32_t) backend->primary_buffer_size);
+    DebugMessage(M64MSG_VERBOSE, "Primary target fullness: %i output samples.", (uint32_t) backend->target);
+    DebugMessage(M64MSG_VERBOSE, "Secondary buffer: %i output samples.", (uint32_t) backend->secondary_buffer_size);
 
     memset(&desired, 0, sizeof(desired));
-    desired.freq = select_output_frequency(sdl_backend->input_frequency);
+    desired.freq = select_output_frequency(backend->input_frequency);
     desired.format = SDL_AUDIO_S16;
     desired.channels = 2;
 
@@ -192,12 +192,17 @@ static void sdl_init_audio_device(struct sdl_backend* sdl_backend)
     DebugMessage(M64MSG_VERBOSE, "Requesting format: " AFMT_FMTSPEC ".", AFMT_ARGS(desired.format));
 
     /* Open the audio device */
-    if (SDL_OpenAudio(&desired, &obtained) < 0)
+    backend->device = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &desired);
+    if (backend->device == 0)
     {
         DebugMessage(M64MSG_ERROR, "Couldn't open audio: %s", SDL_GetError());
-        sdl_backend->error = 1;
+        backend->error = 1;
         return;
     }
+    
+    /* Get the actual audio spec from the device */
+    int sample_frames;
+    SDL_GetAudioDeviceFormat(backend->device, &obtained, &sample_frames);
     if (desired.format != obtained.format)
     {
         DebugMessage(M64MSG_WARNING, "Obtained audio format (" AFMT_FMTSPEC ") differs from requested (" AFMT_FMTSPEC ").", AFMT_ARGS(obtained.format), AFMT_ARGS(desired.format));
@@ -208,32 +213,32 @@ static void sdl_init_audio_device(struct sdl_backend* sdl_backend)
     }
 
     /* adjust some variables given the obtained audio spec */
-    sdl_backend->output_frequency = obtained.freq;
-    sdl_backend->secondary_buffer_size = 1024; // Default buffer size
+    backend->output_frequency = obtained.freq;
+    backend->secondary_buffer_size = 1024; // Default buffer size
 
-    if (sdl_backend->target < sdl_backend->secondary_buffer_size)
-        sdl_backend->target = sdl_backend->secondary_buffer_size;
+    if (backend->target < backend->secondary_buffer_size)
+        backend->target = backend->secondary_buffer_size;
 
-    if (sdl_backend->primary_buffer_size < sdl_backend->target)
-        sdl_backend->primary_buffer_size = sdl_backend->target;
-    if (sdl_backend->primary_buffer_size < sdl_backend->secondary_buffer_size * 2)
-        sdl_backend->primary_buffer_size = sdl_backend->secondary_buffer_size * 2;
+    if (backend->primary_buffer_size < backend->target)
+        backend->primary_buffer_size = backend->target;
+    if (backend->primary_buffer_size < backend->secondary_buffer_size * 2)
+        backend->primary_buffer_size = backend->secondary_buffer_size * 2;
 
     /* allocate memory for audio buffers */
-    resize_primary_buffer(sdl_backend, new_primary_buffer_size(sdl_backend));
-    sdl_backend->mix_buffer = (unsigned char*)realloc(sdl_backend->mix_buffer, sdl_backend->secondary_buffer_size * SDL_SAMPLE_BYTES);
+    resize_primary_buffer(backend, new_primary_buffer_size(backend));
+    backend->mix_buffer = (unsigned char*)realloc(backend->mix_buffer, backend->secondary_buffer_size * SDL_SAMPLE_BYTES);
 
     /* preset the last callback time */
-    if (sdl_backend->last_cb_time == 0) {
-        sdl_backend->last_cb_time = SDL_GetTicks();
+    if (backend->last_cb_time == 0) {
+        backend->last_cb_time = SDL_GetTicks();
     }
 
     DebugMessage(M64MSG_VERBOSE, "Frequency: %i", obtained.freq);
     DebugMessage(M64MSG_VERBOSE, "Format: " AFMT_FMTSPEC, AFMT_ARGS(obtained.format));
     DebugMessage(M64MSG_VERBOSE, "Channels: %i", obtained.channels);
     DebugMessage(M64MSG_VERBOSE, "Silence: 0");
-    DebugMessage(M64MSG_VERBOSE, "Samples: %i", sdl_backend->secondary_buffer_size);
-    DebugMessage(M64MSG_VERBOSE, "Size: %i", sdl_backend->secondary_buffer_size * 4);
+    DebugMessage(M64MSG_VERBOSE, "Samples: %i", backend->secondary_buffer_size);
+    DebugMessage(M64MSG_VERBOSE, "Size: %i", backend->secondary_buffer_size * 4);
 }
 
 static void release_audio_device(struct sdl_backend* sdl_backend)

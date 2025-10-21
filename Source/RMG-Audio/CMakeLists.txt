@@ -14,7 +14,7 @@ set(CMAKE_AUTOUIC ON)
 find_package(Qt6 COMPONENTS Gui Widgets Core REQUIRED)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(SDL2 REQUIRED sdl2)
+pkg_check_modules(SDL3 REQUIRED sdl3)
 pkg_check_modules(SPEEX REQUIRED speexdsp)
 pkg_check_modules(SAMPLERATE REQUIRED samplerate)
 
@@ -38,7 +38,7 @@ set_target_properties(RMG-Audio PROPERTIES PREFIX "")
 
 target_link_libraries(RMG-Audio
     RMG-Core
-    ${SDL2_LIBRARIES}
+    ${SDL3_LIBRARIES}
     ${SPEEX_LIBRARIES}
     ${SAMPLERATE_LIBRARIES}
     Qt6::Gui Qt6::Widgets
