@@ -973,8 +973,8 @@ static uint32_t netplay_get_input(uint8_t control_id)
     int fair_delay_frames = core_get_input_delay_frames();
     int current_buffer_size = buffer_size(control_id);
     
-    DebugMessage(M64MSG_INFO, "Netplay: Fair delay enabled=%d, frames=%d, buffer_size=%d", 
-                 fair_delay_enabled, fair_delay_frames, current_buffer_size);
+    DebugMessage(M64MSG_INFO, "Netplay: Fair delay enabled=%d, frames=%d, buffer_size=%d, control_id=%d", 
+                 fair_delay_enabled, fair_delay_frames, current_buffer_size, control_id);
     
     if (fair_delay_enabled)
     {
@@ -989,10 +989,29 @@ static uint32_t netplay_get_input(uint8_t control_id)
         // Wait for fair delay frames before processing input
         if (current_buffer_size < fair_delay_frames)
         {
-            // Not enough input buffer, return neutral input
-            DebugMessage(M64MSG_INFO, "Netplay: Not enough buffer (%d < %d), returning neutral input", 
-                         current_buffer_size, fair_delay_frames);
-            return 0;
+            static uint32_t fair_delay_start_time = 0;
+            static uint32_t fair_delay_timeout = 5000; // 5 second timeout
+            
+            if (fair_delay_start_time == 0) {
+                fair_delay_start_time = SDL_GetTicks();
+            }
+            
+            uint32_t elapsed = SDL_GetTicks() - fair_delay_start_time;
+            if (elapsed > fair_delay_timeout) {
+                DebugMessage(M64MSG_WARNING, "Netplay: Fair delay timeout (%d ms), proceeding with available buffer (%d < %d)", 
+                             elapsed, current_buffer_size, fair_delay_frames);
+                fair_delay_start_time = 0; // Reset for next time
+                // Continue with available buffer instead of returning 0
+            } else {
+                DebugMessage(M64MSG_INFO, "Netplay: Not enough buffer (%d < %d), waiting (elapsed: %d ms)", 
+                             current_buffer_size, fair_delay_frames, elapsed);
+                return 0;
+            }
+        } else {
+            static uint32_t fair_delay_start_time = 0;
+            if (fair_delay_start_time != 0) {
+                fair_delay_start_time = 0; // Reset when we have enough buffer
+            }
         }
         
         DebugMessage(M64MSG_INFO, "Netplay: Buffer sufficient (%d >= %d), proceeding with input", 
