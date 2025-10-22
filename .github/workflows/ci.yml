@@ -45,7 +45,7 @@ jobs:
             mingw-w64-x86_64-freetype
             mingw-w64-x86_64-libpng
             mingw-w64-x86_64-qt6
-            mingw-w64-x86_64-SDL3
+            mingw-w64-x86_64-sdl3
             mingw-w64-x86_64-hidapi
             mingw-w64-x86_64-speexdsp
             mingw-w64-x86_64-libsamplerate
