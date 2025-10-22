@@ -739,6 +739,9 @@ static void reset_player_throttling(uint8_t control_id)
 
 static void netplay_request_input(uint8_t control_id)
 {
+    static int request_count = 0;
+    request_count++;
+    
     PACKET_DATA(l_request_input_packet)[0] = UDP_REQUEST_KEY_INFO;
     PACKET_DATA(l_request_input_packet)[1] = control_id; //The player we need input for
     netplay_write32(l_reg_id, &PACKET_DATA(l_request_input_packet)[2]); //our registration ID
@@ -746,6 +749,13 @@ static void netplay_request_input(uint8_t control_id)
     PACKET_DATA(l_request_input_packet)[10] = l_spectator; //whether we are a spectator
     PACKET_DATA(l_request_input_packet)[11] = buffer_size(control_id); //our local buffer size
     SET_PACKET_LEN(l_request_input_packet, 12);
+    
+    if (request_count % 200 == 0) // Log every 200 requests to avoid spam
+    {
+        DebugMessage(M64MSG_INFO, "Netplay: Sending input request %d for control_id=%d, count=%d, buffer_size=%d", 
+                     request_count, control_id, l_cin_compats[control_id].netplay_count, buffer_size(control_id));
+    }
+    
     netplay_send_udp_packet(l_udpSocket, l_request_input_packet);
 }
 
@@ -770,16 +780,37 @@ static int netplay_require_response(void* opaque)
     //After 10 seconds a timeout occurs, we assume we have lost connection to the server.
     uint8_t control_id = *(uint8_t*)opaque;
     uint32_t timeout = SDL_GetTicks() + 10000;
+    uint32_t start_time = SDL_GetTicks();
+    int request_count = 0;
+    
+    DebugMessage(M64MSG_INFO, "Netplay: Thread started for control_id=%d, timeout in %d ms", 
+                 control_id, timeout - start_time);
+    
     while (!check_valid(control_id, l_cin_compats[control_id].netplay_count))
     {
-        if (SDL_GetTicks() > timeout)
+        uint32_t current_time = SDL_GetTicks();
+        if (current_time > timeout)
         {
+            DebugMessage(M64MSG_ERROR, "Netplay: Timeout reached for control_id=%d after %d ms, %d requests sent", 
+                         control_id, current_time - start_time, request_count);
             l_udpChannel = -1;
             return 0;
         }
+        
         netplay_request_input(control_id);
+        request_count++;
+        
+        if (request_count % 200 == 0) // Log every 200 requests (1 second at 5ms delay)
+        {
+            DebugMessage(M64MSG_INFO, "Netplay: Still requesting data for control_id=%d, requests=%d, elapsed=%d ms", 
+                         control_id, request_count, current_time - start_time);
+        }
+        
         SDL_Delay(5);
     }
+    
+    DebugMessage(M64MSG_INFO, "Netplay: Data received for control_id=%d after %d ms, %d requests", 
+                 control_id, SDL_GetTicks() - start_time, request_count);
     return 1;
 }
 
@@ -788,8 +819,16 @@ static void netplay_process()
     //In this function we process data we have received from the server
     uint32_t curr, count, keys;
     uint8_t plugin, player, current_status;
+    static int process_count = 0;
+    
     while (netplay_recv_udp_packet(l_udpSocket, l_process_packet) == 1)
     {
+        process_count++;
+        if (process_count % 10 == 0) // Log every 10 packets to avoid spam
+        {
+            DebugMessage(M64MSG_INFO, "Netplay: Processing UDP packet %d, type=%d", 
+                         process_count, PACKET_DATA(l_process_packet)[0]);
+        }
         switch (PACKET_DATA(l_process_packet)[0])
         {
             case UDP_RECEIVE_KEY_INFO:
@@ -850,18 +889,45 @@ static int netplay_ensure_valid(uint8_t control_id)
 {
     //This function makes sure we have data for a certain event
     //If we don't have the data, it will create a new thread that will request the data
+    DebugMessage(M64MSG_INFO, "Netplay: netplay_ensure_valid called for control_id=%d, count=%d", 
+                 control_id, l_cin_compats[control_id].netplay_count);
+    
     if (check_valid(control_id, l_cin_compats[control_id].netplay_count))
+    {
+        DebugMessage(M64MSG_INFO, "Netplay: Data already valid for control_id=%d", control_id);
         return 1;
+    }
 
     if (l_udpChannel == -1)
+    {
+        DebugMessage(M64MSG_ERROR, "Netplay: UDP channel is -1, connection lost");
         return 0;
+    }
 
+    DebugMessage(M64MSG_INFO, "Netplay: Creating thread to request data for control_id=%d", control_id);
     SDL_Thread* thread = SDL_CreateThread(netplay_require_response, "Netplay key request", &control_id);
+    if (!thread)
+    {
+        DebugMessage(M64MSG_ERROR, "Netplay: Failed to create thread for control_id=%d", control_id);
+        return 0;
+    }
 
+    DebugMessage(M64MSG_INFO, "Netplay: Waiting for data for control_id=%d", control_id);
+    int loop_count = 0;
     while (!check_valid(control_id, l_cin_compats[control_id].netplay_count) && l_udpChannel != -1)
+    {
         netplay_process();
+        loop_count++;
+        if (loop_count % 100 == 0) // Log every 100 iterations to avoid spam
+        {
+            DebugMessage(M64MSG_INFO, "Netplay: Still waiting for data, loop_count=%d, control_id=%d", 
+                         loop_count, control_id);
+        }
+    }
+    
     int success;
     SDL_WaitThread(thread, &success);
+    DebugMessage(M64MSG_INFO, "Netplay: Thread finished for control_id=%d, success=%d", control_id, success);
     return success;
 }
 
@@ -886,6 +952,12 @@ static void netplay_delete_event(struct netplay_event* current, uint8_t control_
 static uint32_t netplay_get_input(uint8_t control_id)
 {
     uint32_t keys;
+    static int call_count = 0;
+    call_count++;
+    
+    DebugMessage(M64MSG_INFO, "Netplay: netplay_get_input called for control_id=%d, call_count=%d", 
+                 control_id, call_count);
+    
     netplay_process();
     netplay_request_input(control_id);
 
@@ -897,10 +969,17 @@ static uint32_t netplay_get_input(uint8_t control_id)
     extern int core_get_fair_input_delay(void);
     extern int core_get_input_delay_frames(void);
     
-    if (core_get_fair_input_delay())
+    int fair_delay_enabled = core_get_fair_input_delay();
+    int fair_delay_frames = core_get_input_delay_frames();
+    int current_buffer_size = buffer_size(control_id);
+    
+    DebugMessage(M64MSG_INFO, "Netplay: Fair delay enabled=%d, frames=%d, buffer_size=%d", 
+                 fair_delay_enabled, fair_delay_frames, current_buffer_size);
+    
+    if (fair_delay_enabled)
     {
         // Fair Input Delay Mode: All players wait for the same input delay
-        int fair_delay_frames = core_get_input_delay_frames();
+        DebugMessage(M64MSG_INFO, "Netplay: Fair input delay mode active, checking buffer");
         
         // Disable throttling in fair input delay mode
         main_core_state_set(M64CORE_SPEED_LIMITER, 1);
@@ -908,11 +987,16 @@ static uint32_t netplay_get_input(uint8_t control_id)
         l_canFF = 0;
         
         // Wait for fair delay frames before processing input
-        if (buffer_size(control_id) < fair_delay_frames)
+        if (current_buffer_size < fair_delay_frames)
         {
             // Not enough input buffer, return neutral input
+            DebugMessage(M64MSG_INFO, "Netplay: Not enough buffer (%d < %d), returning neutral input", 
+                         current_buffer_size, fair_delay_frames);
             return 0;
         }
+        
+        DebugMessage(M64MSG_INFO, "Netplay: Buffer sufficient (%d >= %d), proceeding with input", 
+                     current_buffer_size, fair_delay_frames);
     }
     else
     {
@@ -953,8 +1037,11 @@ static uint32_t netplay_get_input(uint8_t control_id)
         }
     }
 
+    DebugMessage(M64MSG_INFO, "Netplay: About to call netplay_ensure_valid for control_id=%d", control_id);
+    
     if (netplay_ensure_valid(control_id))
     {
+        DebugMessage(M64MSG_INFO, "Netplay: Data valid, processing input for control_id=%d", control_id);
         //We grab the event from the linked list, the delete it once it has been used
         //Finally we increment the event counter
         struct netplay_event* current = l_cin_compats[control_id].event_first;
@@ -964,10 +1051,12 @@ static uint32_t netplay_get_input(uint8_t control_id)
         Controls[control_id].Plugin = current->plugin;
         netplay_delete_event(current, control_id);
         ++l_cin_compats[control_id].netplay_count;
+        DebugMessage(M64MSG_INFO, "Netplay: Input processed successfully for control_id=%d, keys=0x%08x", 
+                     control_id, keys);
     }
     else
     {
-        DebugMessage(M64MSG_ERROR, "Netplay: lost connection to server");
+        DebugMessage(M64MSG_ERROR, "Netplay: lost connection to server for control_id=%d", control_id);
         main_core_state_set(M64CORE_EMU_STATE, M64EMU_STOPPED);
         keys = 0;
     }
@@ -988,6 +1077,9 @@ static void netplay_send_input(uint8_t control_id, uint32_t keys)
 
 uint8_t netplay_register_player(uint8_t player, uint8_t plugin, uint8_t rawdata, uint32_t reg_id)
 {
+    DebugMessage(M64MSG_INFO, "Netplay: Registering player %d, plugin=%d, rawdata=%d, reg_id=%u", 
+                 player, plugin, rawdata, reg_id);
+    
     l_reg_id = reg_id;
     char output_data[8];
     output_data[0] = TCP_REGISTER_PLAYER;
@@ -996,13 +1088,26 @@ uint8_t netplay_register_player(uint8_t player, uint8_t plugin, uint8_t rawdata,
     output_data[3] = rawdata; //whether we are using a RawData input plugin
     netplay_write32(l_reg_id, &output_data[4]);
 
+    DebugMessage(M64MSG_INFO, "Netplay: Sending registration packet to server");
     netplay_send_tcp_packet(l_tcpSocket, &output_data[0], 8);
 
     uint8_t response[2];
     size_t recv = 0;
+    DebugMessage(M64MSG_INFO, "Netplay: Waiting for registration response");
     while (recv < 2)
-        recv += netplay_recv_tcp_packet(l_tcpSocket, &response[recv], 2 - recv);
+    {
+        size_t bytes_received = netplay_recv_tcp_packet(l_tcpSocket, &response[recv], 2 - recv);
+        recv += bytes_received;
+        if (bytes_received == 0)
+        {
+            DebugMessage(M64MSG_ERROR, "Netplay: Failed to receive registration response");
+            return 0;
+        }
+    }
+    
     l_buffer_target = response[1]; //local buffer size target
+    DebugMessage(M64MSG_INFO, "Netplay: Registration successful, buffer_target=%d, response=%d", 
+                 l_buffer_target, response[0]);
     return response[0];
 }
 
