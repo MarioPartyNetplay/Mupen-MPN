@@ -29,9 +29,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: recursive
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: Windows
+      - name: Initialize submodules
+        run: git submodule update --init --recursive
+        shell: msys2 {0}
       - uses: msys2/setup-msys2@v2
         with:
           path-type: inherit
@@ -52,6 +56,13 @@ jobs:
             mingw-w64-x86_64-nasm
             mingw-w64-x86_64-minizip
             git
+      - name: Verify submodules
+        run: |
+          echo "Checking SDL3_net directory..."
+          ls -la Source/3rdParty/SDL3_net/
+          echo "Checking for CMakeLists.txt..."
+          ls -la Source/3rdParty/SDL3_net/CMakeLists.txt
+        shell: msys2 {0}
       - name: Build RMG
         run: ./Source/Script/Build.sh Release
         shell: msys2 {0}
