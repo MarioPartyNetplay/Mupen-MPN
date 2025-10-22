@@ -824,11 +824,7 @@ static void netplay_process()
     while (netplay_recv_udp_packet(l_udpSocket, l_process_packet) == 1)
     {
         process_count++;
-        if (process_count % 10 == 0) // Log every 10 packets to avoid spam
-        {
-            DebugMessage(M64MSG_INFO, "Netplay: Processing UDP packet %d, type=%d", 
-                         process_count, PACKET_DATA(l_process_packet)[0]);
-        }
+        // Removed spammy logging - only log errors
         switch (PACKET_DATA(l_process_packet)[0])
         {
             case UDP_RECEIVE_KEY_INFO:
@@ -889,12 +885,11 @@ static int netplay_ensure_valid(uint8_t control_id)
 {
     //This function makes sure we have data for a certain event
     //If we don't have the data, it will create a new thread that will request the data
-    DebugMessage(M64MSG_INFO, "Netplay: netplay_ensure_valid called for control_id=%d, count=%d", 
-                 control_id, l_cin_compats[control_id].netplay_count);
+    // Removed spammy logging - only log errors and significant events
     
     if (check_valid(control_id, l_cin_compats[control_id].netplay_count))
     {
-        DebugMessage(M64MSG_INFO, "Netplay: Data already valid for control_id=%d", control_id);
+        // Removed spammy logging - data validation is working
         return 1;
     }
 
@@ -904,7 +899,7 @@ static int netplay_ensure_valid(uint8_t control_id)
         return 0;
     }
 
-    DebugMessage(M64MSG_INFO, "Netplay: Creating thread to request data for control_id=%d", control_id);
+    // Removed spammy logging - thread creation is working
     SDL_Thread* thread = SDL_CreateThread(netplay_require_response, "Netplay key request", &control_id);
     if (!thread)
     {
@@ -912,22 +907,18 @@ static int netplay_ensure_valid(uint8_t control_id)
         return 0;
     }
 
-    DebugMessage(M64MSG_INFO, "Netplay: Waiting for data for control_id=%d", control_id);
+    // Removed spammy logging - waiting for data is working
     int loop_count = 0;
     while (!check_valid(control_id, l_cin_compats[control_id].netplay_count) && l_udpChannel != -1)
     {
         netplay_process();
         loop_count++;
-        if (loop_count % 100 == 0) // Log every 100 iterations to avoid spam
-        {
-            DebugMessage(M64MSG_INFO, "Netplay: Still waiting for data, loop_count=%d, control_id=%d", 
-                         loop_count, control_id);
-        }
+        // Removed spammy logging - only log errors
     }
     
     int success;
     SDL_WaitThread(thread, &success);
-    DebugMessage(M64MSG_INFO, "Netplay: Thread finished for control_id=%d, success=%d", control_id, success);
+    // Removed spammy logging - thread completion is working
     return success;
 }
 
@@ -955,8 +946,7 @@ static uint32_t netplay_get_input(uint8_t control_id)
     static int call_count = 0;
     call_count++;
     
-    DebugMessage(M64MSG_INFO, "Netplay: netplay_get_input called for control_id=%d, call_count=%d", 
-                 control_id, call_count);
+    // Removed spammy logging - only log significant events
     
     netplay_process();
     netplay_request_input(control_id);
@@ -973,13 +963,9 @@ static uint32_t netplay_get_input(uint8_t control_id)
     int fair_delay_frames = core_get_input_delay_frames();
     int current_buffer_size = buffer_size(control_id);
     
-    DebugMessage(M64MSG_INFO, "Netplay: Fair delay enabled=%d, frames=%d, buffer_size=%d, control_id=%d", 
-                 fair_delay_enabled, fair_delay_frames, current_buffer_size, control_id);
     
     if (fair_delay_enabled)
     {
-        // Fair Input Delay Mode: All players wait for the same input delay
-        DebugMessage(M64MSG_INFO, "Netplay: Fair input delay mode active, checking buffer");
         
         // Disable throttling in fair input delay mode
         main_core_state_set(M64CORE_SPEED_LIMITER, 1);
@@ -1003,8 +989,7 @@ static uint32_t netplay_get_input(uint8_t control_id)
                 fair_delay_start_time = 0; // Reset for next time
                 // Continue with available buffer instead of returning 0
             } else {
-                DebugMessage(M64MSG_INFO, "Netplay: Not enough buffer (%d < %d), waiting (elapsed: %d ms)", 
-                             current_buffer_size, fair_delay_frames, elapsed);
+                // Removed spammy logging - only log timeout warnings
                 return 0;
             }
         } else {
@@ -1014,8 +999,7 @@ static uint32_t netplay_get_input(uint8_t control_id)
             }
         }
         
-        DebugMessage(M64MSG_INFO, "Netplay: Buffer sufficient (%d >= %d), proceeding with input", 
-                     current_buffer_size, fair_delay_frames);
+        // Removed spammy logging - buffer status logged only on significant changes
     }
     else
     {
