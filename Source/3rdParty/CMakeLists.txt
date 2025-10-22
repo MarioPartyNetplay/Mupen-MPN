@@ -70,6 +70,7 @@ endif()
 # SDL3_net external project - must be defined before mupen64plus-core
 ExternalProject_Add(SDL3_net
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/SDL3_net
+    DOWNLOAD_COMMAND ""
     CONFIGURE_COMMAND ${CMAKE_COMMAND} -S ${CMAKE_CURRENT_SOURCE_DIR}/SDL3_net -B ${CMAKE_CURRENT_BINARY_DIR}/SDL3_net
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
         -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}/SDL3_net/install

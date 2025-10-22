@@ -341,11 +341,19 @@ m64p_error netplay_start(const char* host, int port)
     // dummy value
     l_udpChannel = 1;
 #else
+#ifdef USE_SDL3NET
+    if (!NET_Init())
+    {
+        DebugMessage(M64MSG_ERROR, "Netplay: Could not initialize SDL Net library: %s", SDL_GetError());
+        return M64ERR_SYSTEM_FAIL;
+    }
+#else
     if (SDLNet_Init() < 0)
     {
         DebugMessage(M64MSG_ERROR, "Netplay: Could not initialize SDL Net library");
         return M64ERR_SYSTEM_FAIL;
     }
+#endif
 
     l_udpSocket = SDLNet_UDP_Open(0);
     if (l_udpSocket == NULL)
