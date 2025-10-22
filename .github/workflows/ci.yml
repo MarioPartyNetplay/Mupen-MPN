@@ -28,14 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           submodules: recursive
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: Windows
-      - name: Initialize submodules
-        run: git submodule update --init --recursive
-        shell: msys2 {0}
       - uses: msys2/setup-msys2@v2
         with:
           path-type: inherit
