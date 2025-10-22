@@ -114,7 +114,7 @@ if(UNIX)
 endif(UNIX)
 
 if(WIN32)
-    target_link_libraries(RMG-Core wsock32 ws2_32 ${ICONV_LIBRARIES})
+    target_link_libraries(RMG-Core wsock32 ws2_32 iphlpapi ${ICONV_LIBRARIES})
 endif(WIN32)
 
 target_link_libraries(RMG-Core
