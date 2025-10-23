@@ -36,15 +36,20 @@ void InputDevice::OpenDevice(const std::string& name, const std::string& path, c
     // Try to open as game controller first
     if (number >= 0)
     {
-        gameController = SDL_OpenGamepad(number);
-        if (gameController)
+        SDL_JoystickID joystickID = static_cast<SDL_JoystickID>(number);
+        
+        if (SDL_IsGamepad(joystickID))
         {
-            joystick = SDL_GetGamepadJoystick(gameController);
+            gameController = SDL_OpenGamepad(joystickID);
+            if (gameController)
+            {
+                joystick = SDL_GetGamepadJoystick(gameController);
+            }
         }
         else
         {
             // Fallback to joystick
-            joystick = SDL_OpenJoystick(number);
+            joystick = SDL_OpenJoystick(joystickID);
         }
     }
     
