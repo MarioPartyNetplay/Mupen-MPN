@@ -42,8 +42,8 @@ static int l_canFF;
 static int l_netplay_controller;
 static int l_netplay_control[4];
 #ifdef USE_SDL3NET
-static NET_Socket* l_udpSocket;
-static NET_Socket* l_tcpSocket;
+static NET_DatagramSocket* l_udpSocket;
+static NET_StreamSocket* l_tcpSocket;
 #else
 static UDPsocket l_udpSocket;
 static TCPsocket l_tcpSocket;
@@ -63,12 +63,17 @@ static uint8_t l_player_lag[4];
 static int l_fair_input_delay = 0;
 static int l_input_delay_frames = 3;
 
+// Frame Synchronization variables
+static int l_frame_sync_enabled = 0;
+static uint32_t l_lead_frame = 0;
+static uint32_t l_local_frame = 0;
+static uint32_t l_frame_sync_threshold = 2; // Allow 2 frame difference before slowing down
+
 //UDP packets
 #ifdef USE_SDL3NET
-static NET_Datagram *l_request_input_packet;
-static NET_Datagram *l_send_input_packet;
-static NET_Datagram *l_process_packet;
-static NET_Datagram *l_check_sync_packet;
+// SDL3_net uses dynamic packet allocation
+static NET_Datagram* l_process_packet;
+static NET_Address* l_server_address;
 #else
 static UDPpacket *l_request_input_packet;
 static UDPpacket *l_send_input_packet;
@@ -102,6 +107,36 @@ struct __UDPSocket {
 
 m64p_error netplay_start(const char* host, int port)
 {
+#ifdef USE_SDL3NET
+    // SDL3_net implementation
+    l_udpSocket = NET_CreateDatagramSocket(NULL, 0);
+    if (l_udpSocket == NULL)
+    {
+        DebugMessage(M64MSG_ERROR, "Netplay: UDP socket creation failed");
+        return M64ERR_SYSTEM_FAIL;
+    }
+
+    l_server_address = NET_ResolveHostname(host);
+    if (l_server_address == NULL)
+    {
+        DebugMessage(M64MSG_ERROR, "Netplay: Could not resolve server address");
+        NET_DestroyDatagramSocket(l_udpSocket);
+        l_udpSocket = NULL;
+        return M64ERR_SYSTEM_FAIL;
+    }
+
+    l_tcpSocket = NET_CreateClient(l_server_address, port);
+    if (l_tcpSocket == NULL)
+    {
+        DebugMessage(M64MSG_ERROR, "Netplay: TCP socket creation failed");
+        NET_DestroyDatagramSocket(l_udpSocket);
+        NET_UnrefAddress(l_server_address);
+        l_udpSocket = NULL;
+        l_server_address = NULL;
+        return M64ERR_SYSTEM_FAIL;
+    }
+#else
+    // SDL_net implementation
     if (SDLNet_Init() < 0)
     {
         DebugMessage(M64MSG_ERROR, "Netplay: Could not initialize SDL Net library");
@@ -166,6 +201,7 @@ m64p_error netplay_start(const char* host, int port)
         l_check_sync_packet = NULL;
         return M64ERR_NO_MEMORY;
     }
+#endif
 
     for (int i = 0; i < 4; ++i)
     {
@@ -206,6 +242,24 @@ m64p_error netplay_stop()
             }
         }
 
+#ifdef USE_SDL3NET
+        // SDL3_net implementation
+        char output_data[5];
+        output_data[0] = TCP_DISCONNECT_NOTICE;
+        // Write registration ID (assuming we have a helper function)
+        uint32_t reg_id_le = SDL_Swap32LE(l_reg_id);
+        memcpy(&output_data[1], &reg_id_le, 4);
+        
+        NET_WriteToStreamSocket(l_tcpSocket, output_data, 5);
+
+        NET_DestroyDatagramSocket(l_udpSocket);
+        NET_DestroyStreamSocket(l_tcpSocket);
+        NET_UnrefAddress(l_server_address);
+        l_tcpSocket = NULL;
+        l_udpSocket = NULL;
+        l_server_address = NULL;
+#else
+        // SDL_net implementation
         char output_data[5];
         output_data[0] = TCP_DISCONNECT_NOTICE;
         SDLNet_Write32(l_reg_id, &output_data[1]);
@@ -227,8 +281,10 @@ m64p_error netplay_stop()
         l_process_packet = NULL;
         l_check_sync_packet = NULL;
     
-        l_netplay_is_init = 0;
         SDLNet_Quit();
+#endif
+    
+        l_netplay_is_init = 0;
         return M64ERR_SUCCESS;
     }
 }
@@ -253,6 +309,21 @@ static uint8_t buffer_size(uint8_t control_id)
 
 static void netplay_request_input(uint8_t control_id)
 {
+#ifdef USE_SDL3NET
+    // SDL3_net implementation
+    uint8_t packet_data[12];
+    packet_data[0] = UDP_REQUEST_KEY_INFO;
+    packet_data[1] = control_id; //The player we need input for
+    uint32_t reg_id_le = SDL_Swap32LE(l_reg_id);
+    memcpy(&packet_data[2], &reg_id_le, 4); //our registration ID
+    uint32_t count_le = SDL_Swap32LE(l_cin_compats[control_id].netplay_count);
+    memcpy(&packet_data[6], &count_le, 4); //the current event count
+    packet_data[10] = l_spectator; //whether we are a spectator
+    packet_data[11] = buffer_size(control_id); //our local buffer size
+    
+    NET_SendDatagram(l_udpSocket, l_server_address, 0, packet_data, 12);
+#else
+    // SDL_net implementation
     l_request_input_packet->data[0] = UDP_REQUEST_KEY_INFO;
     l_request_input_packet->data[1] = control_id; //The player we need input for
     SDLNet_Write32(l_reg_id, &l_request_input_packet->data[2]); //our registration ID
@@ -261,6 +332,7 @@ static void netplay_request_input(uint8_t control_id)
     l_request_input_packet->data[11] = buffer_size(control_id); //our local buffer size
     l_request_input_packet->len = 12;
     SDLNet_UDP_Send(l_udpSocket, l_udpChannel, l_request_input_packet);
+#endif
 }
 
 static int check_valid(uint8_t control_id, uint32_t count)
@@ -302,6 +374,66 @@ static void netplay_process()
     //In this function we process data we have received from the server
     uint32_t curr, count, keys;
     uint8_t plugin, player, current_status;
+    
+#ifdef USE_SDL3NET
+    // SDL3_net implementation
+    while (NET_ReceiveDatagram(l_udpSocket, &l_process_packet))
+    {
+        if (l_process_packet == NULL) break;
+        
+        switch (l_process_packet->buf[0])
+        {
+            case UDP_RECEIVE_KEY_INFO:
+            case UDP_RECEIVE_KEY_INFO_GRATUITOUS:
+                player = l_process_packet->buf[1];
+                current_status = l_process_packet->buf[2];
+                if (l_process_packet->buf[0] == UDP_RECEIVE_KEY_INFO)
+                    l_player_lag[player] = l_process_packet->buf[3];
+                if (current_status != l_status)
+                {
+                    if (((current_status & 0x1) ^ (l_status & 0x1)) != 0)
+                        DebugMessage(M64MSG_ERROR, "Netplay: players have de-synced at VI %u", l_vi_counter);
+                    for (int dis = 1; dis < 5; ++dis)
+                    {
+                        if (((current_status & (0x1 << dis)) ^ (l_status & (0x1 << dis))) != 0)
+                            DebugMessage(M64MSG_ERROR, "Netplay: player %u has disconnected", dis);
+                    }
+                    l_status = current_status;
+                }
+                curr = 5;
+                for (uint8_t i = 0; i < l_process_packet->buf[4]; ++i)
+                {
+                    count = SDL_Swap32LE(*(uint32_t*)&l_process_packet->buf[curr]);
+                    curr += 4;
+
+                    if (((count - l_cin_compats[player].netplay_count) > (UINT32_MAX / 2)) || (check_valid(player, count)))
+                    {
+                        curr += 5;
+                        continue;
+                    }
+
+                    keys = SDL_Swap32LE(*(uint32_t*)&l_process_packet->buf[curr]);
+                    curr += 4;
+                    plugin = l_process_packet->buf[curr];
+                    curr += 1;
+
+                    struct netplay_event* new_event = (struct netplay_event*)malloc(sizeof(struct netplay_event));
+                    new_event->count = count;
+                    new_event->buttons = keys;
+                    new_event->plugin = plugin;
+                    new_event->next = l_cin_compats[player].event_first;
+                    l_cin_compats[player].event_first = new_event;
+                }
+                break;
+            default:
+                DebugMessage(M64MSG_ERROR, "Netplay: received unknown message from server");
+                break;
+        }
+        
+        NET_DestroyDatagram(l_process_packet);
+    }
+#else
+    // SDL_net implementation
     while (SDLNet_UDP_Recv(l_udpSocket, l_process_packet) == 1)
     {
         switch (l_process_packet->data[0])
@@ -358,6 +490,7 @@ static void netplay_process()
                 break;
         }
     }
+#endif
 }
 
 static int netplay_ensure_valid(uint8_t control_id)
@@ -441,6 +574,20 @@ static uint32_t netplay_get_input(uint8_t control_id)
 
 static void netplay_send_input(uint8_t control_id, uint32_t keys)
 {
+#ifdef USE_SDL3NET
+    // SDL3_net implementation
+    uint8_t packet_data[11];
+    packet_data[0] = UDP_SEND_KEY_INFO;
+    packet_data[1] = control_id; //player number
+    uint32_t count_le = SDL_Swap32LE(l_cin_compats[control_id].netplay_count);
+    memcpy(&packet_data[2], &count_le, 4); // current event count
+    uint32_t keys_le = SDL_Swap32LE(keys);
+    memcpy(&packet_data[6], &keys_le, 4); //key data
+    packet_data[10] = l_plugin[control_id]; //current plugin
+    
+    NET_SendDatagram(l_udpSocket, l_server_address, 0, packet_data, 11);
+#else
+    // SDL_net implementation
     l_send_input_packet->data[0] = UDP_SEND_KEY_INFO;
     l_send_input_packet->data[1] = control_id; //player number
     SDLNet_Write32(l_cin_compats[control_id].netplay_count, &l_send_input_packet->data[2]); // current event count
@@ -448,6 +595,7 @@ static void netplay_send_input(uint8_t control_id, uint32_t keys)
     l_send_input_packet->data[10] = l_plugin[control_id]; //current plugin
     l_send_input_packet->len = 11;
     SDLNet_UDP_Send(l_udpSocket, l_udpChannel, l_send_input_packet);
+#endif
 }
 
 uint8_t netplay_register_player(uint8_t player, uint8_t plugin, uint8_t rawdata, uint32_t reg_id)
@@ -458,6 +606,20 @@ uint8_t netplay_register_player(uint8_t player, uint8_t plugin, uint8_t rawdata,
     output_data[1] = player; //player number we'd like to register
     output_data[2] = plugin; //current plugin
     output_data[3] = rawdata; //whether we are using a RawData input plugin
+
+#ifdef USE_SDL3NET
+    // SDL3_net implementation
+    uint32_t reg_id_le = SDL_Swap32LE(l_reg_id);
+    memcpy(&output_data[4], &reg_id_le, 4);
+
+    NET_WriteToStreamSocket(l_tcpSocket, output_data, 8);
+
+    uint8_t response[2];
+    size_t recv = 0;
+    while (recv < 2)
+        recv += NET_ReadFromStreamSocket(l_tcpSocket, &response[recv], 2 - recv);
+#else
+    // SDL_net implementation
     SDLNet_Write32(l_reg_id, &output_data[4]);
 
     SDLNet_TCP_Send(l_tcpSocket, &output_data[0], 8);
@@ -466,6 +628,8 @@ uint8_t netplay_register_player(uint8_t player, uint8_t plugin, uint8_t rawdata,
     size_t recv = 0;
     while (recv < 2)
         recv += SDLNet_TCP_Recv(l_tcpSocket, &response[recv], 2 - recv);
+#endif
+
     l_buffer_target = response[1]; //local buffer size target
     return response[0];
 }
@@ -517,12 +681,25 @@ file_status_t netplay_read_storage(const char *filename, void *data, size_t size
         ret = read_from_file(filename, data, size);
         if (ret == file_open_error)
             memset(data, 0, size); //all zeros means there is no save file
+#ifdef USE_SDL3NET
+        // SDL3_net implementation
+        uint32_t size_le = SDL_Swap32LE((int32_t)size);
+        memcpy(&output_data[buffer_pos], &size_le, 4); //file data size
+#else
+        // SDL_net implementation
         SDLNet_Write32((int32_t)size, &output_data[buffer_pos]); //file data size
+#endif
         buffer_pos += 4;
         memcpy(&output_data[buffer_pos], data, size); //file data
         buffer_pos += size;
 
+#ifdef USE_SDL3NET
+        // SDL3_net implementation
+        NET_WriteToStreamSocket(l_tcpSocket, output_data, buffer_pos);
+#else
+        // SDL_net implementation
         SDLNet_TCP_Send(l_tcpSocket, &output_data[0], buffer_pos);
+#endif
     }
     else
     {
@@ -534,11 +711,21 @@ file_status_t netplay_read_storage(const char *filename, void *data, size_t size
         memcpy(&output_data[buffer_pos], file_extension, strlen(file_extension) + 1);
         buffer_pos += strlen(file_extension) + 1;
 
+#ifdef USE_SDL3NET
+        // SDL3_net implementation
+        NET_WriteToStreamSocket(l_tcpSocket, output_data, buffer_pos);
+        size_t recv = 0;
+        char *data_array = data;
+        while (recv < size)
+            recv += NET_ReadFromStreamSocket(l_tcpSocket, data_array + recv, size - recv);
+#else
+        // SDL_net implementation
         SDLNet_TCP_Send(l_tcpSocket, &output_data[0], buffer_pos);
         size_t recv = 0;
         char *data_array = data;
         while (recv < size)
             recv += SDLNet_TCP_Recv(l_tcpSocket, data_array + recv, size - recv);
+#endif
 
         int sum = 0;
         for (int i = 0; i < size; ++i)
@@ -564,6 +751,24 @@ void netplay_sync_settings(uint32_t *count_per_op, uint32_t *count_per_op_denom_
     {
         request = TCP_SEND_SETTINGS;
         memcpy(&output_data[0], &request, 1);
+#ifdef USE_SDL3NET
+        // SDL3_net implementation
+        uint32_t count_per_op_le = SDL_Swap32LE(*count_per_op);
+        memcpy(&output_data[1], &count_per_op_le, 4);
+        uint32_t count_per_op_denom_pot_le = SDL_Swap32LE(*count_per_op_denom_pot);
+        memcpy(&output_data[5], &count_per_op_denom_pot_le, 4);
+        uint32_t disable_extra_mem_le = SDL_Swap32LE(*disable_extra_mem);
+        memcpy(&output_data[9], &disable_extra_mem_le, 4);
+        uint32_t si_dma_duration_le = SDL_Swap32LE(*si_dma_duration);
+        memcpy(&output_data[13], &si_dma_duration_le, 4);
+        uint32_t emumode_le = SDL_Swap32LE(*emumode);
+        memcpy(&output_data[17], &emumode_le, 4);
+        uint32_t no_compiled_jump_le = SDL_Swap32LE(*no_compiled_jump);
+        memcpy(&output_data[21], &no_compiled_jump_le, 4);
+        
+        NET_WriteToStreamSocket(l_tcpSocket, output_data, SETTINGS_SIZE + 1);
+#else
+        // SDL_net implementation
         SDLNet_Write32(*count_per_op, &output_data[1]);
         SDLNet_Write32(*count_per_op_denom_pot, &output_data[5]);
         SDLNet_Write32(*disable_extra_mem, &output_data[9]);
@@ -571,11 +776,26 @@ void netplay_sync_settings(uint32_t *count_per_op, uint32_t *count_per_op_denom_
         SDLNet_Write32(*emumode, &output_data[17]);
         SDLNet_Write32(*no_compiled_jump, &output_data[21]);
         SDLNet_TCP_Send(l_tcpSocket, &output_data[0], SETTINGS_SIZE + 1);
+#endif
     }
     else
     {
         request = TCP_RECEIVE_SETTINGS;
         memcpy(&output_data[0], &request, 1);
+#ifdef USE_SDL3NET
+        // SDL3_net implementation
+        NET_WriteToStreamSocket(l_tcpSocket, output_data, 1);
+        int32_t recv = 0;
+        while (recv < SETTINGS_SIZE)
+            recv += NET_ReadFromStreamSocket(l_tcpSocket, &output_data[recv], SETTINGS_SIZE - recv);
+        *count_per_op = SDL_Swap32LE(*(uint32_t*)&output_data[0]);
+        *count_per_op_denom_pot = SDL_Swap32LE(*(uint32_t*)&output_data[4]);
+        *disable_extra_mem = SDL_Swap32LE(*(uint32_t*)&output_data[8]);
+        *si_dma_duration = SDL_Swap32LE(*(uint32_t*)&output_data[12]);
+        *emumode = SDL_Swap32LE(*(uint32_t*)&output_data[16]);
+        *no_compiled_jump = SDL_Swap32LE(*(uint32_t*)&output_data[20]);
+#else
+        // SDL_net implementation
         SDLNet_TCP_Send(l_tcpSocket, &output_data[0], 1);
         int32_t recv = 0;
         while (recv < SETTINGS_SIZE)
@@ -586,6 +806,7 @@ void netplay_sync_settings(uint32_t *count_per_op, uint32_t *count_per_op_denom_
         *si_dma_duration = SDLNet_Read32(&output_data[12]);
         *emumode = SDLNet_Read32(&output_data[16]);
         *no_compiled_jump = SDLNet_Read32(&output_data[20]);
+#endif
     }
 }
 
@@ -601,6 +822,21 @@ void netplay_check_sync(struct cp0* cp0)
     {
         const uint32_t* cp0_regs = r4300_cp0_regs(cp0);
 
+#ifdef USE_SDL3NET
+        // SDL3_net implementation
+        uint8_t packet_data[l_check_sync_packet_size];
+        packet_data[0] = UDP_SYNC_DATA;
+        uint32_t vi_counter_le = SDL_Swap32LE(l_vi_counter);
+        memcpy(&packet_data[1], &vi_counter_le, 4); //current VI count
+        for (int i = 0; i < CP0_REGS_COUNT; ++i)
+        {
+            uint32_t reg_le = SDL_Swap32LE(cp0_regs[i]);
+            memcpy(&packet_data[(i * 4) + 5], &reg_le, 4);
+        }
+        
+        NET_SendDatagram(l_udpSocket, l_server_address, 0, packet_data, l_check_sync_packet_size);
+#else
+        // SDL_net implementation
         l_check_sync_packet->data[0] = UDP_SYNC_DATA;
         SDLNet_Write32(l_vi_counter, &l_check_sync_packet->data[1]); //current VI count
         for (int i = 0; i < CP0_REGS_COUNT; ++i)
@@ -609,6 +845,7 @@ void netplay_check_sync(struct cp0* cp0)
         }
         l_check_sync_packet->len = l_check_sync_packet_size;
         SDLNet_UDP_Send(l_udpSocket, l_udpChannel, l_check_sync_packet);
+#endif
     }
 
     ++l_vi_counter;
@@ -626,6 +863,45 @@ void netplay_read_registration(struct controller_input_compat* cin_compats)
     uint32_t reg_id;
     char output_data = TCP_GET_REGISTRATION;
     char input_data[24];
+
+#ifdef USE_SDL3NET
+    // SDL3_net implementation
+    NET_WriteToStreamSocket(l_tcpSocket, &output_data, 1);
+    size_t recv = 0;
+    while (recv < 24)
+        recv += NET_ReadFromStreamSocket(l_tcpSocket, &input_data[recv], 24 - recv);
+    uint32_t curr = 0;
+    for (int i = 0; i < 4; ++i)
+    {
+        reg_id = SDL_Swap32LE(*(uint32_t*)&input_data[curr]);
+        curr += 4;
+
+        Controls[i].Type = CONT_TYPE_STANDARD; //make sure VRU is disabled
+
+        if (reg_id == 0) //No one registered to control this player
+        {
+            Controls[i].Present = 0;
+            Controls[i].Plugin = PLUGIN_NONE;
+            Controls[i].RawData = 0;
+            curr += 2;
+        }
+        else
+        {
+            Controls[i].Present = 1;
+            if (i > 0 && input_data[curr] == PLUGIN_MEMPAK) // only P1 can use mempak
+                Controls[i].Plugin = PLUGIN_NONE;
+            else if (input_data[curr] == PLUGIN_TRANSFER_PAK) // Transferpak not supported during netplay
+                Controls[i].Plugin = PLUGIN_NONE;
+            else
+                Controls[i].Plugin = input_data[curr];
+            l_plugin[i] = Controls[i].Plugin;
+            ++curr;
+            Controls[i].RawData = input_data[curr];
+            ++curr;
+        }
+    }
+#else
+    // SDL_net implementation
     SDLNet_TCP_Send(l_tcpSocket, &output_data, 1);
     size_t recv = 0;
     while (recv < 24)
@@ -660,6 +936,7 @@ void netplay_read_registration(struct controller_input_compat* cin_compats)
             ++curr;
         }
     }
+#endif
 }
 
 static void netplay_send_raw_input(struct pif* pif)
@@ -727,10 +1004,19 @@ m64p_error netplay_send_config(char* data, int size)
 
     if (l_netplay_control[0] != -1 || size == 1) //Only P1 sends settings, we allow all players to send if the size is 1, this may be a request packet
     {
+#ifdef USE_SDL3NET
+        // SDL3_net implementation
+        int result = NET_WriteToStreamSocket(l_tcpSocket, data, size);
+        if (result < size)
+            return M64ERR_SYSTEM_FAIL;
+        return M64ERR_SUCCESS;
+#else
+        // SDL_net implementation
         int result = SDLNet_TCP_Send(l_tcpSocket, data, size);
         if (result < size)
             return M64ERR_SYSTEM_FAIL;
         return M64ERR_SUCCESS;
+#endif
     }
     else
         return M64ERR_INVALID_STATE;
@@ -743,6 +1029,18 @@ m64p_error netplay_receive_config(char* data, int size)
 
     if (l_netplay_control[0] == -1) //Only P2-4 receive settings
     {
+#ifdef USE_SDL3NET
+        // SDL3_net implementation
+        int recv = 0;
+        while (recv < size)
+        {
+            recv += NET_ReadFromStreamSocket(l_tcpSocket, &data[recv], size - recv);
+            if (recv < 1)
+                return M64ERR_SYSTEM_FAIL;
+        }
+        return M64ERR_SUCCESS;
+#else
+        // SDL_net implementation
         int recv = 0;
         while (recv < size)
         {
@@ -751,6 +1049,7 @@ m64p_error netplay_receive_config(char* data, int size)
                 return M64ERR_SYSTEM_FAIL;
         }
         return M64ERR_SUCCESS;
+#endif
     }
     else
         return M64ERR_INVALID_STATE;
@@ -777,4 +1076,70 @@ void core_set_input_delay_frames(int frames)
     if (frames >= 0 && frames <= 10) {
         l_input_delay_frames = frames;
     }
+}
+
+// Frame Synchronization Functions
+int core_get_frame_sync_enabled(void)
+{
+    return l_frame_sync_enabled;
+}
+
+void core_set_frame_sync_enabled(int enabled)
+{
+    l_frame_sync_enabled = enabled;
+}
+
+uint32_t core_get_lead_frame(void)
+{
+    return l_lead_frame;
+}
+
+void core_set_lead_frame(uint32_t frame)
+{
+    l_lead_frame = frame;
+}
+
+uint32_t core_get_local_frame(void)
+{
+    return l_local_frame;
+}
+
+void core_set_local_frame(uint32_t frame)
+{
+    l_local_frame = frame;
+}
+
+uint32_t core_get_frame_sync_threshold(void)
+{
+    return l_frame_sync_threshold;
+}
+
+void core_set_frame_sync_threshold(uint32_t threshold)
+{
+    l_frame_sync_threshold = threshold;
+}
+
+// Check if we need to slow down due to frame synchronization
+int core_should_slow_down(void)
+{
+    if (!l_frame_sync_enabled) {
+        return 0;
+    }
+    
+    // If we're ahead of the lead frame, slow down
+    if (l_local_frame > l_lead_frame) {
+        return 1;
+    }
+    
+    // If we're more than threshold frames behind, don't slow down
+    if ((l_lead_frame - l_local_frame) > l_frame_sync_threshold) {
+        return 0;
+    }
+    
+    // If we're within threshold but behind, slow down to catch up
+    if (l_local_frame < l_lead_frame) {
+        return 1;
+    }
+    
+    return 0;
 }

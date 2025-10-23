@@ -279,7 +279,7 @@ size_t ResampleAndMix(void* resampler, const struct resampler_interface* iresamp
     consumed = iresampler->resample(resampler, src, src_size, src_freq, mix_buffer, dst_size, dst_freq);
     memset(dst, 0, dst_size);
 #if SDL_VERSION_ATLEAST(3,0,0)
-    SDL_MixAudio((Uint8*)dst, (Uint8*)mix_buffer, dst_size, SDL_AUDIO_S16, VolSDL);
+    SDL_MixAudio((Uint8*)dst, (Uint8*)mix_buffer, SDL_AUDIO_S16, dst_size, (int)(VolSDL * 128));
 #else
     SDL_MixAudio((Uint8*)dst, (Uint8*)mix_buffer, dst_size, VolSDL);
 #endif

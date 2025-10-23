@@ -169,6 +169,18 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::Netplay_SelectedServer:
         setting = {SETTING_SECTION_NETPLAY, "SelectedServer", std::string("")};
         break;
+    case SettingsID::Netplay_FairInputDelay:
+        setting = {SETTING_SECTION_NETPLAY, "FairInputDelay", false};
+        break;
+    case SettingsID::Netplay_InputDelayFrames:
+        setting = {SETTING_SECTION_NETPLAY, "InputDelayFrames", 3};
+        break;
+    case SettingsID::Netplay_FrameSyncEnabled:
+        setting = {SETTING_SECTION_NETPLAY, "FrameSyncEnabled", false};
+        break;
+    case SettingsID::Netplay_FrameSyncThreshold:
+        setting = {SETTING_SECTION_NETPLAY, "FrameSyncThreshold", 2};
+        break;
 
     case SettingsID::Core_GFX_Plugin:
         setting = {SETTING_SECTION_CORE, "GFX_Plugin",

@@ -73,6 +73,17 @@ int core_get_input_delay_frames(void);
 void core_set_fair_input_delay(int enabled);
 void core_set_input_delay_frames(int frames);
 
+// Frame Synchronization Functions
+int core_get_frame_sync_enabled(void);
+void core_set_frame_sync_enabled(int enabled);
+uint32_t core_get_lead_frame(void);
+void core_set_lead_frame(uint32_t frame);
+uint32_t core_get_local_frame(void);
+void core_set_local_frame(uint32_t frame);
+uint32_t core_get_frame_sync_threshold(void);
+void core_set_frame_sync_threshold(uint32_t threshold);
+int core_should_slow_down(void);
+
 #else
 
 static osal_inline m64p_error netplay_start(const char* host, int port)
@@ -165,6 +176,47 @@ static osal_inline void core_set_fair_input_delay(int enabled)
 
 static osal_inline void core_set_input_delay_frames(int frames)
 {
+}
+
+static osal_inline int core_get_frame_sync_enabled(void)
+{
+    return 0;
+}
+
+static osal_inline void core_set_frame_sync_enabled(int enabled)
+{
+}
+
+static osal_inline uint32_t core_get_lead_frame(void)
+{
+    return 0;
+}
+
+static osal_inline void core_set_lead_frame(uint32_t frame)
+{
+}
+
+static osal_inline uint32_t core_get_local_frame(void)
+{
+    return 0;
+}
+
+static osal_inline void core_set_local_frame(uint32_t frame)
+{
+}
+
+static osal_inline uint32_t core_get_frame_sync_threshold(void)
+{
+    return 2;
+}
+
+static osal_inline void core_set_frame_sync_threshold(uint32_t threshold)
+{
+}
+
+static osal_inline int core_should_slow_down(void)
+{
+    return 0;
 }
 
 #endif

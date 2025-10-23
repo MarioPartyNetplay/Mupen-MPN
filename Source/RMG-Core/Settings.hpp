@@ -48,6 +48,8 @@ enum class SettingsID
     Netplay_SelectedServer,
     Netplay_FairInputDelay,
     Netplay_InputDelayFrames,
+    Netplay_FrameSyncEnabled,
+    Netplay_FrameSyncThreshold,
 
     // Core Plugin Settings
     Core_GFX_Plugin,

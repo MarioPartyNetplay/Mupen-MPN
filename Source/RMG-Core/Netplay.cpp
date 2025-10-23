@@ -155,3 +155,39 @@ int CoreGetInputDelayFrames(void)
     return 0;
 #endif // NETPLAY
 }
+
+bool CoreSetFrameSyncEnabled(bool enabled)
+{
+#ifdef NETPLAY
+    return CoreSettingsSetValue(SettingsID::Netplay_FrameSyncEnabled, enabled);
+#else
+    return false;
+#endif // NETPLAY
+}
+
+bool CoreGetFrameSyncEnabled(void)
+{
+#ifdef NETPLAY
+    return CoreSettingsGetBoolValue(SettingsID::Netplay_FrameSyncEnabled);
+#else
+    return false;
+#endif // NETPLAY
+}
+
+int CoreSetFrameSyncThreshold(int threshold)
+{
+#ifdef NETPLAY
+    return CoreSettingsSetValue(SettingsID::Netplay_FrameSyncThreshold, threshold);
+#else
+    return false;
+#endif // NETPLAY
+}
+
+int CoreGetFrameSyncThreshold(void)
+{
+#ifdef NETPLAY
+    return CoreSettingsGetIntValue(SettingsID::Netplay_FrameSyncThreshold);
+#else
+    return 0;
+#endif // NETPLAY
+}

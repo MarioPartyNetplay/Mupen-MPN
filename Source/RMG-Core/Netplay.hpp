@@ -27,4 +27,9 @@ bool CoreGetFairInputDelay(void);
 bool CoreSetInputDelayFrames(int frames);
 int CoreGetInputDelayFrames(void);
 
+bool CoreSetFrameSyncEnabled(bool enabled);
+bool CoreGetFrameSyncEnabled(void);
+int CoreSetFrameSyncThreshold(int threshold);
+int CoreGetFrameSyncThreshold(void);
+
 #endif // CORE_NETPLAY_HPP
