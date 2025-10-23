@@ -46,7 +46,7 @@
 #define AUDIO_PLUGIN_API_VERSION 0x020000
 #define CONFIG_PARAM_VERSION     1.00
 
-#if SDL_VERSION_ATLEAST(2,0,0)
+#if SDL_VERSION_ATLEAST(2,0,0) && !SDL_VERSION_ATLEAST(3,0,0)
 #define SDL_MixAudio(A, B, C, D) SDL_MixAudio(A, B, SDL_AUDIO_S16, C, D)
 #endif
 
@@ -278,7 +278,11 @@ size_t ResampleAndMix(void* resampler, const struct resampler_interface* iresamp
 
     consumed = iresampler->resample(resampler, src, src_size, src_freq, mix_buffer, dst_size, dst_freq);
     memset(dst, 0, dst_size);
+#if SDL_VERSION_ATLEAST(3,0,0)
+    SDL_MixAudio((Uint8*)dst, (Uint8*)mix_buffer, dst_size, SDL_AUDIO_S16, VolSDL);
+#else
     SDL_MixAudio((Uint8*)dst, (Uint8*)mix_buffer, dst_size, VolSDL);
+#endif
 
     return consumed;
 }

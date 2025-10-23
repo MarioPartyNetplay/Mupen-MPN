@@ -38,9 +38,15 @@
 
 #define SDL_LockAudio() 
 #define SDL_UnlockAudio() 
+#if SDL_VERSION_ATLEAST(3,0,0)
 #define SDL_PauseAudio(A) ((A) ? SDL_PauseAudioDevice(sdl_backend->device) : SDL_ResumeAudioDevice(sdl_backend->device))
 #define SDL_CloseAudio() SDL_CloseAudioDevice(sdl_backend->device)
 #define SDL_OpenAudio(A, B) ((sdl_backend->device = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, A)) == 0 ? -1 : 0)
+#else
+#define SDL_PauseAudio(A) ((A) ? SDL_PauseAudioDevice(sdl_backend->device) : SDL_ResumeAudioDevice(sdl_backend->device))
+#define SDL_CloseAudio() SDL_CloseAudioDevice(sdl_backend->device)
+#define SDL_OpenAudio(A, B) ((sdl_backend->device = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, A)) == 0 ? -1 : 0)
+#endif
 struct sdl_backend
 {
     /* Audio Device */

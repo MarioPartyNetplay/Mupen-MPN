@@ -29,7 +29,11 @@
 #include "backends/plugins_compat/plugins_compat.h"
 #include "netplay.h"
 
+#ifdef USE_SDL3NET
+#include <SDL3_net/SDL_net.h>
+#else
 #include <SDL_net.h>
+#endif
 #if !defined(WIN32)
 #include <netinet/ip.h>
 #endif
@@ -37,8 +41,13 @@
 static int l_canFF;
 static int l_netplay_controller;
 static int l_netplay_control[4];
+#ifdef USE_SDL3NET
+static NET_Socket* l_udpSocket;
+static NET_Socket* l_tcpSocket;
+#else
 static UDPsocket l_udpSocket;
 static TCPsocket l_tcpSocket;
+#endif
 static int l_udpChannel;
 static int l_spectator;
 static int l_netplay_is_init = 0;
@@ -55,10 +64,17 @@ static int l_fair_input_delay = 0;
 static int l_input_delay_frames = 3;
 
 //UDP packets
+#ifdef USE_SDL3NET
+static NET_Datagram *l_request_input_packet;
+static NET_Datagram *l_send_input_packet;
+static NET_Datagram *l_process_packet;
+static NET_Datagram *l_check_sync_packet;
+#else
 static UDPpacket *l_request_input_packet;
 static UDPpacket *l_send_input_packet;
 static UDPpacket *l_process_packet;
 static UDPpacket *l_check_sync_packet;
+#endif
 static const int32_t l_check_sync_packet_size = (CP0_REGS_COUNT * 4) + 5;
 
 //UDP packet formats
