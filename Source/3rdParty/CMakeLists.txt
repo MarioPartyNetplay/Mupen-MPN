@@ -95,7 +95,7 @@ ExternalProject_Add(mupen64plus-core
         KEYBINDINGS=0 ACCURATE_FPU=1 VULKAN=0 NETPLAY=$<BOOL:${NETPLAY}> 
         SDL3_CAMERA=1
         SDLNET_CFLAGS=-I${CMAKE_CURRENT_BINARY_DIR}/SDL3_net/install/include\ -DUSE_SDL3NET
-        SDLNET_LDLIBS=${CMAKE_CURRENT_BINARY_DIR}/SDL3_net/install/lib/libSDL3_net.a
+        SDLNET_LDLIBS=${CMAKE_CURRENT_BINARY_DIR}/SDL3_net/install/lib/libSDL3_net.a\ -lws2_32\ -liphlpapi
         TARGET=${CORE_FILE} DEBUG=${MAKE_DEBUG}
         CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
         OPTFLAGS=${MAKE_OPTFLAGS}
