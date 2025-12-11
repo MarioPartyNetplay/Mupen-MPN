@@ -860,6 +860,12 @@ D10CE202 004C
 D10CE202 004D
 800D124F 00FF
 
+$Mechanics - Replace All Stars Chance Time outcome with All Coins
+Note= By: WolfGC64.
+D10CE202 006A
+D01100DF 0005
+801100DF 0000
+
 $Mechanics - Reverse Mode
 Note= By: gamemasterplc. Permanently under the effects of a Reverse Mushroom.
 D10FD196 0080
@@ -1182,3 +1188,4 @@ $Minigame Replacement - The Beat Goes On -> Toadstool Titan
 Note= By: Celery
 D00CD068 0020
 800CD068 0016
+
