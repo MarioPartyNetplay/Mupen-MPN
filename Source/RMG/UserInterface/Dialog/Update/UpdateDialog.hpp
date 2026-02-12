@@ -1,6 +1,6 @@
 /*
  * Rosalie's Mupen GUI - https://github.com/Rosalie241/RMG
- *  Copyright (C) 2020-2025 Rosalie Wanders <rosalie@mailbox.org>
+ *  Copyright (C) 2020-2026 Rosalie Wanders <rosalie@mailbox.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 3.
@@ -29,9 +29,6 @@ class UpdateDialog : public QDialog, private Ui::UpdateDialog
     QJsonObject jsonObject;
     QString filename;
     QUrl url;
-#ifdef _WIN32
-    bool isWin32Setup = false;
-#endif // _WIN32
 
   public:
     UpdateDialog(QWidget *parent, QJsonObject jsonObject, bool forced);

@@ -1,6 +1,6 @@
 /*
  * Rosalie's Mupen GUI - https://github.com/Rosalie241/RMG
- *  Copyright (C) 2020-2025 Rosalie Wanders <rosalie@mailbox.org>
+ *  Copyright (C) 2020-2026 Rosalie Wanders <rosalie@mailbox.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 3.
@@ -71,7 +71,7 @@ void UpdateDialog::accept(void)
     QUrl urlToDownload;
 
 #ifdef _WIN32
-    this->isWin32Setup = QFile::exists("unins000.exe") && QFile::exists("unins000.dat");
+    const bool isWin32Setup = QFile::exists("unins000.exe") && QFile::exists("unins000.dat");
 #endif // _WIN32
 
     for (const QJsonValue& value : jsonArray)
@@ -83,30 +83,18 @@ void UpdateDialog::accept(void)
         QString url           = object.value("browser_download_url").toString();
 
 #ifdef _WIN32
-        if (this->isWin32Setup)
+        if (((QSysInfo::buildCpuArchitecture() == "x86_64" && lowerFilename.contains("windows64")) ||
+              lowerFilename.contains("windows-" + QSysInfo::buildCpuArchitecture())) &&
+            lowerFilename.contains(isWin32Setup ? "setup" : "portable") &&
+            lowerFilename.endsWith(isWin32Setup ? ".exe"  : ".zip"))
         {
-            if (lowerFilename.contains("windows64") &&
-                lowerFilename.contains("setup") &&
-                lowerFilename.endsWith(".exe"))
-            {
-                filenameToDownload = filename;
-                urlToDownload = QUrl(url);
-                break;
-            }
-        }
-        else
-        {
-            if (lowerFilename.contains("windows64") &&
-                lowerFilename.contains("portable") &&
-                lowerFilename.endsWith(".zip"))
-            {
-                filenameToDownload = filename;
-                urlToDownload = QUrl(url);
-                break;
-            }
+            filenameToDownload = filename;
+            urlToDownload = QUrl(url);
+            break;
         }
 #else
-        if (lowerFilename.contains("linux64") &&
+        if (((QSysInfo::buildCpuArchitecture() == "x86_64" && lowerFilename.contains("linux64")) ||
+              lowerFilename.contains("linux-" + QSysInfo::buildCpuArchitecture())) &&
             lowerFilename.contains("portable") &&
             lowerFilename.endsWith(".appimage"))
         {

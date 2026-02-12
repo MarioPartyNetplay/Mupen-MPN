@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>639</width>
-    <height>543</height>
+    <width>960</width>
+    <height>720</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -25,7 +25,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>639</width>
+     <width>960</width>
      <height>30</height>
     </rect>
    </property>
@@ -194,6 +194,11 @@
    <addaction name="action_System_Screenshot"/>
    <addaction name="separator"/>
    <addaction name="action_View_Fullscreen"/>
+   <addaction name="separator"/>
+   <addaction name="action_Settings_Graphics"/>
+   <addaction name="action_Settings_Audio"/>
+   <addaction name="action_Settings_Rsp"/>
+   <addaction name="action_Settings_Input"/>
    <addaction name="separator"/>
    <addaction name="action_Settings_Settings"/>
   </widget>
@@ -636,9 +641,9 @@
    </property>
   </action>
   <action name="action_View_Search">
-    <property name="icon">
-      <iconset theme="search-line"/>
-     </property>
+   <property name="icon">
+    <iconset theme="search-line"/>
+   </property>
    <property name="text">
     <string>Search</string>
    </property>

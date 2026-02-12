@@ -1,6 +1,6 @@
 /*
   SDL_net: A simple networking library for use with SDL
-  Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -121,7 +121,7 @@ extern "C" {
 #endif
 
 /**
- * The current major version of SDL_net headers.
+ * The current major version of the SDL_net headers.
  *
  * If this were SDL_net version 3.2.1, this value would be 3.
  *

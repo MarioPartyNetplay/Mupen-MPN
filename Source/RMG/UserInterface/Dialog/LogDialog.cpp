@@ -1,6 +1,6 @@
 /*
  * Rosalie's Mupen GUI - https://github.com/Rosalie241/RMG
- *  Copyright (C) 2020-2025 Rosalie Wanders <rosalie@mailbox.org>
+ *  Copyright (C) 2020-2026 Rosalie Wanders <rosalie@mailbox.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 3.
@@ -21,19 +21,9 @@ LogDialog::LogDialog(QWidget *parent) : QDialog(parent)
     this->setWindowIcon(QIcon(":Resource/RMG.png"));
     this->setWindowFlags(this->windowFlags() | Qt::WindowMinimizeButtonHint);
 
-    try
-    { // for some reason on Windows 10 for some users, 
-      // ->setFont() will crash in DwriteCreateFactory,
-      // so catch the exception and do nothing
-        QFont font({"Cascadia Mono", "Consolas", "monospace"});
-#ifdef _WIN32
-        font.setStyleHint(QFont::TypeWriter);
-#endif
-        this->plainTextEdit->setFont(font);
-    }
-    catch (...)
-    {
-    }
+    QFont font({"Cascadia Mono", "Consolas", "monospace"});
+    font.setStyleHint(QFont::TypeWriter);
+    this->plainTextEdit->setFont(font);
 }
 
 LogDialog::~LogDialog(void)
