@@ -2074,7 +2074,7 @@ void MainWindow::on_Action_Netplay_CreateSession(void)
 #ifdef NETPLAY
     if (this->netplayCoordinator == nullptr)
     {
-        this->netplayCoordinator = new Netplay::NetplayCoordinator("http://localhost:9290", this);
+        this->netplayCoordinator = new Netplay::NetplayCoordinator("http://localhost:2626", this);
     }
 
     Dialog::CreateNetplaySessionDialog dialog(this, this->netplayCoordinator, this->ui_Widget_RomBrowser->GetModelData());
@@ -2091,7 +2091,7 @@ void MainWindow::on_Action_Netplay_JoinSession(void)
 #ifdef NETPLAY
     if (this->netplayCoordinator == nullptr)
     {
-        this->netplayCoordinator = new Netplay::NetplayCoordinator("http://localhost:9290", this);
+        this->netplayCoordinator = new Netplay::NetplayCoordinator("http://localhost:2626", this);
     }
 
     Dialog::NetplaySessionBrowserDialog dialog(this, this->netplayCoordinator, this->ui_Widget_RomBrowser->GetModelData());

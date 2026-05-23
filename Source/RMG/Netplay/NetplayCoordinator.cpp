@@ -8,6 +8,7 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "NetplayCoordinator.hpp"
+#include "NatTraversal/NatTraversalProtocol.hpp"
 #include "Netplay.hpp"
 #include <RMG-Core/Netplay.hpp>
 #include <algorithm>
@@ -241,10 +242,12 @@ void NetplayCoordinator::connectToServer(const QString& playerName)
     m_socketIO->connectToServer(playerName);
 }
 
-void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int port, const QString& playerName)
+void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int port, const QString& playerName,
+                                               const QString& roomId)
 {
     m_playerName = playerName;
-    m_shouldAutoJoinRoom = true;  // Flag to auto-join after connection
+    m_shouldAutoJoinRoom = true;
+    m_autoJoinRoomId = roomId.trimmed();
     
     // Recreate the Socket.IO client with the new server URL
     QString serverUrl = QString("http://%1:%2").arg(ipAddress).arg(port);
@@ -504,8 +507,7 @@ void NetplayCoordinator::on_socketIO_connected()
     if (m_shouldAutoJoinRoom)
     {
         qDebug() << "NetplayCoordinator: Auto-joining room for direct connection";
-        // Request the room list from the server
-        m_socketIO->requestRoomList();
+        m_socketIO->requestRoomList(true);
     }
 
     emit connected();
@@ -607,20 +609,32 @@ void NetplayCoordinator::on_socketIO_roomsListed(const QJsonArray& rooms)
 {
     qDebug() << "NetplayCoordinator: Received rooms list, count:" << rooms.size();
 
-    if (m_shouldAutoJoinRoom && rooms.size() > 0)
-    {
-        // Join the first available room (hosting room)
-        QJsonObject room = rooms[0].toObject();
-        QString roomId = room["roomId"].toString();
-        
-        // Store room data for later use
-        m_autoJoinRoomData = room;
-        
-        qDebug() << "NetplayCoordinator: Auto-joining room:" << roomId;
-        m_shouldAutoJoinRoom = false;  // Reset flag
-        
-        m_socketIO->joinRoom(roomId, false);  // Not a spectator
+    if (!m_shouldAutoJoinRoom) {
+        return;
     }
+
+    QString roomId;
+    if (rooms.size() > 0) {
+        const QJsonObject room = rooms[0].toObject();
+        roomId = room.value(QStringLiteral("roomId")).toString();
+        m_autoJoinRoomData = room;
+    } else if (!m_autoJoinRoomId.isEmpty()) {
+        roomId = m_autoJoinRoomId;
+        qDebug() << "NetplayCoordinator: Room list empty, joining room from session index:" << roomId;
+    }
+
+    m_shouldAutoJoinRoom = false;
+    m_autoJoinRoomId.clear();
+
+    if (roomId.isEmpty()) {
+        qWarning() << "NetplayCoordinator: No joinable room found on host";
+        setState(Error);
+        emit connectionError(QStringLiteral("No joinable room found on host"));
+        return;
+    }
+
+    qDebug() << "NetplayCoordinator: Auto-joining room:" << roomId;
+    m_socketIO->joinRoom(roomId, false);
 }
 
 void NetplayCoordinator::on_socketIO_gameStarted(const QString& mode, bool resync, const QString& matchId)
@@ -1003,9 +1017,7 @@ QString NetplayCoordinator::getPeerAddress() const
 int NetplayCoordinator::getGamePort() const
 {
     // Return the port where the game will communicate on
-    // Default to 2626 which is used for Socket.IO signaling
-    // The actual WebRTC data channels will negotiate their own ports
-    return 9290;
+    return kDefaultNetplayHostingPort;
 }
 // Private Slots - Lockstep
 //

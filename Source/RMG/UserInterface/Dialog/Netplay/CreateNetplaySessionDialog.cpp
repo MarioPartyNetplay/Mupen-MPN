@@ -12,6 +12,7 @@
 #include "NetplayCommon.hpp"
 #include "Netplay/NetplayCoordinator.hpp"
 #include "Netplay/NatTraversal/NatTraversalProtocol.hpp"
+#include "Netplay/NatTraversal/NatTraversalClient.hpp"
 
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
@@ -35,6 +36,8 @@
 
 using namespace UserInterface::Dialog;
 using namespace Utilities;
+// Provide `Netplay::` alias for existing code that refers to that namespace
+namespace Netplay = UserInterface::Netplay;
 
 
 //
@@ -131,11 +134,12 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     this->directConnectionCheckBox->setChecked(false);
     
     QLabel* portLabel = new QLabel("Hosting Port:", this);
-    portLabel->setToolTip("Port to listen on for incoming player connections (default: 9290)");
+    portLabel->setToolTip(QString("Port to listen on for incoming player connections (default: %1)")
+                              .arg(Netplay::kDefaultNetplayHostingPort));
     this->hostingPortSpinBox = new QSpinBox(this);
     this->hostingPortSpinBox->setMinimum(1024);
     this->hostingPortSpinBox->setMaximum(65535);
-    this->hostingPortSpinBox->setValue(9290);
+    this->hostingPortSpinBox->setValue(Netplay::kDefaultNetplayHostingPort);
     this->hostingPortSpinBox->setEnabled(false);
     this->hostingPortSpinBox->setToolTip("Valid ports: 1024-65535. Locked unless Direct connection is enabled.");
     
@@ -148,12 +152,12 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
         if (this->hostingPortSpinBox) {
             this->hostingPortSpinBox->setEnabled(directConnection);
             if (!directConnection) {
-                this->hostingPortSpinBox->setValue(9290);
+                this->hostingPortSpinBox->setValue(Netplay::kDefaultNetplayHostingPort);
             }
         }
         this->hostingPort = directConnection && this->hostingPortSpinBox
             ? this->hostingPortSpinBox->value()
-            : 9290;
+            : Netplay::kDefaultNetplayHostingPort;
     });
     
     portLayout->addWidget(this->directConnectionCheckBox);
@@ -184,7 +188,7 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
 CreateNetplaySessionDialog::~CreateNetplaySessionDialog(void)
 {
     if (this->natTraversalClient) {
-        this->natTraversalClient->stopHosting();
+        this->natTraversalClient->stopHosting(false);
     }
 
     QString nickname = this->nickNameLineEdit->text();
@@ -288,7 +292,8 @@ void CreateNetplaySessionDialog::createSession(void)
     }
     json.insert("md5_hash", this->sessionMD5);  // For ROM matching
     json.insert("rom_path", this->sessionFile); // For loading cheats
-    
+    json.insert("room_id", this->coordinator->getGameSession().roomId);
+
     this->sessionJson = json;
     
     qDebug() << "Created session via coordinator, hosting on port" << this->hostingPort << "as" << playerName;
@@ -306,21 +311,66 @@ void CreateNetplaySessionDialog::registerNatTraversalHost(void)
     this->natTraversalClient = std::make_unique<Netplay::NatTraversalClient>(this);
 
     connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostRegistered,
-            this, [this](const QString& hostCode) {
-        qDebug() << "NAT traversal host code:" << hostCode;
+            this, [this](const QString& hostCode, const QString& publicAddress, int signalingPort) {
+        qDebug() << "NAT traversal host code:" << hostCode << "endpoint:" << publicAddress << signalingPort;
         this->sessionJson.insert("host_code", hostCode);
-        this->sessionJson.insert("public_address", hostCode);
         this->sessionJson.insert("use_nat_traversal", true);
-        this->publishSessionIndex(hostCode);
-        this->finalizeSession();
+        this->sessionJson.insert("server_port", signalingPort > 0 ? signalingPort : this->hostingPort);
+        this->sessionJson.insert("public_port", signalingPort > 0 ? signalingPort : this->hostingPort);
+        this->sessionJson.insert("connect_port", signalingPort > 0 ? signalingPort : this->hostingPort);
+        if (Netplay::isUsableConnectAddress(publicAddress)) {
+            this->sessionJson.insert("public_address", publicAddress);
+            this->sessionJson.insert("connect_address", publicAddress);
+            this->publishSessionIndex(hostCode);
+            this->finalizeSession();
+            return;
+        }
+
+        qDebug() << "NAT server did not provide a public IP; querying STUN";
+        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::publicAddressResolved,
+                this, [this, hostCode](const QString& ip, int port) {
+            Q_UNUSED(port);
+            if (Netplay::isUsableConnectAddress(ip)) {
+                this->sessionJson.insert("public_address", ip);
+                this->sessionJson.insert("connect_address", ip);
+            }
+            this->publishSessionIndex(hostCode);
+            this->finalizeSession();
+        }, Qt::SingleShotConnection);
+        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::publicAddressFailed,
+                this, [this, hostCode](const QString& reason) {
+            qWarning() << "STUN after register failed:" << reason << "- using HTTP public IP lookup";
+            this->pendingNatHostCode = hostCode;
+            this->fetchPublicIpAddress();
+        }, Qt::SingleShotConnection);
+        this->natTraversalClient->queryStunServer(QStringLiteral("stun.l.google.com"), 19302);
     });
 
     connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostRegistrationFailed,
             this, [this](const QString& reason) {
         qWarning() << "NAT traversal registration failed:" << reason;
         QtMessageBox::Error(this, "NAT Traversal Failed",
-                            QString("Could not register host code (%1). Falling back to public IP lookup.").arg(reason));
-        this->fetchPublicIpAddress();
+                            QString("Could not register host code (%1). Attempting STUN public IP discovery.").arg(reason));
+        // Try STUN first; if it fails, fall back to HTTP checkip
+        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::publicAddressResolved,
+                this, [this](const QString& ip, int port) {
+            qDebug() << "STUN resolved public address:" << ip << port;
+            this->publicIpAddress = ip;
+            this->sessionJson.insert("public_address", ip);
+            this->sessionJson.insert("connect_address", ip);
+            this->sessionJson.insert("server_port", port);
+            this->sessionJson.insert("public_port", port);
+            this->sessionJson.insert("connect_port", port);
+            this->finalizeSession();
+        });
+        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::publicAddressFailed,
+                this, [this](const QString& reason) {
+            qWarning() << "STUN public address discovery failed:" << reason << "- falling back to HTTP lookup";
+            this->fetchPublicIpAddress();
+        });
+
+        // Use a common public STUN server; this is configurable later
+        this->natTraversalClient->queryStunServer("stun.l.google.com", 19302);
     });
 
     this->natTraversalClient->startHosting(static_cast<uint16_t>(this->hostingPort));
@@ -406,8 +456,19 @@ void CreateNetplaySessionDialog::on_publicIpFetch_Finished(QNetworkReply* reply)
     
     networkReply->deleteLater();
     this->publicIpReply = nullptr;
-    
-    // Finalize the session with the fetched public IP
+
+    if (!this->pendingNatHostCode.isEmpty()) {
+        const QString hostCode = this->pendingNatHostCode;
+        this->pendingNatHostCode.clear();
+        if (Netplay::isUsableConnectAddress(this->publicIpAddress)) {
+            this->sessionJson.insert("public_address", this->publicIpAddress);
+            this->sessionJson.insert("connect_address", this->publicIpAddress);
+        }
+        this->publishSessionIndex(hostCode);
+        this->finalizeSession();
+        return;
+    }
+
     this->finalizeSession();
 }
 

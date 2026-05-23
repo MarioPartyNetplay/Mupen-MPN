@@ -11,6 +11,7 @@
 #include "UserInterface/Dialog/Cheats/CheatsDialog.hpp"
 #include "Utilities/QtMessageBox.hpp"
 #include "NetplaySessionDialog.hpp"
+#include "Netplay/NatTraversal/NatTraversalProtocol.hpp"
 
 #include <QJsonDocument>
 #include <QPushButton>
@@ -106,6 +107,10 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     const QString hostCode = sessionJson.value("host_code").toString();
     if (this->sessionSlot == 0 && !hostCode.isEmpty())
     {
+        const int hostingPort = sessionJson.value("server_port").toInt(Netplay::kDefaultNetplayHostingPort);
+        this->natTraversalClient = std::make_unique<Netplay::NatTraversalClient>(this);
+        this->natTraversalClient->resumeHosting(hostCode, static_cast<uint16_t>(hostingPort));
+
         this->natIndexClient = std::make_unique<Netplay::NatTraversalIndexClient>(this);
         connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::published,
                 this, [](const QString& key) {
@@ -247,15 +252,26 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
         
         if (publicIpEdit) {
             const QString hostCode = sessionJson.value("host_code").toString();
+            const QString connectAddress = sessionJson.value("connect_address").toString();
+            const int connectPort = sessionJson.value("connect_port").toInt(
+                sessionJson.value("public_port").toInt(Netplay::kDefaultNetplayHostingPort));
+
+            QLabel* publicIpLabel = this->findChild<QLabel*>("label_3");
             if (!hostCode.isEmpty()) {
-                QLabel* publicIpLabel = this->findChild<QLabel*>("label_3");
                 if (publicIpLabel) {
                     publicIpLabel->setText("Host Code");
                 }
-                publicIpEdit->setText(hostCode);
+                if (!connectAddress.isEmpty() && connectAddress != hostCode) {
+                    publicIpEdit->setText(QString("%1  (%2:%3)").arg(hostCode, connectAddress, QString::number(connectPort)));
+                } else {
+                    publicIpEdit->setText(hostCode);
+                }
             } else {
                 const QString publicAddress = sessionJson.value("public_address").toString();
-                const int publicPort = sessionJson.value("public_port").toInt(9290);
+                const int publicPort = sessionJson.value("public_port").toInt(Netplay::kDefaultNetplayHostingPort);
+                if (publicIpLabel) {
+                    publicIpLabel->setText("Connect");
+                }
                 publicIpEdit->setText(QString("%1:%2").arg(publicAddress, QString::number(publicPort)));
             }
         }

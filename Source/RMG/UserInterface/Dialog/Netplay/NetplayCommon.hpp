@@ -28,9 +28,9 @@ namespace NetplayCommon
         QString Data;
     };
 
-    #define NETPLAYCOMMON_SESSION_REGEX "[a-zA-Z0-9 ]+"
-    #define NETPLAYCOMMON_NICKNAME_REGEX "[a-zA-Z0-9]+"
-    #define NETPLAYCOMMON_PASSWORD_REGEX "[a-zA-Z0-9,.\\/<>?;:[\\]{}\\-=_+`~!@#$%^&*()]+"
+    #define NETPLAYCOMMON_SESSION_REGEX "^[a-zA-Z0-9_-]{1,16}$"
+    #define NETPLAYCOMMON_NICKNAME_REGEX "^[a-zA-Z0-9_-]{1,16}$"
+    #define NETPLAYCOMMON_PASSWORD_REGEX "^[a-zA-Z0-9,.\\/<>?;:[\\]{}\\-=_+`~!@#$%^&*()]+$"
 
     // Adds common json emulator and auth info
     void AddCommonJson(QJsonObject& json);

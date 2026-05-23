@@ -55,15 +55,16 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
     QNetworkReply* publicIpReply = nullptr;
 
     int pingTimerId = -1;
-    int hostingPort = 9290;  // Default port for hosting
+    int hostingPort = Netplay::kDefaultNetplayHostingPort;
     int publicIpTimeoutTimerId = -1;
     bool directConnection = false;
     
     QString publicIpAddress;  // Store the public IP
+    QString pendingNatHostCode;  // Finish NAT publish/finalize after public IP lookup
     QCheckBox* directConnectionCheckBox = nullptr;
     QSpinBox* hostingPortSpinBox = nullptr;
-    std::unique_ptr<Netplay::NatTraversalClient> natTraversalClient;
-    std::unique_ptr<Netplay::NatTraversalIndexClient> natIndexClient;
+    std::unique_ptr<UserInterface::Netplay::NatTraversalClient> natTraversalClient;
+    std::unique_ptr<UserInterface::Netplay::NatTraversalIndexClient> natIndexClient;
 
   	QJsonObject sessionJson;
     QString sessionFile;

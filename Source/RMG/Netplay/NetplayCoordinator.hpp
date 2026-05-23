@@ -5,6 +5,7 @@
  #ifndef NETPLAYCOORDINATOR_HPP
  #define NETPLAYCOORDINATOR_HPP
  
+ #include "NatTraversal/NatTraversalProtocol.hpp"
  #include "SocketIO/SocketIOClient.hpp"
  #include "SocketIO/SocketIOServer.hpp"
  #include "WebRTC/WebRTCPeer.hpp"
@@ -48,20 +49,21 @@
      };
  
      explicit NetplayCoordinator(
-         const QString& serverUrl = "http://localhost:9290",
+         const QString& serverUrl = "http://localhost:2626",
          QObject* parent = nullptr
      );
      ~NetplayCoordinator();
  
      // Hosting logic
-     bool startHosting(int port = 2626, const QString& playerName = "Player", const QString& gameName = "Unknown");
+     bool startHosting(int port = kDefaultNetplayHostingPort, const QString& playerName = "Player", const QString& gameName = "Unknown");
      void stopHosting();
      bool isHostingServer() const;
      SocketIOServer* getHostingServer() { return m_server.get(); }
  
      // Session Lifecycle
      void connectToServer(const QString& playerName);
-     void connectToDirectIPServer(const QString& ipAddress, int port, const QString& playerName);
+     void connectToDirectIPServer(const QString& ipAddress, int port, const QString& playerName,
+                                  const QString& roomId = QString());
      void createRoom(const QString& roomName, const QString& gameId = "ssb64", int maxPlayers = 4);
      void joinRoom(const QString& roomId, bool asSpectator = false, const QString& password = "");
      void leaveRoom();
@@ -188,6 +190,7 @@
      QString m_playerName;
      QList<SocketIOClient::PlayerInfo> m_cachedPlayers;
      bool m_shouldAutoJoinRoom = false;
+     QString m_autoJoinRoomId;
      QJsonObject m_autoJoinRoomData;
  
      // CRITICAL: Scoped configuration type

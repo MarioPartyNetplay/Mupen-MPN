@@ -172,7 +172,10 @@ void NatTraversalIndexClient::onReadyRead()
 
 void NatTraversalIndexClient::handleResponse(const QByteArray& datagram)
 {
-    const QList<QByteArray> parts = datagram.split('|');
+    QByteArray sanitized = datagram;
+    sanitized.replace('\0', QByteArray());
+
+    const QList<QByteArray> parts = sanitized.split('|');
     if (parts.size() < 2 || parts[0] != QByteArray(kNatIndexProtocol)) {
         return;
     }

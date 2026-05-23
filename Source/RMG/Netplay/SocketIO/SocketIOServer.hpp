@@ -1,6 +1,7 @@
 #ifndef SOCKET_IO_SERVER_HPP
 #define SOCKET_IO_SERVER_HPP
 
+#include "../NatTraversal/NatTraversalProtocol.hpp"
 #include <QObject>
 #include <QWebSocketServer>
 #include <QWebSocket>
@@ -22,9 +23,9 @@
  * - Game state broadcast
  *
  * Usage:
- *   SocketIOServer 9290;
- *   server.startServer(9290);
- *   // Clients connect via Socket.IO to ws://host:9290
+ *   SocketIOServer server;
+ *   server.startServer(2626);
+ *   // Clients connect via Socket.IO to ws://host:2626
  */
 class SocketIOServer : public QObject
 {
@@ -36,10 +37,10 @@ public:
 
     /**
      * @brief Start listening for connections
-     * @param port Port to listen on (default 9290)
+     * @param port Port to listen on (default 2626)
      * @return true if server started successfully
      */
-    bool startServer(int port = 9290);
+    bool startServer(int port = UserInterface::Netplay::kDefaultNetplayHostingPort);
 
     /**
      * @brief Stop the server

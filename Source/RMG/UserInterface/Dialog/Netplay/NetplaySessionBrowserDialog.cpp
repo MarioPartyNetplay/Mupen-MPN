@@ -270,22 +270,28 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
 
 void NetplaySessionBrowserDialog::connectToResolvedHost(const QString& address, int port)
 {
-    qDebug() << "Connecting to" << address << ":" << port;
+    QString roomId;
+    if (!this->pendingIndexSession.isEmpty()) {
+        roomId = this->pendingIndexSession.value(QStringLiteral("room_id")).toString();
+    }
+
+    qDebug() << "Connecting to" << address << ":" << port << "room:" << roomId;
 
     this->targetAddress = address;
     this->targetPort = port;
     this->isWaitingForConnection = true;
-    this->coordinator->connectToDirectIPServer(address, port, this->nickNameLineEdit->text());
+    this->coordinator->connectToDirectIPServer(address, port, this->nickNameLineEdit->text(), roomId);
 }
 
 void NetplaySessionBrowserDialog::beginHostCodeJoin(const QString& hostCode)
 {
-    this->pendingHostCode = Netplay::normalizeTraversalCode(hostCode);
+    this->pendingHostCode = Netplay::normalizeTraversalCode(hostCode).toUpper();
     this->pendingIndexSession = QJsonObject();
     this->pendingIndexReady = false;
     this->pendingLookupReady = false;
+    this->pendingLookupFailed = false;
     this->pendingLookupAddress.clear();
-    this->pendingLookupPort = 27886;
+    this->pendingLookupPort = Netplay::kDefaultNetplayHostingPort;
     this->isResolvingHostCode = true;
 
     QPushButton* joinButton = this->buttonBox->button(QDialogButtonBox::Ok);
@@ -303,10 +309,10 @@ void NetplaySessionBrowserDialog::beginHostCodeJoin(const QString& hostCode)
     });
     connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostLookupFailed,
             this, [this](const QString& reason) {
-        this->isResolvingHostCode = false;
-        this->pendingHostCode.clear();
-        this->validateJoinButton();
-        QtMessageBox::Error(this, "Host Lookup Failed", reason);
+        qDebug() << "TRAV lookup failed:" << reason << "- will try session index endpoint";
+        this->pendingLookupFailed = true;
+        this->pendingLookupReady = false;
+        this->tryCompleteHostCodeJoin();
     });
 
     this->natIndexClient = std::make_unique<Netplay::NatTraversalIndexClient>(this);
@@ -334,12 +340,34 @@ void NetplaySessionBrowserDialog::beginHostCodeJoin(const QString& hostCode)
 
 void NetplaySessionBrowserDialog::tryCompleteHostCodeJoin()
 {
-    if (!this->pendingLookupReady || !this->pendingIndexReady) {
+    if (!this->pendingIndexReady) {
+        return;
+    }
+
+    if (this->pendingLookupReady) {
+        this->isResolvingHostCode = false;
+        this->connectToResolvedHost(this->pendingLookupAddress, this->pendingLookupPort);
+        return;
+    }
+
+    if (!this->pendingLookupFailed) {
+        return;
+    }
+
+    QString indexAddress;
+    int indexPort = 0;
+    if (Netplay::sessionConnectEndpoint(this->pendingIndexSession, &indexAddress, &indexPort)) {
+        qDebug() << "Joining via session index endpoint" << indexAddress << indexPort;
+        this->isResolvingHostCode = false;
+        this->connectToResolvedHost(indexAddress, indexPort);
         return;
     }
 
     this->isResolvingHostCode = false;
-    this->connectToResolvedHost(this->pendingLookupAddress, this->pendingLookupPort);
+    this->pendingHostCode.clear();
+    this->validateJoinButton();
+    QtMessageBox::Error(this, "Host Lookup Failed",
+                        "Host code is not registered and the session index has no connect address.");
 }
 
 void NetplaySessionBrowserDialog::accept(void)
@@ -350,7 +378,7 @@ void NetplaySessionBrowserDialog::accept(void)
     }
 
     QString addressPart = addressInput;
-    int port = 9290;
+    int port = Netplay::kDefaultNetplayHostingPort;
 
     const int colonIndex = addressInput.lastIndexOf(':');
     if (colonIndex != -1) {

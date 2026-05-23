@@ -5,6 +5,9 @@
 #ifndef NATTRAVERSALPROTOCOL_HPP
 #define NATTRAVERSALPROTOCOL_HPP
 
+#include <QHostAddress>
+#include <QAbstractSocket>
+#include <QJsonObject>
 #include <QRegularExpression>
 #include <QString>
 #include <cstdint>
@@ -15,10 +18,13 @@ namespace UserInterface::Netplay {
 // as of writing im not sure if im going to make it public...
 // Maybe unelss abuse arises...
 static constexpr const char* kNatTraversalHost = "216.225.154.31";
-static constexpr int kNatTraversalPort = 9290;
+// NAT traversal service (Source/Server/nat_traversal_server) — not the game port.
+static constexpr int kNatTraversalPort = 9290;   // UDP: N02TRAV1 + N02IDX1
+static constexpr int kNatIndexHttpPort = 9291;   // HTTP index browser
+// Socket.IO netplay host listens here; register this port with NAT (REGISTER|port).
+static constexpr int kDefaultNetplayHostingPort = 2626;
 static constexpr const char* kNatTraversalProtocol = "N02TRAV1";
 static constexpr const char* kNatIndexProtocol = "N02IDX1";
-static constexpr int kNatIndexHttpPort = 9291;
 static constexpr uint32_t kNatTraversalMaxHostCode = 0x0FFFFFFF;
 
 inline bool isValidIndexKey(const QString& key)
@@ -67,6 +73,65 @@ inline QString normalizeTraversalCode(const QString& input)
 inline bool looksLikeTraversalCode(const QString& input)
 {
     return !normalizeTraversalCode(input).isEmpty();
+}
+
+inline bool looksLikeIpAddress(const QString& text)
+{
+    QHostAddress address;
+    return address.setAddress(text.trimmed());
+}
+
+inline bool isUsableConnectAddress(const QString& text)
+{
+    QHostAddress address;
+    if (!address.setAddress(text.trimmed())) {
+        return false;
+    }
+    if (address.isLoopback()) {
+        return false;
+    }
+    if (address.protocol() == QAbstractSocket::IPv4Protocol) {
+        const quint32 ip = address.toIPv4Address();
+        const quint8 b0 = static_cast<quint8>((ip >> 24) & 0xFF);
+        const quint8 b1 = static_cast<quint8>((ip >> 16) & 0xFF);
+        if (b0 == 10) {
+            return false;
+        }
+        if (b0 == 192 && b1 == 168) {
+            return false;
+        }
+        if (b0 == 172 && b1 >= 16 && b1 <= 31) {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline bool sessionConnectEndpoint(const QJsonObject& session, QString* addressOut, int* portOut)
+{
+    QString address = session.value(QStringLiteral("connect_address")).toString().trimmed();
+    if (address.isEmpty() || looksLikeTraversalCode(address) || !isUsableConnectAddress(address)) {
+        address = session.value(QStringLiteral("public_address")).toString().trimmed();
+    }
+    if (address.isEmpty() || looksLikeTraversalCode(address) || !isUsableConnectAddress(address)) {
+        return false;
+    }
+
+    const int port = session.value(QStringLiteral("connect_port"))
+                         .toInt(session.value(QStringLiteral("server_port"))
+                                    .toInt(session.value(QStringLiteral("public_port"))
+                                               .toInt(kDefaultNetplayHostingPort)));
+    if (port < 1024 || port > 65535) {
+        return false;
+    }
+
+    if (addressOut) {
+        *addressOut = address;
+    }
+    if (portOut) {
+        *portOut = port;
+    }
+    return true;
 }
 
 inline QString sessionIndexKey(const QString& hostCode)

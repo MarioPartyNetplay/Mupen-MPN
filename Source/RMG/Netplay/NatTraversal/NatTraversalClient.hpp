@@ -26,16 +26,25 @@ public:
     QString hostCode() const;
 
     void startHosting(uint16_t signalingPort);
-    void stopHosting();
+    void resumeHosting(const QString& hostCode, uint16_t signalingPort);
+    void stopHosting(bool unregister = true);
 
     void lookupHost(const QString& hostCode);
     void cancelLookup();
+    // Perform a STUN binding request to discover the externally mapped
+    // address for this client. `hostname` may be a DNS name or IP.
+    // Emits `publicAddressResolved` on success or `publicAddressFailed` on error/timeout.
+    void queryStunServer(const QString& hostname, uint16_t port = 19302);
+    
 
 signals:
-    void hostRegistered(const QString& hostCode);
+    void hostRegistered(const QString& hostCode, const QString& publicAddress, int signalingPort);
     void hostRegistrationFailed(const QString& reason);
     void hostLookupSucceeded(const QString& address, int port);
     void hostLookupFailed(const QString& reason);
+    // STUN: resolve public IP:port by querying a STUN server (RFC 5389)
+    void publicAddressResolved(const QString& address, int port);
+    void publicAddressFailed(const QString& reason);
 
 private slots:
     void onReadyRead();
@@ -59,12 +68,13 @@ private:
 
     static QList<QByteArray> splitTraversalParts(QByteArray datagram);
 
+
     QUdpSocket m_socket;
     QHostAddress m_serverAddress;
     QTimer m_housekeepingTimer;
 
     Mode m_mode = Mode::Idle;
-    uint16_t m_signalingPort = 9290;
+    uint16_t m_signalingPort = kDefaultNetplayHostingPort;
 
     QString m_hostCode;
     int m_hostRegisterAttempts = 0;

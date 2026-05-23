@@ -50,7 +50,7 @@ typedef int socket_t;
 #define DEFAULT_HTTP_PORT 9291
 #define MAX_HOSTS 4096
 #define MAX_INDEX_ENTRIES 512
-#define HOST_TTL_SEC 45
+#define HOST_TTL_SEC 300
 #define INDEX_TTL_SEC 300
 #define MAX_HOST_CODE 0x0FFFFFFFu
 #define MAX_KEY_LEN 128
@@ -279,7 +279,7 @@ static host_entry_t* upsert_host(uint32_t code, uint32_t host_ip, uint16_t port,
 static void trav_register(socket_t sock, const struct sockaddr_in* client, socklen_t client_len, const char* port_text)
 {
     char code_text[8];
-    char reply[64];
+    char reply[96];
     uint16_t port = (uint16_t)atoi(port_text);
     uint32_t code;
 
@@ -298,9 +298,13 @@ static void trav_register(socket_t sock, const struct sockaddr_in* client, sockl
         return;
     }
 
-    snprintf(reply, sizeof(reply), TRAV_PROTOCOL "|REGISTEROK|%s", code_text);
-    send_reply(sock, (const struct sockaddr*)client, client_len, reply);
-    printf("[trav] REGISTER %s -> %s:%u\n", code_text, inet_ntoa(client->sin_addr), (unsigned)port);
+    snprintf(reply, sizeof(reply), TRAV_PROTOCOL "|REGISTEROK|%s|%s|%u", code_text,
+             inet_ntoa(client->sin_addr), (unsigned)port);
+    for (int i = 0; i < 3; ++i) {
+        send_reply(sock, (const struct sockaddr*)client, client_len, reply);
+    }
+    printf("[trav] REGISTER %s -> %s:%u (signaling port %u)\n", code_text, inet_ntoa(client->sin_addr),
+           (unsigned)ntohs(client->sin_port), (unsigned)port);
 }
 
 static void trav_lookup(socket_t sock, const struct sockaddr_in* client, socklen_t client_len, const char* code_text)
@@ -497,9 +501,7 @@ static int split_parts(char* message, int length, char* parts[], int max_parts)
     }
     parts[count++] = message;
     for (int i = 0; i < length && count < max_parts; ++i) {
-        char c = message[i];
-        if (c == '|' || c == '\0') {
-            /* replace separator with NUL and point to next byte (if any) */
+        if (message[i] == '|') {
             message[i] = '\0';
             if (i + 1 < length) {
                 parts[count++] = &message[i + 1];
@@ -535,6 +537,11 @@ static void handle_udp(socket_t sock, const char* buffer, int length, const stru
 
     memcpy(message, buffer, (size_t)length);
     message[length] = '\0';
+    for (int i = 0; i < length; ++i) {
+        if (message[i] == '\0') {
+            message[i] = '|';
+        }
+    }
 
     part_count = split_parts(message, length, parts, 8);
     if (part_count < 2) {
@@ -554,6 +561,11 @@ static void handle_udp(socket_t sock, const char* buffer, int length, const stru
                 }
             }
         } else if (strcmp(parts[1], "LOOKUP") == 0 && part_count >= 3) {
+            for (int i = 0; parts[2][i] != '\0'; i++) {
+                if (parts[2][i] >= 'a' && parts[2][i] <= 'f') {
+                    parts[2][i] = parts[2][i] - 'a' + 'A';
+                }
+            }
             trav_lookup(sock, client, client_len, parts[2]);
         } else if (strcmp(parts[1], "UNREGISTER") == 0 && part_count >= 3) {
             uint32_t code = 0;
@@ -588,8 +600,11 @@ static void handle_udp(socket_t sock, const char* buffer, int length, const stru
 
         prune_index();
         if (strcmp(parts[1], "SET") == 0 && part_count >= 4) {
-            /* parts[3] contains the value (may include base64). */
-            index_set(sock, client, client_len, parts[2], parts[3]);
+            const char* value = field_after_key(message, "SET", parts[2]);
+            if (value == NULL) {
+                value = parts[3];
+            }
+            index_set(sock, client, client_len, parts[2], value);
         } else if (strcmp(parts[1], "GET") == 0 && part_count >= 3) {
             index_get(sock, client, client_len, parts[2]);
         } else if (strcmp(parts[1], "DEL") == 0 && part_count >= 3) {
@@ -1134,11 +1149,7 @@ static void handle_http_client(socket_t client)
         /* Append hosts list for easier debugging */
         offset += (size_t)snprintf(body + offset, sizeof(body) - offset, ",\"hosts\":[");
         int wrote_host = 0;
-        for (int i = 0; i < g_host_count; ++i) {        import socket
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.sendto(b'N02TRAV1|REGISTER|9290', ('216.225.154.31', 9290))
-        s.close()
-        print('sent REGISTER')
+        for (int i = 0; i < g_host_count; ++i) {
             if (!g_hosts[i].in_use) continue;
             if (now - g_hosts[i].last_seen > HOST_TTL_SEC) continue;
             char code_text[8];

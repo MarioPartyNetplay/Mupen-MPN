@@ -15,6 +15,7 @@
 #include <QString>
 #include <memory>
 
+#include "Netplay/NatTraversal/NatTraversalClient.hpp"
 #include "Netplay/NatTraversal/NatTraversalIndexClient.hpp"
 
 #include <RMG-Core/Cheats.hpp>
@@ -40,6 +41,7 @@ private:
     QString romFile;
     int sessionSlot = -1;
     Netplay::NetplayCoordinator* coordinator;
+    std::unique_ptr<Netplay::NatTraversalClient> natTraversalClient;
     std::unique_ptr<Netplay::NatTraversalIndexClient> natIndexClient;
 
     void syncHostSessionState(void);

@@ -409,9 +409,12 @@ void SocketIOClient::on_textMessageReceived(const QString& message)
 
 void SocketIOClient::on_error(QAbstractSocket::SocketError error)
 {
-    qWarning() << "Socket.IO error:" << error;
+    qWarning() << "Socket.IO error:" << error << m_webSocket->errorString();
     m_connectionState = Error;
-    emit connectionError(QString::number(error));
+    const QString message = m_webSocket->errorString().isEmpty()
+                                ? QStringLiteral("WebSocket error %1").arg(static_cast<int>(error))
+                                : m_webSocket->errorString();
+    emit connectionError(message);
 }
 
 void SocketIOClient::on_pong(quint64 elapsedTime, const QByteArray& payload)
