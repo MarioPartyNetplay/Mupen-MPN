@@ -21,6 +21,7 @@
 
 #include <filesystem>
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <sstream>
 #include <format>
@@ -102,15 +103,69 @@ static std::filesystem::path get_cheat_file_name(const CoreRomHeader& romHeader,
     return cheatFileName;
 }
 
+static std::filesystem::path get_named_cheat_file_name(const CoreRomHeader& romHeader, const CoreRomSettings& romSettings)
+{
+    auto normalize_cheat_name = [](std::string cheatName) -> std::string
+    {
+        if (cheatName.empty())
+        {
+            return {};
+        }
+
+        // Strip region/tags and remove characters that should not be part of the
+        // cheat filename. This lets "Mario Party 3 (U)" resolve to MarioParty3.cht.
+        const size_t tagIndex = cheatName.find_first_of("([{<");
+        if (tagIndex != std::string::npos)
+        {
+            cheatName.erase(tagIndex);
+        }
+
+        cheatName.erase(
+            std::remove_if(cheatName.begin(), cheatName.end(), [](unsigned char c) {
+                return !std::isalnum(c);
+            }),
+            cheatName.end());
+
+        return cheatName;
+    };
+
+    std::string cheatName = normalize_cheat_name(romHeader.Name);
+    if (cheatName.empty())
+    {
+        cheatName = normalize_cheat_name(romSettings.GoodName);
+    }
+
+    if (cheatName.empty())
+    {
+        return std::filesystem::path();
+    }
+
+    return std::format("{}.cht", cheatName);
+}
+
 static std::filesystem::path get_shared_cheat_file_path(const CoreRomHeader& romHeader, const CoreRomSettings& romSettings)
 {
     std::filesystem::path cheatFilePath;
+    std::filesystem::path customCheatFilePath;
 
     cheatFilePath = CoreGetSharedDataDirectory();
     cheatFilePath += CORE_DIR_SEPERATOR_STR;
     cheatFilePath += "Cheats";
     cheatFilePath += CORE_DIR_SEPERATOR_STR;
     cheatFilePath += get_cheat_file_name(romHeader, romSettings);
+
+    customCheatFilePath = CoreGetSharedDataDirectory();
+    customCheatFilePath += CORE_DIR_SEPERATOR_STR;
+    customCheatFilePath += "Cheats";
+    customCheatFilePath += CORE_DIR_SEPERATOR_STR;
+    customCheatFilePath += "Custom";
+    customCheatFilePath += CORE_DIR_SEPERATOR_STR;
+    customCheatFilePath += get_named_cheat_file_name(romHeader, romSettings);
+
+    if (std::filesystem::is_regular_file(customCheatFilePath))
+    {
+        return customCheatFilePath;
+    }
 
    return cheatFilePath;
 }
@@ -138,7 +193,7 @@ static std::filesystem::path get_user_cheat_file_path(const CoreRomHeader& romHe
     namedCheatFilePath += CORE_DIR_SEPERATOR_STR;
     namedCheatFilePath += "Cheats-User";
     namedCheatFilePath += CORE_DIR_SEPERATOR_STR;
-    namedCheatFilePath += std::format("{}.cht", romHeader.Name);
+    namedCheatFilePath += get_named_cheat_file_name(romHeader, romSettings);
 
     // try to make the user cheats directory
     // if it doesn't exist yet
@@ -153,9 +208,8 @@ static std::filesystem::path get_user_cheat_file_path(const CoreRomHeader& romHe
         return oldCheatFilePath;
     }
 
-    // use ROM name if it exists instead of CRC
-    if (!std::filesystem::is_regular_file(cheatFilePath)
-      && std::filesystem::is_regular_file(namedCheatFilePath))
+        // prefer the real-name-based cheat file when it exists
+        if (std::filesystem::is_regular_file(namedCheatFilePath))
     {
         return namedCheatFilePath;
     }

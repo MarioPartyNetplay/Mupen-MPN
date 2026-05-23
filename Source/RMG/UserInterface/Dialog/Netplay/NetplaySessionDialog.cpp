@@ -38,6 +38,27 @@ const QStringList& netplaySaveExtensions()
     return extensions;
 }
 
+QJsonArray buildEnabledCheatsSnapshot(const QString& romFile)
+{
+    std::vector<CoreCheat> cheats;
+    QJsonArray hostCheats;
+
+    if (!CoreGetCurrentCheats(romFile.toStdU32String(), cheats))
+    {
+        return hostCheats;
+    }
+
+    for (const auto& cheat : cheats)
+    {
+        if (CoreIsCheatEnabled(romFile.toStdU32String(), cheat))
+        {
+            CheatsCommon::EnableCheat(true, hostCheats, romFile, cheat, true);
+        }
+    }
+
+    return hostCheats;
+}
+
 QJsonArray buildSaveSyncFiles(const QString& romFile)
 {
     QJsonArray saveFiles;
@@ -106,23 +127,11 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     // Auto-enable pre-toggled cheats for host
     if (this->sessionSlot == 0)
     {
-        std::vector<CoreCheat> cheats;
-        if (CoreGetCurrentCheats(this->romFile.toStdU32String(), cheats))
+        QJsonArray hostCheats = buildEnabledCheatsSnapshot(this->romFile);
+        if (!hostCheats.isEmpty())
         {
-            QJsonArray hostCheats;
-            for (const auto& cheat : cheats)
-            {
-                if (CoreIsCheatEnabled(this->romFile.toStdU32String(), cheat))
-                {
-                    CheatsCommon::EnableCheat(true, hostCheats, this->romFile, cheat, true);
-                }
-            }
-
-            if (!hostCheats.isEmpty())
-            {
-                this->setCheats(hostCheats);
-                this->coordinator->sendCheatsUpdate(hostCheats);
-            }
+            this->setCheats(hostCheats);
+            this->coordinator->sendCheatsUpdate(hostCheats);
         }
     }
 
@@ -367,12 +376,18 @@ void NetplaySessionDialog::on_coordinator_playersUpdated(const QStringList& play
             cheatsButton->setEnabled(true);
         }
     }
+
+    if (isP1 && playerNames.size() > 1)
+    {
+        this->syncHostSessionState();
+    }
 }
 
 void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
 {
     // Apply cheats before starting game
     this->applyCheats();
+    this->syncHostSessionState();
 
     QJsonDocument sessionDoc = QJsonDocument::fromJson(this->sessionFile.toUtf8());
     QJsonObject sessionJson = sessionDoc.object();
@@ -464,6 +479,22 @@ void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& sav
     }
 }
 
+void NetplaySessionDialog::syncHostSessionState(void)
+{
+    if (!this->coordinator || this->sessionSlot != 0)
+    {
+        return;
+    }
+
+    const QJsonArray hostCheats = buildEnabledCheatsSnapshot(this->romFile);
+    if (!hostCheats.isEmpty())
+    {
+        this->coordinator->sendCheatsUpdate(hostCheats);
+    }
+
+    this->coordinator->sendSaveSync(buildSaveSyncFiles(this->romFile));
+}
+
 void NetplaySessionDialog::on_coordinator_chatMessageReceived(const QString& playerName, const QString& message)
 {
     QString displayMessage = playerName + ": " + message;
@@ -529,7 +560,7 @@ void NetplaySessionDialog::accept()
     startButton->setEnabled(false);
     cheatsButton->setEnabled(false);
 
-    this->coordinator->sendSaveSync(buildSaveSyncFiles(this->romFile));
+    this->syncHostSessionState();
 
     // Signal coordinator to start the game
     this->coordinator->startGame();

@@ -10,6 +10,7 @@
 #define CORE_INTERNAL
 #include "ConvertStringEncoding.hpp"
 #include "RomSettings.hpp"
+#include "RomHeader.hpp"
 #include "Settings.hpp"
 #include "Library.hpp"
 #include "Error.hpp"
@@ -74,6 +75,13 @@ CORE_EXPORT bool CoreGetCurrentRomSettings(CoreRomSettings& settings)
     settings.TransferPak = m64p_settings.transferpak;
     settings.CountPerOp = m64p_settings.countperop;
     settings.SiDMADuration = m64p_settings.sidmaduration;
+
+    CoreRomHeader header;
+    if (!CoreGetCurrentRomHeader(header))
+    {
+        return false;
+    }
+
     apply_gameid_save_overrides(header, settings);
     return true;
 }

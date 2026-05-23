@@ -37,6 +37,7 @@ private:
     int sessionSlot = -1;
     Netplay::NetplayCoordinator* coordinator;
 
+    void syncHostSessionState(void);
     bool getCheats(std::vector<CoreCheat>& cheats, QJsonArray& cheatsArray);
     bool setCheats(const QJsonArray& cheatsArray);
     bool applyCheats(void);
