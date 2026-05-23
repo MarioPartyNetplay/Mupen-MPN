@@ -788,6 +788,7 @@ void SocketIOServer::handle_CheatsUpdate(QWebSocket* socket, const QJsonObject& 
     QJsonObject payload;
     payload["cheats"] = cheats;
     emitToRoom(client->roomId, "cheats-updated", payload);
+    emit cheatsUpdated(client->roomId, cheats);
 }
 
 void SocketIOServer::handle_SaveSyncUpdate(QWebSocket* socket, const QJsonObject& msg)
@@ -800,6 +801,7 @@ void SocketIOServer::handle_SaveSyncUpdate(QWebSocket* socket, const QJsonObject
     QJsonObject payload;
     payload["files"] = saveFiles;
     emitToRoom(client->roomId, "save-sync", payload);
+    emit saveSyncReceived(client->roomId, saveFiles);
 }
 
 void SocketIOServer::handle_ControllerInput(QWebSocket* socket, const QJsonObject& msg)

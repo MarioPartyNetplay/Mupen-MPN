@@ -343,15 +343,11 @@ bool NetplaySessionDialog::getCheats(std::vector<CoreCheat>& cheats, QJsonArray&
     QJsonDocument sessionDoc = QJsonDocument::fromJson(this->sessionFile.toUtf8());
     QJsonObject sessionJson = sessionDoc.object();
 
-    // Host uses local enabled cheats as authoritative source
-    if (this->sessionSlot == 0)
+    cheatsArray = sessionJson.value("cheats").toArray();
+    if (cheatsArray.isEmpty() && this->sessionSlot == 0)
     {
+        // Host falls back to locally enabled cheats until the first sync.
         cheatsArray = buildEnabledCheatsSnapshot(this->romFile);
-    }
-    else
-    {
-        // Clients ONLY use synced session cheats
-        cheatsArray = sessionJson.value("cheats").toArray();
     }
 
     if (cheatsArray.isEmpty())

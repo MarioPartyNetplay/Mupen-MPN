@@ -129,6 +129,16 @@ signals:
      */
     void chatMessageReceived(const QString& roomId, const QString& playerName, const QString& message);
 
+    /**
+     * @brief Emitted when cheats are updated by a client (embedded host has no websocket)
+     */
+    void cheatsUpdated(const QString& roomId, const QJsonArray& cheats);
+
+    /**
+     * @brief Emitted when save data is synced by a client
+     */
+    void saveSyncReceived(const QString& roomId, const QJsonArray& saveFiles);
+
 private slots:
     /**
      * @brief Handle new WebSocket connection

@@ -11,6 +11,8 @@
 #include <QRandomGenerator>
 #include <QTimer>
 
+#include <iterator>
+
 namespace UserInterface::Netplay {
 
 namespace {
@@ -439,126 +441,264 @@ void NatTraversalClient::resetJoinState()
     m_nextJoinRequestMs = 0;
 }
 
-void NatTraversalClient::queryStunServer(const QString& hostname, uint16_t port)
+namespace {
+
+constexpr quint32 kStunMagicCookie = 0x2112A442;
+constexpr quint16 kStunAttrMappedAddress = 0x0001;
+constexpr quint16 kStunAttrXorMappedAddress = 0x0020;
+
+struct StunServerEndpoint {
+    const char* hostname;
+    quint16 port;
+};
+
+constexpr StunServerEndpoint kDefaultStunServers[] = {
+    {"stun.l.google.com", 19302},
+    {"stun1.l.google.com", 19302},
+    {"stun.cloudflare.com", 3478},
+};
+
+bool parseStunIpv4Endpoint(const QByteArray& data, int valueOffset, quint16 attrLen, quint32 magicCookie,
+                           bool xorEncoded, QString* addressOut, int* portOut)
 {
-    // Resolve hostname (numeric or DNS)
-    QHostAddress serverAddr;
-    if (!serverAddr.setAddress(hostname)) {
-        const QHostInfo info = QHostInfo::fromName(hostname);
-        if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
-            emit publicAddressFailed(QString("Failed to resolve STUN server %1: %2").arg(hostname, info.errorString()));
-            return;
-        }
-        for (const QHostAddress& a : info.addresses()) {
-            if (a.protocol() == QAbstractSocket::IPv4Protocol) {
-                serverAddr = a;
-                break;
-            }
-        }
-        if (serverAddr.isNull()) {
-            emit publicAddressFailed(QString("No IPv4 address for STUN server %1").arg(hostname));
-            return;
-        }
+    if (attrLen < 8 || valueOffset + 8 > data.size()) {
+        return false;
     }
 
-    QUdpSocket* stunSocket = new QUdpSocket(this);
-    if (!stunSocket->bind(QHostAddress::AnyIPv4, 0, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
-        emit publicAddressFailed(QString("Failed to bind STUN socket: %1").arg(stunSocket->errorString()));
-        stunSocket->deleteLater();
+    const unsigned char family = static_cast<unsigned char>(data[valueOffset + 1]);
+    if (family != 0x01) {
+        return false;
+    }
+
+    const quint16 rawPort = (static_cast<unsigned char>(data[valueOffset + 2]) << 8) |
+                            static_cast<unsigned char>(data[valueOffset + 3]);
+    const quint32 rawAddr = (static_cast<unsigned char>(data[valueOffset + 4]) << 24) |
+                            (static_cast<unsigned char>(data[valueOffset + 5]) << 16) |
+                            (static_cast<unsigned char>(data[valueOffset + 6]) << 8) |
+                            static_cast<unsigned char>(data[valueOffset + 7]);
+
+    const quint16 port = xorEncoded ? static_cast<quint16>(rawPort ^ ((magicCookie >> 16) & 0xFFFF)) : rawPort;
+    const quint32 addr = xorEncoded ? (rawAddr ^ magicCookie) : rawAddr;
+
+    if (addressOut) {
+        *addressOut = QString::asprintf("%u.%u.%u.%u",
+                                        (addr >> 24) & 0xFF,
+                                        (addr >> 16) & 0xFF,
+                                        (addr >> 8) & 0xFF,
+                                        addr & 0xFF);
+    }
+    if (portOut) {
+        *portOut = static_cast<int>(port);
+    }
+    return true;
+}
+
+bool parseStunBindingSuccess(const QByteArray& data, const QByteArray& transactionId, QString* addressOut, int* portOut)
+{
+    if (data.size() < 20 || data.mid(8, 12) != transactionId) {
+        return false;
+    }
+
+    const quint16 msgType = (static_cast<unsigned char>(data[0]) << 8) | static_cast<unsigned char>(data[1]);
+    if (msgType != 0x0101) {
+        return false;
+    }
+
+    const quint16 msgLen = (static_cast<unsigned char>(data[2]) << 8) | static_cast<unsigned char>(data[3]);
+    if (data.size() < 20 + msgLen) {
+        return false;
+    }
+
+    int offset = 20;
+    QString mappedAddress;
+    int mappedPort = 0;
+    bool found = false;
+
+    while (offset + 4 <= 20 + msgLen) {
+        const quint16 attrType = (static_cast<unsigned char>(data[offset]) << 8) |
+                                 static_cast<unsigned char>(data[offset + 1]);
+        const quint16 attrLen = (static_cast<unsigned char>(data[offset + 2]) << 8) |
+                                static_cast<unsigned char>(data[offset + 3]);
+        offset += 4;
+        if (offset + attrLen > data.size()) {
+            break;
+        }
+
+        QString address;
+        int port = 0;
+        if (attrType == kStunAttrXorMappedAddress &&
+            parseStunIpv4Endpoint(data, offset, attrLen, kStunMagicCookie, true, &address, &port)) {
+            mappedAddress = address;
+            mappedPort = port;
+            found = true;
+        } else if (attrType == kStunAttrMappedAddress &&
+                   parseStunIpv4Endpoint(data, offset, attrLen, kStunMagicCookie, false, &address, &port)) {
+            mappedAddress = address;
+            mappedPort = port;
+            found = true;
+        }
+
+        const int padded = ((attrLen + 3) / 4) * 4;
+        offset += padded;
+    }
+
+    if (!found) {
+        return false;
+    }
+
+    if (addressOut) {
+        *addressOut = mappedAddress;
+    }
+    if (portOut) {
+        *portOut = mappedPort;
+    }
+    return true;
+}
+
+} // namespace
+
+void NatTraversalClient::queryStunServer(const QString& hostname, uint16_t port)
+{
+    m_stunQueryPrimaryHost = hostname.trimmed();
+    m_stunQueryPrimaryPort = port;
+    m_stunQueryIndex = 0;
+    tryStunServer(0);
+}
+
+void NatTraversalClient::tryStunServer(int serverIndex)
+{
+    QString hostname;
+    quint16 port = m_stunQueryPrimaryPort;
+
+    if (serverIndex == 0 && !m_stunQueryPrimaryHost.isEmpty()) {
+        hostname = m_stunQueryPrimaryHost;
+    } else {
+        const int fallbackIndex = serverIndex - (m_stunQueryPrimaryHost.isEmpty() ? 0 : 1);
+        if (fallbackIndex < 0 || fallbackIndex >= static_cast<int>(std::size(kDefaultStunServers))) {
+            emit publicAddressFailed(QStringLiteral("STUN discovery failed on all servers"));
+            m_stunQueryIndex = -1;
+            return;
+        }
+        hostname = QString::fromLatin1(kDefaultStunServers[fallbackIndex].hostname);
+        port = kDefaultStunServers[fallbackIndex].port;
+    }
+
+    m_stunQueryIndex = serverIndex;
+
+    QHostAddress serverAddr;
+    if (serverAddr.setAddress(hostname)) {
+        sendStunBindingRequest(serverAddr, port);
         return;
     }
 
-    // Build STUN binding request (RFC5389)
-    const quint32 magicCookie = 0x2112A442;
+    QHostInfo::lookupHost(hostname, this, [this, hostname, port, serverIndex](const QHostInfo& info) {
+        if (m_stunQueryIndex != serverIndex) {
+            return;
+        }
+
+        if (info.error() != QHostInfo::NoError) {
+            qWarning() << "STUN DNS lookup failed for" << hostname << ":" << info.errorString();
+            tryStunServer(serverIndex + 1);
+            return;
+        }
+
+        QHostAddress resolved;
+        for (const QHostAddress& candidate : info.addresses()) {
+            if (candidate.protocol() == QAbstractSocket::IPv4Protocol) {
+                resolved = candidate;
+                break;
+            }
+        }
+
+        if (resolved.isNull()) {
+            qWarning() << "STUN DNS lookup returned no IPv4 address for" << hostname;
+            tryStunServer(serverIndex + 1);
+            return;
+        }
+
+        sendStunBindingRequest(resolved, port);
+    });
+}
+
+void NatTraversalClient::sendStunBindingRequest(const QHostAddress& serverAddr, quint16 port)
+{
+    const int serverIndex = m_stunQueryIndex;
+
+    QUdpSocket* stunSocket = new QUdpSocket(this);
+    if (!stunSocket->bind(QHostAddress::AnyIPv4, 0, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
+        qWarning() << "Failed to bind STUN socket:" << stunSocket->errorString();
+        stunSocket->deleteLater();
+        tryStunServer(serverIndex + 1);
+        return;
+    }
+
     QByteArray transactionId(12, 0);
     for (int i = 0; i < 12; ++i) {
         transactionId[i] = static_cast<char>(QRandomGenerator::global()->generate() & 0xFF);
     }
 
     QByteArray request;
-    // Type: 0x0001 (Binding Request)
-    request.append(char(0x00)); request.append(char(0x01));
-    // Length: 0x0000 (no attributes)
-    request.append(char(0x00)); request.append(char(0x00));
-    // Magic cookie
-    request.append(char((magicCookie >> 24) & 0xFF));
-    request.append(char((magicCookie >> 16) & 0xFF));
-    request.append(char((magicCookie >> 8) & 0xFF));
-    request.append(char((magicCookie >> 0) & 0xFF));
-    // Transaction ID
+    request.append(char(0x00));
+    request.append(char(0x01));
+    request.append(char(0x00));
+    request.append(char(0x00));
+    request.append(char((kStunMagicCookie >> 24) & 0xFF));
+    request.append(char((kStunMagicCookie >> 16) & 0xFF));
+    request.append(char((kStunMagicCookie >> 8) & 0xFF));
+    request.append(char((kStunMagicCookie >> 0) & 0xFF));
     request.append(transactionId);
 
-    // Setup timeout
     QTimer* timeoutTimer = new QTimer(this);
     timeoutTimer->setSingleShot(true);
-    timeoutTimer->setInterval(3000);
+    timeoutTimer->setInterval(4000);
 
-    connect(timeoutTimer, &QTimer::timeout, this, [stunSocket, timeoutTimer, this]() {
+    auto failAndContinue = [this, stunSocket, timeoutTimer, serverIndex](const QString& reason) {
+        if (m_stunQueryIndex != serverIndex) {
+            stunSocket->deleteLater();
+            timeoutTimer->deleteLater();
+            return;
+        }
+        qWarning() << reason;
         stunSocket->close();
         stunSocket->deleteLater();
         timeoutTimer->deleteLater();
-        emit publicAddressFailed("STUN request timed out");
+        tryStunServer(serverIndex + 1);
+    };
+
+    connect(timeoutTimer, &QTimer::timeout, this, [failAndContinue]() {
+        failAndContinue(QStringLiteral("STUN request timed out"));
     });
 
-    connect(stunSocket, &QUdpSocket::readyRead, this, [stunSocket, transactionId, magicCookie, timeoutTimer, this]() mutable {
-        while (stunSocket->hasPendingDatagrams()) {
-            QNetworkDatagram dg = stunSocket->receiveDatagram();
-            const QByteArray data = dg.data();
-            if (data.size() < 20) {
-                continue;
-            }
-            // Check transaction ID
-            if (data.mid(8, 12) != transactionId) {
-                continue;
-            }
-            // Message type 0x0101 (Binding Success Response)
-            const quint16 msgType = (static_cast<unsigned char>(data[0]) << 8) | static_cast<unsigned char>(data[1]);
-            if (msgType != 0x0101) {
-                continue;
-            }
+    connect(stunSocket, &QUdpSocket::readyRead, this,
+            [this, stunSocket, transactionId, timeoutTimer, serverIndex, failAndContinue]() {
+                while (stunSocket->hasPendingDatagrams()) {
+                    const QByteArray data = stunSocket->receiveDatagram().data();
+                    QString address;
+                    int mappedPort = 0;
+                    if (!parseStunBindingSuccess(data, transactionId, &address, &mappedPort)) {
+                        continue;
+                    }
 
-            // Parse attributes starting at offset 20
-            int offset = 20;
-            while (offset + 4 <= data.size()) {
-                const quint16 attrType = (static_cast<unsigned char>(data[offset]) << 8) | static_cast<unsigned char>(data[offset+1]);
-                const quint16 attrLen = (static_cast<unsigned char>(data[offset+2]) << 8) | static_cast<unsigned char>(data[offset+3]);
-                offset += 4;
-                if (offset + attrLen > data.size()) break;
-
-                if (attrType == 0x0020 && attrLen >= 8) { // XOR-MAPPED-ADDRESS
-                    const unsigned char family = static_cast<unsigned char>(data[offset + 1]);
-                    if (family == 0x01 && attrLen >= 8) { // IPv4
-                        const quint16 xport = (static_cast<unsigned char>(data[offset+2]) << 8) | static_cast<unsigned char>(data[offset+3]);
-                        const quint16 port = xport ^ static_cast<quint16>((magicCookie >> 16) & 0xFFFF);
-                        const quint32 xaddr = (static_cast<unsigned char>(data[offset+4]) << 24) |
-                                              (static_cast<unsigned char>(data[offset+5]) << 16) |
-                                              (static_cast<unsigned char>(data[offset+6]) << 8) |
-                                              (static_cast<unsigned char>(data[offset+7]));
-                        const quint32 addr = xaddr ^ magicCookie;
-                        QHostAddress mappedAddr;
-                        mappedAddr.setAddress(QString::asprintf("%u.%u.%u.%u",
-                                                                (addr >> 24) & 0xFF,
-                                                                (addr >> 16) & 0xFF,
-                                                                (addr >> 8) & 0xFF,
-                                                                (addr >> 0) & 0xFF));
-                        timeoutTimer->stop();
-                        timeoutTimer->deleteLater();
-                        stunSocket->close();
-                        stunSocket->deleteLater();
-                        emit publicAddressResolved(mappedAddr.toString(), static_cast<int>(port));
+                    if (m_stunQueryIndex != serverIndex) {
                         return;
                     }
+
+                    timeoutTimer->stop();
+                    timeoutTimer->deleteLater();
+                    stunSocket->close();
+                    stunSocket->deleteLater();
+                    m_stunQueryIndex = -1;
+                    qDebug() << "STUN mapped endpoint" << address << mappedPort;
+                    emit publicAddressResolved(address, mappedPort);
+                    return;
                 }
+            });
 
-                // Advance (attributes are padded to 4-byte boundary)
-                int padded = ((attrLen + 3) / 4) * 4;
-                offset += padded;
-            }
-        }
-    });
+    if (stunSocket->writeDatagram(request, serverAddr, port) < 0) {
+        failAndContinue(QString("Failed to send STUN request: %1").arg(stunSocket->errorString()));
+        return;
+    }
 
-    // Send request
-    stunSocket->writeDatagram(request, serverAddr, port);
     timeoutTimer->start();
 }
 

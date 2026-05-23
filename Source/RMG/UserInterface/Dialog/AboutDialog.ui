@@ -126,7 +126,7 @@ font-size:12px;
          <item>
           <widget class="QLabel" name="legacyLabel">
            <property name="text">
-            <string>Legacy:
+            <string>Legacy of Jeff "FunnyBirdMan":
 This project carries forward the vision he believed in.
 We continue it in his honor by making Nintendo 64 netplay accessible to everyone,
 removing barriers, and focusing on ease of use and mod support for the community.

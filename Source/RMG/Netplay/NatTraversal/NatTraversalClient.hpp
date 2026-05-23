@@ -65,6 +65,8 @@ private:
     void failLookup(const QString& reason);
     void resetJoinState();
     void resetHostState();
+    void tryStunServer(int serverIndex);
+    void sendStunBindingRequest(const QHostAddress& serverAddr, quint16 port);
 
     static QList<QByteArray> splitTraversalParts(QByteArray datagram);
 
@@ -84,6 +86,10 @@ private:
     QString m_joinCode;
     qint64 m_joinDeadlineMs = 0;
     qint64 m_nextJoinRequestMs = 0;
+
+    QString m_stunQueryPrimaryHost;
+    quint16 m_stunQueryPrimaryPort = 19302;
+    int m_stunQueryIndex = -1;
 };
 
 } // namespace UserInterface::Netplay

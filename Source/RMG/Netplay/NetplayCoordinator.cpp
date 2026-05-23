@@ -200,6 +200,20 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
                 emit chatMessageReceived(playerName, message);
             });
 
+    connect(m_server.get(), &SocketIOServer::cheatsUpdated,
+            this, [this](const QString& roomId, const QJsonArray& cheats) {
+                if (roomId != m_gameSession.roomId)
+                    return;
+                emit cheatsUpdated(cheats);
+            });
+
+    connect(m_server.get(), &SocketIOServer::saveSyncReceived,
+            this, [this](const QString& roomId, const QJsonArray& saveFiles) {
+                if (roomId != m_gameSession.roomId)
+                    return;
+                emit saveSyncReceived(saveFiles);
+            });
+
     // Create initial room for remote players to join
     m_gameSession.roomId = QUuid::createUuid().toString(QUuid::WithoutBraces).left(8).toUpper();
     m_gameSession.localSlot = 0;
@@ -930,6 +944,7 @@ void NetplayCoordinator::sendCheatsUpdate(const QJsonArray& cheats)
     if (isHostingServer()) {
         if (m_server && !m_gameSession.roomId.isEmpty()) {
             m_server->broadcastCheatsUpdate(m_gameSession.roomId, cheats);
+            emit cheatsUpdated(cheats);
         }
         return;
     }
