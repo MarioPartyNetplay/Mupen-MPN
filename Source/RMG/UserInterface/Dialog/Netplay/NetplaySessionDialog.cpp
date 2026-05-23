@@ -291,9 +291,9 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
                     publicIpLabel->setText("Host Code");
                 }
                 if (!connectAddress.isEmpty() && connectAddress != hostCode) {
-                    publicIpEdit->setText(QString("%1  (%2:%3)").arg(hostCode, connectAddress, QString::number(connectPort)));
+                    publicIpEdit->setText(QString("%1:%2").arg(hostCode));
                 } else {
-                    publicIpEdit->setText(hostCode);
+                    publicIpEdit->setText(QString("%1:%2").arg(connectAddress, QString::number(connectPort)));
                 }
             } else {
                 const QString publicAddress = sessionJson.value("public_address").toString();
