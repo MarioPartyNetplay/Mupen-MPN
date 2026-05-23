@@ -471,6 +471,7 @@ void SettingsDialog::loadInterfaceGeneralSettings(void)
 #ifdef UPDATER
     this->checkForUpdatesCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_CheckForUpdates));
 #endif // UPDATER
+    this->enableDiscordRpcCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_EnableDiscordRPC));
 }
 
 void SettingsDialog::loadInterfaceEmulationSettings(void)
@@ -635,6 +636,7 @@ void SettingsDialog::loadDefaultInterfaceGeneralSettings(void)
 #ifdef UPDATER
     this->checkForUpdatesCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_CheckForUpdates));
 #endif // UPDATER
+    this->enableDiscordRpcCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_EnableDiscordRPC));
 }
 
 void SettingsDialog::loadDefaultInterfaceEmulationSettings(void)
@@ -878,6 +880,7 @@ void SettingsDialog::saveInterfaceGeneralSettings(void)
 #ifdef UPDATER
     CoreSettingsSetValue(SettingsID::GUI_CheckForUpdates, this->checkForUpdatesCheckBox->isChecked());
 #endif // UPDATER
+    CoreSettingsSetValue(SettingsID::GUI_EnableDiscordRPC, this->enableDiscordRpcCheckBox->isChecked());
 }
 
 void SettingsDialog::saveInterfaceEmulationSettings(void)

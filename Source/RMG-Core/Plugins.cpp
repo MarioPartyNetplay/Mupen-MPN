@@ -457,13 +457,16 @@ CORE_EXPORT std::vector<CorePlugin> CoreGetAllPlugins(void)
 
 CORE_EXPORT bool CoreApplyPluginSettings(void)
 {
+    const bool discordRpcEnabled = CoreSettingsGetBoolValue(SettingsID::GUI_EnableDiscordRPC);
     const std::array<std::string, 5> settings = 
     {
         CoreSettingsGetStringValue(SettingsID::Core_RSP_Plugin),
         CoreSettingsGetStringValue(SettingsID::Core_GFX_Plugin),
         CoreSettingsGetStringValue(SettingsID::Core_AUDIO_Plugin),
         CoreSettingsGetStringValue(SettingsID::Core_INPUT_Plugin),
-        CoreSettingsGetStringValue(SettingsID::Core_EXECUTION_Plugin),
+        discordRpcEnabled ?
+            CoreSettingsGetStringValue(SettingsID::Core_EXECUTION_Plugin) :
+            std::string("(None)"),
     };
 
     return apply_plugin_settings(settings);
@@ -472,6 +475,7 @@ CORE_EXPORT bool CoreApplyPluginSettings(void)
 CORE_EXPORT bool CoreApplyRomPluginSettings(void)
 {
     CoreRomSettings romSettings;
+    const bool discordRpcEnabled = CoreSettingsGetBoolValue(SettingsID::GUI_EnableDiscordRPC);
 
     if (!CoreGetCurrentDefaultRomSettings(romSettings))
     {
@@ -492,7 +496,9 @@ CORE_EXPORT bool CoreApplyRomPluginSettings(void)
         CoreSettingsGetStringValue(SettingsID::Game_GFX_Plugin, section),
         CoreSettingsGetStringValue(SettingsID::Game_AUDIO_Plugin, section),
         CoreSettingsGetStringValue(SettingsID::Game_INPUT_Plugin, section),
-        CoreSettingsGetStringValue(SettingsID::Game_EXECUTION_Plugin, section),
+        discordRpcEnabled ?
+            CoreSettingsGetStringValue(SettingsID::Game_EXECUTION_Plugin, section) :
+            std::string("(None)"),
     };
 
     return apply_plugin_settings(settings);

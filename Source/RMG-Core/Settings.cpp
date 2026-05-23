@@ -154,6 +154,9 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::GUI_CheckForUpdates:
         setting = {SETTING_SECTION_GUI, "CheckForUpdates", true};
         break;
+    case SettingsID::GUI_EnableDiscordRPC:
+        setting = {SETTING_SECTION_GUI, "EnableDiscordRPC", true};
+        break;
     case SettingsID::GUI_LastUpdateCheck:
         setting = {SETTING_SECTION_GUI, "LastUpdateCheck", std::string("")};
         break;

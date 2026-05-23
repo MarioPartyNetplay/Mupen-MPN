@@ -38,6 +38,7 @@ enum class SettingsID
     GUI_Theme,
     GUI_IconTheme,
     GUI_CheckForUpdates,
+    GUI_EnableDiscordRPC,
     GUI_LastUpdateCheck,
     GUI_ConfirmExitWhileInGame,
     GUI_Version,
