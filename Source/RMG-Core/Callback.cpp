@@ -8,6 +8,7 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #define CORE_INTERNAL
+#include "Discord.hpp"
 #include "ConvertStringEncoding.hpp"
 #include "Callback.hpp"
 #include "Library.hpp"
@@ -57,11 +58,11 @@ void CoreDebugCallback(void* context, int level, const char* message)
     }
 
     // convert string encoding accordingly
-    if (messageString.starts_with("IS64:"))
+    if (messageString.rfind("IS64:", 0) == 0)
     {
         messageString = CoreConvertStringEncoding(message, CoreStringEncoding::EUC_JP);
     }
-    else if (contextString.starts_with("[CORE]"))
+    else if (contextString.rfind("[CORE]", 0) == 0)
     {
         messageString = CoreConvertStringEncoding(message, CoreStringEncoding::Shift_JIS);
     }
@@ -74,6 +75,11 @@ void CoreStateCallback(void*, m64p_core_param param, int value)
     if (!l_SetupCallbacks)
     {
         return;
+    }
+
+    if (param == static_cast<m64p_core_param>(CoreStateCallbackType::Frame))
+    {
+        CoreDiscordUpdateFrame(value);
     }
 
     l_StateCallbackFunc((CoreStateCallbackType)param, value);

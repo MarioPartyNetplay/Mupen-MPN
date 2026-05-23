@@ -12,10 +12,10 @@
 
 #include "Library.hpp"
 
-#define HOOK_FUNC_OPT(handle, prevar, var) this->var = (ptr_##prevar##var)CoreGetLibrarySymbol(handle, #prevar #var);
+#define HOOK_FUNC_OPT(handle, prevar, var) this->var = (ptr_##prevar##var)CoreGetLibrarySymbol(reinterpret_cast<CoreLibraryHandle>(handle), #prevar #var);
 
 #define HOOK_FUNC(handle, prevar, var)                                    \
-    this->var = reinterpret_cast<ptr_##prevar##var>(CoreGetLibrarySymbol(handle, #prevar #var)); \
+    this->var = reinterpret_cast<ptr_##prevar##var>(CoreGetLibrarySymbol(reinterpret_cast<CoreLibraryHandle>(handle), #prevar #var)); \
     if (this->var == nullptr)                                             \
     {                                                                     \
         this->errorMessage += "Failed to hook \"" #prevar #var "\": ";    \

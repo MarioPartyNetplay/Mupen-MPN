@@ -1093,6 +1093,7 @@ void new_vi(void)
 #endif
 
     execution.frame(l_CurrentVI);
+    StateChanged(M64CORE_FRAME, l_CurrentVI);
 
     if (l_CurrentVI % 30 == 0) {
         if (l_LastVITime != -1) {

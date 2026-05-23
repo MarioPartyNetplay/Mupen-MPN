@@ -22,6 +22,9 @@
 #include "File.hpp"
 #include "Rom.hpp"
 
+// MPN Lets add the MPNMemory header here so we can use the constants for the memory addresses
+#include "MPNMemory.h"
+
 #include "m64p/Api.hpp"
 
 //

@@ -11,6 +11,7 @@
 #define M64P_COREAPI_HPP
 
 #include "api/m64p_common.h"
+#include "api/m64p_debugger.h"
 #include "api/m64p_frontend.h"
 
 #include <string>
@@ -43,6 +44,7 @@ class CoreApi
     ptr_CoreGetRomSettings GetRomSettings;
     ptr_CoreGetAPIVersions GetAPIVersions;
     ptr_CoreErrorMessage ErrorMessage;
+    ptr_DebugMemGetPointer DebugMemGetPointer;
 
   private:
     bool hooked = false;

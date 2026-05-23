@@ -14,6 +14,7 @@
 #include "RomSettings.hpp"
 
 bool CoreDiscordStart(const CoreRomHeader& header, const CoreRomSettings& settings);
+void CoreDiscordUpdateFrame(int frame);
 void CoreDiscordShutdown(void);
 
 #endif // CORE_DISCORD_HPP

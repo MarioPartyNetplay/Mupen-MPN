@@ -43,7 +43,7 @@ bool CoreCallbacks::Init(void)
 {
     // needed for Qt
     qRegisterMetaType<CoreDebugMessageType>("CoreDebugMessageType");
-    qRegisterMetaType<CoreDebugMessageType>("CoreStateCallbackType");
+    qRegisterMetaType<CoreStateCallbackType>("CoreStateCallbackType");
     qRegisterMetaType<CoreCallbackMessage>("CoreCallbackMessage");
 
     this->LoadSettings();
