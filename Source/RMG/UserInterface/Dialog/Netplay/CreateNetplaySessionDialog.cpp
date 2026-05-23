@@ -168,10 +168,6 @@ CreateNetplaySessionDialog::~CreateNetplaySessionDialog(void)
     }
 
     QString server = this->serverComboBox->currentText();
-    if (!server.isEmpty())
-    {
-        CoreSettingsSetValue(SettingsID::Netplay_SelectedServer, server.toStdString());
-    }
 }
 
 QJsonObject CreateNetplaySessionDialog::GetSessionJson(void)
@@ -397,67 +393,7 @@ void CreateNetplaySessionDialog::on_broadcastSocket_readyRead()
     {
         QNetworkDatagram datagram = this->broadcastSocket.receiveDatagram();
         QByteArray incomingData = datagram.data();
-        
-        NetplayCommon::AddServers(this->serverComboBox, QJsonDocument::fromJson(incomingData));
     }
-
-    NetplayCommon::RestoreSelectedServer(this->serverComboBox);
-}
-
-void CreateNetplaySessionDialog::on_jsonServerListDownload_Finished(QNetworkReply* reply)
-{
-    if (reply->error())
-    {
-        QtMessageBox::Error(this, "Server Error", "Failed to retrieve server list json: " + reply->errorString());
-        reply->deleteLater();
-        return;
-    }
-
-    NetplayCommon::AddServers(this->serverComboBox, 
-                              QJsonDocument::fromJson(reply->readAll()));
-
-    reply->deleteLater();
-}
-
-void CreateNetplaySessionDialog::on_dispatcherRegionListDownload_Finished(QNetworkReply* reply)
-{
-    if (reply->error())
-    {
-        QtMessageBox::Error(this, "Server Error", "Failed to retrieve region list: " + reply->errorString());
-        reply->deleteLater();
-        return;
-    }
-
-    NetplayCommon::AddServers(this->serverComboBox, 
-                              QJsonDocument::fromJson(reply->readAll()), true);
-
-    reply->deleteLater();
-}
-
-void CreateNetplaySessionDialog::on_dispatcherServerCreate_Finished(QNetworkReply* reply)
-{
-    if (reply->error())
-    {
-        QtMessageBox::Error(this, "Server Error", "Failed to create server: " + reply->errorString());
-        reply->deleteLater();
-        this->toggleUI(true, this->validate());
-        return;
-    }
-
-    QJsonDocument jsonDocument = QJsonDocument::fromJson(reply->readAll());
-    QJsonObject jsonObject = jsonDocument.object();
-
-    if (jsonObject.empty() || jsonObject.keys().empty())
-    {
-        QtMessageBox::Error(this, "Server Error", "Failed to create server: " + jsonDocument.toJson());
-        reply->deleteLater();
-        this->toggleUI(true, this->validate());
-        return;
-    }
-
-    // Old dispatcher server creation code - no longer used
-    // The session is now created via local hosting
-    reply->deleteLater();
 }
 
 void CreateNetplaySessionDialog::on_nickNameLineEdit_textChanged(void)

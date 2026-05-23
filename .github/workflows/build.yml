@@ -103,15 +103,6 @@ jobs:
             mingw-w64-x86_64-nasm
             mingw-w64-x86_64-minizip
 
-      - name: Verify SDL3_net Submodule
-        shell: msys2 {0}
-        run: |
-          echo "Checking SDL3_net directory..."
-          ls -la Source/3rdParty/SDL3_net/
-
-          echo "Checking for CMakeLists.txt..."
-          ls -la Source/3rdParty/SDL3_net/CMakeLists.txt
-
       - name: Build RMG
         shell: msys2 {0}
         run: |

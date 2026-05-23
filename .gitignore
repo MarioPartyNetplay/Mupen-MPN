@@ -26,8 +26,9 @@ Source/3rdParty/mupen64plus-core/src/asm_defines/asm_defines_nasm.h
 .vscode
 
 # Source/3rdParty/libarchive's shitty ignore file
-Source/3rdParty/libdatachanel/deps
-Source/3rdParty/libdatachanel/CMakeFiles
+Source/3rdParty/libdatachannel/deps
+Source/3rdParty/libdatachannel/CMakeFiles
+Source/3rdParty/libdatachannel
 
 # Git version hash File
 Source/RMG-Core/VersionHash.hpp

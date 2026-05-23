@@ -170,15 +170,6 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::Netplay_Nickname:
         setting = {SETTING_SECTION_NETPLAY, "Nickname", std::string("MPN PLayer")};
         break;
-    case SettingsID::Netplay_ServerJsonUrl:
-        setting = {SETTING_SECTION_NETPLAY, "ServerJsonUrl", std::string("")};
-        break;
-    case SettingsID::Netplay_DispatcherUrl:
-        setting = {SETTING_SECTION_NETPLAY, "DispatcherUrl", std::string("https://dispatch.gopher64.com")};
-        break;
-    case SettingsID::Netplay_SelectedServer:
-        setting = {SETTING_SECTION_NETPLAY, "SelectedServer", std::string("")};
-        break;
 
     case SettingsID::Core_GFX_Plugin:
         setting = {SETTING_SECTION_CORE, "GFX_Plugin", 
@@ -1744,31 +1735,6 @@ CORE_EXPORT bool CoreSettingsUpgrade(void)
         if (CoreSettingsGetBoolValue(SettingsID::Audio_Synchronize))
         {
             CoreSettingsSetValue(SettingsID::Audio_Synchronize, false);
-        }
-    }
-
-    if (settingsVersion == "v0.6.8" || 
-        settingsVersion == "v0.6.9" ||
-        settingsVersion == "v0.7.0" ||
-        settingsVersion == "v0.7.0" ||
-        settingsVersion == "v0.7.1" ||
-        settingsVersion == "v0.7.2" ||
-        settingsVersion == "v0.7.3" ||
-        settingsVersion == "v0.7.4" ||
-        settingsVersion == "v0.7.5" ||
-        settingsVersion == "v0.7.6" ||
-        settingsVersion == "v0.7.7" ||
-        settingsVersion == "v0.7.8" ||
-        settingsVersion == "v0.7.9")
-    {
-        // in v0.8.0 RMG switched to the dispatcher server for netplay,
-        // to keep support for the json file, we only empty that setting
-        // when it is the default value because the default json url
-        // no longer exists
-        settingsString = CoreSettingsGetStringValue(SettingsID::Netplay_ServerJsonUrl);
-        if (settingsString == "https://m64p.s3.amazonaws.com/servers.json")
-        {
-            CoreSettingsSetValue(SettingsID::Netplay_ServerJsonUrl, std::string(""));
         }
     }
 

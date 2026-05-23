@@ -83,10 +83,6 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
     void on_broadcastSocket_readyRead(void);
     void on_publicIpFetch_Finished(QNetworkReply* reply);
 
-    void on_jsonServerListDownload_Finished(QNetworkReply* reply);
-    void on_dispatcherRegionListDownload_Finished(QNetworkReply* reply);
-    void on_dispatcherServerCreate_Finished(QNetworkReply* reply);
-
     void on_nickNameLineEdit_textChanged(void);
 
     void on_romListWidget_OnRomChanged(bool valid);

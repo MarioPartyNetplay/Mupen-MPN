@@ -533,8 +533,6 @@ void SettingsDialog::loadInterfaceNetplaySettings(void)
     }
 
     this->netplayNicknameLineEdit->setText(QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_Nickname)));
-    this->netplayServerUrlLineEdit->setText(QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_ServerJsonUrl)));
-    this->netplayDispatcherUrlLineEdit->setText(QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_DispatcherUrl)));
 }
 
 void SettingsDialog::loadDefaultCoreSettings(void)
@@ -689,8 +687,6 @@ void SettingsDialog::loadDefaultInterfaceOSDSettings(void)
 void SettingsDialog::loadDefaultInterfaceNetplaySettings(void)
 {
     this->netplayNicknameLineEdit->setText(QString::fromStdString(CoreSettingsGetDefaultStringValue(SettingsID::Netplay_Nickname)));
-    this->netplayServerUrlLineEdit->setText(QString::fromStdString(CoreSettingsGetDefaultStringValue(SettingsID::Netplay_ServerJsonUrl)));
-    this->netplayDispatcherUrlLineEdit->setText(QString::fromStdString(CoreSettingsGetDefaultStringValue(SettingsID::Netplay_DispatcherUrl)));
 }
 
 void SettingsDialog::saveSettings(void)
@@ -929,8 +925,6 @@ void SettingsDialog::saveInterfaceOSDSettings(void)
 void SettingsDialog::saveInterfaceNetplaySettings(void)
 {
     CoreSettingsSetValue(SettingsID::Netplay_Nickname, this->netplayNicknameLineEdit->text().toStdString());
-    CoreSettingsSetValue(SettingsID::Netplay_ServerJsonUrl, this->netplayServerUrlLineEdit->text().toStdString());
-    CoreSettingsSetValue(SettingsID::Netplay_DispatcherUrl, this->netplayDispatcherUrlLineEdit->text().toStdString());
 }
 
 void SettingsDialog::commonHotkeySettings(SettingsDialogAction action)
