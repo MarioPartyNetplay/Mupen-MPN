@@ -1,179 +1,150 @@
-name: RMG
+name: Mupen CLI
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
 
 jobs:
-  build-linux:
-    strategy:
-      matrix:
-        include:
-          - { os: ubuntu-24.04, features: ON, architecture: x86_64, configuration: Release }
-          - { os: ubuntu-24.04, features: ON, architecture: x86_64, configuration: Debug }
-          - { os: ubuntu-24.04, features: OFF, architecture: x86_64, configuration: Release }
-          - { os: ubuntu-24.04, features: OFF, architecture: x86_64, configuration: Debug }
-          - { os: ubuntu-24.04-arm, features: ON, architecture: aarch64, configuration: Release }
-          - { os: ubuntu-24.04-arm, features: ON, architecture: aarch64, configuration: Debug }
-          - { os: ubuntu-24.04-arm, features: OFF, architecture: aarch64, configuration: Release }
-          - { os: ubuntu-24.04-arm, features: OFF, architecture: aarch64, configuration: Debug }
-    runs-on: ${{ matrix.os }}
+  linux:
+    runs-on: ubuntu-latest
+
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:gnome-46
+      options: --privileged
+
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout Repository
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - uses: hendrikmuhs/ccache-action@v1.2
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Setup Flatpak
+        run: |
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+          flatpak install -y flathub \
+            org.kde.Sdk//6.8 \
+            org.kde.Platform//6.8
+
+      - name: Install Build Dependencies
+        run: |
+          dnf install -y \
+            cmake \
+            ninja-build \
+            rust \
+            cargo \
+            git \
+            gcc-c++ \
+            libusb1-devel \
+            libXext-devel \
+            libgudev-devel \
+            qt6-qtbase-devel \
+            qt6-qttools-devel \
+            systemd-devel \
+            openal-soft-devel \
+            libevdev-devel \
+            libao-devel \
+            SOIL-devel \
+            libXrandr-devel \
+            SDL3-devel \
+            SDL2-devel \
+            SDL2_net \
+            pulseaudio-libs-devel \
+            bluez-libs-devel \
+            p7zip
+
+      - name: Build Flatpak
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          key: linux-${{ matrix.architecture }}-${{ matrix.features }}-${{ matrix.configuration }}
-      - name: Install Packages
-        run: |
-          # remove and disable snap, this fixes long update times
-          # taken from https://github.com/ading2210/gh-actions-remove-snap/blob/main/workflow.sh
-          sudo systemctl disable --now snapd
-          sudo apt-get purge -y snapd
-          echo "Package: snapd"    | sudo tee /etc/apt/preferences.d/disable-snap.pref
-          echo "Pin: release a=*"  | sudo tee -a /etc/apt/preferences.d/disable-snap.pref
-          echo "Pin-Priority: -10" | sudo tee -a /etc/apt/preferences.d/disable-snap.pref
-          sudo apt-mark hold firefox
+          manifest-path: Package/flatpak.yml
+          bundle: MupenMPN-linux.flatpak
+          cache-key: flatpak-builder-${{ github.sha }}
 
-          sudo apt-get -y update
-          sudo apt-get -y upgrade
-          sudo apt-get -y install cmake libusb-1.0-0-dev libhidapi-dev libsamplerate0-dev libspeex-dev libminizip-dev libfreetype6-dev \
-            libgl1-mesa-dev libglu1-mesa-dev pkg-config zlib1g-dev binutils-dev libspeexdsp-dev qt6-base-dev libqt6svg6-dev libqt6websockets6-dev libvulkan-dev \
-            build-essential nasm git zip appstream xvfb qt6ct mesa-vulkan-drivers
-
-          # sdl3 dependencies
-          sudo apt-get -y install build-essential git make \
-            pkg-config cmake ninja-build gnome-desktop-testing libasound2-dev libpulse-dev \
-            libaudio-dev libjack-dev libsndio-dev libx11-dev libxext-dev \
-            libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev \
-            libxkbcommon-dev libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev \
-            libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev
-      - name: Prepare Environment
-        run: |
-          echo "GIT_REVISION=$(git describe --tags --always)" >> $GITHUB_ENV
-      - name: Build SDL3
-        run: |
-          export sdl_dir="$(pwd)/../SDL3"
-
-          git clone https://github.com/libsdl-org/SDL.git "$sdl_dir" -b release-3.2.28 --depth=1
-
-          mkdir -p "$sdl_dir/build"
-          cmake -S "$sdl_dir" -B "$sdl_dir/build" \
-                -DCMAKE_BUILD_TYPE="Release" \
-                -DCMAKE_INSTALL_LIBDIR="lib/${{ matrix.architecture }}-linux-gnu" \
-                -DCMAKE_INSTALL_FULL_LIBDIR="/usr/lib/${{ matrix.architecture }}-linux-gnu" \
-                -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-                -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-
-          cmake --build "$sdl_dir/build" --parallel "$(nproc)"
-          sudo cmake --install "$sdl_dir/build" --prefix /usr/
-      - name: Build RMG (AppImage)
-        run: |
-          export src_dir="$(pwd)"
-          export build_dir="$(pwd)/Build/AppImage"
-          export bin_dir="$(pwd)/Bin/AppImage"
-    
-          mkdir $build_dir Bin/ -p
-          cmake -S "$src_dir" -B "$build_dir" -DCMAKE_BUILD_TYPE="${{ matrix.configuration }}" \
-                -DNETPLAY=${{ matrix.features }} \
-                -DVRU=${{ matrix.features }} \
-                -DUSE_ANGRYLION=${{ matrix.features }} \
-                -DUPDATER=${{ matrix.features }} \
-                -DAPPIMAGE_UPDATER=${{ matrix.features }} \
-                -DPORTABLE_INSTALL=OFF \
-                -DCMAKE_INSTALL_PREFIX="/usr" \
-                -DCMAKE_INSTALL_LIBDIR="lib"  \
-                -G "Unix Makefiles"
-
-          cmake --build "$build_dir" --parallel "$(nproc)"
-          cmake --install "$build_dir" --strip --prefix="$bin_dir/usr"
-        shell: bash
-      - name: Create AppImage
-        if: ${{ matrix.features == 'ON' && matrix.architecture == 'x86_64' && matrix.configuration == 'Release' }}
-        run: |
-          ./Package/AppImage/Create.sh
-        shell: bash
-      - name: Upload RMG (AppImage)
-        if: ${{ matrix.features == 'ON' && matrix.architecture == 'x86_64' && matrix.configuration == 'Release' }}
-        uses: actions/upload-artifact@v5
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: RMG-Portable-Linux64-${{ env.GIT_REVISION }}
-          path: Bin/*.AppImage
+          name: MupenMPN-linux
+          path: MupenMPN-linux.flatpak
 
-  build-windows:
-    runs-on: windows-2025
-    strategy:
-      matrix:
-        include:
-          - { features: ON, configuration: Release }
-          - { features: ON, configuration: Debug }
-          - { features: OFF, configuration: Release }
-          - { features: OFF, configuration: Debug }
+  windows:
+    runs-on: windows-2022
+
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout Repository
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - uses: hendrikmuhs/ccache-action@v1.2
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: windows-${{ matrix.features }}-${{ matrix.configuration }}
-      - uses: msys2/setup-msys2@v2
+          key: windows-msys2
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
         with:
           path-type: inherit
           update: true
-          msystem: ucrt64
           install: >-
             make
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-freetype
-            mingw-w64-ucrt-x86_64-libpng
-            mingw-w64-ucrt-x86_64-sdl3
-            mingw-w64-ucrt-x86_64-qt6
-            mingw-w64-ucrt-x86_64-libusb
-            mingw-w64-ucrt-x86_64-hidapi
-            mingw-w64-ucrt-x86_64-speexdsp
-            mingw-w64-ucrt-x86_64-libsamplerate
-            mingw-w64-ucrt-x86_64-nasm
-            mingw-w64-ucrt-x86_64-minizip
-            mingw-w64-ucrt-x86_64-vulkan-headers
             git
-      - name: Prepare Environment
-        run: |
-          $env:revision = git describe --tags --always
-          echo "GIT_REVISION=$env:revision" >> $env:GITHUB_ENV
-        shell: pwsh
-      - name: Build RMG (Portable)
-        run: |
-          export src_dir="$(pwd)"
-          export build_dir="$(pwd)/Build/${{ matrix.configuration }}"
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-qt6
+            mingw-w64-x86_64-sdl3
+            mingw-w64-x86_64-hidapi
+            mingw-w64-x86_64-freetype
+            mingw-w64-x86_64-libpng
+            mingw-w64-x86_64-speexdsp
+            mingw-w64-x86_64-libsamplerate
+            mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-minizip
 
-          cmake -S "$src_dir" -B "$build_dir" -DCMAKE_BUILD_TYPE="${{ matrix.configuration }}" \
-                -DNETPLAY=${{ matrix.features }} \
-                -DVRU=${{ matrix.features }} \
-                -DUSE_ANGRYLION=${{ matrix.features }} \
-                -DUPDATER=${{ matrix.features }} \
-                -DPORTABLE_INSTALL=ON \
-                -G "MSYS Makefiles"
+      - name: Verify SDL3_net Submodule
+        shell: msys2 {0}
+        run: |
+          echo "Checking SDL3_net directory..."
+          ls -la Source/3rdParty/SDL3_net/
 
-          cmake --build "$build_dir" --parallel "$(nproc)"
-          cmake --install "$build_dir" --strip --prefix="$src_dir"
-          cmake --build "$build_dir" --target=bundle_dependencies
+          echo "Checking for CMakeLists.txt..."
+          ls -la Source/3rdParty/SDL3_net/CMakeLists.txt
+
+      - name: Build RMG
         shell: msys2 {0}
-      - name: Create Installer
-        if: ${{ matrix.features == 'ON' && matrix.configuration == 'Release' }}
-        run: .\Build\Release\Source\Installer\CreateInstaller.bat
-      - name: Configure RMG (Portable)
-        if: ${{ matrix.features == 'ON' && matrix.configuration == 'Release' }}
-        run: touch Bin/Release/portable.txt
-        shell: msys2 {0}
-      - name: Upload RMG (Portable)
-        if: ${{ matrix.features == 'ON' && matrix.configuration == 'Release' }}
-        uses: actions/upload-artifact@v5
+        run: |
+          chmod +x ./Source/Script/Build.sh
+          ./Source/Script/Build.sh Release
+
+      - name: Upload Windows Artifact (Folder Build)
+        uses: actions/upload-artifact@v4
         with:
-          name: RMG-Portable-Windows64-${{ env.GIT_REVISION }}
+          name: MupenMPN-win32
           path: Bin/Release/*
-      - name: Upload RMG (Installer)
-        if: ${{ matrix.features == 'ON' && matrix.configuration == 'Release' }}
-        uses: actions/upload-artifact@v5
+
+      - name: Install Enigma Virtual Box
+        shell: pwsh
+        run: |
+          Invoke-WebRequest `
+            -Uri "https://enigmaprotector.com/assets/files/enigmavb.exe" `
+            -OutFile enigmavb.exe
+
+          Start-Process -FilePath .\enigmavb.exe -ArgumentList "/S" -Wait
+
+      - name: Create Portable Single EXE
+        shell: msys2 {0}
+        run: |
+          echo "Packaging with Enigma Virtual Box..."
+          mkdir -p Bin/Release/Flat
+          EXE_NAME="MupenMPN.exe"
+          INPUT="Bin/Release/$EXE_NAME"
+          OUTPUT="Bin/Release/Flat/MupenMPN.exe"
+          enigmavbconsole Package/MupenMPN.ebp
+
+      - name: Upload Windows Artifact (Portable EXE)
+        uses: actions/upload-artifact@v4
         with:
-          name: RMG-Setup-Windows64-${{ env.GIT_REVISION }}
-          path: Bin/*.exe
+          name: MupenMPN-win32-portable
+          path: Bin/Release/Flat/
