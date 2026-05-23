@@ -9,13 +9,21 @@ def system(cmd, default):
         return default
 
 if __name__ == "__main__":
-    hash = system("git rev-parse --short=7 HEAD", "0" * 7)  # Ensuring a 7-character fallback
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.normpath(os.path.join(base_path, "..", ".."))
+
+    short_hash = system("git rev-parse --short=7 HEAD", "0" * 7)
+    version = system("git describe --tags --always", short_hash)
+
+    version_file = os.path.join(repo_root, "VERSION")
+    if version == short_hash and os.path.isfile(version_file):
+        with open(version_file, "r", encoding="ascii") as f:
+            version = f.read().strip() or version
 
     mappings = {
-        "GIT_COMMIT_HASH": hash,
+        "GIT_COMMIT_HASH": version,
     }
 
-    base_path = os.path.dirname(os.path.abspath(__file__))
     in_path = os.path.join(base_path, "VersionHash.hpp.in")
     out_path = os.path.join(base_path, "VersionHash.hpp")
 

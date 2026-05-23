@@ -299,20 +299,13 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
         
         if (publicIpEdit) {
             const QString hostCode = sessionJson.value("host_code").toString();
-            const QString connectAddress = sessionJson.value("connect_address").toString();
-            const int connectPort = sessionJson.value("connect_port").toInt(
-                sessionJson.value("public_port").toInt(Netplay::kDefaultNetplayHostingPort));
 
             QLabel* publicIpLabel = this->findChild<QLabel*>("label_3");
             if (!hostCode.isEmpty()) {
                 if (publicIpLabel) {
                     publicIpLabel->setText("Host Code");
                 }
-                if (!connectAddress.isEmpty() && connectAddress != hostCode) {
-                    publicIpEdit->setText(QString("%1:%2").arg(hostCode));
-                } else {
-                    publicIpEdit->setText(QString("%1:%2").arg(connectAddress, QString::number(connectPort)));
-                }
+                publicIpEdit->setText(hostCode);
             } else {
                 const QString publicAddress = sessionJson.value("public_address").toString();
                 const int publicPort = sessionJson.value("public_port").toInt(Netplay::kDefaultNetplayHostingPort);
