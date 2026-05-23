@@ -175,7 +175,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
         CoreSettingsGetBoolValue(SettingsID::GUI_ConfirmExitWhileInGame))
     {
         bool skipExitConfirmation = false;
-        bool ret = QtMessageBox::Question(this, "Are you sure you want to exit RMG?", "Don't ask for confirmation again", skipExitConfirmation);
+        bool ret = QtMessageBox::Question(this, "Are you sure you want to exit Mupen-MPN?", "Don't ask for confirmation again", skipExitConfirmation);
         if (!ret)
         {
             event->ignore();
@@ -814,6 +814,10 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_StartROM));
     this->action_System_StartRom->setShortcut(QKeySequence(keyBinding));
     this->action_System_StartRom->setEnabled(!inEmulation);
+    this->action_System_StartRom2->setShortcut(QKeySequence(keyBinding));
+    this->action_System_StartRom2->setEnabled(!inEmulation);
+    this->action_System_StartRom3->setShortcut(QKeySequence(keyBinding));
+    this->action_System_StartRom3->setEnabled(!inEmulation);
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_StartCombo));
     this->action_System_OpenCombo->setShortcut(QKeySequence(keyBinding));
     this->action_System_OpenCombo->setEnabled(!inEmulation);
@@ -834,6 +838,8 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Screenshot));
     this->action_System_Screenshot->setEnabled(inEmulation);
     this->action_System_Screenshot->setShortcut(QKeySequence(keyBinding));
+    this->action_System_Screenshot2->setEnabled(inEmulation);
+    this->action_System_Screenshot2->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_LimitFPS));
     this->action_System_LimitFPS->setEnabled(inEmulation && !CoreHasInitNetplay());
     this->action_System_LimitFPS->setShortcut(QKeySequence(keyBinding));
@@ -919,15 +925,17 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Settings));
     this->action_Settings_Settings->setShortcut(QKeySequence(keyBinding));
 
-    this->action_View_GameList->setEnabled(!inEmulation);
-    this->action_View_GameGrid->setEnabled(!inEmulation);
     this->action_View_UniformSize->setEnabled(!inEmulation);
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Fullscreen));
     this->action_View_Fullscreen->setEnabled(inEmulation);
     this->action_View_Fullscreen->setShortcut(QKeySequence(keyBinding));
+    this->action_View_Fullscreen2->setEnabled(inEmulation);
+    this->action_View_Fullscreen2->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_RefreshROMList));
     this->action_View_RefreshRoms->setEnabled(!inEmulation);
     this->action_View_RefreshRoms->setShortcut(QKeySequence(keyBinding));
+    this->action_View_RefreshRoms2->setEnabled(!inEmulation);
+    this->action_View_RefreshRoms2->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_ViewLog));
     this->action_View_Log->setShortcut(QKeySequence(keyBinding));
     this->action_View_ClearRomCache->setEnabled(!inEmulation);
@@ -937,8 +945,7 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
 
 #ifdef NETPLAY
     this->action_Netplay_CreateSession->setEnabled(!inEmulation && this->netplaySessionDialog == nullptr);
-    this->action_Netplay_BrowseSessions->setEnabled(!inEmulation && this->netplaySessionDialog == nullptr);
-    this->action_Netplay_ViewSession->setEnabled(inEmulation && this->netplaySessionDialog != nullptr);
+    this->action_Netplay_JoinSession->setEnabled(!inEmulation && this->netplaySessionDialog == nullptr);
 #endif // NETPLAY
 
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_IncreaseVolume));
@@ -951,7 +958,6 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     this->action_Audio_ToggleVolumeMute->setShortcut(QKeySequence(keyBinding));
     this->action_Audio_ToggleVolumeMute->setEnabled(inEmulation);
 }
-
 void MainWindow::updateSaveStateSlotActions(bool inEmulation, bool isPaused)
 {
     std::filesystem::path saveStatePath;
@@ -1225,6 +1231,7 @@ void MainWindow::configureActions(void)
 void MainWindow::connectActionSignals(void)
 {
     connect(this->action_System_StartRom, &QAction::triggered, this, &MainWindow::on_Action_System_OpenRom);
+    connect(this->action_System_StartRom2, &QAction::triggered, this, &MainWindow::on_Action_System_OpenRom);
     connect(this->action_System_OpenCombo, &QAction::triggered, this, &MainWindow::on_Action_System_OpenCombo);
     connect(this->action_System_Exit, &QAction::triggered, this, &MainWindow::on_Action_System_Exit);
 
@@ -1233,6 +1240,8 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_System_HardReset, &QAction::triggered, this, &MainWindow::on_Action_System_HardReset);
     connect(this->action_System_Pause, &QAction::triggered, this, &MainWindow::on_Action_System_Pause);
     connect(this->action_System_Screenshot, &QAction::triggered, this,
+            &MainWindow::on_Action_System_Screenshot);
+    connect(this->action_System_Screenshot2, &QAction::triggered, this,
             &MainWindow::on_Action_System_Screenshot);
     connect(this->action_System_LimitFPS, &QAction::triggered, this, &MainWindow::on_Action_System_LimitFPS);
     connect(this->action_System_SaveState, &QAction::triggered, this, &MainWindow::on_Action_System_SaveState);
@@ -1243,26 +1252,29 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_System_GSButton, &QAction::triggered, this, &MainWindow::on_Action_System_GSButton);
 
     connect(this->action_Settings_Graphics, &QAction::triggered, this, &MainWindow::on_Action_Settings_Graphics);
+    connect(this->action_Settings_Graphics2, &QAction::triggered, this, &MainWindow::on_Action_Settings_Graphics);
     connect(this->action_Settings_Audio, &QAction::triggered, this, &MainWindow::on_Action_Settings_Audio);
     connect(this->action_Settings_Rsp, &QAction::triggered, this, &MainWindow::on_Action_Settings_Rsp);
     connect(this->action_Settings_Input, &QAction::triggered, this,
             &MainWindow::on_Action_Settings_Input);
+    connect(this->action_Settings_Input2, &QAction::triggered, this,
+            &MainWindow::on_Action_Settings_Input);
     connect(this->action_Settings_Settings, &QAction::triggered, this, &MainWindow::on_Action_Settings_Settings);
-
+    connect(this->action_Settings_Settings2, &QAction::triggered, this, &MainWindow::on_Action_Settings_Settings);
     connect(this->action_View_Toolbar, &QAction::toggled, this, &MainWindow::on_Action_View_Toolbar);
     connect(this->action_View_StatusBar, &QAction::toggled, this, &MainWindow::on_Action_View_StatusBar);
     connect(this->action_View_GameList, &QAction::toggled, this, &MainWindow::on_Action_View_GameList);
     connect(this->action_View_GameGrid, &QAction::toggled, this, &MainWindow::on_Action_View_GameGrid);
     connect(this->action_View_UniformSize, &QAction::toggled, this, &MainWindow::on_Action_View_UniformSize);
     connect(this->action_View_Fullscreen, &QAction::triggered, this, &MainWindow::on_Action_View_Fullscreen);
+    connect(this->action_View_Fullscreen2, &QAction::triggered, this, &MainWindow::on_Action_View_Fullscreen);
     connect(this->action_View_RefreshRoms, &QAction::triggered, this, &MainWindow::on_Action_View_RefreshRoms);
+    connect(this->action_View_RefreshRoms2, &QAction::triggered, this, &MainWindow::on_Action_View_RefreshRoms);
     connect(this->action_View_ClearRomCache, &QAction::triggered, this, &MainWindow::on_Action_View_ClearRomCache);
     connect(this->action_View_Log, &QAction::triggered, this, &MainWindow::on_Action_View_Log);
     connect(this->action_View_Search, &QAction::triggered, this, &MainWindow::on_Action_View_Search);
-
     connect(this->action_Netplay_CreateSession, &QAction::triggered, this, &MainWindow::on_Action_Netplay_CreateSession);
-    connect(this->action_Netplay_BrowseSessions, &QAction::triggered, this, &MainWindow::on_Action_Netplay_BrowseSessions);
-    connect(this->action_Netplay_ViewSession, &QAction::triggered, this, &MainWindow::on_Action_Netplay_ViewSession);
+    connect(this->action_Netplay_JoinSession, &QAction::triggered, this, &MainWindow::on_Action_Netplay_JoinSession);
 
     connect(this->action_Help_Github, &QAction::triggered, this, &MainWindow::on_Action_Help_Github);
     connect(this->action_Help_About, &QAction::triggered, this, &MainWindow::on_Action_Help_About);
@@ -2074,7 +2086,7 @@ void MainWindow::on_Action_Netplay_CreateSession(void)
 #endif // NETPLAY
 }
 
-void MainWindow::on_Action_Netplay_BrowseSessions(void)
+void MainWindow::on_Action_Netplay_JoinSession(void)
 {
 #ifdef NETPLAY
     if (this->netplayCoordinator == nullptr)
@@ -2091,20 +2103,9 @@ void MainWindow::on_Action_Netplay_BrowseSessions(void)
 #endif // NETPLAY
 }
 
-void MainWindow::on_Action_Netplay_ViewSession(void)
-{
-#ifdef NETPLAY
-    if (this->netplaySessionDialog != nullptr &&
-        this->netplaySessionDialog->isHidden())
-    {
-        this->netplaySessionDialog->show();
-    }
-#endif
-}
-
 void MainWindow::on_Action_Help_Github(void)
 {
-    QDesktopServices::openUrl(QUrl("https://github.com/Rosalie241/RMG"));
+    QDesktopServices::openUrl(QUrl("https://github.com/MarioPartyNetplay/Mupen-MPN"));
 }
 
 void MainWindow::on_Action_Help_About(void)

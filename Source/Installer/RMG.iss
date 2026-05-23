@@ -4,7 +4,7 @@
 #define MyAppName "Mupen MPN"
 #define MyAppPublisher "Rosalie"
 #define MyAppURL "https://github.com/Rosalie241/RMG"
-#define MyAppExeName "RMG.exe"
+#define MyAppExeName "Mupen-MPN.exe"
 
 ; REQUIREMENTS:
 ; Specify MyAppDir, which should point to the binaries

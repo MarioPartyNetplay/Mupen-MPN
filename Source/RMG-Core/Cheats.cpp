@@ -1,5 +1,5 @@
 /*
- * Rosalie's Mupen GUI - https://github.com/Rosalie241/RMG
+ * Mupen MPN - https://github.com/Rosalie241/RMG
  *  Copyright (C) 2020-2026 Rosalie Wanders <rosalie@mailbox.org>
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -82,29 +82,6 @@ static bool read_file_lines(const std::filesystem::path& file, std::vector<std::
 
 static std::filesystem::path get_cheat_file_name(const CoreRomHeader& romHeader, const CoreRomSettings& romSettings)
 {
-    std::filesystem::path cheatFileName;
-
-    // fallback to using MD5 as file name when CRC1 & CRC2 & CountryCode are 0
-    if (romHeader.CRC1 == 0 && romHeader.CRC2 == 0 && romHeader.CountryCode == 0)
-    {
-        // ensure MD5 is a valid length
-        if (romSettings.MD5.size() != 32)
-        { // if it's invalid, return an empty path
-            return std::filesystem::path();
-        }
-
-        cheatFileName = std::format("{}.cht", romSettings.MD5);
-    }
-    else
-    { // else use CRC1 & CRC2 & CountryCode
-        cheatFileName = std::format("{:08X}-{:08X}-{:02X}.cht", romHeader.CRC1, romHeader.CRC2, romHeader.CountryCode);
-    }
-
-    return cheatFileName;
-}
-
-static std::filesystem::path get_named_cheat_file_name(const CoreRomHeader& romHeader, const CoreRomSettings& romSettings)
-{
     auto normalize_cheat_name = [](std::string cheatName) -> std::string
     {
         if (cheatName.empty())
@@ -160,7 +137,7 @@ static std::filesystem::path get_shared_cheat_file_path(const CoreRomHeader& rom
     customCheatFilePath += CORE_DIR_SEPERATOR_STR;
     customCheatFilePath += "Custom";
     customCheatFilePath += CORE_DIR_SEPERATOR_STR;
-    customCheatFilePath += get_named_cheat_file_name(romHeader, romSettings);
+    customCheatFilePath += get_cheat_file_name(romHeader, romSettings);
 
     if (std::filesystem::is_regular_file(customCheatFilePath))
     {
@@ -193,7 +170,7 @@ static std::filesystem::path get_user_cheat_file_path(const CoreRomHeader& romHe
     namedCheatFilePath += CORE_DIR_SEPERATOR_STR;
     namedCheatFilePath += "Cheats-User";
     namedCheatFilePath += CORE_DIR_SEPERATOR_STR;
-    namedCheatFilePath += get_named_cheat_file_name(romHeader, romSettings);
+    namedCheatFilePath += get_cheat_file_name(romHeader, romSettings);
 
     // try to make the user cheats directory
     // if it doesn't exist yet

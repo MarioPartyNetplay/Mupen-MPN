@@ -1,6 +1,6 @@
 /*
  * Rosalie's Mupen GUI - https://github.com/Rosalie241/RMG
- *  Copyright (C) 2020-2026 Rosalie Wanders <rosalie@mailbox.org>
+ *  Copyright (C) 2020 Rosalie Wanders <rosalie@mailbox.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 3.
@@ -86,6 +86,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     bool ui_ShowStatusbar = false;
 
     bool ui_ManuallyPaused = true;
+
     bool ui_ManuallySavedState  = false;
     bool ui_ManuallyLoadedState = false;
 
@@ -145,7 +146,6 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     void connectEmulationThreadSignals(void);
     void launchEmulationThread(QString cartRom, QString address, int port, int player);
     void launchEmulationThread(QString cartRom, QString diskRom = "", bool refreshRomListAfterEmulation = false, int slot = -1, bool netplay = false, bool dragdrop = false);
-
     QString getSaveStateSlotDateTimeText(QAction* action);
     QString getSaveStateSlotText(QAction* action, int slot);
 
@@ -219,8 +219,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     void on_Action_View_Search(void);
 
     void on_Action_Netplay_CreateSession(void);
-    void on_Action_Netplay_BrowseSessions(void);
-    void on_Action_Netplay_ViewSession(void);
+    void on_Action_Netplay_JoinSession(void);
 
     void on_Action_Help_Github(void);
     void on_Action_Help_About(void);

@@ -168,7 +168,7 @@ static l_Setting get_setting(SettingsID settingId)
         break;
 
     case SettingsID::Netplay_Nickname:
-        setting = {SETTING_SECTION_NETPLAY, "Nickname", std::string("NetplayUser")};
+        setting = {SETTING_SECTION_NETPLAY, "Nickname", std::string("MPN PLayer")};
         break;
     case SettingsID::Netplay_ServerJsonUrl:
         setting = {SETTING_SECTION_NETPLAY, "ServerJsonUrl", std::string("")};
