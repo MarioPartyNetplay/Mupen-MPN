@@ -28,6 +28,7 @@ LockstepEngine::LockstepEngine(const Config& config)
         std::cerr << "LockstepEngine: numPlayers must be 2-4, got " << config.numPlayers << std::endl;
     }
 
+    m_config.stallTimeoutMilliseconds = stallTimeoutForDelayFrames(m_config.inputDelayFrames);
     m_dataChannels.resize(config.numPlayers);
 }
 
@@ -69,29 +70,20 @@ void LockstepEngine::setDataChannel(int peerSlot, std::shared_ptr<WebRTCDataChan
     }
 }
 
-void LockstepEngine::submitLocalInput(uint32_t controllerState) {
-    broadcastInput(controllerState);
+void LockstepEngine::submitLocalInput(uint32_t controllerState)
+{
+    const uint32_t sendFrame = getSendFrameNumber();
 
     {
         std::lock_guard<std::recursive_mutex> lock(m_mutex);
-        m_frameBuffer[m_currentFrameNumber].playerInputs[m_config.localPlayerSlot] = controllerState;
-        m_frameReceived[m_config.localPlayerSlot] = true;
+        FrameInputs& frameInputs = m_frameBuffer[sendFrame];
+        frameInputs.frameNumber = sendFrame;
+        frameInputs.playerInputs[m_config.localPlayerSlot] = controllerState;
         m_lastKnownInputs[m_config.localPlayerSlot] = controllerState;
     }
 
-    // --- THE FIX: BLOCK THE EMULATOR UNTIL NETWORK DATA ARRIVES ---
-    if (m_config.numPlayers > 1) {
-        bool ready = waitForAllInputs(m_currentFrameNumber, m_config.stallTimeoutMilliseconds);
-        if (!ready) {
-            applyTimeoutFallback(m_currentFrameNumber);
-        }
-    }
-
-    // Now everyone's input is securely in the buffer. 
-    // Fire the callback so Coordinator can save it for getSyncedInput!
-    if (m_callbacks.frameReady) {
-        m_callbacks.frameReady(m_currentFrameNumber, m_frameBuffer[m_currentFrameNumber].playerInputs);
-    }
+    // Network send is handled by NetplayCoordinator (Socket.IO). WebRTC path only:
+    broadcastInput(controllerState, sendFrame);
 }
 
 void LockstepEngine::submitRemoteInput(int fromSlot, uint32_t frameNumber, uint32_t controllerState)
@@ -106,19 +98,12 @@ void LockstepEngine::submitRemoteInput(int fromSlot, uint32_t frameNumber, uint3
     // Do not require a WebRTC channel here, or host-relayed inputs will be dropped
     // before they can enter the lockstep buffer.
 
-    // Handle slight frame number mismatches (e.g., input for frame N when we expect N-1)
-    // This provides tolerance for network jitter.
-    uint32_t targetFrame = frameNumber;
-    if (frameNumber < m_currentFrameNumber && (m_currentFrameNumber - frameNumber) <= 2) {
-        // Input is slightly behind; store it but mark as out-of-order
-        targetFrame = frameNumber;
-    } else if (frameNumber >= m_currentFrameNumber) {
-        // Input is current or future frame
-        targetFrame = frameNumber;
-    } else {
-        // Input is too far in the past; skip it
+    // Allow slightly late packets; with input delay, early (future) packets are normal.
+    constexpr uint32_t kFrameSlack = 4;
+    if (frameNumber + kFrameSlack < m_currentFrameNumber) {
         return;
     }
+    const uint32_t targetFrame = frameNumber;
 
     FrameInputs& frameInputs = m_frameBuffer[targetFrame];
     frameInputs.frameNumber = targetFrame;
@@ -138,13 +123,30 @@ void LockstepEngine::submitRemoteInput(int fromSlot, uint32_t frameNumber, uint3
 
 bool LockstepEngine::advanceFrame()
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    
-    // Clear the received flags so we are forced to wait for fresh packets next frame
-    m_frameReceived.clear(); 
-    
-    m_currentFrameNumber++;
-    return true; 
+    const uint32_t frameNumber = m_currentFrameNumber;
+
+    if (m_config.numPlayers > 1) {
+        bool ready = waitForAllInputs(frameNumber, m_config.stallTimeoutMilliseconds);
+        if (!ready) {
+            std::lock_guard<std::recursive_mutex> lock(m_mutex);
+            applyTimeoutFallback(frameNumber);
+        }
+    }
+
+    std::map<int, uint32_t> frameInputs;
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        frameInputs = m_frameBuffer[frameNumber].playerInputs;
+        m_frameReceived.clear();
+        m_currentFrameNumber++;
+        pruneOldFrames(m_currentFrameNumber > 120 ? m_currentFrameNumber - 120 : 0);
+    }
+
+    if (m_callbacks.frameReady) {
+        m_callbacks.frameReady(frameNumber, frameInputs);
+    }
+
+    return true;
 }
 
 void LockstepEngine::checkDesync(uint32_t romChecksum)
@@ -185,6 +187,11 @@ void LockstepEngine::requestResync()
 uint32_t LockstepEngine::getCurrentFrameNumber() const
 {
     return m_currentFrameNumber;
+}
+
+uint32_t LockstepEngine::getSendFrameNumber() const
+{
+    return m_currentFrameNumber + static_cast<uint32_t>(m_config.inputDelayFrames);
 }
 
 std::map<int, uint32_t> LockstepEngine::getCurrentFrameInputs() const
@@ -254,9 +261,29 @@ void LockstepEngine::setInputDelayFrames(int frames)
         frames = 99;
     }
     m_config.inputDelayFrames = frames;
-    // Higher buffer waits longer for peer input before timing out (smoother FPS, more latency).
-    m_config.stallTimeoutMilliseconds = frames == 0 ? 100 : std::min(frames * 33, 3300);
+    m_config.stallTimeoutMilliseconds = stallTimeoutForDelayFrames(frames);
     std::cout << "LockstepEngine: Input delay changed to " << frames << " frames" << std::endl;
+}
+
+int LockstepEngine::stallTimeoutForDelayFrames(int inputDelayFrames)
+{
+    if (inputDelayFrames <= 0) {
+        // Zero delay: strict lockstep, short wait per frame.
+        return 100;
+    }
+    // With delay buffering, inputs should already be in the buffer; only wait briefly on loss.
+    return std::min(std::max(50, inputDelayFrames * 8), 500);
+}
+
+void LockstepEngine::pruneOldFrames(uint32_t oldestFrameToKeep)
+{
+    for (auto it = m_frameBuffer.begin(); it != m_frameBuffer.end();) {
+        if (it->first < oldestFrameToKeep) {
+            it = m_frameBuffer.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void LockstepEngine::onDataChannelBinaryMessageReceived(int peerSlot, const std::vector<uint8_t>& data)
@@ -287,16 +314,11 @@ void LockstepEngine::onDataChannelError(int peerSlot, const std::string& error)
     }
 }
 
-void LockstepEngine::broadcastInput(uint32_t controllerState) {
+void LockstepEngine::broadcastInput(uint32_t controllerState, uint32_t frameNumber)
+{
     std::vector<uint8_t> packet(INPUT_PACKET_SIZE);
-    uint32_t frameNum;
-    
-    {
-        std::lock_guard<std::recursive_mutex> lock(m_mutex);
-        frameNum = m_currentFrameNumber;
-    }
 
-    std::memcpy(packet.data(), &frameNum, 4);
+    std::memcpy(packet.data(), &frameNumber, 4);
     std::memcpy(packet.data() + 4, &controllerState, 4);
 
     std::lock_guard<std::recursive_mutex> lock(m_mutex);

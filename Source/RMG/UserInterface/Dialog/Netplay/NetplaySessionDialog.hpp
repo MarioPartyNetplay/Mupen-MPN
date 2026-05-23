@@ -50,6 +50,9 @@ private:
     bool setCheats(const QJsonArray& cheatsArray);
     bool applyCheats(void);
     void updateCheatsTreeWidget(void);
+    bool isLocalSessionHost(void) const;
+    void applyHostOnlyControlsVisibility(void);
+    void setLayoutWidgetsVisible(QLayout* layout, bool visible);
 
 private slots:
     void on_netplay_connected();

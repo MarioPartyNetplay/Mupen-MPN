@@ -148,7 +148,7 @@
      void on_socketIO_disconnected();
      void on_socketIO_connectionError(const QString& error);
      void on_socketIO_roomCreated(const QString& roomId);
-     void on_socketIO_roomJoined(const QString& roomId);
+     void on_socketIO_roomJoined(const QString& roomId, int slotIndex);
      void on_socketIO_roomLeft();
      void on_socketIO_roomClosed(const QString& reason);
      void on_socketIO_playersUpdated(const QList<SocketIOClient::PlayerInfo>& players);

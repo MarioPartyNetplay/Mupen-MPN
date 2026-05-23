@@ -83,6 +83,8 @@ public:
     void requestResync();
 
     uint32_t getCurrentFrameNumber() const;
+    /** Frame number to tag outbound packets with (current + input delay). */
+    uint32_t getSendFrameNumber() const;
     std::map<int, uint32_t> getCurrentFrameInputs() const;
     bool isDesynchronized() const;
     int getPendingInputsCount() const;
@@ -92,7 +94,10 @@ public:
     void setInputDelayFrames(int frames);
     void setNumPlayers(int numPlayers);
     void setLocalPlayerSlot(int slot);
-    
+
+    /** Stall timeout (ms) used when waiting for missing inputs at a frame. */
+    static int stallTimeoutForDelayFrames(int inputDelayFrames);
+
 private:
     static const int INPUT_PACKET_SIZE = 8;
     static const uint32_t FALLBACK_INPUT = 0x00000000;
@@ -101,7 +106,8 @@ private:
     void onDataChannelClosed(int peerSlot);
     void onDataChannelError(int peerSlot, const std::string& error);
 
-    void broadcastInput(uint32_t controllerState);
+    void broadcastInput(uint32_t controllerState, uint32_t frameNumber);
+    void pruneOldFrames(uint32_t oldestFrameToKeep);
     void processInputPacket(int fromSlot, const std::vector<uint8_t>& packet);
     bool waitForAllInputs(uint32_t frameNumber, int timeoutMs);
     void applyTimeoutFallback(uint32_t frameNumber);

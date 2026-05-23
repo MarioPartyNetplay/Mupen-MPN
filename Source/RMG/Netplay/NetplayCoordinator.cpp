@@ -77,10 +77,10 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
     // Initialize lockstep config
     m_lockstepConfig.numPlayers = 4;
     m_lockstepConfig.localPlayerSlot = 0;
-    m_lockstepConfig.inputDelayFrames = 4;
+    m_lockstepConfig.inputDelayFrames = 6;
     m_lockstepConfig.resyncEnabled = false;
     m_lockstepConfig.resyncCheckIntervalFrames = 30;
-    m_lockstepConfig.stallTimeoutMilliseconds = 1000;
+    m_lockstepConfig.stallTimeoutMilliseconds = RMGCore::LockstepEngine::stallTimeoutForDelayFrames(6);
 
     qDebug() << "NetplayCoordinator created";
     UserInterface::Netplay::g_netplayCoordinator = this;
@@ -412,18 +412,18 @@ void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
 {
     if (m_state != InGame || !m_lockstepEngine) return;
 
-    uint32_t frameNumber = m_lockstepEngine->getCurrentFrameNumber();
+    // Tag outbound packets with the delayed frame so peers receive them before we execute.
+    const uint32_t sendFrameNumber = m_lockstepEngine->getSendFrameNumber();
 
     if (isHostingServer()) {
-        // P1 (Host) sends their input to the server to be broadcast to P2
-        QMetaObject::invokeMethod(m_server.get(), [this, frameNumber, controllerState](){
-            m_server->broadcastControllerInput(m_gameSession.roomId, m_lockstepConfig.localPlayerSlot, frameNumber, controllerState);
-        }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(m_server.get(), [this, sendFrameNumber, controllerState]() {
+            m_server->broadcastControllerInput(m_gameSession.roomId, m_lockstepConfig.localPlayerSlot,
+                                               sendFrameNumber, controllerState);
+        }, Qt::BlockingQueuedConnection);
     } else if (m_socketIO) {
-        // Guests send input to host via Socket.IO transport.
-        QMetaObject::invokeMethod(m_socketIO.get(), [this, frameNumber, controllerState](){
-            m_socketIO->sendControllerInput(frameNumber, controllerState);
-        }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(m_socketIO.get(), [this, sendFrameNumber, controllerState]() {
+            m_socketIO->sendControllerInput(sendFrameNumber, controllerState);
+        }, Qt::BlockingQueuedConnection);
     }
 
     m_lockstepEngine->submitLocalInput(controllerState);
@@ -563,13 +563,16 @@ void NetplayCoordinator::on_socketIO_roomCreated(const QString& roomId)
     emit roomCreated(roomId, 0);
 }
 
-void NetplayCoordinator::on_socketIO_roomJoined(const QString& roomId)
+void NetplayCoordinator::on_socketIO_roomJoined(const QString& roomId, int slotIndex)
 {
-    qDebug() << "NetplayCoordinator: Room joined" << roomId;
+    qDebug() << "NetplayCoordinator: Room joined" << roomId << "slot:" << slotIndex;
     m_gameSession.roomId = roomId;
-    // Slot will be set by on_socketIO_playersUpdated
+    if (slotIndex >= 0) {
+        m_gameSession.localSlot = slotIndex;
+        m_lockstepConfig.localPlayerSlot = slotIndex;
+    }
     setState(InLobby);
-    emit roomJoined(roomId, m_gameSession.localSlot);
+    emit roomJoined(roomId, slotIndex >= 0 ? slotIndex : m_gameSession.localSlot);
 }
 
 void NetplayCoordinator::on_socketIO_roomLeft()

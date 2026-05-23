@@ -147,7 +147,7 @@ signals:
 
     // Room signals
     void roomCreated(const QString& roomId);
-    void roomJoined(const QString& roomId);
+    void roomJoined(const QString& roomId, int slotIndex);
     void roomLeft();
     void roomClosed(const QString& reason);
     void playersUpdated(const QList<PlayerInfo>& players);

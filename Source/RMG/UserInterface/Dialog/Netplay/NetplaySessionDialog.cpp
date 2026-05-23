@@ -103,7 +103,10 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     QJsonDocument sessionDoc = QJsonDocument::fromJson(sessionFile.toUtf8());
     QJsonObject sessionJson = sessionDoc.object();
     this->romFile = sessionJson.value("rom_path").toString();
-    this->sessionSlot = sessionJson.value("slot").toInt(-1);
+    this->sessionSlot = sessionJson.value("slot").toInt(sessionJson.value("slotIndex").toInt(-1));
+    if (this->sessionSlot < 0 && this->coordinator) {
+        this->sessionSlot = this->coordinator->getGameSession().localSlot;
+    }
 
     const QString hostCode = sessionJson.value("host_code").toString();
     if (this->sessionSlot == 0 && !hostCode.isEmpty())
@@ -166,16 +169,31 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     const int initialBufferDelay = sessionJson.value("buffer_delay").toInt(this->coordinator->getInputDelayFrames());
     this->bufferDelaySpinBox->setValue(initialBufferDelay);
     this->coordinator->setInputDelayFrames(initialBufferDelay);
-    const bool isHost = this->sessionSlot == 0;
+    connect(this->coordinator, &Netplay::NetplayCoordinator::roomJoined,
+            this, [this](const QString&, int slot) {
+        this->sessionSlot = slot;
+        QJsonDocument sessionDoc = QJsonDocument::fromJson(this->sessionFile.toUtf8());
+        QJsonObject sessionJson = sessionDoc.object();
+        sessionJson.insert("slot", slot);
+        sessionJson.insert("slotIndex", slot);
+        this->sessionFile = QJsonDocument(sessionJson).toJson(QJsonDocument::Compact);
+        this->applyHostOnlyControlsVisibility();
+    });
+
+    const bool isHost = this->isLocalSessionHost();
     this->bufferDelaySpinBox->setReadOnly(!isHost);
     connect(this->bufferDelaySpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
-            this, [this, isHost](int value) {
-        if (!isHost) {
+            this, [this](int value) {
+        if (!this->isLocalSessionHost()) {
             return;
         }
         this->coordinator->sendInputDelayUpdate(value);
+        QJsonDocument sessionDoc = QJsonDocument::fromJson(this->sessionFile.toUtf8());
+        QJsonObject sessionJson = sessionDoc.object();
+        sessionJson.insert("buffer_delay", value);
+        this->sessionFile = QJsonDocument(sessionJson).toJson(QJsonDocument::Compact);
     });
-    if (isHost) {
+    if (this->isLocalSessionHost()) {
         this->coordinator->sendInputDelayUpdate(initialBufferDelay);
     }
     connect(this->coordinator, &Netplay::NetplayCoordinator::inputDelayChanged,
@@ -332,10 +350,91 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     qDebug() << "Netplay Session created:" << sessionJson.value("player_name").toString("Host")
              << "at" << sessionJson.value("server_address").toString() << ":"
              << sessionJson.value("server_port").toInt();
+
+    this->applyHostOnlyControlsVisibility();
 }
 
 NetplaySessionDialog::~NetplaySessionDialog(void)
 {
+}
+
+bool NetplaySessionDialog::isLocalSessionHost(void) const
+{
+    QJsonDocument sessionDoc = QJsonDocument::fromJson(this->sessionFile.toUtf8());
+    const QJsonObject sessionJson = sessionDoc.object();
+    if (sessionJson.value("is_hosting").toBool(false)) {
+        return true;
+    }
+
+    const int jsonSlot = sessionJson.value("slot").toInt(sessionJson.value("slotIndex").toInt(-1));
+    if (jsonSlot >= 0) {
+        return jsonSlot == 0;
+    }
+
+    if (this->sessionSlot >= 0) {
+        return this->sessionSlot == 0;
+    }
+
+    if (this->coordinator) {
+        if (this->coordinator->isHostingServer()) {
+            return true;
+        }
+        return this->coordinator->isHost();
+    }
+
+    return false;
+}
+
+void NetplaySessionDialog::setLayoutWidgetsVisible(QLayout* layout, bool visible)
+{
+    if (!layout) {
+        return;
+    }
+
+    for (int i = 0; i < layout->count(); ++i) {
+        if (QLayoutItem* item = layout->itemAt(i)) {
+            if (QWidget* widget = item->widget()) {
+                widget->setVisible(visible);
+            } else if (QLayout* childLayout = item->layout()) {
+                this->setLayoutWidgetsVisible(childLayout, visible);
+            }
+        }
+    }
+}
+
+void NetplaySessionDialog::applyHostOnlyControlsVisibility(void)
+{
+    const bool isHost = this->isLocalSessionHost();
+
+    this->setLayoutWidgetsVisible(this->horizontalLayout_buffer, isHost);
+    if (this->bufferLabel) {
+        this->bufferLabel->setVisible(isHost);
+    }
+    if (this->bufferDelaySpinBox) {
+        this->bufferDelaySpinBox->setVisible(isHost);
+    }
+    this->groupBox_3->setVisible(isHost);
+    if (!isHost) {
+        this->groupBox_3->hide();
+        this->verticalLayout_3->setStretch(1, 0);
+    } else {
+        this->groupBox_3->show();
+        this->verticalLayout_3->setStretch(1, 1);
+    }
+
+    if (isHost) {
+        this->buttonBox->setStandardButtons(QDialogButtonBox::Cancel | QDialogButtonBox::Ok |
+                                            QDialogButtonBox::RestoreDefaults);
+        if (QPushButton* startButton = this->buttonBox->button(QDialogButtonBox::Ok)) {
+            startButton->setText("Start");
+        }
+        if (QPushButton* cheatsButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults)) {
+            cheatsButton->setText("Cheats");
+            cheatsButton->setIcon(QIcon::fromTheme("code-box-line"));
+        }
+    } else {
+        this->buttonBox->setStandardButtons(QDialogButtonBox::Cancel);
+    }
 }
 
 bool NetplaySessionDialog::getCheats(std::vector<CoreCheat>& cheats, QJsonArray& cheatsArray)
@@ -420,11 +519,15 @@ void NetplaySessionDialog::on_coordinator_playersUpdated(const QStringList& play
 {
     this->listWidget->clear();
 
-    const bool isP1 = (this->sessionSlot == 0);
+    const bool isHost = this->isLocalSessionHost();
     QPushButton* startButton = this->buttonBox->button(QDialogButtonBox::Ok);
     QPushButton* cheatsButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults);
-    startButton->setEnabled(false);
-    cheatsButton->setEnabled(isP1);
+    if (startButton) {
+        startButton->setEnabled(false);
+    }
+    if (cheatsButton && isHost) {
+        cheatsButton->setEnabled(false);
+    }
     
     for (int i = 0; i < playerNames.size() && i < 4; i++)
     {
@@ -437,14 +540,18 @@ void NetplaySessionDialog::on_coordinator_playersUpdated(const QStringList& play
         this->listWidget->addItem(item);
 
         // Enable start button only when we're the host (first player) and everyone is ready
-        if (i == 0 && !name.isEmpty() && isP1)
+        if (i == 0 && !name.isEmpty() && isHost)
         {
-            startButton->setEnabled(true);
-            cheatsButton->setEnabled(true);
+            if (startButton) {
+                startButton->setEnabled(true);
+            }
+            if (cheatsButton) {
+                cheatsButton->setEnabled(true);
+            }
         }
     }
 
-    if (isP1 && playerNames.size() > 1)
+    if (isHost && playerNames.size() > 1)
     {
         this->syncHostSessionState();
     }
@@ -675,7 +782,7 @@ void NetplaySessionDialog::on_buttonBox_clicked(QAbstractButton* button)
 
 void NetplaySessionDialog::accept()
 {
-    if (this->sessionSlot != 0)
+    if (!this->isLocalSessionHost())
     {
         return;
     }
@@ -697,10 +804,12 @@ void NetplaySessionDialog::accept()
         }
     }
 
-    QPushButton* startButton = this->buttonBox->button(QDialogButtonBox::Ok);
-    QPushButton* cheatsButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults);
-    startButton->setEnabled(false);
-    cheatsButton->setEnabled(false);
+    if (QPushButton* startButton = this->buttonBox->button(QDialogButtonBox::Ok)) {
+        startButton->setEnabled(false);
+    }
+    if (QPushButton* cheatsButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults)) {
+        cheatsButton->setEnabled(false);
+    }
 
     this->syncHostSessionState();
 
@@ -739,7 +848,10 @@ void NetplaySessionDialog::reject(void)
 void NetplaySessionDialog::showEvent(QShowEvent* event)
 {
     QDialog::showEvent(event);
-    this->updateCheatsTreeWidget();
+    this->applyHostOnlyControlsVisibility();
+    if (this->isLocalSessionHost()) {
+        this->updateCheatsTreeWidget();
+    }
 }
 
 

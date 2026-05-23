@@ -514,7 +514,7 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
         m_currentRoom.roomId = roomId;
         m_currentRoom.localSlot = slotIndex;
         qDebug() << "Room joined:" << roomId << "slot:" << slotIndex;
-        emit roomJoined(roomId);
+        emit roomJoined(roomId, slotIndex);
 
     } else if (eventName == "users-updated" && args.size() > 0) {
         QJsonObject data = args[0].toObject();

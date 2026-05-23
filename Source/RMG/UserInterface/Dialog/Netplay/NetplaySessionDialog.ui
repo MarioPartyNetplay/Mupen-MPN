@@ -98,7 +98,7 @@
      <item>
       <widget class="QSpinBox" name="bufferDelaySpinBox">
        <property name="toolTip">
-        <string>Higher buffer improves frame rate stability on slow connections (more latency). Lower values reduce input lag.</string>
+        <string>Input delay in frames (~17 ms each). Use 4–8 for regional play; higher values absorb network jitter at the cost of more input lag.</string>
        </property>
        <property name="minimum">
         <number>0</number>
@@ -107,7 +107,7 @@
         <number>99</number>
        </property>
        <property name="value">
-        <number>4</number>
+        <number>6</number>
        </property>
       </widget>
      </item>
