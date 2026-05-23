@@ -20,6 +20,7 @@
 
 #include "ui_NetplaySessionBrowserDialog.h"
 #include "Netplay/NatTraversal/NatTraversalClient.hpp"
+#include "Netplay/NatTraversal/NatTraversalIndexClient.hpp"
 #include "Netplay/NetplayCoordinator.hpp"
 
 #include <RMG-Core/RomSettings.hpp>
@@ -47,14 +48,24 @@ class NetplaySessionBrowserDialog : public QDialog, private Ui::NetplaySessionBr
     bool isWaitingForConnection;  // Track if we're waiting for server connection
     bool isResolvingHostCode = false;
     QString targetAddress;
-    int targetPort = 27886;
+    int targetPort = 9290;
     std::unique_ptr<Netplay::NatTraversalClient> natTraversalClient;
+    std::unique_ptr<Netplay::NatTraversalIndexClient> natIndexClient;
+
+    QString pendingHostCode;
+    QJsonObject pendingIndexSession;
+    bool pendingIndexReady = false;
+    bool pendingLookupReady = false;
+    QString pendingLookupAddress;
+    int pendingLookupPort = 9290;
 
     QString showROMDialog(QString name, QString md5);
 
     bool validate(void);
     void validateJoinButton(void);
     void connectToResolvedHost(const QString& address, int port);
+    void beginHostCodeJoin(const QString& hostCode);
+    void tryCompleteHostCodeJoin();
 
   private slots:
     void on_nickNameLineEdit_textChanged(void);

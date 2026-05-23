@@ -1,12 +1,13 @@
 /*
  * RMG NAT traversal + index server
  *
- * UDP 6364 (default):
+ * UDP 9290 (default):
  *   N02TRAV1  host codes (REGISTER, LOOKUP, KEEP, UNREGISTER)
  *   N02IDX1   key/value index (SET, GET, DEL, LIST) — values as B64:...
  *
- * HTTP 6365 (default, --http-port):
+ * HTTP 9191 (default, --http-port):
  *   GET  /              HTML index of keys
+ *   GET  /rooms         HTML list of active traversal rooms
  *   GET  /index/{key}   read value
  *   PUT  /index/{key}   store body (also POST)
  *
@@ -45,8 +46,8 @@ typedef int socket_t;
 
 #define TRAV_PROTOCOL "N02TRAV1"
 #define INDEX_PROTOCOL "N02IDX1"
-#define DEFAULT_UDP_PORT 6364
-#define DEFAULT_HTTP_PORT 6365
+#define DEFAULT_UDP_PORT 9290
+#define DEFAULT_HTTP_PORT 9291
 #define MAX_HOSTS 4096
 #define MAX_INDEX_ENTRIES 512
 #define HOST_TTL_SEC 45
@@ -654,6 +655,61 @@ static void http_reply_value(socket_t client, const char* key, int found)
     }
 }
 
+static void http_reply_rooms_page(socket_t client)
+{
+    char body[65536];
+    size_t offset = 0;
+    const uint64_t now = now_seconds();
+
+    offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
+                               "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+                               "<title>RMG Active Rooms</title></head><body><h1>Active Rooms</h1><ul>");
+
+    for (int i = 0; i < g_host_count; ++i) {
+        if (!g_hosts[i].in_use || now - g_hosts[i].last_seen > HOST_TTL_SEC) {
+            continue;
+        }
+
+        char code_text[8];
+        char ip_text[INET_ADDRSTRLEN];
+        struct in_addr addr;
+
+        if (!format_host_code(g_hosts[i].code, code_text, sizeof(code_text))) {
+            continue;
+        }
+
+        addr.s_addr = g_hosts[i].host_ip;
+        const char* ip_string = inet_ntop(AF_INET, &addr, ip_text, sizeof(ip_text));
+        if (ip_string == NULL) {
+            ip_string = "0.0.0.0";
+        }
+
+        offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
+                                   "<li><b>%s</b> - %s:%u (last seen %llu sec ago)</li>", code_text,
+                                   ip_string, (unsigned)g_hosts[i].signaling_port,
+                                   (unsigned long long)(now - g_hosts[i].last_seen));
+        if (offset >= sizeof(body) - 256) {
+            break;
+        }
+    }
+
+    if (offset == 0) {
+        offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "<li>No active rooms</li>");
+    }
+
+    offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "</ul></body></html>");
+
+    {
+        char header[256];
+        snprintf(header, sizeof(header),
+                 "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %zu\r\n"
+                 "Connection: close\r\n\r\n",
+                 offset);
+        http_send_all(client, header);
+        http_send_all(client, body);
+    }
+}
+
 static void handle_http_client(socket_t client)
 {
     char request[MAX_HTTP_REQUEST];
@@ -695,6 +751,11 @@ static void handle_http_client(socket_t client)
 
     if (strcmp(path, "/") == 0 || strcmp(path, "/index") == 0 || strcmp(path, "/index/") == 0) {
         http_reply_index_page(client);
+        return;
+    }
+
+    if (strcmp(path, "/rooms") == 0 || strcmp(path, "/rooms/") == 0) {
+        http_reply_rooms_page(client);
         return;
     }
 

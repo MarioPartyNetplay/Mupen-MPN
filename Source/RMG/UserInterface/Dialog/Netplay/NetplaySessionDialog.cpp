@@ -16,6 +16,7 @@
 #include <QPushButton>
 #include <QMessageBox>
 #include <QShowEvent>
+#include <QAbstractButton>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QDir>
@@ -236,7 +237,7 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
                 publicIpEdit->setText(hostCode);
             } else {
                 const QString publicAddress = sessionJson.value("public_address").toString();
-                const int publicPort = sessionJson.value("public_port").toInt(27886);
+                const int publicPort = sessionJson.value("public_port").toInt(9290);
                 publicIpEdit->setText(QString("%1:%2").arg(publicAddress, QString::number(publicPort)));
             }
         }
@@ -562,6 +563,23 @@ void NetplaySessionDialog::accept()
         return;
     }
 
+    const int activePlayers = this->coordinator ? this->coordinator->getPlayerList().size() : 0;
+    if (activePlayers < 2)
+    {
+        QMessageBox messageBox(this);
+        messageBox.setIcon(QMessageBox::Warning);
+        messageBox.setWindowTitle("Start Game");
+        messageBox.setText("There are fewer than 2 players in the lobby.");
+        messageBox.setInformativeText("Are you sure you want to start anyway?");
+        messageBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+        messageBox.setDefaultButton(QMessageBox::No);
+
+        if (messageBox.exec() != QMessageBox::Yes)
+        {
+            return;
+        }
+    }
+
     QPushButton* startButton = this->buttonBox->button(QDialogButtonBox::Ok);
     QPushButton* cheatsButton = this->buttonBox->button(QDialogButtonBox::RestoreDefaults);
     startButton->setEnabled(false);
@@ -604,6 +622,7 @@ void NetplaySessionDialog::reject(void)
 void NetplaySessionDialog::showEvent(QShowEvent* event)
 {
     QDialog::showEvent(event);
+    this->updateCheatsTreeWidget();
 }
 
 

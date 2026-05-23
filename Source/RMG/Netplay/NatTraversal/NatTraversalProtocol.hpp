@@ -11,11 +11,14 @@
 
 namespace UserInterface::Netplay {
 
-static constexpr const char* kNatTraversalHost = "127.0.0.1";
-static constexpr int kNatTraversalPort = 6364;
+// Nat has to implement server protocol in Source/Server.
+// as of writing im not sure if im going to make it public...
+// Maybe unelss abuse arises...
+static constexpr const char* kNatTraversalHost = "216.225.154.31";
+static constexpr int kNatTraversalPort = 9290;
 static constexpr const char* kNatTraversalProtocol = "N02TRAV1";
 static constexpr const char* kNatIndexProtocol = "N02IDX1";
-static constexpr int kNatIndexHttpPort = 6365;
+static constexpr int kNatIndexHttpPort = 9291;
 static constexpr uint32_t kNatTraversalMaxHostCode = 0x0FFFFFFF;
 
 inline bool isValidIndexKey(const QString& key)
@@ -64,6 +67,15 @@ inline QString normalizeTraversalCode(const QString& input)
 inline bool looksLikeTraversalCode(const QString& input)
 {
     return !normalizeTraversalCode(input).isEmpty();
+}
+
+inline QString sessionIndexKey(const QString& hostCode)
+{
+    const QString normalized = normalizeTraversalCode(hostCode);
+    if (normalized.isEmpty()) {
+        return {};
+    }
+    return QStringLiteral("session/") + normalized;
 }
 
 inline QString natTraversalServerHostname()

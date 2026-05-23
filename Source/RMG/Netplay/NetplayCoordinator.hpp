@@ -48,13 +48,13 @@
      };
  
      explicit NetplayCoordinator(
-         const QString& serverUrl = "http://localhost:27886",
+         const QString& serverUrl = "http://localhost:9290",
          QObject* parent = nullptr
      );
      ~NetplayCoordinator();
  
      // Hosting logic
-     bool startHosting(int port = 27886, const QString& playerName = "Player", const QString& gameName = "Unknown");
+     bool startHosting(int port = 2626, const QString& playerName = "Player", const QString& gameName = "Unknown");
      void stopHosting();
      bool isHostingServer() const;
      SocketIOServer* getHostingServer() { return m_server.get(); }

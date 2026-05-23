@@ -22,6 +22,8 @@ public:
 
     void publish(const QString& key, const QByteArray& data);
     void fetch(const QString& key);
+    void publishSession(const QString& hostCode, const QByteArray& data);
+    void fetchSession(const QString& hostCode);
     void cancel();
 
 signals:

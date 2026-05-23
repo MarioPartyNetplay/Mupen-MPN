@@ -15,6 +15,7 @@
 
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
+#include <QCheckBox>
 #include <QNetworkDatagram>
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
@@ -124,20 +125,40 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     // Add port customization UI
     QWidget* portWidget = new QWidget(this);
     QVBoxLayout* portLayout = new QVBoxLayout(portWidget);
+
+    this->directConnectionCheckBox = new QCheckBox("Direct connection", this);
+    this->directConnectionCheckBox->setToolTip("Skip NAT traversal and allow the hosting port to be changed.");
+    this->directConnectionCheckBox->setChecked(false);
     
     QLabel* portLabel = new QLabel("Hosting Port:", this);
-    portLabel->setToolTip("Port to listen on for incoming player connections (default: 27886)");
-    QSpinBox* portSpinBox = new QSpinBox(this);
-    portSpinBox->setMinimum(1024);
-    portSpinBox->setMaximum(65535);
-    portSpinBox->setValue(27886);
-    portSpinBox->setToolTip("Valid ports: 1024-65535. Use 27886 for default.");
+    portLabel->setToolTip("Port to listen on for incoming player connections (default: 9290)");
+    this->hostingPortSpinBox = new QSpinBox(this);
+    this->hostingPortSpinBox->setMinimum(1024);
+    this->hostingPortSpinBox->setMaximum(65535);
+    this->hostingPortSpinBox->setValue(9290);
+    this->hostingPortSpinBox->setEnabled(false);
+    this->hostingPortSpinBox->setToolTip("Valid ports: 1024-65535. Locked unless Direct connection is enabled.");
     
-    connect(portSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), 
+    connect(this->hostingPortSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [this](int port) { this->hostingPort = port; });
+
+    connect(this->directConnectionCheckBox, &QCheckBox::toggled, this,
+            [this](bool directConnection) {
+        this->directConnection = directConnection;
+        if (this->hostingPortSpinBox) {
+            this->hostingPortSpinBox->setEnabled(directConnection);
+            if (!directConnection) {
+                this->hostingPortSpinBox->setValue(9290);
+            }
+        }
+        this->hostingPort = directConnection && this->hostingPortSpinBox
+            ? this->hostingPortSpinBox->value()
+            : 9290;
+    });
     
+    portLayout->addWidget(this->directConnectionCheckBox);
     portLayout->addWidget(portLabel);
-    portLayout->addWidget(portSpinBox);
+    portLayout->addWidget(this->hostingPortSpinBox);
     portLayout->setContentsMargins(0, 0, 0, 0);
     
     // Find the parent layout and add the port widget
@@ -226,6 +247,8 @@ void CreateNetplaySessionDialog::createSession(void)
     // Start hosting a local signaling server
     QString playerName = this->nickNameLineEdit->text();
     QString gameName = this->getGameName(this->sessionGoodName, this->sessionFile);
+    const bool directConnection = this->directConnectionCheckBox != nullptr && this->directConnectionCheckBox->isChecked();
+    this->directConnection = directConnection;
     
     if (!this->coordinator->startHosting(this->hostingPort, playerName, gameName))
     {
@@ -245,7 +268,7 @@ void CreateNetplaySessionDialog::createSession(void)
     json.insert("server_port", this->hostingPort);
     json.insert("public_address", "localhost");
     json.insert("public_port", this->hostingPort);
-    json.insert("use_nat_traversal", true);
+    json.insert("use_nat_traversal", !directConnection);
     json.insert("is_hosting", true);
     json.insert("slot", 0);
     json.insert("md5_hash", this->sessionMD5);  // For ROM matching
@@ -254,6 +277,11 @@ void CreateNetplaySessionDialog::createSession(void)
     this->sessionJson = json;
     
     qDebug() << "Created session via coordinator, hosting on port" << this->hostingPort << "as" << playerName;
+
+    if (directConnection) {
+        this->finalizeSession();
+        return;
+    }
 
     this->registerNatTraversalHost();
 }
@@ -286,19 +314,18 @@ void CreateNetplaySessionDialog::registerNatTraversalHost(void)
 void CreateNetplaySessionDialog::publishSessionIndex(const QString& hostCode)
 {
     this->natIndexClient = std::make_unique<Netplay::NatTraversalIndexClient>(this);
-    const QString indexKey = QStringLiteral("session/") + hostCode;
     const QByteArray payload = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
 
     connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::published,
-            this, [indexKey]() {
-        qDebug() << "Published session index:" << indexKey;
+            this, [hostCode](const QString& key) {
+        qDebug() << "Published session index:" << key << "for host" << hostCode;
     });
     connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::publishFailed,
             this, [](const QString& reason) {
         qWarning() << "Failed to publish session index:" << reason;
     });
 
-    this->natIndexClient->publish(indexKey, payload);
+    this->natIndexClient->publishSession(hostCode, payload);
 }
 
 void CreateNetplaySessionDialog::fetchPublicIpAddress(void)
@@ -372,7 +399,9 @@ void CreateNetplaySessionDialog::on_publicIpFetch_Finished(QNetworkReply* reply)
 void CreateNetplaySessionDialog::finalizeSession(void)
 {
     if (!this->sessionJson.contains("host_code")) {
-        this->sessionJson.insert("public_address", this->publicIpAddress);
+        if (!this->directConnection) {
+            this->sessionJson.insert("public_address", this->publicIpAddress);
+        }
         this->sessionJson.insert("use_nat_traversal", false);
     }
 
@@ -391,6 +420,12 @@ void CreateNetplaySessionDialog::toggleUI(bool enable, bool enableCreateButton)
     createButton->setEnabled(enableCreateButton);
 
     this->nickNameLineEdit->setReadOnly(!enable);
+    if (this->directConnectionCheckBox) {
+        this->directConnectionCheckBox->setEnabled(enable);
+    }
+    if (this->hostingPortSpinBox) {
+        this->hostingPortSpinBox->setEnabled(enable && this->directConnection);
+    }
 }
 
 void CreateNetplaySessionDialog::timerEvent(QTimerEvent* event)
@@ -479,6 +514,6 @@ void CreateNetplaySessionDialog::accept()
     // disable create button while we're processing the request
     this->toggleUI(false, false);
 
-    // Create session via coordinator (will host locally on port 27886)
+    // Create session via coordinator
     this->createSession();
 }

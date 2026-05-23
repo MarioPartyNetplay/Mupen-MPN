@@ -64,7 +64,7 @@ private:
     QTimer m_housekeepingTimer;
 
     Mode m_mode = Mode::Idle;
-    uint16_t m_signalingPort = 27886;
+    uint16_t m_signalingPort = 2626;
 
     QString m_hostCode;
     int m_hostRegisterAttempts = 0;

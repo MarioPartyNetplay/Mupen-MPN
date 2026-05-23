@@ -21,6 +21,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QFile>
+#include <QFileInfo>
 
 #include <RMG-Core/Settings.hpp>
 #include <RMG-Core/Rom.hpp>
@@ -192,6 +193,14 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
         if (gameName.isEmpty()) {
             gameName = roomData.value("gameId").toString("Unknown");
         }
+
+        if (!this->pendingHostCode.isEmpty() && !this->pendingIndexSession.isEmpty()) {
+            const QString indexGame = this->pendingIndexSession.value("game_name").toString();
+            if (!indexGame.isEmpty()) {
+                gameName = indexGame;
+            }
+        }
+
         QString romPath;
         for (auto it = this->romData.constBegin(); it != this->romData.constEnd(); ++it)
         {
@@ -206,9 +215,14 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
             }
         }
 
+        if (romPath.isEmpty() && !this->pendingIndexSession.isEmpty()) {
+            romPath = this->pendingIndexSession.value("rom_path").toString();
+        }
+
         if (romPath.isEmpty())
         {
-            romPath = this->showROMDialog(gameName, "");
+            const QString md5 = this->pendingIndexSession.value("md5_hash").toString();
+            romPath = this->showROMDialog(gameName, md5);
             if (romPath.isEmpty())
             {
                 QtMessageBox::Error(this, "ROM Required", "Please select a ROM to join this netplay game.");
@@ -235,8 +249,13 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
         sessionJson.insert("public_address", this->targetAddress);
         sessionJson.insert("public_port", this->targetPort);
         sessionJson.insert("rom_path", romPath);
+        if (!this->pendingHostCode.isEmpty()) {
+            sessionJson.insert("host_code", this->pendingHostCode);
+        }
         
         this->sessionJson = sessionJson;
+        this->pendingHostCode.clear();
+        this->pendingIndexSession = QJsonObject();
         this->sessionFile = QJsonDocument(sessionJson).toJson(QJsonDocument::Compact);
         
         qDebug() << "Session JSON created:" << this->sessionFile;
@@ -259,6 +278,70 @@ void NetplaySessionBrowserDialog::connectToResolvedHost(const QString& address, 
     this->coordinator->connectToDirectIPServer(address, port, this->nickNameLineEdit->text());
 }
 
+void NetplaySessionBrowserDialog::beginHostCodeJoin(const QString& hostCode)
+{
+    this->pendingHostCode = Netplay::normalizeTraversalCode(hostCode);
+    this->pendingIndexSession = QJsonObject();
+    this->pendingIndexReady = false;
+    this->pendingLookupReady = false;
+    this->pendingLookupAddress.clear();
+    this->pendingLookupPort = 27886;
+    this->isResolvingHostCode = true;
+
+    QPushButton* joinButton = this->buttonBox->button(QDialogButtonBox::Ok);
+    if (joinButton) {
+        joinButton->setEnabled(false);
+    }
+
+    this->natTraversalClient = std::make_unique<Netplay::NatTraversalClient>(this);
+    connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostLookupSucceeded,
+            this, [this](const QString& address, int resolvedPort) {
+        this->pendingLookupAddress = address;
+        this->pendingLookupPort = resolvedPort;
+        this->pendingLookupReady = true;
+        this->tryCompleteHostCodeJoin();
+    });
+    connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostLookupFailed,
+            this, [this](const QString& reason) {
+        this->isResolvingHostCode = false;
+        this->pendingHostCode.clear();
+        this->validateJoinButton();
+        QtMessageBox::Error(this, "Host Lookup Failed", reason);
+    });
+
+    this->natIndexClient = std::make_unique<Netplay::NatTraversalIndexClient>(this);
+    connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::fetched,
+            this, [this](const QString& key, const QByteArray& data) {
+        Q_UNUSED(key);
+        const QJsonDocument doc = QJsonDocument::fromJson(data);
+        if (doc.isObject()) {
+            this->pendingIndexSession = doc.object();
+            qDebug() << "Loaded session index for" << this->pendingHostCode;
+        }
+        this->pendingIndexReady = true;
+        this->tryCompleteHostCodeJoin();
+    });
+    connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::fetchFailed,
+            this, [this](const QString& reason) {
+        qDebug() << "Session index unavailable:" << reason;
+        this->pendingIndexReady = true;
+        this->tryCompleteHostCodeJoin();
+    });
+
+    this->natIndexClient->fetchSession(this->pendingHostCode);
+    this->natTraversalClient->lookupHost(this->pendingHostCode);
+}
+
+void NetplaySessionBrowserDialog::tryCompleteHostCodeJoin()
+{
+    if (!this->pendingLookupReady || !this->pendingIndexReady) {
+        return;
+    }
+
+    this->isResolvingHostCode = false;
+    this->connectToResolvedHost(this->pendingLookupAddress, this->pendingLookupPort);
+}
+
 void NetplaySessionBrowserDialog::accept(void)
 {
     QString addressInput = this->ipAddressLineEdit->text().trimmed();
@@ -267,7 +350,7 @@ void NetplaySessionBrowserDialog::accept(void)
     }
 
     QString addressPart = addressInput;
-    int port = 27886;
+    int port = 9290;
 
     const int colonIndex = addressInput.lastIndexOf(':');
     if (colonIndex != -1) {
@@ -283,26 +366,7 @@ void NetplaySessionBrowserDialog::accept(void)
     }
 
     if (Netplay::looksLikeTraversalCode(addressPart)) {
-        this->isResolvingHostCode = true;
-        QPushButton* joinButton = this->buttonBox->button(QDialogButtonBox::Ok);
-        if (joinButton) {
-            joinButton->setEnabled(false);
-        }
-
-        this->natTraversalClient = std::make_unique<Netplay::NatTraversalClient>(this);
-        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostLookupSucceeded,
-                this, [this](const QString& address, int resolvedPort) {
-            this->isResolvingHostCode = false;
-            this->connectToResolvedHost(address, resolvedPort);
-        });
-        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostLookupFailed,
-                this, [this](const QString& reason) {
-            this->isResolvingHostCode = false;
-            this->validateJoinButton();
-            QtMessageBox::Error(this, "Host Lookup Failed", reason);
-        });
-
-        this->natTraversalClient->lookupHost(Netplay::normalizeTraversalCode(addressPart));
+        this->beginHostCodeJoin(addressPart);
         return;
     }
 

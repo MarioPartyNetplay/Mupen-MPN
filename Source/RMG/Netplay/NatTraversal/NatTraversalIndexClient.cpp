@@ -14,6 +14,19 @@ namespace {
 
 constexpr int kRequestTimeoutMs = 5000;
 
+QByteArray payloadAfterField(const QByteArray& datagram, const QByteArray& prefix)
+{
+    if (!datagram.startsWith(prefix)) {
+        return {};
+    }
+
+    QByteArray payload = datagram.mid(prefix.size());
+    if (payload.startsWith("B64:")) {
+        payload = QByteArray::fromBase64(payload.mid(4));
+    }
+    return payload;
+}
+
 } // namespace
 
 NatTraversalIndexClient::NatTraversalIndexClient(QObject* parent)
@@ -36,9 +49,9 @@ void NatTraversalIndexClient::publish(const QString& key, const QByteArray& data
     m_pendingOp = PendingOp::Publish;
     m_pendingKey = key.trimmed();
 
-    const QByteArray payload = QByteArray(kNatIndexProtocol) + "|SET|" + m_pendingKey.toUtf8() + "|B64:" +
+    const QByteArray message = QByteArray(kNatIndexProtocol) + "|SET|" + m_pendingKey.toUtf8() + "|B64:" +
                                data.toBase64(QByteArray::Base64Encoding);
-    sendMessage(payload);
+    sendMessage(message);
     m_timeoutTimer.start(kRequestTimeoutMs);
 }
 
@@ -54,9 +67,29 @@ void NatTraversalIndexClient::fetch(const QString& key)
     m_pendingOp = PendingOp::Fetch;
     m_pendingKey = key.trimmed();
 
-    const QByteArray payload = QByteArray(kNatIndexProtocol) + "|GET|" + m_pendingKey.toUtf8();
-    sendMessage(payload);
+    const QByteArray message = QByteArray(kNatIndexProtocol) + "|GET|" + m_pendingKey.toUtf8();
+    sendMessage(message);
     m_timeoutTimer.start(kRequestTimeoutMs);
+}
+
+void NatTraversalIndexClient::fetchSession(const QString& hostCode)
+{
+    const QString key = sessionIndexKey(hostCode);
+    if (key.isEmpty()) {
+        emit fetchFailed("Invalid host code");
+        return;
+    }
+    fetch(key);
+}
+
+void NatTraversalIndexClient::publishSession(const QString& hostCode, const QByteArray& data)
+{
+    const QString key = sessionIndexKey(hostCode);
+    if (key.isEmpty()) {
+        emit publishFailed("Invalid host code");
+        return;
+    }
+    publish(key, data);
 }
 
 void NatTraversalIndexClient::cancel()
@@ -91,7 +124,7 @@ bool NatTraversalIndexClient::ensureReady(QString* errorOut)
     const QHostInfo hostInfo = QHostInfo::fromName(hostname);
     if (hostInfo.error() != QHostInfo::NoError) {
         if (errorOut) {
-            *errorOut = hostInfo.errorString();
+            *errorOut = QString("Failed to resolve %1: %2").arg(hostname, hostInfo.errorString());
         }
         return false;
     }
@@ -150,16 +183,13 @@ void NatTraversalIndexClient::handleResponse(const QByteArray& datagram)
         return;
     }
 
-    if (type == "GETOK" && parts.size() >= 4) {
+    if (type == "GETOK" && parts.size() >= 3) {
         if (m_pendingOp != PendingOp::Fetch || QString::fromUtf8(parts[2]) != m_pendingKey) {
             return;
         }
 
-        QByteArray payload = parts[3];
-        if (payload.startsWith("B64:")) {
-            payload = QByteArray::fromBase64(payload.mid(4));
-        }
-
+        const QByteArray prefix = QByteArray(kNatIndexProtocol) + "|GETOK|" + m_pendingKey.toUtf8() + "|";
+        const QByteArray payload = payloadAfterField(datagram, prefix);
         const QString key = m_pendingKey;
         cancel();
         emit fetched(key, payload);
@@ -167,7 +197,7 @@ void NatTraversalIndexClient::handleResponse(const QByteArray& datagram)
     }
 
     if (type == "GETFAIL" && parts.size() >= 4) {
-        if (m_pendingOp != PendingOp::Fetch) {
+        if (m_pendingOp != PendingOp::Fetch || QString::fromUtf8(parts[2]) != m_pendingKey) {
             return;
         }
 
@@ -189,17 +219,14 @@ void NatTraversalIndexClient::onTimeout()
 void NatTraversalIndexClient::fail(const QString& reason)
 {
     if (m_pendingOp == PendingOp::Publish) {
-        const PendingOp op = m_pendingOp;
         cancel();
         emit publishFailed(reason);
-        Q_UNUSED(op);
         return;
     }
 
     if (m_pendingOp == PendingOp::Fetch) {
         cancel();
         emit fetchFailed(reason);
-        return;
     }
 }
 

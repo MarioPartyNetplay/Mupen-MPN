@@ -52,7 +52,7 @@
         </sizepolicy>
        </property>
        <property name="placeholderText">
-        <string>127.0.0.1:27886</string>
+        <string>a1b2cf3</string>
        </property>
       </widget>
      </item>

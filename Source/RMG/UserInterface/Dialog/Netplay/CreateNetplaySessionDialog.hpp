@@ -12,9 +12,11 @@
 
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QCheckBox>
 #include <QJsonObject>
 #include <QTimerEvent>
 #include <QWebSocket>
+#include <QSpinBox>
 #include <QUdpSocket>
 #include <QDialog>
 #include <QString>
@@ -53,10 +55,13 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
     QNetworkReply* publicIpReply = nullptr;
 
     int pingTimerId = -1;
-    int hostingPort = 27886;  // Default port for hosting
+    int hostingPort = 9290;  // Default port for hosting
     int publicIpTimeoutTimerId = -1;
+    bool directConnection = false;
     
     QString publicIpAddress;  // Store the public IP
+    QCheckBox* directConnectionCheckBox = nullptr;
+    QSpinBox* hostingPortSpinBox = nullptr;
     std::unique_ptr<Netplay::NatTraversalClient> natTraversalClient;
     std::unique_ptr<Netplay::NatTraversalIndexClient> natIndexClient;
 

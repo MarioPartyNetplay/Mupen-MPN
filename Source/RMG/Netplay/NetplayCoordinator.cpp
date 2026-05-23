@@ -1003,9 +1003,9 @@ QString NetplayCoordinator::getPeerAddress() const
 int NetplayCoordinator::getGamePort() const
 {
     // Return the port where the game will communicate on
-    // Default to 27886 which is used for Socket.IO signaling
+    // Default to 2626 which is used for Socket.IO signaling
     // The actual WebRTC data channels will negotiate their own ports
-    return 27886;
+    return 9290;
 }
 // Private Slots - Lockstep
 //

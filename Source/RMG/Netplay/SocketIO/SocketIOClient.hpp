@@ -81,7 +81,7 @@ public:
     };
 
     // Constructor/Destructor
-    explicit SocketIOClient(const QString& serverUrl = "http://localhost:27886", QObject* parent = nullptr);
+    explicit SocketIOClient(const QString& serverUrl = "http://localhost:2626", QObject* parent = nullptr);
     ~SocketIOClient();
 
     // Connection Management
