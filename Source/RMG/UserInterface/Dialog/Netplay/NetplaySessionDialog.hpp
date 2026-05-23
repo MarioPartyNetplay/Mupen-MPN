@@ -13,6 +13,9 @@
 #include <QJsonObject>
 #include <QDialog>
 #include <QString>
+#include <memory>
+
+#include "Netplay/NatTraversal/NatTraversalIndexClient.hpp"
 
 #include <RMG-Core/Cheats.hpp>
 #include "Netplay/NetplayCoordinator.hpp"
@@ -36,8 +39,10 @@ private:
     QString romFile;
     int sessionSlot = -1;
     Netplay::NetplayCoordinator* coordinator;
+    std::unique_ptr<Netplay::NatTraversalIndexClient> natIndexClient;
 
     void syncHostSessionState(void);
+    void publishHostSessionIndex(bool started);
     bool getCheats(std::vector<CoreCheat>& cheats, QJsonArray& cheatsArray);
     bool setCheats(const QJsonArray& cheatsArray);
     bool applyCheats(void);

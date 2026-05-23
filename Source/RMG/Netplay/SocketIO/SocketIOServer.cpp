@@ -660,6 +660,8 @@ void SocketIOServer::handle_ListRooms(QWebSocket* socket, const QJsonObject& msg
         return;
 
     qDebug() << "SocketIOServer: Client requesting room list";
+
+    const bool waitingOnly = msg.value("waiting").toBool(false);
     
     QJsonArray roomsArray;
 
@@ -667,17 +669,29 @@ void SocketIOServer::handle_ListRooms(QWebSocket* socket, const QJsonObject& msg
     {
         const SignalingRoom& room = it.value();
 
-        if (room.started)
-            continue;  // Don't list started games
+        if (waitingOnly)
+        {
+            if (room.started)
+                continue;
+        }
+        else
+        {
+            if (!room.started)
+                continue;
+        }
 
         QJsonObject roomObj;
         roomObj["roomId"] = room.id;
+        roomObj["hostCode"] = room.id;
         roomObj["hostId"] = room.hostId;
+        roomObj["hostName"] = room.hostId;
+        roomObj["playerName"] = room.hostId;
         roomObj["roomName"] = room.roomName;
         roomObj["gameName"] = room.gameName;
         roomObj["gameId"] = room.gameId;
         roomObj["playerCount"] = room.players.size();
         roomObj["maxPlayers"] = room.maxPlayers;
+        roomObj["lobbySize"] = QString("%1/%2").arg(room.players.size()).arg(room.maxPlayers);
         roomObj["started"] = room.started;
 
         // List players with more details

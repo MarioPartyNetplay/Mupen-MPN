@@ -126,7 +126,7 @@ public:
     void sendSaveSync(const QJsonArray& saveFiles);
 
     // Room List
-    void requestRoomList();
+    void requestRoomList(bool waiting = false);
     
     void sendInputDelayUpdate(int frames);
 

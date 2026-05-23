@@ -327,7 +327,7 @@ void SocketIOClient::sendSaveSync(const QJsonArray& saveFiles)
     emitEvent("save-sync", payload);
 }
 
-void SocketIOClient::requestRoomList()
+void SocketIOClient::requestRoomList(bool waiting)
 {
     if (m_connectionState != Connected) {
         qWarning() << "Cannot request room list: not connected to server";
@@ -336,6 +336,7 @@ void SocketIOClient::requestRoomList()
 
     qDebug() << "SocketIOClient: Requesting room list from server";
     QJsonObject payload;
+    payload["waiting"] = waiting;
     emitEvent("list-rooms", payload);
 }
 

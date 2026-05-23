@@ -103,6 +103,20 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     this->romFile = sessionJson.value("rom_path").toString();
     this->sessionSlot = sessionJson.value("slot").toInt(-1);
 
+    const QString hostCode = sessionJson.value("host_code").toString();
+    if (this->sessionSlot == 0 && !hostCode.isEmpty())
+    {
+        this->natIndexClient = std::make_unique<Netplay::NatTraversalIndexClient>(this);
+        connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::published,
+                this, [](const QString& key) {
+            qDebug() << "Updated session index:" << key;
+        });
+        connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::publishFailed,
+                this, [](const QString& reason) {
+            qWarning() << "Failed to update session index:" << reason;
+        });
+    }
+
     // Connect coordinator signals
     connect(this->coordinator, &Netplay::NetplayCoordinator::playersUpdated, this,
             [this](const QList<Netplay::SocketIOClient::PlayerInfo>& players) {
@@ -111,10 +125,12 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
             names << player.name;
         }
         this->on_coordinator_playersUpdated(names);
+        this->publishHostSessionIndex(this->coordinator->isInGame());
     });
     connect(this->coordinator, &Netplay::NetplayCoordinator::gameStarted, this,
             [this](const Netplay::NetplayCoordinator::GameSession& session) {
         this->on_coordinator_gameStarted(session.localSlot);
+        this->publishHostSessionIndex(true);
     });
     connect(this->coordinator, &Netplay::NetplayCoordinator::chatMessageReceived,
             this, &NetplaySessionDialog::on_coordinator_chatMessageReceived);
@@ -148,6 +164,8 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
         this->chatLineEdit->setEnabled(true);
         this->sendPushButton->setEnabled(!this->chatLineEdit->text().isEmpty());
     }
+
+    this->publishHostSessionIndex(currentState == Netplay::NetplayCoordinator::InGame);
 
     // Setup UI
     QPushButton* startButton = this->buttonBox->button(QDialogButtonBox::Ok);
@@ -503,6 +521,64 @@ void NetplaySessionDialog::syncHostSessionState(void)
     this->coordinator->sendSaveSync(buildSaveSyncFiles(this->romFile));
 }
 
+void NetplaySessionDialog::publishHostSessionIndex(bool started)
+{
+    if (!this->natIndexClient || this->sessionSlot != 0)
+    {
+        return;
+    }
+
+    QJsonDocument sessionDoc = QJsonDocument::fromJson(this->sessionFile.toUtf8());
+    QJsonObject sessionJson = sessionDoc.object();
+    if (sessionJson.isEmpty())
+    {
+        return;
+    }
+
+    const auto players = this->coordinator ? this->coordinator->getPlayerList() : QList<Netplay::SocketIOClient::PlayerInfo>();
+    QJsonArray playersArray;
+    for (const auto& player : players)
+    {
+        QJsonObject playerObj;
+        playerObj["playerId"] = player.id;
+        playerObj["name"] = player.name;
+        playerObj["slotIndex"] = player.slot;
+        playerObj["isReady"] = player.isReady;
+        playerObj["isSpectator"] = player.isSpectator;
+        playersArray.append(playerObj);
+    }
+
+    if (playersArray.isEmpty())
+    {
+        QJsonObject hostPlayer;
+        hostPlayer["name"] = sessionJson.value("player_name").toString("Host");
+        hostPlayer["slotIndex"] = 0;
+        playersArray.append(hostPlayer);
+    }
+
+    const int playerCount = playersArray.size();
+    const int maxPlayers = 4;
+
+    sessionJson["started"] = started;
+    sessionJson["player_count"] = playerCount;
+    sessionJson["max_players"] = maxPlayers;
+    sessionJson["lobby_size"] = QString("%1/%2").arg(playerCount).arg(maxPlayers);
+    sessionJson["players"] = playersArray;
+    sessionJson["host_name"] = sessionJson.value("player_name").toString("Host");
+
+    this->sessionJson = sessionJson;
+    this->sessionFile = QJsonDocument(sessionJson).toJson(QJsonDocument::Compact);
+
+    const QString hostCode = sessionJson.value("host_code").toString();
+    if (hostCode.isEmpty())
+    {
+        return;
+    }
+
+    const QByteArray payload = QJsonDocument(sessionJson).toJson(QJsonDocument::Compact);
+    this->natIndexClient->publishSession(hostCode, payload);
+}
+
 void NetplaySessionDialog::on_coordinator_chatMessageReceived(const QString& playerName, const QString& message)
 {
     QString displayMessage = playerName + ": " + message;
@@ -647,4 +723,5 @@ void NetplaySessionDialog::on_coordinator_stateChanged(Netplay::NetplayCoordinat
                          state == Netplay::NetplayCoordinator::InGame);
     this->chatLineEdit->setEnabled(active);
     this->sendPushButton->setEnabled(active && !this->chatLineEdit->text().isEmpty());
+    this->publishHostSessionIndex(state == Netplay::NetplayCoordinator::InGame);
 }

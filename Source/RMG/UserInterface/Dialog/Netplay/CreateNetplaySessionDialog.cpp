@@ -271,6 +271,21 @@ void CreateNetplaySessionDialog::createSession(void)
     json.insert("use_nat_traversal", !directConnection);
     json.insert("is_hosting", true);
     json.insert("slot", 0);
+    json.insert("started", false);
+    json.insert("player_count", 1);
+    json.insert("max_players", 4);
+    json.insert("lobby_size", "1/4");
+    json.insert("host_name", playerName);
+    {
+        QJsonArray players;
+        QJsonObject hostPlayer;
+        hostPlayer.insert("name", playerName);
+        hostPlayer.insert("slotIndex", 0);
+        hostPlayer.insert("isReady", true);
+        hostPlayer.insert("isSpectator", false);
+        players.append(hostPlayer);
+        json.insert("players", players);
+    }
     json.insert("md5_hash", this->sessionMD5);  // For ROM matching
     json.insert("rom_path", this->sessionFile); // For loading cheats
     

@@ -655,7 +655,200 @@ static void http_reply_value(socket_t client, const char* key, int found)
     }
 }
 
-static void http_reply_rooms_page(socket_t client)
+static const char* json_find_value(const char* json, const char* key)
+{
+    char pattern[160];
+    snprintf(pattern, sizeof(pattern), "\"%s\":", key);
+    return strstr(json, pattern) ? strstr(json, pattern) + strlen(pattern) : NULL;
+}
+
+static int json_get_bool_field(const char* json, const char* key, int* out)
+{
+    const char* value = json_find_value(json, key);
+    if (value == NULL || out == NULL) {
+        return 0;
+    }
+    if (strncmp(value, "true", 4) == 0) {
+        *out = 1;
+        return 1;
+    }
+    if (strncmp(value, "false", 5) == 0) {
+        *out = 0;
+        return 1;
+    }
+    return 0;
+}
+
+static int json_get_int_field(const char* json, const char* key, int* out)
+{
+    const char* value = json_find_value(json, key);
+    char* end = NULL;
+    long parsed;
+
+    if (value == NULL || out == NULL) {
+        return 0;
+    }
+
+    parsed = strtol(value, &end, 10);
+    if (end == value) {
+        return 0;
+    }
+
+    *out = (int)parsed;
+    return 1;
+}
+
+static int json_get_string_field(const char* json, const char* key, char* out, size_t out_size)
+{
+    const char* value = json_find_value(json, key);
+    size_t offset = 0;
+
+    if (value == NULL || out == NULL || out_size == 0 || *value != '"') {
+        return 0;
+    }
+
+    ++value;
+    while (*value != '\0' && *value != '"') {
+        if (*value == '\\' && value[1] != '\0') {
+            ++value;
+        }
+        if (offset + 1 < out_size) {
+            out[offset++] = *value;
+        }
+        ++value;
+    }
+
+    if (*value != '"') {
+        return 0;
+    }
+
+    out[offset] = '\0';
+    return 1;
+}
+
+static int json_copy_array_field(const char* json, const char* key, char* out, size_t out_size)
+{
+    const char* value = json_find_value(json, key);
+    size_t offset = 0;
+    int depth = 0;
+    int in_string = 0;
+
+    if (value == NULL || out == NULL || out_size == 0 || *value != '[') {
+        return 0;
+    }
+
+    while (*value != '\0') {
+        if (offset + 1 >= out_size) {
+            return 0;
+        }
+
+        out[offset++] = *value;
+
+        if (in_string) {
+            if (*value == '\\' && value[1] != '\0') {
+                ++value;
+                if (offset + 1 >= out_size) {
+                    return 0;
+                }
+                out[offset++] = *value;
+            } else if (*value == '"') {
+                in_string = 0;
+            }
+        } else {
+            if (*value == '"') {
+                in_string = 1;
+            } else if (*value == '[') {
+                ++depth;
+            } else if (*value == ']') {
+                --depth;
+                if (depth == 0) {
+                    out[offset] = '\0';
+                    return 1;
+                }
+            }
+        }
+
+        ++value;
+    }
+
+    return 0;
+}
+
+static void json_escape_string(const char* input, char* output, size_t output_size)
+{
+    size_t offset = 0;
+
+    if (output_size == 0) {
+        return;
+    }
+
+    for (const unsigned char* p = (const unsigned char*)input; p != NULL && *p != '\0'; ++p) {
+        const char* replacement = NULL;
+        char tmp[3] = {0, 0, 0};
+
+        switch (*p) {
+        case '"': replacement = "\\\""; break;
+        case '\\': replacement = "\\\\"; break;
+        case '\b': replacement = "\\b"; break;
+        case '\f': replacement = "\\f"; break;
+        case '\n': replacement = "\\n"; break;
+        case '\r': replacement = "\\r"; break;
+        case '\t': replacement = "\\t"; break;
+        default:
+            if (*p < 0x20) {
+                snprintf(tmp, sizeof(tmp), "%c", *p);
+                replacement = tmp;
+            }
+            break;
+        }
+
+        if (replacement != NULL) {
+            size_t len = strlen(replacement);
+            if (offset + len >= output_size) {
+                break;
+            }
+            memcpy(output + offset, replacement, len);
+            offset += len;
+        } else {
+            if (offset + 1 >= output_size) {
+                break;
+            }
+            output[offset++] = (char)*p;
+        }
+    }
+
+    output[offset] = '\0';
+}
+
+static int http_query_bool(const char* path, const char* key, int default_value)
+{
+    char pattern[64];
+    const char* query;
+    const char* value;
+
+    snprintf(pattern, sizeof(pattern), "%s=", key);
+    query = strchr(path, '?');
+    if (query == NULL) {
+        return default_value;
+    }
+
+    value = strstr(query + 1, pattern);
+    if (value == NULL) {
+        return default_value;
+    }
+
+    value += strlen(pattern);
+    if (strncmp(value, "true", 4) == 0 || strncmp(value, "1", 1) == 0 || strncmp(value, "yes", 3) == 0) {
+        return 1;
+    }
+    if (strncmp(value, "false", 5) == 0 || strncmp(value, "0", 1) == 0 || strncmp(value, "no", 2) == 0) {
+        return 0;
+    }
+
+    return default_value;
+}
+
+static void http_reply_rooms_html(socket_t client)
 {
     char body[65536];
     size_t offset = 0;
@@ -710,6 +903,124 @@ static void http_reply_rooms_page(socket_t client)
     }
 }
 
+static void http_reply_rooms_json(socket_t client, int waitingOnly)
+{
+    char body[65536];
+    size_t offset = 0;
+    const uint64_t now = now_seconds();
+    int wrote_room = 0;
+
+    body[0] = '\0';
+    offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "{\"rooms\":[");
+
+    for (int i = 0; i < g_host_count; ++i) {
+        if (!g_hosts[i].in_use || now - g_hosts[i].last_seen > HOST_TTL_SEC) {
+            continue;
+        }
+
+        char code_text[8];
+        char ip_text[INET_ADDRSTRLEN];
+        char key[MAX_KEY_LEN];
+        char host_name[128] = {0};
+        char game_name[128] = {0};
+        char players_json[MAX_VALUE_LEN] = {0};
+        char host_name_json[256];
+        char game_name_json[256];
+        char lobby_size[32];
+        char* session_json;
+        struct in_addr addr;
+        int started = 0;
+        int player_count = 1;
+        int max_players = 4;
+
+        if (!format_host_code(g_hosts[i].code, code_text, sizeof(code_text))) {
+            continue;
+        }
+
+        snprintf(key, sizeof(key), "session/%s", code_text);
+        {
+            index_entry_t* entry = find_index(key);
+            if (entry != NULL && now - entry->last_seen <= INDEX_TTL_SEC) {
+                session_json = entry->value;
+                json_get_bool_field(session_json, "started", &started);
+                json_get_int_field(session_json, "player_count", &player_count);
+                json_get_int_field(session_json, "max_players", &max_players);
+                if (!json_get_string_field(session_json, "host_name", host_name, sizeof(host_name))) {
+                    if (!json_get_string_field(session_json, "player_name", host_name, sizeof(host_name))) {
+                        if (!json_get_string_field(session_json, "room_name", host_name, sizeof(host_name))) {
+                            strncpy(host_name, code_text, sizeof(host_name) - 1);
+                        }
+                    }
+                }
+                if (!json_get_string_field(session_json, "game_name", game_name, sizeof(game_name))) {
+                    strncpy(game_name, "", sizeof(game_name) - 1);
+                }
+                if (!json_copy_array_field(session_json, "players", players_json, sizeof(players_json))) {
+                    char escaped_host[256];
+                    json_escape_string(host_name, escaped_host, sizeof(escaped_host));
+                    snprintf(players_json, sizeof(players_json), "[{\"name\":\"%s\",\"slotIndex\":0}]", escaped_host);
+                }
+            }
+        }
+
+        if (waitingOnly) {
+            if (started) {
+                continue;
+            }
+        } else {
+            if (!started) {
+                continue;
+            }
+        }
+
+        if (host_name[0] == '\0') {
+            strncpy(host_name, code_text, sizeof(host_name) - 1);
+        }
+
+        addr.s_addr = g_hosts[i].host_ip;
+        if (inet_ntop(AF_INET, &addr, ip_text, sizeof(ip_text)) == NULL) {
+            strncpy(ip_text, "0.0.0.0", sizeof(ip_text) - 1);
+        }
+
+        json_escape_string(host_name, host_name_json, sizeof(host_name_json));
+        json_escape_string(game_name, game_name_json, sizeof(game_name_json));
+        snprintf(lobby_size, sizeof(lobby_size), "%d/%d", player_count, max_players > 0 ? max_players : 4);
+
+        if (wrote_room) {
+            if (offset + 1 < sizeof(body)) {
+                body[offset++] = ',';
+                body[offset] = '\0';
+            }
+        }
+
+        offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
+                                   "{\"hostCode\":\"%s\",\"hostName\":\"%s\",\"gameName\":\"%s\","
+                                   "\"playerCount\":%d,\"maxPlayers\":%d,\"lobbySize\":\"%s\","
+                                   "\"started\":%s,\"players\":%s,\"address\":\"%s\",\"port\":%u}",
+                                   code_text, host_name_json, game_name_json, player_count,
+                                   (max_players > 0 ? max_players : 4), lobby_size,
+                                   started ? "true" : "false", players_json, ip_text,
+                                   (unsigned)g_hosts[i].signaling_port);
+        wrote_room = 1;
+
+        if (offset >= sizeof(body) - 256) {
+            break;
+        }
+    }
+
+    offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "]}");
+
+    {
+        char header[256];
+        snprintf(header, sizeof(header),
+                 "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: %zu\r\n"
+                 "Connection: close\r\n\r\n",
+                 offset);
+        http_send_all(client, header);
+        http_send_all(client, body);
+    }
+}
+
 static void handle_http_client(socket_t client)
 {
     char request[MAX_HTTP_REQUEST];
@@ -754,8 +1065,13 @@ static void handle_http_client(socket_t client)
         return;
     }
 
-    if (strcmp(path, "/rooms") == 0 || strcmp(path, "/rooms/") == 0) {
-        http_reply_rooms_page(client);
+    if (strcmp(path, "/rooms.html") == 0 || strcmp(path, "/rooms/page") == 0) {
+        http_reply_rooms_html(client);
+        return;
+    }
+
+    if (strncmp(path, "/rooms", 6) == 0) {
+        http_reply_rooms_json(client, http_query_bool(path, "waiting", 0));
         return;
     }
 
