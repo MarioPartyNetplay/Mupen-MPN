@@ -161,7 +161,7 @@ static void update_presence_from_memory(void)
 
             if (gameType != 5 && gameType != 6)
             {
-                state += " | Turn " + std::to_string(currentTurn) + "/" + std::to_string(totalTurns);
+                state += " Turn: " + std::to_string(currentTurn) + "/" + std::to_string(totalTurns);
             }
             
             if (boardId < (sizeof(MP3_BOARDS_THUMB) / sizeof(MP3_BOARDS_THUMB[0])))
@@ -190,7 +190,7 @@ static void update_presence_from_memory(void)
             state = MP2_BOARDS[boardId];
             if (boardId != 7) 
             {
-                state += " | Turn " + std::to_string(currentTurn) + "/" + std::to_string(totalTurns);
+                state += " Turn: " + std::to_string(currentTurn) + "/" + std::to_string(totalTurns);
             }
             else
             {
@@ -222,7 +222,7 @@ static void update_presence_from_memory(void)
             state = MP1_BOARDS[boardId];
             if (boardId != 10) 
             {
-                state += " | Turn " + std::to_string(currentTurn) + "/" + std::to_string(totalTurns);
+                state += " Turn: " + std::to_string(currentTurn) + "/" + std::to_string(totalTurns);
             }
             else
             {
