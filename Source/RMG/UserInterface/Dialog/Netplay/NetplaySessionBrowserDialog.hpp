@@ -16,8 +16,10 @@
 #include <QJsonObject>
 #include <QDialog>
 #include <QString>
+#include <memory>
 
 #include "ui_NetplaySessionBrowserDialog.h"
+#include "Netplay/NatTraversal/NatTraversalClient.hpp"
 #include "Netplay/NetplayCoordinator.hpp"
 
 #include <RMG-Core/RomSettings.hpp>
@@ -43,13 +45,16 @@ class NetplaySessionBrowserDialog : public QDialog, private Ui::NetplaySessionBr
     QString sessionFile;
     QMap<QString, CoreRomSettings> romData;
     bool isWaitingForConnection;  // Track if we're waiting for server connection
+    bool isResolvingHostCode = false;
     QString targetAddress;
     int targetPort = 27886;
+    std::unique_ptr<Netplay::NatTraversalClient> natTraversalClient;
 
     QString showROMDialog(QString name, QString md5);
 
     bool validate(void);
     void validateJoinButton(void);
+    void connectToResolvedHost(const QString& address, int port);
 
   private slots:
     void on_nickNameLineEdit_textChanged(void);

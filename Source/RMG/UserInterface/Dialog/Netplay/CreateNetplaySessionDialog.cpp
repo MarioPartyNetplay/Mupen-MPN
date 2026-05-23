@@ -11,6 +11,7 @@
 #include "Utilities/QtMessageBox.hpp"
 #include "NetplayCommon.hpp"
 #include "Netplay/NetplayCoordinator.hpp"
+#include "Netplay/NatTraversal/NatTraversalProtocol.hpp"
 
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
@@ -161,6 +162,10 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
 
 CreateNetplaySessionDialog::~CreateNetplaySessionDialog(void)
 {
+    if (this->natTraversalClient) {
+        this->natTraversalClient->stopHosting();
+    }
+
     QString nickname = this->nickNameLineEdit->text();
     if (!nickname.isEmpty())
     {
@@ -238,8 +243,9 @@ void CreateNetplaySessionDialog::createSession(void)
     json.insert("player_name", playerName);
     json.insert("server_address", "127.0.0.1");
     json.insert("server_port", this->hostingPort);
-    json.insert("public_address", "localhost");  // Will be updated by fetchPublicIpAddress()
+    json.insert("public_address", "localhost");
     json.insert("public_port", this->hostingPort);
+    json.insert("use_nat_traversal", true);
     json.insert("is_hosting", true);
     json.insert("slot", 0);
     json.insert("md5_hash", this->sessionMD5);  // For ROM matching
@@ -248,9 +254,51 @@ void CreateNetplaySessionDialog::createSession(void)
     this->sessionJson = json;
     
     qDebug() << "Created session via coordinator, hosting on port" << this->hostingPort << "as" << playerName;
-    
-    // Fetch public IP address from AWS
-    this->fetchPublicIpAddress();
+
+    this->registerNatTraversalHost();
+}
+
+void CreateNetplaySessionDialog::registerNatTraversalHost(void)
+{
+    this->natTraversalClient = std::make_unique<Netplay::NatTraversalClient>(this);
+
+    connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostRegistered,
+            this, [this](const QString& hostCode) {
+        qDebug() << "NAT traversal host code:" << hostCode;
+        this->sessionJson.insert("host_code", hostCode);
+        this->sessionJson.insert("public_address", hostCode);
+        this->sessionJson.insert("use_nat_traversal", true);
+        this->publishSessionIndex(hostCode);
+        this->finalizeSession();
+    });
+
+    connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostRegistrationFailed,
+            this, [this](const QString& reason) {
+        qWarning() << "NAT traversal registration failed:" << reason;
+        QtMessageBox::Error(this, "NAT Traversal Failed",
+                            QString("Could not register host code (%1). Falling back to public IP lookup.").arg(reason));
+        this->fetchPublicIpAddress();
+    });
+
+    this->natTraversalClient->startHosting(static_cast<uint16_t>(this->hostingPort));
+}
+
+void CreateNetplaySessionDialog::publishSessionIndex(const QString& hostCode)
+{
+    this->natIndexClient = std::make_unique<Netplay::NatTraversalIndexClient>(this);
+    const QString indexKey = QStringLiteral("session/") + hostCode;
+    const QByteArray payload = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
+
+    connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::published,
+            this, [indexKey]() {
+        qDebug() << "Published session index:" << indexKey;
+    });
+    connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::publishFailed,
+            this, [](const QString& reason) {
+        qWarning() << "Failed to publish session index:" << reason;
+    });
+
+    this->natIndexClient->publish(indexKey, payload);
 }
 
 void CreateNetplaySessionDialog::fetchPublicIpAddress(void)
@@ -323,11 +371,15 @@ void CreateNetplaySessionDialog::on_publicIpFetch_Finished(QNetworkReply* reply)
 
 void CreateNetplaySessionDialog::finalizeSession(void)
 {
-    // Update session JSON with the public IP address
-    this->sessionJson.insert("public_address", this->publicIpAddress);
+    if (!this->sessionJson.contains("host_code")) {
+        this->sessionJson.insert("public_address", this->publicIpAddress);
+        this->sessionJson.insert("use_nat_traversal", false);
+    }
+
     this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
-    
-    qDebug() << "Finalized session with public IP:" << this->publicIpAddress;
+
+    const QString connectInfo = this->sessionJson.value("host_code").toString(this->publicIpAddress);
+    qDebug() << "Finalized session with connect info:" << connectInfo;
     
     // Close dialog to proceed to session screen
     QDialog::accept();

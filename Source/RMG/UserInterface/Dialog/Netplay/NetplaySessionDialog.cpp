@@ -227,9 +227,18 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
         }
         
         if (publicIpEdit) {
-            QString publicAddress = sessionJson.value("public_address").toString();
-            int publicPort = sessionJson.value("public_port").toInt(27886);
-            publicIpEdit->setText(QString("%1:%2").arg(publicAddress, QString::number(publicPort)));
+            const QString hostCode = sessionJson.value("host_code").toString();
+            if (!hostCode.isEmpty()) {
+                QLabel* publicIpLabel = this->findChild<QLabel*>("label_3");
+                if (publicIpLabel) {
+                    publicIpLabel->setText("Host Code");
+                }
+                publicIpEdit->setText(hostCode);
+            } else {
+                const QString publicAddress = sessionJson.value("public_address").toString();
+                const int publicPort = sessionJson.value("public_port").toInt(27886);
+                publicIpEdit->setText(QString("%1:%2").arg(publicAddress, QString::number(publicPort)));
+            }
         }
     }
 

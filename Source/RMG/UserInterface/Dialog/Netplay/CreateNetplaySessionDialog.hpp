@@ -18,8 +18,11 @@
 #include <QUdpSocket>
 #include <QDialog>
 #include <QString>
+#include <memory>
 
 #include "ui_CreateNetplaySessionDialog.h"
+#include "Netplay/NatTraversal/NatTraversalClient.hpp"
+#include "Netplay/NatTraversal/NatTraversalIndexClient.hpp"
 
 #include <RMG-Core/RomSettings.hpp>
 
@@ -54,6 +57,8 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
     int publicIpTimeoutTimerId = -1;
     
     QString publicIpAddress;  // Store the public IP
+    std::unique_ptr<Netplay::NatTraversalClient> natTraversalClient;
+    std::unique_ptr<Netplay::NatTraversalIndexClient> natIndexClient;
 
   	QJsonObject sessionJson;
     QString sessionFile;
@@ -68,6 +73,8 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
     void validateCreateButton(void);
 
     void createSession(void);
+    void registerNatTraversalHost(void);
+    void publishSessionIndex(const QString& hostCode);
     void fetchPublicIpAddress(void);
     void finalizeSession(void);
 

@@ -117,6 +117,8 @@ if (NETPLAY)
         Netplay/SocketIO/SocketIOClient.cpp
         Netplay/SocketIO/SocketIOServer.cpp
         Netplay/WebRTC/WebRTCPeer.cpp
+        Netplay/NatTraversal/NatTraversalClient.cpp
+        Netplay/NatTraversal/NatTraversalIndexClient.cpp
         Netplay/NetplayCoordinator.cpp
         Netplay.cpp
     )

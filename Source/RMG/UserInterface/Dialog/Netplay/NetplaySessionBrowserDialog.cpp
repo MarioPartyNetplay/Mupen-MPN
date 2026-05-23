@@ -8,6 +8,7 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "NetplaySessionBrowserDialog.hpp"
+#include "Netplay/NatTraversal/NatTraversalProtocol.hpp"
 #include "NetplaySessionPasswordDialog.hpp"
 #include "Utilities/QtMessageBox.hpp"
 
@@ -35,6 +36,9 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
     : QDialog(parent), coordinator(coordinator), romData(modelData), isWaitingForConnection(false)
 {
     this->setupUi(this);
+
+    this->ipAddressLineEdit->setPlaceholderText("Host code (7 hex) or IP:Port");
+    this->ipLabel->setText("Host Code / IP:Port");
 
     // Set validator for nickname
     QRegularExpression re("^[a-zA-Z0-9_-]{1,16}$");
@@ -119,13 +123,18 @@ bool NetplaySessionBrowserDialog::validate(void)
         return false;
     }
 
-    QString ip = this->ipAddressLineEdit->text().trimmed();
-    if (ip.isEmpty())
-    {
+    const QString addressInput = this->ipAddressLineEdit->text().trimmed();
+    if (addressInput.isEmpty()) {
         return false;
     }
 
-    return true;
+    const int colonIndex = addressInput.lastIndexOf(':');
+    const QString addressPart = colonIndex == -1 ? addressInput : addressInput.left(colonIndex);
+    if (Netplay::looksLikeTraversalCode(addressPart)) {
+        return true;
+    }
+
+    return !addressPart.isEmpty();
 }
 
 void NetplaySessionBrowserDialog::validateJoinButton(void)
@@ -154,9 +163,11 @@ void NetplaySessionBrowserDialog::onCoordinatorConnected(void)
 
 void NetplaySessionBrowserDialog::onCoordinatorConnectionError(const QString& error)
 {
-    if (isWaitingForConnection)
+    if (isWaitingForConnection || isResolvingHostCode)
     {
         isWaitingForConnection = false;
+        isResolvingHostCode = false;
+        this->validateJoinButton();
         QtMessageBox::Error(this, "Connection Failed", "Failed to connect to server: " + error);
     }
 }
@@ -238,54 +249,67 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
     }
 }
 
+void NetplaySessionBrowserDialog::connectToResolvedHost(const QString& address, int port)
+{
+    qDebug() << "Connecting to" << address << ":" << port;
+
+    this->targetAddress = address;
+    this->targetPort = port;
+    this->isWaitingForConnection = true;
+    this->coordinator->connectToDirectIPServer(address, port, this->nickNameLineEdit->text());
+}
+
 void NetplaySessionBrowserDialog::accept(void)
 {
-    // Direct connection mode - connect to IP:Port
     QString addressInput = this->ipAddressLineEdit->text().trimmed();
-    
-    if (addressInput.isEmpty())
-    {
+    if (addressInput.isEmpty()) {
         addressInput = "localhost";
     }
-    
-    // Parse IP:Port (format: "192.168.1.100:27886" or "192.168.1.100")
-    QString ipAddress = addressInput;
-    int port = 27886; // Default port
-    
-    int colonIndex = addressInput.lastIndexOf(':');
-    if (colonIndex != -1)
-    {
-        ipAddress = addressInput.left(colonIndex);
-        QString portStr = addressInput.mid(colonIndex + 1);
-        bool ok;
-        int parsedPort = portStr.toInt(&ok);
-        if (ok && parsedPort >= 1024 && parsedPort <= 65535)
-        {
-            port = parsedPort;
-        }
-        else
-        {
+
+    QString addressPart = addressInput;
+    int port = 27886;
+
+    const int colonIndex = addressInput.lastIndexOf(':');
+    if (colonIndex != -1) {
+        addressPart = addressInput.left(colonIndex);
+        const QString portStr = addressInput.mid(colonIndex + 1);
+        bool ok = false;
+        const int parsedPort = portStr.toInt(&ok);
+        if (!ok || parsedPort < 1024 || parsedPort > 65535) {
             QtMessageBox::Error(this, "Invalid Port", "Port must be between 1024 and 65535");
             return;
         }
+        port = parsedPort;
     }
-    
-    if (ipAddress.isEmpty())
-    {
-        QtMessageBox::Error(this, "Invalid IP", "Please enter a valid IP address");
+
+    if (Netplay::looksLikeTraversalCode(addressPart)) {
+        this->isResolvingHostCode = true;
+        QPushButton* joinButton = this->buttonBox->button(QDialogButtonBox::Ok);
+        if (joinButton) {
+            joinButton->setEnabled(false);
+        }
+
+        this->natTraversalClient = std::make_unique<Netplay::NatTraversalClient>(this);
+        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostLookupSucceeded,
+                this, [this](const QString& address, int resolvedPort) {
+            this->isResolvingHostCode = false;
+            this->connectToResolvedHost(address, resolvedPort);
+        });
+        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostLookupFailed,
+                this, [this](const QString& reason) {
+            this->isResolvingHostCode = false;
+            this->validateJoinButton();
+            QtMessageBox::Error(this, "Host Lookup Failed", reason);
+        });
+
+        this->natTraversalClient->lookupHost(Netplay::normalizeTraversalCode(addressPart));
         return;
     }
-    
-    qDebug() << "Connecting to" << ipAddress << ":" << port;
 
-    // Save target endpoint for the session dialog metadata.
-    this->targetAddress = ipAddress;
-    this->targetPort = port;
-    
-    // Mark that we're waiting for connection and room join
-    isWaitingForConnection = true;
-    
-    // Connect to the server at the direct IP address
-    // The actual dialog accept will happen when roomJoined() signal is received
-    this->coordinator->connectToDirectIPServer(ipAddress, port, this->nickNameLineEdit->text());
+    if (addressPart.isEmpty()) {
+        QtMessageBox::Error(this, "Invalid Address", "Please enter a valid host code or IP address");
+        return;
+    }
+
+    this->connectToResolvedHost(addressPart, port);
 }
