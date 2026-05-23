@@ -7,7 +7,7 @@
  *
  * HTTP 9191 (default, --http-port):
  *   GET  /              HTML index of keys
- *   GET  /rooms         HTML list of active traversal rooms
+ *   GET  /rooms         JSON list of active traversal rooms
  *   GET  /index/{key}   read value
  *   PUT  /index/{key}   store body (also POST)
  *
@@ -402,15 +402,18 @@ static void index_set(socket_t sock, const struct sockaddr_in* client, socklen_t
     size_t decoded_len = 0;
 
     if (!is_valid_key(key)) {
+        printf("[idx] SET BADKEY '%s' from %s:%u\n", key, inet_ntoa(client->sin_addr), (unsigned)ntohs(client->sin_port));
         send_reply(sock, (const struct sockaddr*)client, client_len, INDEX_PROTOCOL "|ERR|BADKEY");
         return;
     }
 
     if (strncmp(value_field, "B64:", 4) == 0) {
         decoded_len = b64_decode(value_field + 4, decoded, sizeof(decoded));
+        printf("[idx] Decoded B64 length=%zu for key=%s from %s:%u\n", decoded_len, key, inet_ntoa(client->sin_addr), (unsigned)ntohs(client->sin_port));
     } else {
         decoded_len = strlen(value_field);
         if (decoded_len >= sizeof(decoded)) {
+            printf("[idx] SET TOO LARGE %zu bytes for key=%s from %s:%u\n", decoded_len, key, inet_ntoa(client->sin_addr), (unsigned)ntohs(client->sin_port));
             send_reply(sock, (const struct sockaddr*)client, client_len, INDEX_PROTOCOL "|ERR|TOOLARGE");
             return;
         }
@@ -418,6 +421,7 @@ static void index_set(socket_t sock, const struct sockaddr_in* client, socklen_t
     }
 
     if (upsert_index(key, decoded, decoded_len, now_seconds()) == NULL) {
+        printf("[idx] SET FAILED for key=%s (index full or error) from %s:%u\n", key, inet_ntoa(client->sin_addr), (unsigned)ntohs(client->sin_port));
         send_reply(sock, (const struct sockaddr*)client, client_len, INDEX_PROTOCOL "|ERR|FULL");
         return;
     }
@@ -485,17 +489,21 @@ static void index_list(socket_t sock, const struct sockaddr_in* client, socklen_
     send_reply(sock, (const struct sockaddr*)client, client_len, reply);
 }
 
-static int split_parts(char* message, char* parts[], int max_parts)
+static int split_parts(char* message, int length, char* parts[], int max_parts)
 {
     int count = 0;
-    if (message == NULL || max_parts <= 0) {
+    if (message == NULL || max_parts <= 0 || length <= 0) {
         return 0;
     }
     parts[count++] = message;
-    for (char* p = message; *p && count < max_parts; ++p) {
-        if (*p == '|') {
-            *p = '\0';
-            parts[count++] = p + 1;
+    for (int i = 0; i < length && count < max_parts; ++i) {
+        char c = message[i];
+        if (c == '|' || c == '\0') {
+            /* replace separator with NUL and point to next byte (if any) */
+            message[i] = '\0';
+            if (i + 1 < length) {
+                parts[count++] = &message[i + 1];
+            }
         }
     }
     return count;
@@ -528,7 +536,7 @@ static void handle_udp(socket_t sock, const char* buffer, int length, const stru
     memcpy(message, buffer, (size_t)length);
     message[length] = '\0';
 
-    part_count = split_parts(message, parts, 8);
+    part_count = split_parts(message, length, parts, 8);
     if (part_count < 2) {
         return;
     }
@@ -560,12 +568,28 @@ static void handle_udp(socket_t sock, const char* buffer, int length, const stru
     }
 
     if (strcmp(parts[0], INDEX_PROTOCOL) == 0) {
+        /* Diagnostic log for incoming index requests: show length and hex of first bytes */
+        {
+            char ip_text[INET_ADDRSTRLEN];
+            struct in_addr caddr = client->sin_addr;
+            const char* ip_string = inet_ntop(AF_INET, &caddr, ip_text, sizeof(ip_text));
+            if (!ip_string) ip_string = "0.0.0.0";
+            /* length is the original datagram length available in this scope */
+            printf("[idx] RX from %s:%u len=%d data=", ip_string, (unsigned)ntohs(client->sin_port), length);
+            for (int i = 0; i < length && i < 64; ++i) {
+                unsigned char b = (unsigned char)message[i];
+                printf("%02X", b);
+            }
+            if (length > 64) {
+                printf("...");
+            }
+            printf("\n");
+        }
+
         prune_index();
         if (strcmp(parts[1], "SET") == 0 && part_count >= 4) {
-            const char* value = field_after_key(message, "SET", parts[2]);
-            if (value != NULL) {
-                index_set(sock, client, client_len, parts[2], value);
-            }
+            /* parts[3] contains the value (may include base64). */
+            index_set(sock, client, client_len, parts[2], parts[3]);
         } else if (strcmp(parts[1], "GET") == 0 && part_count >= 3) {
             index_get(sock, client, client_len, parts[2]);
         } else if (strcmp(parts[1], "DEL") == 0 && part_count >= 3) {
@@ -986,6 +1010,12 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
         json_escape_string(game_name, game_name_json, sizeof(game_name_json));
         snprintf(lobby_size, sizeof(lobby_size), "%d/%d", player_count, max_players > 0 ? max_players : 4);
 
+        /* Ensure players_json is valid JSON even if no session/index entry exists */
+        if (players_json[0] == '\0') {
+            strncpy(players_json, "[]", sizeof(players_json) - 1);
+            players_json[sizeof(players_json) - 1] = '\0';
+        }
+
         if (wrote_room) {
             if (offset + 1 < sizeof(body)) {
                 body[offset++] = ',';
@@ -1071,7 +1101,72 @@ static void handle_http_client(socket_t client)
     }
 
     if (strncmp(path, "/rooms", 6) == 0) {
-        http_reply_rooms_json(client, http_query_bool(path, "waiting", 0));
+        /* Show waiting (lobby) rooms by default to match client expectations. */
+        http_reply_rooms_json(client, http_query_bool(path, "waiting", 1));
+        return;
+    }
+
+    if (strcmp(path, "/debug_index") == 0) {
+        /* Return raw index entries for debugging */
+        char body[131072];
+        size_t offset = 0;
+        const uint64_t now = now_seconds();
+
+        offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "{\"index\":[");
+        int wrote = 0;
+        for (int i = 0; i < g_index_count; ++i) {
+            if (!g_index[i].in_use || now - g_index[i].last_seen > INDEX_TTL_SEC) {
+                continue;
+            }
+            char b64[MAX_VALUE_LEN * 2];
+            b64_encode((const unsigned char*)g_index[i].value, g_index[i].value_len, b64, sizeof(b64));
+            if (wrote) {
+                offset += (size_t)snprintf(body + offset, sizeof(body) - offset, ",");
+            }
+            offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
+                                       "{\"key\":\"%s\",\"last_seen\":%llu,\"value_b64\":\"%s\"}",
+                                       g_index[i].key, (unsigned long long)g_index[i].last_seen, b64);
+            wrote = 1;
+            if (offset >= sizeof(body) - 1024) break;
+        }
+        offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "]");
+
+        /* Append hosts list for easier debugging */
+        offset += (size_t)snprintf(body + offset, sizeof(body) - offset, ",\"hosts\":[");
+        int wrote_host = 0;
+        for (int i = 0; i < g_host_count; ++i) {        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.sendto(b'N02TRAV1|REGISTER|9290', ('216.225.154.31', 9290))
+        s.close()
+        print('sent REGISTER')
+            if (!g_hosts[i].in_use) continue;
+            if (now - g_hosts[i].last_seen > HOST_TTL_SEC) continue;
+            char code_text[8];
+            char ip_text[INET_ADDRSTRLEN];
+            struct in_addr addr;
+            if (!format_host_code(g_hosts[i].code, code_text, sizeof(code_text))) {
+                continue;
+            }
+            addr.s_addr = g_hosts[i].host_ip;
+            if (inet_ntop(AF_INET, &addr, ip_text, sizeof(ip_text)) == NULL) {
+                strncpy(ip_text, "0.0.0.0", sizeof(ip_text) - 1);
+            }
+            if (wrote_host) {
+                offset += (size_t)snprintf(body + offset, sizeof(body) - offset, ",");
+            }
+            offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
+                                       "{\"hostCode\":\"%s\",\"address\":\"%s\",\"port\":%u,\"last_seen\":%llu}",
+                                       code_text, ip_text, (unsigned)g_hosts[i].signaling_port,
+                                       (unsigned long long)g_hosts[i].last_seen);
+            wrote_host = 1;
+            if (offset >= sizeof(body) - 256) break;
+        }
+        offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "]}");
+
+        char header[256];
+        snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n", offset);
+        http_send_all(client, header);
+        http_send_all(client, body);
         return;
     }
 
@@ -1241,6 +1336,11 @@ int main(int argc, char** argv)
             socklen_t client_len = sizeof(client);
             socket_t client_sock = accept(http_sock, (struct sockaddr*)&client, &client_len);
             if (client_sock != SOCKET_INVALID) {
+                char peer_ip[INET_ADDRSTRLEN];
+                if (inet_ntop(AF_INET, &client.sin_addr, peer_ip, sizeof(peer_ip)) == NULL) {
+                    strncpy(peer_ip, "0.0.0.0", sizeof(peer_ip));
+                }
+                printf("[http] connection from %s:%u\n", peer_ip, (unsigned)ntohs(client.sin_port));
                 handle_http_client(client_sock);
                 socket_close(client_sock);
             }

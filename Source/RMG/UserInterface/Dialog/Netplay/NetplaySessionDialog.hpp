@@ -36,6 +36,7 @@ public:
 
 private:
     QString sessionFile;
+    QJsonObject sessionJson;
     QString romFile;
     int sessionSlot = -1;
     Netplay::NetplayCoordinator* coordinator;

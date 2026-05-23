@@ -38,18 +38,6 @@ namespace NetplayCommon
     // Retrieves RSP and GFX plugin names
     QList<QString> GetPluginNames(QString md5QString);
 
-    // Adds servers from json to combobox
-    void AddServers(QComboBox* comboBox, const QJsonDocument& document, bool dispatcher = false);
-
-    // Restores previously selected server
-    void RestoreSelectedServer(QComboBox* comboBox);
-
-    // Returns whether server from comboBox is dispatcher
-    bool IsServerDispatcher(QComboBox* comboBox, int index = -1);
-
-    // Returns server data from comboBox
-    QString GetServerData(QComboBox* comboBox, int index = -1);
-
 #ifdef NETPLAY
     // Returns network request from url with emulator id
     QNetworkRequest GetNetworkRequest(QUrl url);

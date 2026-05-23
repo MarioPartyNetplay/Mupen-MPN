@@ -118,6 +118,7 @@ bool NatTraversalIndexClient::ensureReady(QString* errorOut)
     QHostAddress address;
     if (address.setAddress(hostname)) {
         m_serverAddress = address;
+        qDebug() << "NatIndex: resolved" << hostname << "->" << m_serverAddress.toString() << ":" << kNatTraversalPort;
         return true;
     }
 
@@ -150,8 +151,14 @@ void NatTraversalIndexClient::sendMessage(const QByteArray& message)
         return;
     }
 
-    if (m_socket.writeDatagram(message, m_serverAddress, kNatTraversalPort) < 0) {
+    qDebug() << "NatIndex: sending" << message.size() << "bytes to" << m_serverAddress.toString() << ":" << kNatTraversalPort
+             << "data=" << message.toHex().toUpper();
+
+    qint64 written = m_socket.writeDatagram(message, m_serverAddress, kNatTraversalPort);
+    if (written < 0) {
         fail(m_socket.errorString());
+    } else if (written != message.size()) {
+        qWarning() << "NatIndex: partial write" << written << "of" << message.size();
     }
 }
 
