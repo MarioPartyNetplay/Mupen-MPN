@@ -132,7 +132,7 @@ jobs:
           EXE_NAME="MupenMPN.exe"
           INPUT="Bin/Release/$EXE_NAME"
           OUTPUT="Bin/Release/Flat/MupenMPN.exe"
-          enigmavbconsole Package/MupenMPN.ebp
+          enigmavbconsole Package/MupenMPN.evb
 
       - name: Upload Windows Artifact (Portable EXE)
         uses: actions/upload-artifact@v4
