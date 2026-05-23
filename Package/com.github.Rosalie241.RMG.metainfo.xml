@@ -2,8 +2,8 @@
 <!-- Copyright 2024 Rosalie Wanders -->
 <component type="desktop-application">
   <!--Created with jdAppStreamEdit 9.1-->
-  <id>com.github.Rosalie241.RMG</id>
-  <name>Rosalie's Mupen GUI</name>
+  <id>org.marioparty.mupen</id>
+  <name>Mupen MPN</name>
   <summary>Play Nintendo 64 games easily</summary>
   <developer id="com.github.rosalie241">
     <name>Rosalie</name>
@@ -12,7 +12,7 @@
   <project_license>GPL-3.0-only</project_license>
   <update_contact>rosalie@mailbox.org</update_contact>
   <description>
-    <p>Rosalie's Mupen GUI is an easy to use yet customizable mupen64plus front-end, allowing you to easily play Nintendo 64 games.</p>
+    <p>Mupen MPN is an easy to use yet customizable mupen64plus front-end, allowing you to easily play Nintendo 64 games.</p>
   </description>
   <screenshots>
     <screenshot type="default">
@@ -1052,7 +1052,7 @@
     <control>voice</control>
   </supports>
   <content_rating type="oars-1.1"/>
-  <launchable type="desktop-id">com.github.Rosalie241.RMG.desktop</launchable>
+  <launchable type="desktop-id">org.marioparty.mupen.desktop</launchable>
   <keywords>
     <keyword>mupen64plus</keyword>
     <keyword>RMG</keyword>

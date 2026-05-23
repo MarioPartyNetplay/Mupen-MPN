@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=Rosalie's Mupen GUI
+Name=Mupen MPN
 Comment=An easy to use &amp; cross-platform mupen64plus front-end written in C++ & Qt
 Exec=RMG %f
 TryExec=RMG
-Icon=com.github.Rosalie241.RMG
+Icon=org.marioparty.mupen
 Terminal=false
 Categories=Game;Emulator;Qt;
 MimeType=application/x-n64-rom;

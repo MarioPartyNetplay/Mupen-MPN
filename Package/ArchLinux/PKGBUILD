@@ -2,7 +2,7 @@
 pkgname=rmg
 pkgver=0.8.9
 pkgrel=1
-pkgdesc="Rosalie's Mupen GUI"
+pkgdesc="Mupen MPN"
 arch=('x86_64' 'aarch64')
 url="https://github.com/Rosalie241/$pkgname"
 license=('GPL3')

@@ -247,7 +247,7 @@ static void load_settings(void)
     std::string gameId;
     CoreRomSettings romSettings;
 
-    std::string userProfileSectionBase = "Rosalie's Mupen GUI - Input Plugin User Profile";
+    std::string userProfileSectionBase = "Mupen MPN - Input Plugin User Profile";
     std::vector<std::string> userProfiles;
     std::vector<std::string>::iterator userProfilesIter;
 
@@ -268,7 +268,7 @@ static void load_settings(void)
     for (int i = 0; i < NUM_CONTROLLERS; i++)
     {
         InputProfile* profile = &l_InputProfiles[i];
-        std::string section     = "Rosalie's Mupen GUI - Input Plugin Profile " + std::to_string(i);
+        std::string section     = "Mupen MPN - Input Plugin Profile " + std::to_string(i);
         std::string gameSection = section + " Game " + gameId;
         std::string userProfileSection;
         std::string userProfileName;
@@ -1209,7 +1209,7 @@ EXPORT m64p_error CALL PluginGetVersion(m64p_plugin_type *pluginType, int *plugi
 
     if (pluginNamePtr != nullptr)
     {
-        *pluginNamePtr = "Rosalie's Mupen GUI - Input Plugin";
+        *pluginNamePtr = "Mupen MPN - Input Plugin";
     }
 
     if (capabilities != nullptr)

@@ -369,7 +369,7 @@ QString ControllerWidget::getUserProfileSectionName(QString profile)
 {
     QString profileSection;
 
-    profileSection = "Rosalie's Mupen GUI - Input Plugin User Profile \"";
+    profileSection = "Mupen MPN - Input Plugin User Profile \"";
     profileSection += profile;
     profileSection += "\"";
 
@@ -2037,7 +2037,7 @@ void ControllerWidget::RevertSettings()
     sections.append(this->profiles);
 
     // add section with profiles list
-    sections.append("Rosalie's Mupen GUI - Input Plugin");
+    sections.append("Mupen MPN - Input Plugin");
 
     // revert each section
     for (QString section : sections)

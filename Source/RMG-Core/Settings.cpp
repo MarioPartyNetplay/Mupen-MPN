@@ -55,7 +55,7 @@ static std::vector<std::string> l_keyList;
 // Local Functions
 //
 
-#define SETTING_SECTION_GUI         "Rosalie's Mupen GUI"
+#define SETTING_SECTION_GUI         "Mupen MPN"
 #define SETTING_SECTION_NETPLAY     SETTING_SECTION_GUI  " Netplay"
 #define SETTING_SECTION_CORE        SETTING_SECTION_GUI  " Core"
 #define SETTING_SECTION_OVERLAY     SETTING_SECTION_CORE " Overlay"

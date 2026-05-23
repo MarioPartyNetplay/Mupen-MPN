@@ -1,5 +1,5 @@
 #
-# Rosalie's Mupen GUI CMakeLists.txt
+# Mupen MPN CMakeLists.txt
 #
 cmake_minimum_required(VERSION 3.15)
 
@@ -187,13 +187,13 @@ install(FILES ${MUPEN64PLUS_PLUGIN_GFX_PARALLEL}
 )
 
 if (INSTALL_DESKTOP_FILE)
-    install(FILES Package/com.github.Rosalie241.RMG.desktop
+    install(FILES Package/org.marioparty.mupen.desktop
         DESTINATION ${DESKTOP_INSTALL_PATH}
     )
-    install(FILES Package/com.github.Rosalie241.RMG.svg
+    install(FILES Package/org.marioparty.mupen.svg
         DESTINATION ${ICON_INSTALL_PATH}
     )
-    install(FILES Package/com.github.Rosalie241.RMG.metainfo.xml
+    install(FILES Package/org.marioparty.mupen.metainfo.xml
         DESTINATION ${METAINFO_INSTALL_PATH}
     )
 endif(INSTALL_DESKTOP_FILE)

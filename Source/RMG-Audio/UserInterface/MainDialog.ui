@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Rosalie's Mupen GUI - Audio Plugin</string>
+   <string>Mupen MPN - Audio Plugin</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>

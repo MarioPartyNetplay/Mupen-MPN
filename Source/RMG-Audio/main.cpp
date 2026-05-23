@@ -155,7 +155,7 @@ EXPORT m64p_error CALL PluginGetVersion(m64p_plugin_type *PluginType, int *Plugi
 
     if (PluginNamePtr != nullptr)
     {
-        *PluginNamePtr = "Rosalie's Mupen GUI - Audio Plugin";
+        *PluginNamePtr = "Mupen MPN - Audio Plugin";
     }
 
     if (Capabilities != nullptr)

@@ -1,7 +1,7 @@
 Name:    RMG       
 Version: 0.8.9
 Release: %autorelease
-Summary: Rosalie's Mupen GUI 
+Summary: Mupen MPN 
 
 License: GPL-3.0-only       
 URL:     https://github.com/Rosalie241/RMG
@@ -40,7 +40,7 @@ Requires: qt6-qtwebsockets
 Requires: libatomic
 
 %description
-Rosalie's Mupen GUI is a free and open-source mupen64plus front-end written in C++
+Mupen MPN is a free and open-source mupen64plus front-end written in C++
 
 %prep
 %autosetup
@@ -57,9 +57,9 @@ Rosalie's Mupen GUI is a free and open-source mupen64plus front-end written in C
 /usr/lib64/libRMG-Core.so
 /usr/lib64/RMG/
 /usr/share/RMG/
-/usr/share/applications/com.github.Rosalie241.RMG.desktop
-/usr/share/icons/hicolor/scalable/apps/com.github.Rosalie241.RMG.svg
-/usr/share/metainfo/com.github.Rosalie241.RMG.metainfo.xml
+/usr/share/applications/org.marioparty.mupen.desktop
+/usr/share/icons/hicolor/scalable/apps/org.marioparty.mupen.svg
+/usr/share/metainfo/org.marioparty.mupen.metainfo.xml
 
 %changelog
 %autochangelog

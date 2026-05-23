@@ -45,7 +45,7 @@ MainDialog::MainDialog(QWidget* parent, Thread::SDLThread* sdlThread, bool romCo
     {
         Widget::ControllerWidget* widget = new Widget::ControllerWidget(this, this->eventFilter);
         widget->SetOnlyLoadGameProfile(romConfig, romHeader, romSettings);
-        widget->SetSettingsSection("Player " + QString::number(i + 1), "Rosalie's Mupen GUI - Input Plugin Profile " + QString::number(i));
+        widget->SetSettingsSection("Player " + QString::number(i + 1), "Mupen MPN - Input Plugin Profile " + QString::number(i));
         widget->LoadSettings();
         this->tabWidget->widget(i)->layout()->addWidget(widget);
         controllerWidgets.push_back(widget);

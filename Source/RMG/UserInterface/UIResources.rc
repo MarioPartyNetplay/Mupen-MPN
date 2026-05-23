@@ -46,12 +46,12 @@ BEGIN
         BLOCK "200004b0"
         BEGIN
             VALUE "CompanyName", "Rosalie"
-            VALUE "FileDescription", "Rosalie's Mupen GUI"
+            VALUE "FileDescription", "Mupen MPN"
             VALUE "FileVersion", "1.0.0.1"
             VALUE "InternalName", "RMG.exe"
             VALUE "LegalCopyright", "Copyright (C) 2020-2026 Rosalie Wanders"
             VALUE "OriginalFilename", "RMG.exe"
-            VALUE "ProductName", "Rosalie's Mupen GUI"
+            VALUE "ProductName", "Mupen MPN"
             VALUE "ProductVersion", "1.0.0.1"
         END
     END

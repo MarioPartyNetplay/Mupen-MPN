@@ -1,18 +1,18 @@
-# Rosalie's Mupen GUI
+# Mupen MPN
 
-Rosalie's Mupen GUI is a free and open-source mupen64plus front-end written in C++.
+Mupen MPN is a free and open-source mupen64plus front-end written in C++.
 
 It offers a simple-to-use user interface.
 
 ## Download
 
 #### Windows
-You can download Rosalie's Mupen GUI on [Github Releases](https://github.com/Rosalie241/RMG/releases)
+You can download Mupen MPN on [Github Releases](https://github.com/Rosalie241/RMG/releases)
 
 #### Linux
-You can download Rosalie's Mupen GUI on 
+You can download Mupen MPN on 
 * [Github Releases (AppImage)](https://github.com/Rosalie241/RMG/releases)
-* [Flathub (Flatpak)](https://flathub.org/apps/details/com.github.Rosalie241.RMG)
+* [Flathub (Flatpak)](https://flathub.org/apps/details/org.marioparty.mupen)
 * [Arch User Repository](https://aur.archlinux.org/packages/rmg)
 * [Fedora COPR](https://copr.fedorainfracloud.org/coprs/rosalie/RMG/)
 
@@ -22,7 +22,7 @@ You can ask for help or report issues on [Github](https://github.com/Rosalie241/
 
 ## License
 
-Rosalie's Mupen GUI is licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.en.html).
+Mupen MPN is licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.en.html).
 
 ## Showcase
 

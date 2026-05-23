@@ -1,5 +1,5 @@
 #
-# Rosalie's Mupen GUI CMakeLists.txt
+# Mupen MPN CMakeLists.txt
 #
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
