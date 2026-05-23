@@ -1,150 +1,254 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>AboutDialog</class>
+
  <widget class="QDialog" name="AboutDialog">
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>658</width>
-    <height>514</height>
+    <width>720</width>
+    <height>420</height>
    </rect>
   </property>
-  <property name="sizePolicy">
-   <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-    <horstretch>0</horstretch>
-    <verstretch>0</verstretch>
-   </sizepolicy>
-  </property>
+
   <property name="windowTitle">
-   <string>About RMG</string>
+   <string>About Mupen MPN</string>
   </property>
-  <layout class="QVBoxLayout" name="verticalLayout">
+
+  <layout class="QVBoxLayout" name="mainLayout">
+
+   <!-- TABS -->
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout">
-     <item>
-      <widget class="QLabel" name="label">
-       <property name="minimumSize">
-        <size>
-         <width>64</width>
-         <height>64</height>
-        </size>
-       </property>
-       <property name="maximumSize">
-        <size>
-         <width>64</width>
-         <height>64</height>
-        </size>
-       </property>
-       <property name="text">
-        <string notr="true"/>
-       </property>
-       <property name="pixmap">
-        <pixmap resource="../UIResources.qrc">:/Resource/RMG.png</pixmap>
-       </property>
-       <property name="scaledContents">
-        <bool>true</bool>
-       </property>
-       <property name="alignment">
-        <set>Qt::AlignmentFlag::AlignCenter</set>
-       </property>
-      </widget>
-     </item>
-    </layout>
+    <widget class="QTabWidget" name="tabWidget">
+
+     <!-- ================= ABOUT TAB ================= -->
+     <widget class="QWidget" name="tabAbout">
+      <attribute name="title">
+       <string>About</string>
+      </attribute>
+
+      <layout class="QHBoxLayout" name="aboutLayout">
+
+       <!-- LOGO -->
+       <item>
+        <widget class="QLabel" name="logoLabel">
+         <property name="minimumSize">
+          <size><width>160</width><height>160</height></size>
+         </property>
+         <property name="maximumSize">
+          <size><width>160</width><height>160</height></size>
+         </property>
+         <property name="pixmap">
+          <pixmap resource="../UIResources.qrc">:/Resource/RMG.png</pixmap>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignCenter</set>
+         </property>
+         <property name="scaledContents">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+
+       <!-- RIGHT PANEL -->
+       <item>
+        <layout class="QVBoxLayout" name="infoLayout">
+
+         <!-- TITLE -->
+         <item>
+          <widget class="QLabel" name="titleLabel">
+           <property name="text">
+            <string>Mupen MPN</string>
+           </property>
+           <property name="styleSheet">
+            <string notr="true">
+font-size:26px;
+font-weight:bold;
+            </string>
+           </property>
+          </widget>
+         </item>
+
+         <!-- VERSION (C++ injected git hash) -->
+         <item>
+          <widget class="QLabel" name="versionLabel">
+           <property name="text">
+            <string>git: loading...</string>
+           </property>
+           <property name="styleSheet">
+            <string notr="true">
+color:#888;
+font-size:13px;
+            </string>
+           </property>
+          </widget>
+         </item>
+
+         <!-- SPACER (proper Qt spacing instead of CSS hacks) -->
+         <item>
+          <spacer name="headerSpacer">
+           <property name="orientation">
+            <enum>Qt::Vertical</enum>
+           </property>
+           <property name="sizeHint">
+            <size>
+             <width>0</width>
+             <height>12</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+
+         <!-- DESCRIPTION -->
+         <item>
+          <widget class="QLabel" name="descLabel">
+           <property name="text">
+            <string>Mupen MPN is a free and open-source Nintendo 64 emulator.
+
+This software should only be used with games you legally own.</string>
+           </property>
+
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+
+           <property name="styleSheet">
+            <string notr="true">
+color:#ddd;
+font-size:12px;
+            </string>
+           </property>
+          </widget>
+         </item>
+
+         <!-- LEGACY -->
+         <item>
+          <widget class="QLabel" name="legacyLabel">
+           <property name="text">
+            <string>Legacy:
+This project carries forward the vision he believed in.
+We continue it in his honor by making Nintendo 64 netplay accessible to everyone,
+removing barriers, and focusing on ease of use and mod support for the community.
+
+Although he can no longer be with us, we hope he can see that he was cared about,
+and that his vision continues to live on through this project.</string>
+           </property>
+
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+
+           <property name="styleSheet">
+            <string notr="true">
+color:#bbb;
+font-size:11px;
+            </string>
+           </property>
+          </widget>
+         </item>
+
+        </layout>
+       </item>
+
+      </layout>
+     </widget>
+
+     <!-- ================= CONTRIBUTORS TAB ================= -->
+     <widget class="QWidget" name="tabContributors">
+      <attribute name="title">
+       <string>Contributors</string>
+      </attribute>
+
+      <layout class="QVBoxLayout" name="contributorsLayout">
+
+       <item>
+        <widget class="QTextEdit" name="contributorsText">
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+
+         <property name="plainText">
+          <string>
+Core Contributors:
+- Rosalie — RMG Developer
+- Logan — Simple64 Netcode Developer
+- mupen64plus Team
+
+MPN Contributors:
+- Tabitha — Mupen MPN Developer
+- Lave, Jeff₍₁₎ — MPN Founders
+- Rain, gamemasterplc, zestydev — decompilation project contributors
+- Airsolan — Cheat System
+- gamemasterplc — Cheat System
+
+And everyone who contributed, tested, and supports the project.
+
+₍₁₎ In memory of Jeff, an early contributor who shaped the project’s foundation, community direction, and emulator vision. His historic contributions will always be remembered.
+          </string>
+         </property>
+
+        </widget>
+       </item>
+
+      </layout>
+     </widget>
+
+     <!-- ================= LICENSE TAB ================= -->
+     <widget class="QWidget" name="tabLicense">
+      <attribute name="title">
+       <string>License</string>
+      </attribute>
+
+      <layout class="QVBoxLayout" name="licenseLayout">
+
+       <item>
+        <widget class="QTextEdit" name="licenseText">
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+
+         <property name="plainText">
+          <string>
+GNU GENERAL PUBLIC LICENSE
+Version 3
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License.
+
+This program is distributed WITHOUT ANY WARRANTY.
+          </string>
+         </property>
+
+        </widget>
+       </item>
+
+      </layout>
+     </widget>
+
+    </widget>
    </item>
+
+   <!-- COPYRIGHT -->
    <item>
-    <widget class="QTextBrowser" name="textBrowser">
-     <property name="html">
-      <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;meta charset=&quot;utf-8&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
-p, li { white-space: pre-wrap; }
-hr { height: 1px; border-width: 0; }
-li.unchecked::marker { content: &quot;\2610&quot;; }
-li.checked::marker { content: &quot;\2612&quot;; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Noto Sans'; font-size:10pt; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-weight:700;&quot;&gt;Mupen MPN &lt;/span&gt;is an easy to use &amp;amp; cross-platform mupen64plus front-end written in C++ &amp;amp; Qt.&lt;/p&gt;
-&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Version: {version}&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;License: GPLv3&lt;/p&gt;
-&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Contributors:&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- Rosalie Wanders (&lt;a href=&quot;https://github.com/Rosalie241&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/Rosalie241&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- GhostlyDark (&lt;a href=&quot;https://github.com/GhostlyDark&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/GhostlyDark&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- JakobDev (&lt;a href=&quot;https://github.com/JakobDev&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/JakobDev&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- JaxonWasTaken (&lt;a href=&quot;https://github.com/JaxonWasTaken&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/JaxonWasTaken&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- RetraCarteR (&lt;a href=&quot;https://github.com/RetraCarteR&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/RetraCarteR&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- orbea (&lt;a href=&quot;https://github.com/orbea&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/orbea&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- Fanatic-64 (&lt;a href=&quot;https://github.com/Fanatic-64&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/Fanatic-64&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- Alice (&lt;a href=&quot;https://github.com/nekopsykose&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/nekopsykose&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- Cosima Neidahl (&lt;a href=&quot;https://github.com/OPNA2608&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/OPNA2608&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- kev4cards (&lt;a href=&quot;https://github.com/kev4cards&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/kev4cards&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- Logan McNaughton (&lt;a href=&quot;https://github.com/loganmc10&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/loganmc10&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- porcino (&lt;a href=&quot;https://github.com/porcino&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/porcino&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- Sebastian Grabowski (&lt;a href=&quot;https://github.com/picsel2&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/picsel2&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- Alejandro Bringas Martinez (&lt;a href=&quot;https://github.com/iWeaker&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/iWeaker&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- Samuel (&lt;a href=&quot;https://github.com/Samueru-sama&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/Samueru-sama&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- cursedUs64-git (&lt;a href=&quot;https://github.com/cursedUs64-git&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/cursedUs64-git&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- Pcgaming575 (&lt;a href=&quot;https://github.com/Pcgaming575&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/Pcgaming575&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- Jaffacakelover (&lt;a href=&quot;https://github.com/Jaffacakelover&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/Jaffacakelover&lt;/span&gt;&lt;/a&gt;) &lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- RibShark (&lt;a href=&quot;https://github.com/RibShark&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/RibShark&lt;/span&gt;&lt;/a&gt;) &lt;/p&gt;
-&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Special thanks:&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- Gent (&lt;a href=&quot;https://github.com/TheGent&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/TheGent&lt;/span&gt;&lt;/a&gt;) for providing custom cheats&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- Jaffacakelover (&lt;a href=&quot;https://github.com/Jaffacakelover&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/Jaffacakelover&lt;/span&gt;&lt;/a&gt;) for making the controller image for RMG-Input&lt;/p&gt;
-&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;It uses the following third party projects:&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- Qt6 (&lt;a href=&quot;https://www.qt.io/product/qt6&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://www.qt.io/product/qt6&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- SDL3 (&lt;a href=&quot;https://github.com/libsdl-org/SDL&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/libsdl-org/SDL&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- imgui (&lt;a href=&quot;https://github.com/ocornut/imgui&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/ocornut/imgui&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- lzma (&lt;a href=&quot;https://7-zip.org/sdk.html&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://7-zip.org/sdk.html&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- vosk-api (&lt;a href=&quot;https://github.com/alphacep/vosk-api&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/alphacep/vosk-api&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- RemixIcon (&lt;a href=&quot;https://github.com/Remix-Design/RemixIcon&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/Remix-Design/RemixIcon&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;It includes the following third party projects:&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- mupen64plus-core (&lt;a href=&quot;https://github.com/mupen64plus/mupen64plus-core&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/mupen64plus/mupen64plus-core&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- mupen64plus-input-gca (&lt;a href=&quot;https://github.com/amatho/mupen64plus-input-gca&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/amatho/mupen64plus-input-gca&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- mupen64plus-input-raphnetraw (&lt;a href=&quot;https://github.com/raphnet/mupen64plus-input-raphnetraw&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/raphnet/mupen64plus-input-raphnetraw&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- mupen64plus-rsp-cxd4 (&lt;a href=&quot;https://github.com/mupen64plus/mupen64plus-rsp-cxd4&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/mupen64plus/mupen64plus-rsp-cxd4&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- mupen64plus-rsp-hle (&lt;a href=&quot;https://github.com/mupen64plus/mupen64plus-rsp-hle)&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/mupen64plus/mupen64plus-rsp-hle&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- mupen64plus-rsp-parallel (&lt;a href=&quot;https://github.com/libretro/parallel-rsp&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/libretro/parallel-rsp&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- mupen64plus-video-angrylion-plus (&lt;a href=&quot;https://github.com/ata4/angrylion-rdp-plus&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/ata4/angrylion-rdp-plus&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- mupen64plus-video-GLideN64 (&lt;a href=&quot;https://github.com/gonetz/GLideN64&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/gonetz/GLideN64&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- mupen64plus-video-parallel (&lt;a href=&quot;https://github.com/Themaister/parallel-rdp-standalone&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/Themaister/parallel-rdp-standalone&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;- SDL_GameControllerDB (&lt;a href=&quot;https://github.com/mdqinc/SDL_GameControllerDB&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#1d99f3;&quot;&gt;https://github.com/mdqinc/SDL_GameControllerDB&lt;/span&gt;&lt;/a&gt;)&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    <widget class="QLabel" name="copyrightLabel">
+     <property name="text">
+      <string>© Mario Party Netplay — Built on Mupen64Plus / RMG foundation</string>
      </property>
-     <property name="openExternalLinks">
-      <bool>true</bool>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">
+color:#777;
+font-size:11px;
+      </string>
      </property>
     </widget>
    </item>
-   <item>
-    <widget class="QDialogButtonBox" name="buttonBox">
-     <property name="standardButtons">
-      <set>QDialogButtonBox::StandardButton::Ok</set>
-     </property>
-    </widget>
-   </item>
+
   </layout>
  </widget>
- <resources>
-  <include location="../UIResources.qrc"/>
- </resources>
- <connections>
-  <connection>
-   <sender>buttonBox</sender>
-   <signal>accepted()</signal>
-   <receiver>AboutDialog</receiver>
-   <slot>accept()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>190</x>
-     <y>283</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>190</x>
-     <y>153</y>
-    </hint>
-   </hints>
-  </connection>
- </connections>
+
+ <connections/>
 </ui>

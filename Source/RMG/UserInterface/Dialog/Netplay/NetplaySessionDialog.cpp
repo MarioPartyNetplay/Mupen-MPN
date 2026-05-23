@@ -127,12 +127,7 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     // Auto-enable pre-toggled cheats for host
     if (this->sessionSlot == 0)
     {
-        QJsonArray hostCheats = buildEnabledCheatsSnapshot(this->romFile);
-        if (!hostCheats.isEmpty())
-        {
-            this->setCheats(hostCheats);
-            this->coordinator->sendCheatsUpdate(hostCheats);
-        }
+        this->syncHostSessionState();
     }
 
     // Connect to connection state signals to enable/disable chat
@@ -272,20 +267,23 @@ NetplaySessionDialog::~NetplaySessionDialog(void)
 
 bool NetplaySessionDialog::getCheats(std::vector<CoreCheat>& cheats, QJsonArray& cheatsArray)
 {
-    // Parse session JSON to get cheat data if available
     QJsonDocument sessionDoc = QJsonDocument::fromJson(this->sessionFile.toUtf8());
     QJsonObject sessionJson = sessionDoc.object();
-    
-    // Check if cheats are embedded in session JSON
-    if (sessionJson.contains("cheats")) {
+
+    // Host uses local enabled cheats as authoritative source
+    if (this->sessionSlot == 0)
+    {
+        cheatsArray = buildEnabledCheatsSnapshot(this->romFile);
+    }
+    else
+    {
+        // Clients ONLY use synced session cheats
         cheatsArray = sessionJson.value("cheats").toArray();
-    } else {
-        // No cheats in session - return empty array
-        return true;  // This is not an error, just no cheats
     }
 
-    if (cheatsArray.isEmpty()) {
-        return true;  // Empty cheats is valid
+    if (cheatsArray.isEmpty())
+    {
+        return true;
     }
 
     if (!CheatsCommon::ParseCheatJson(cheatsArray, cheats))

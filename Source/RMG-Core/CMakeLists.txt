@@ -77,6 +77,12 @@ if(WIN32)
     target_link_libraries(RMG-Core wsock32 ws2_32 ${ICONV_LIBRARIES})
 endif(WIN32)
 
+# Call the version calculation script
+execute_process(
+    COMMAND python make_version.py
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 target_link_libraries(RMG-Core
     ${MINIZIP_LIBRARIES}
     lzma
