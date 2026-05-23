@@ -1323,7 +1323,7 @@ void MainWindow::checkForUpdates(bool silent, bool force)
     QNetworkAccessManager* networkAccessManager = new QNetworkAccessManager(this);
     connect(networkAccessManager, &QNetworkAccessManager::finished, this, &MainWindow::on_networkAccessManager_Finished);
     networkAccessManager->setTransferTimeout(15000);
-    networkAccessManager->get(QNetworkRequest(QUrl("https://api.github.com/repos/Rosalie241/RMG/releases/latest")));
+    networkAccessManager->get(QNetworkRequest(QUrl("https://api.github.com/repos/MarioPartyNetplay/Mupen-MPN/releases/latest")));
 }
 #endif // UPDATER
 
