@@ -102,6 +102,7 @@ jobs:
             mingw-w64-x86_64-libsamplerate
             mingw-w64-x86_64-nasm
             mingw-w64-x86_64-minizip
+            mingw-w64-x86_64-libsrtp
             mingw-w64-x86_64-libusb
 
       - name: Build RMG
