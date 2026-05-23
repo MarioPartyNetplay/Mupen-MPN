@@ -2,6 +2,7 @@
 # 3rdParty CMakeLists.txt
 #
 include(ExternalProject)
+find_package(Git REQUIRED)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
@@ -251,6 +252,79 @@ ExternalProject_Add(SDL_GameControllerDB
     BUILD_BYPRODUCTS ${SDL_GAMECONTROLLERDB_SOURCES_OUT}
 )
 
+# libdatachannel integration (for WebRTC P2P netplay)
+if (NETPLAY)
+    set(LIBDATACHANNEL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libdatachannel")
+    
+    # MinGW-specific flags for libdatachannel
+    set(LIBDATACHANNEL_CMAKE_ARGS ${CMAKE_CONFIGURE_ARGS})
+    
+    if (WIN32 AND MINGW)
+        # MinGW on Windows needs special handling
+        list(APPEND LIBDATACHANNEL_CMAKE_ARGS
+            -DCMAKE_SYSTEM_NAME=Windows
+            -DCMAKE_RC_COMPILER="${CMAKE_RC_COMPILER}"
+        )
+    endif()
+    
+    # Always prefer system OpenSSL, nlohmann-json, and libSRTP
+    # Disable examples/tests to avoid unnecessary example linking failures
+    list(APPEND LIBDATACHANNEL_CMAKE_ARGS
+        -DUSE_GNUTLS=OFF
+        -DUSE_MBEDTLS=OFF
+        -DUSE_OPENSSL=ON
+        -DUSE_SYSTEM_SRTP=ON
+        -DNO_EXAMPLES=ON
+        -DNO_TESTS=ON
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+    )
+    
+    ExternalProject_Add(libdatachannel
+        SOURCE_DIR ${LIBDATACHANNEL_DIR}
+        
+        INSTALL_COMMAND ""
+        
+        BUILD_IN_SOURCE False
+        BUILD_ALWAYS False
+        CMAKE_ARGS ${LIBDATACHANNEL_CMAKE_ARGS}
+        BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/libdatachannel
+        
+        BUILD_BYPRODUCTS 
+            ${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.a
+            ${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.lib
+            ${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.dll.a
+            ${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.dll
+    )
+    
+    # Create imported library target for linking
+    add_library(libdatachannel_external STATIC IMPORTED GLOBAL)
+    add_dependencies(libdatachannel_external libdatachannel)
+    
+    # Handle platform-specific library naming
+    if (WIN32 AND MINGW)
+        # MinGW uses .dll.a for import libraries
+        set_target_properties(libdatachannel_external PROPERTIES
+            IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.dll.a"
+        )
+    elseif (WIN32)
+        # MSVC uses .lib
+        set_target_properties(libdatachannel_external PROPERTIES
+            IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.lib"
+        )
+    else()
+        # Unix-like systems use .a
+        set_target_properties(libdatachannel_external PROPERTIES
+            IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.a"
+        )
+    endif()
+    
+    # Set include directories
+    set_target_properties(libdatachannel_external PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${LIBDATACHANNEL_DIR}/include"
+    )
+    
+endif(NETPLAY)
+
 ExternalProject_Get_property(mupen64plus-core BUILD_BYPRODUCTS)
 set(MUPEN64PLUSCORE_LIB ${BUILD_BYPRODUCTS} PARENT_SCOPE)
 set(MUPEN64PLUSCORE_INI ${M64P_CORE_DIR}/data/mupen64plus.ini PARENT_SCOPE)
@@ -283,3 +357,17 @@ set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/imgui PARENT_SCOPE)
 
 ExternalProject_Get_property(SDL_GameControllerDB BUILD_BYPRODUCTS)
 set(SDL_GAMECONTROLLERDB ${BUILD_BYPRODUCTS} PARENT_SCOPE)
+
+# libdatachannel exports
+if (NETPLAY)
+    set(LIBDATACHANNEL_EXTERNAL_TARGET libdatachannel_external PARENT_SCOPE)
+    set(LIBDATACHANNEL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libdatachannel/include" PARENT_SCOPE)
+    
+    if (WIN32 AND MINGW)
+        set(LIBDATACHANNEL_LIBRARIES "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.dll.a" PARENT_SCOPE)
+    elseif (WIN32)
+        set(LIBDATACHANNEL_LIBRARIES "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.lib" PARENT_SCOPE)
+    else()
+        set(LIBDATACHANNEL_LIBRARIES "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.a" PARENT_SCOPE)
+    endif()
+endif(NETPLAY)

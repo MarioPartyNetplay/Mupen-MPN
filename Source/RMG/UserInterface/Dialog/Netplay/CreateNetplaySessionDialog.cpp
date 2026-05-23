@@ -10,17 +10,24 @@
 #include "CreateNetplaySessionDialog.hpp"
 #include "Utilities/QtMessageBox.hpp"
 #include "NetplayCommon.hpp"
+#include "Netplay/NetplayCoordinator.hpp"
 
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
 #include <QNetworkDatagram>
+#include <QNetworkAccessManager>
+#include <QNetworkRequest>
 #include <QJsonDocument>
 #include <QPushButton>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QSpinBox>
+#include <QLabel>
+#include <QVBoxLayout>
 #include <QUrlQuery>
 #include <QFileInfo>
 #include <QFile>
+#include <QUrl>
 
 #include <RMG-Core/Settings.hpp>
 
@@ -33,16 +40,25 @@ using namespace Utilities;
 //
 
 
-CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, QWebSocket* webSocket, QMap<QString, CoreRomSettings> modelData) : QDialog(parent)
+CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInterface::Netplay::NetplayCoordinator* coordinator, QMap<QString, CoreRomSettings> modelData) : QDialog(parent)
 {
     this->setupUi(this);
 
-    // prepare web socket
-    this->webSocket = webSocket;
-    connect(this->webSocket, &QWebSocket::textMessageReceived, this, &CreateNetplaySessionDialog::on_webSocket_textMessageReceived);
-    connect(this->webSocket, &QWebSocket::pong, this, &CreateNetplaySessionDialog::on_webSocket_pong);
-    connect(this->webSocket, &QWebSocket::connected, this, &CreateNetplaySessionDialog::on_webSocket_connected);
-
+    // Store coordinator reference
+    this->coordinator = coordinator;
+    
+    // Connect to coordinator signals
+    connect(this->coordinator, &Netplay::NetplayCoordinator::roomCreated, this,
+            [this](const QString& roomId, int slot) {
+        qDebug() << "Session created with room ID:" << roomId;
+        QDialog::accept();
+    });
+    connect(this->coordinator, &Netplay::NetplayCoordinator::connectionError, this,
+            [this](const QString& error) {
+        QtMessageBox::Error(this, "Hosting Error", error);
+        this->toggleUI(true, this->validate());
+    });
+    
     // prepare broadcast
     broadcastSocket.bind(QHostAddress(QHostAddress::AnyIPv4), 0);
     connect(&this->broadcastSocket, &QUdpSocket::readyRead, this, &CreateNetplaySessionDialog::on_broadcastSocket_readyRead);
@@ -60,14 +76,77 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, QWebSock
     this->nickNameLineEdit->setValidator(new QRegularExpressionValidator(nicknameRe, this));
     this->nickNameLineEdit->setText(QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_Nickname)));
 
-    // set validator for session
-    QRegularExpression sessionRe(NETPLAYCOMMON_SESSION_REGEX);
-    this->sessionNameLineEdit->setValidator(new QRegularExpressionValidator(sessionRe, this));
+    // Remove server combo visibility - not needed
+    if (this->serverComboBox) {
+        this->serverComboBox->hide();
+    }
+    
+    // Remove server label
+    QLabel* serverLabel = this->findChild<QLabel*>("label");
+    if (serverLabel) {
+        serverLabel->hide();
+    }
+    
+    // Remove ping line edit - not needed
+    if (this->pingLineEdit) {
+        this->pingLineEdit->hide();
+    }
+    
+    // Remove ping label
+    QLabel* pingLabel = this->findChild<QLabel*>("pingLabel");
+    if (pingLabel) {
+        pingLabel->hide();
+    }
+    
+    // Remove session name line edit - will use nickname instead
+    if (this->sessionNameLineEdit) {
+        this->sessionNameLineEdit->hide();
+    }
+    
+    // Remove session name label
+    QLabel* sessionNameLabel = this->findChild<QLabel*>("label_2");
+    if (sessionNameLabel) {
+        sessionNameLabel->hide();
+    }
+    
+    // Remove password line edit - hardcoded to MPN
+    if (this->passwordLineEdit) {
+        this->passwordLineEdit->hide();
+    }
+    
+    // Remove password label
+    QLabel* passwordLabel = this->findChild<QLabel*>("label_3");
+    if (passwordLabel) {
+        passwordLabel->hide();
+    }
 
-    // set validator for password
-    QRegularExpression passwordRe(NETPLAYCOMMON_PASSWORD_REGEX);
-    this->passwordLineEdit->setValidator(new QRegularExpressionValidator(passwordRe, this));
-
+    // Add port customization UI
+    QWidget* portWidget = new QWidget(this);
+    QVBoxLayout* portLayout = new QVBoxLayout(portWidget);
+    
+    QLabel* portLabel = new QLabel("Hosting Port:", this);
+    portLabel->setToolTip("Port to listen on for incoming player connections (default: 27886)");
+    QSpinBox* portSpinBox = new QSpinBox(this);
+    portSpinBox->setMinimum(1024);
+    portSpinBox->setMaximum(65535);
+    portSpinBox->setValue(27886);
+    portSpinBox->setToolTip("Valid ports: 1024-65535. Use 27886 for default.");
+    
+    connect(portSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), 
+            this, [this](int port) { this->hostingPort = port; });
+    
+    portLayout->addWidget(portLabel);
+    portLayout->addWidget(portSpinBox);
+    portLayout->setContentsMargins(0, 0, 0, 0);
+    
+    // Find the parent layout and add the port widget
+    // Since we're using setupUi, we'll add it dynamically to the dialog
+    QVBoxLayout* mainLayout = qobject_cast<QVBoxLayout*>(this->layout());
+    if (mainLayout) {
+        // Insert before buttonBox
+        mainLayout->insertWidget(mainLayout->count() - 1, portWidget);
+    }
+    
     // add data to widget
     for (auto it = modelData.begin(); it != modelData.end(); it++)
     {
@@ -78,44 +157,6 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, QWebSock
     this->romListWidget->RefreshDone();
 
     this->validateCreateButton();
-
-    // request server list
-    QString serverUrl = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_ServerJsonUrl));
-    if (!serverUrl.isEmpty())
-    {
-        QFile qFile(serverUrl);
-        if (qFile.exists())
-        {
-            if (qFile.open(QIODevice::ReadOnly))
-            {
-                NetplayCommon::AddServers(this->serverComboBox, 
-                                          QJsonDocument::fromJson(qFile.readAll()));   
-            }
-            else
-            {
-                QtMessageBox::Error(this, "Server Error", "Failed to open server list json: " + qFile.errorString());
-            }
-        }
-        else if (QUrl(serverUrl).isValid())
-        {
-            QNetworkAccessManager* networkAccessManager = new QNetworkAccessManager(this);
-            connect(networkAccessManager, &QNetworkAccessManager::finished, this, &CreateNetplaySessionDialog::on_jsonServerListDownload_Finished);
-            networkAccessManager->setTransferTimeout(15000);
-            networkAccessManager->get(QNetworkRequest(QUrl(serverUrl)));
-        }
-    }
-
-    QString dispatcherUrl = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_DispatcherUrl));
-    if (!dispatcherUrl.isEmpty() && QUrl(dispatcherUrl).isValid())
-    {
-        this->dispatcherUrl = dispatcherUrl;
-
-        QNetworkAccessManager* networkAccessManager = new QNetworkAccessManager(this);
-        connect(networkAccessManager, &QNetworkAccessManager::finished, this, &CreateNetplaySessionDialog::on_dispatcherRegionListDownload_Finished);
-        networkAccessManager->setTransferTimeout(15000);
-
-        networkAccessManager->get(NetplayCommon::GetNetworkRequest(this->dispatcherUrl + "/getRegions"));
-    }
 }
 
 CreateNetplaySessionDialog::~CreateNetplaySessionDialog(void)
@@ -165,14 +206,7 @@ bool CreateNetplaySessionDialog::validate(void)
         return false;
     }
 
-    if (this->sessionNameLineEdit->text().isEmpty() ||
-        this->sessionNameLineEdit->text().size() > 128)
-    {
-        return false;
-    }
-
-    if (!this->romListWidget->IsCurrentRomValid() ||
-        this->serverComboBox->count() == 0)
+    if (!this->romListWidget->IsCurrentRomValid())
     {
         return false;
     }
@@ -188,25 +222,119 @@ void CreateNetplaySessionDialog::validateCreateButton(void)
 
 void CreateNetplaySessionDialog::createSession(void)
 {
-    QList<QString> plugins = NetplayCommon::GetPluginNames(this->sessionMD5);
+    // Start hosting a local signaling server
+    QString playerName = this->nickNameLineEdit->text();
+    QString gameName = this->getGameName(this->sessionGoodName, this->sessionFile);
+    
+    if (!this->coordinator->startHosting(this->hostingPort, playerName, gameName))
+    {
+        QtMessageBox::Error(this, "Hosting Error", QString("Failed to start hosting server on port %1").arg(this->hostingPort));
+        this->toggleUI(true, this->validate());
+        return;
+    }
 
-    QJsonObject jsonFeatures;
-    jsonFeatures.insert("rsp_plugin", plugins[0]);
-    jsonFeatures.insert("gfx_plugin", plugins[1]);
-
+    // Build session JSON with hosting information
     QJsonObject json;
-    QJsonObject session;
-    session.insert("room_name", this->sessionNameLineEdit->text());
-    session.insert("password", this->passwordLineEdit->text());
-    session.insert("MD5", this->sessionMD5);
-    session.insert("game_name", this->getGameName(this->sessionGoodName, this->sessionFile));
-    session.insert("features",  jsonFeatures);
-    json.insert("type", "request_create_room");
-    json.insert("player_name", this->nickNameLineEdit->text());
-    json.insert("room", session);
-    NetplayCommon::AddCommonJson(json);
+    json.insert("room_name", playerName);  // Room name is the host's nickname
+    json.insert("password", "MPN");  // Hardcoded password
+    json.insert("MD5", this->sessionMD5);
+    json.insert("game_name", gameName);
+    json.insert("player_name", playerName);
+    json.insert("server_address", "127.0.0.1");
+    json.insert("server_port", this->hostingPort);
+    json.insert("public_address", "localhost");  // Will be updated by fetchPublicIpAddress()
+    json.insert("public_port", this->hostingPort);
+    json.insert("is_hosting", true);
+    json.insert("slot", 0);
+    json.insert("md5_hash", this->sessionMD5);  // For ROM matching
+    json.insert("rom_path", this->sessionFile); // For loading cheats
+    
+    this->sessionJson = json;
+    
+    qDebug() << "Created session via coordinator, hosting on port" << this->hostingPort << "as" << playerName;
+    
+    // Fetch public IP address from AWS
+    this->fetchPublicIpAddress();
+}
 
-    this->webSocket->sendTextMessage(QJsonDocument(json).toJson());
+void CreateNetplaySessionDialog::fetchPublicIpAddress(void)
+{
+    // Set a 3-second timeout for the public IP fetch
+    this->publicIpTimeoutTimerId = this->startTimer(3000);
+    
+    // Make GET request to AWS checkip service
+    QUrl url("http://checkip.amazonaws.com/");
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::UserAgentHeader, "RMG-Netplay/1.0");
+    
+    this->publicIpReply = this->networkManager.get(request);
+    connect(this->publicIpReply, QOverload<QNetworkReply::NetworkError>::of(&QNetworkReply::errorOccurred),
+            this, [this](QNetworkReply::NetworkError error) {
+        qDebug() << "Public IP fetch network error:" << error;
+    });
+    // finished() signal doesn't pass any parameters, so we use a lambda
+    connect(this->publicIpReply, &QNetworkReply::finished, this, [this]() {
+        this->on_publicIpFetch_Finished(nullptr);
+    });
+}
+
+void CreateNetplaySessionDialog::on_publicIpFetch_Finished(QNetworkReply* reply)
+{
+    // Handle timeout timer
+    if (this->publicIpTimeoutTimerId != -1)
+    {
+        this->killTimer(this->publicIpTimeoutTimerId);
+        this->publicIpTimeoutTimerId = -1;
+    }
+    
+    // Use the stored member reply since the signal doesn't pass it
+    QNetworkReply* networkReply = this->publicIpReply;
+    if (!networkReply) {
+        qWarning() << "Public IP reply is null";
+        this->publicIpAddress = "localhost";
+        this->finalizeSession();
+        return;
+    }
+    
+    if (networkReply->error() == QNetworkReply::NoError)
+    {
+        QString responseData = QString::fromUtf8(networkReply->readAll()).trimmed();
+        qDebug() << "Public IP response:" << responseData;
+        
+        // AWS returns just the IP address, e.g., "203.0.113.42\n"
+        if (!responseData.isEmpty())
+        {
+            this->publicIpAddress = responseData;
+        }
+        else
+        {
+            qWarning() << "Empty response from public IP service";
+            this->publicIpAddress = "localhost";
+        }
+    }
+    else
+    {
+        qWarning() << "Failed to fetch public IP:" << networkReply->errorString();
+        this->publicIpAddress = "localhost";
+    }
+    
+    networkReply->deleteLater();
+    this->publicIpReply = nullptr;
+    
+    // Finalize the session with the fetched public IP
+    this->finalizeSession();
+}
+
+void CreateNetplaySessionDialog::finalizeSession(void)
+{
+    // Update session JSON with the public IP address
+    this->sessionJson.insert("public_address", this->publicIpAddress);
+    this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
+    
+    qDebug() << "Finalized session with public IP:" << this->publicIpAddress;
+    
+    // Close dialog to proceed to session screen
+    QDialog::accept();
 }
 
 void CreateNetplaySessionDialog::toggleUI(bool enable, bool enableCreateButton)
@@ -214,10 +342,6 @@ void CreateNetplaySessionDialog::toggleUI(bool enable, bool enableCreateButton)
     QPushButton* createButton = this->buttonBox->button(QDialogButtonBox::Ok);
     createButton->setEnabled(enableCreateButton);
 
-    this->serverComboBox->setEnabled(enable);
-    this->sessionNameLineEdit->setReadOnly(!enable);
-    this->passwordLineEdit->setReadOnly(!enable);
-    this->sessionNameLineEdit->setReadOnly(!enable);
     this->nickNameLineEdit->setReadOnly(!enable);
 }
 
@@ -225,47 +349,46 @@ void CreateNetplaySessionDialog::timerEvent(QTimerEvent* event)
 {
     if (event->timerId() == this->pingTimerId)
     {
-        if (this->webSocket->isValid())
+        // Keep-alive is handled by coordinator internally
+        // No additional ping needed
+    }
+    else if (event->timerId() == this->publicIpTimeoutTimerId)
+    {
+        // Public IP fetch timed out, use fallback
+        qWarning() << "Public IP fetch timed out, using fallback";
+        this->publicIpAddress = "localhost";
+        
+        this->killTimer(this->publicIpTimeoutTimerId);
+        this->publicIpTimeoutTimerId = -1;
+        
+        // Cancel the ongoing request
+        if (this->publicIpReply)
         {
-            this->webSocket->ping();
+            this->publicIpReply->abort();
+            this->publicIpReply->deleteLater();
+            this->publicIpReply = nullptr;
         }
+        
+        // Finalize the session with fallback IP
+        this->finalizeSession();
     }
 }
 
+// WebSocket handlers are no longer used - we use coordinator for hosting
+// Kept for reference but not actively used
 void CreateNetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
 {
-    QJsonDocument jsonDocument = QJsonDocument::fromJson(message.toUtf8());
-    QJsonObject json = jsonDocument.object();
-
-    if (json.value("type").toString() == "reply_create_room")
-    {
-        if (json.value("accept").toInt() == 0)
-        {
-            this->sessionJson = json;
-            QDialog::accept();
-        }
-        else
-        {
-            QtMessageBox::Error(this, "Server Error", json.value("message").toString());
-            this->toggleUI(true, this->validate());
-        }
-    }
+    // Deprecated - using coordinator instead
 }
 
 void CreateNetplaySessionDialog::on_webSocket_pong(quint64 elapsedTime, const QByteArray&)
 {
-    if (!NetplayCommon::IsServerDispatcher(this->serverComboBox))
-    {
-        this->pingLineEdit->setText(QString::number(elapsedTime) + " ms");
-    }
+    // Deprecated - using coordinator instead
 }
 
 void CreateNetplaySessionDialog::on_webSocket_connected()
 {
-    if (NetplayCommon::IsServerDispatcher(this->serverComboBox))
-    {
-        this->createSession();
-    }
+    // Deprecated - using coordinator instead
 }
 
 void CreateNetplaySessionDialog::on_broadcastSocket_readyRead()
@@ -332,37 +455,9 @@ void CreateNetplaySessionDialog::on_dispatcherServerCreate_Finished(QNetworkRepl
         return;
     }
 
-    // first item should be an address
-    QString address = jsonObject[jsonObject.keys().at(0)].toString();
-    this->webSocket->open(QUrl(address));
-
+    // Old dispatcher server creation code - no longer used
+    // The session is now created via local hosting
     reply->deleteLater();
-}
-
-void CreateNetplaySessionDialog::on_serverComboBox_currentIndexChanged(int index)
-{
-    if (index == -1)
-    {
-        return;
-    }
-
-    bool dispatcher = NetplayCommon::IsServerDispatcher(this->serverComboBox, index);
-    
-    if (this->pingTimerId != -1)
-    {
-        this->killTimer(this->pingTimerId);
-        this->pingTimerId = -1;
-    }
-
-    this->pingLineEdit->setText(dispatcher ? "N/A" : "Calculating...");
-
-    if (!dispatcher)
-    {
-        this->pingTimerId = this->startTimer(2000);
-
-        QString address = NetplayCommon::GetServerData(this->serverComboBox, index);
-        this->webSocket->open(QUrl(address));
-    }
 }
 
 void CreateNetplaySessionDialog::on_nickNameLineEdit_textChanged(void)
@@ -370,15 +465,8 @@ void CreateNetplaySessionDialog::on_nickNameLineEdit_textChanged(void)
     this->validateCreateButton();
 }
 
-void CreateNetplaySessionDialog::on_sessionNameLineEdit_textChanged(void)
-{
-    this->validateCreateButton();
-}
-
-void CreateNetplaySessionDialog::on_passwordLineEdit_textChanged(void)
-{
-    this->validateCreateButton();
-}
+// Removed on_sessionNameLineEdit_textChanged - session name is now auto-generated from nickname
+// Removed on_passwordLineEdit_textChanged - password is now hardcoded to MPN
 
 void CreateNetplaySessionDialog::on_romListWidget_OnRomChanged(bool valid)
 {
@@ -387,11 +475,7 @@ void CreateNetplaySessionDialog::on_romListWidget_OnRomChanged(bool valid)
 
 void CreateNetplaySessionDialog::accept()
 {
-    if (!NetplayCommon::IsServerDispatcher(this->serverComboBox) && !this->webSocket->isValid())
-    {
-        QtMessageBox::Error(this, "Server Error", "Connection Failed");
-        return;
-    }
+    // No need to check dispatcher - we use coordinator for hosting
 
     NetplayRomData romData;
     if (!this->romListWidget->GetCurrentRom(romData))
@@ -407,26 +491,6 @@ void CreateNetplaySessionDialog::accept()
     // disable create button while we're processing the request
     this->toggleUI(false, false);
 
-    if (NetplayCommon::IsServerDispatcher(this->serverComboBox))
-    {
-        QNetworkAccessManager* networkAccessManager = new QNetworkAccessManager(this);
-        connect(networkAccessManager, &QNetworkAccessManager::finished, this, &CreateNetplaySessionDialog::on_dispatcherServerCreate_Finished);
-        networkAccessManager->setTransferTimeout(120000);
-
-        QUrl url(this->dispatcherUrl + "/createServer");
-
-        QUrlQuery urlQuery;
-        urlQuery.addQueryItem("region", NetplayCommon::GetServerData(this->serverComboBox));
-        url.setQuery(urlQuery);
-
-        networkAccessManager->get(NetplayCommon::GetNetworkRequest(url));
-
-        // creating a server can take a while,
-        // so show a loading screen
-        this->romListWidget->ShowLoading();
-    }
-    else
-    {
-        this->createSession();
-    }
+    // Create session via coordinator (will host locally on port 27886)
+    this->createSession();
 }

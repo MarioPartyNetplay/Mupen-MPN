@@ -22,6 +22,8 @@ set(RMG_CORE_SOURCES
     m64p/CoreApi.cpp
     m64p/ConfigApi.cpp
     m64p/PluginApi.cpp
+    Netplay/LockstepEngine.cpp
+    Netplay/WebRTC/WebRTCDataChannel.cpp
     CachedRomHeaderAndSettings.cpp
     ConvertStringEncoding.cpp
     SpeedLimiter.cpp
@@ -53,7 +55,7 @@ set(RMG_CORE_SOURCES
 )
 
 if (NETPLAY)
-    add_definitions(-DNETPLAY)
+    add_definitions(-DNETPLAY -DWEBRTC_P2P)
 endif(NETPLAY)
 
 if (PORTABLE_INSTALL)
@@ -61,6 +63,10 @@ if (PORTABLE_INSTALL)
 endif(PORTABLE_INSTALL)
 
 add_library(RMG-Core SHARED ${RMG_CORE_SOURCES})
+
+if (NETPLAY)
+    add_dependencies(RMG-Core libdatachannel libdatachannel_external)
+endif(NETPLAY)
 
 if(UNIX)
     target_link_libraries(RMG-Core dl)
@@ -75,10 +81,22 @@ target_link_libraries(RMG-Core
     lzma
 )
 
+if (NETPLAY)
+    if (LIBDATACHANNEL_EXTERNAL_TARGET)
+        target_link_libraries(RMG-Core ${LIBDATACHANNEL_EXTERNAL_TARGET})
+        target_include_directories(RMG-Core PRIVATE ${LIBDATACHANNEL_INCLUDE_DIR})
+    elseif (TARGET libdatachannel::libdatachannel)
+        target_link_libraries(RMG-Core libdatachannel::libdatachannel)
+    elseif (TARGET LibDataChannel::LibDataChannel)
+        target_link_libraries(RMG-Core LibDataChannel::LibDataChannel)
+    endif()
+endif(NETPLAY)
+
 target_include_directories(RMG-Core PRIVATE 
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../
+    ${CMAKE_CURRENT_SOURCE_DIR}/../RMG/Netplay
     ${MINIZIP_INCLUDE_DIRS}
 )
 

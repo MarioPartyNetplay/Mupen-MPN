@@ -1,4 +1,3 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>NetplaySessionBrowserDialog</class>
  <widget class="QDialog" name="NetplaySessionBrowserDialog">
@@ -6,12 +5,12 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>723</width>
-    <height>511</height>
+    <width>400</width>
+    <height>150</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Netplay Session Browser</string>
+   <string>Join Netplay Session</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
@@ -36,52 +35,28 @@
     </layout>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout">
+    <layout class="QHBoxLayout" name="horizontalLayout_ip">
      <item>
-      <widget class="QLabel" name="label">
+      <widget class="QLabel" name="ipLabel">
        <property name="text">
-        <string>Server</string>
+        <string>IP:Port</string>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="QComboBox" name="serverComboBox"/>
-     </item>
-    </layout>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_3">
-     <item>
-      <widget class="QLabel" name="pingLabel">
+      <widget class="QLineEdit" name="ipAddressLineEdit">
        <property name="sizePolicy">
-        <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+        <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
          <horstretch>0</horstretch>
          <verstretch>0</verstretch>
         </sizepolicy>
        </property>
-       <property name="text">
-        <string>Server ping</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QLineEdit" name="pingLineEdit">
-       <property name="readOnly">
-        <bool>true</bool>
+       <property name="placeholderText">
+        <string>127.0.0.1:27886</string>
        </property>
       </widget>
      </item>
     </layout>
-   </item>
-   <item>
-    <widget class="UserInterface::Widget::NetplaySessionBrowserWidget" name="sessionBrowserWidget">
-     <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
-       <horstretch>0</horstretch>
-       <verstretch>0</verstretch>
-      </sizepolicy>
-     </property>
-    </widget>
    </item>
    <item>
     <widget class="QDialogButtonBox" name="buttonBox">
@@ -89,20 +64,12 @@
       <enum>Qt::Orientation::Horizontal</enum>
      </property>
      <property name="standardButtons">
-      <set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Ok|QDialogButtonBox::StandardButton::RestoreDefaults</set>
+      <set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Ok</set>
      </property>
     </widget>
    </item>
   </layout>
  </widget>
- <customwidgets>
-  <customwidget>
-   <class>UserInterface::Widget::NetplaySessionBrowserWidget</class>
-   <extends>QStackedWidget</extends>
-   <header>UserInterface/Widget/Netplay/NetplaySessionBrowserWidget.hpp</header>
-   <container>1</container>
-  </customwidget>
- </customwidgets>
  <resources/>
  <connections>
   <connection>
@@ -112,12 +79,12 @@
    <slot>accept()</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>248</x>
-     <y>254</y>
+     <x>200</x>
+     <y>120</y>
     </hint>
     <hint type="destinationlabel">
-     <x>157</x>
-     <y>274</y>
+     <x>100</x>
+     <y>100</y>
     </hint>
    </hints>
   </connection>
@@ -128,12 +95,12 @@
    <slot>reject()</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>316</x>
-     <y>260</y>
+     <x>200</x>
+     <y>120</y>
     </hint>
     <hint type="destinationlabel">
-     <x>286</x>
-     <y>274</y>
+     <x>300</x>
+     <y>100</y>
     </hint>
    </hints>
   </connection>

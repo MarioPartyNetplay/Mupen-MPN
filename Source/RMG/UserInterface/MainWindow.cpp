@@ -22,6 +22,7 @@
 #include "Dialog/Netplay/NetplaySessionBrowserDialog.hpp"
 #include "Dialog/Netplay/CreateNetplaySessionDialog.hpp"
 #include "Dialog/Netplay/NetplaySessionDialog.hpp"
+#include "Netplay/NetplayCoordinator.hpp"
 #endif // NETPLAY
 #include "UserInterface/EventFilter.hpp"
 #include "Utilities/QtKeyToSdl3Key.hpp"
@@ -35,9 +36,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #endif // UPDATER
-#ifdef NETPLAY
-#include <QWebSocket>
-#endif // NETPLAY
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QGuiApplication>
@@ -1318,7 +1316,7 @@ void MainWindow::checkForUpdates(bool silent, bool force)
 #endif // UPDATER
 
 #ifdef NETPLAY
-void MainWindow::showNetplaySessionDialog(QWebSocket* webSocket, QJsonObject json, QString sessionFile)
+void MainWindow::showNetplaySessionDialog(QString sessionFile)
 {
     if (this->netplaySessionDialog != nullptr)
     {
@@ -1326,7 +1324,7 @@ void MainWindow::showNetplaySessionDialog(QWebSocket* webSocket, QJsonObject jso
         this->netplaySessionDialog = nullptr;
     }
     
-    this->netplaySessionDialog = new Dialog::NetplaySessionDialog(nullptr, webSocket, json, sessionFile);
+    this->netplaySessionDialog = new Dialog::NetplaySessionDialog(nullptr, this->netplayCoordinator, sessionFile);
     connect(this->netplaySessionDialog, &Dialog::NetplaySessionDialog::OnPlayGame, this, &MainWindow::on_Netplay_PlayGame);
     connect(this->netplaySessionDialog, &Dialog::NetplaySessionDialog::rejected, this, &MainWindow::on_NetplaySessionDialog_rejected);
     this->netplaySessionDialog->show();
@@ -1528,6 +1526,11 @@ void MainWindow::on_EventFilter_FileDropped(QDropEvent *event)
 
 void MainWindow::on_QGuiApplication_applicationStateChanged(Qt::ApplicationState state)
 {
+    if (CoreIsEmbeddedNetplayActive() || CoreHasInitNetplay())
+    {
+        return;
+    }
+
     bool isRunning = CoreIsEmulationRunning();
     bool isPaused = CoreIsEmulationPaused();
 
@@ -2057,13 +2060,16 @@ void MainWindow::on_Action_View_Search(void)
 void MainWindow::on_Action_Netplay_CreateSession(void)
 {
 #ifdef NETPLAY
-    static QWebSocket webSocket;
+    if (this->netplayCoordinator == nullptr)
+    {
+        this->netplayCoordinator = new Netplay::NetplayCoordinator("http://localhost:27886", this);
+    }
 
-    Dialog::CreateNetplaySessionDialog dialog(this, &webSocket, this->ui_Widget_RomBrowser->GetModelData());
+    Dialog::CreateNetplaySessionDialog dialog(this, this->netplayCoordinator, this->ui_Widget_RomBrowser->GetModelData());
     int ret = dialog.exec();
     if (ret == QDialog::Accepted)
     {
-        this->showNetplaySessionDialog(&webSocket, dialog.GetSessionJson(), dialog.GetSessionFile());
+        this->showNetplaySessionDialog(dialog.GetSessionFile());
     }
 #endif // NETPLAY
 }
@@ -2071,13 +2077,16 @@ void MainWindow::on_Action_Netplay_CreateSession(void)
 void MainWindow::on_Action_Netplay_BrowseSessions(void)
 {
 #ifdef NETPLAY
-    static QWebSocket webSocket;
+    if (this->netplayCoordinator == nullptr)
+    {
+        this->netplayCoordinator = new Netplay::NetplayCoordinator("http://localhost:27886", this);
+    }
 
-    Dialog::NetplaySessionBrowserDialog dialog(this, &webSocket, this->ui_Widget_RomBrowser->GetModelData());
+    Dialog::NetplaySessionBrowserDialog dialog(this, this->netplayCoordinator, this->ui_Widget_RomBrowser->GetModelData());
     int ret = dialog.exec();
     if (ret == QDialog::Accepted)
     {
-        this->showNetplaySessionDialog(&webSocket, dialog.GetSessionJson(), dialog.GetSessionFile());
+        this->showNetplaySessionDialog(dialog.GetSessionFile());
     }
 #endif // NETPLAY
 }

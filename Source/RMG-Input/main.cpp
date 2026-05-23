@@ -209,6 +209,11 @@ static bool l_KeyboardState[SDL_SCANCODE_COUNT];
 // config GUI state
 static bool l_IsConfigGuiOpen = false;
 
+// Embedded netplay synchronization state
+static bool l_EmbeddedNetplayLocalSubmitted = false;
+static bool l_EmbeddedNetplayFrameAdvanced = false;
+static uint32_t l_EmbeddedNetplaySyncedState[NUM_CONTROLLERS] = {0};
+
 //
 // Local Functions
 //
@@ -399,6 +404,13 @@ static void apply_controller_profiles(void)
         return;
     }
 
+    const bool embeddedNetplay = CoreIsEmbeddedNetplayActive();
+    int embeddedLocalSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
+    if (embeddedLocalSlot < 0 || embeddedLocalSlot >= NUM_CONTROLLERS)
+    {
+        embeddedLocalSlot = 0;
+    }
+
     for (int i = 0; i < NUM_CONTROLLERS; i++)
     {
         InputProfile* profile = &l_InputProfiles[i];
@@ -437,7 +449,24 @@ static void apply_controller_profiles(void)
         }
 #endif // VRU
 
-        l_ControlInfo.Controls[i].Present = profile->PluggedIn ? 1 : 0;
+        // In embedded netplay, all controller ports should appear present to the ROM.
+        // Only the local assigned slot uses local physical input; remote slots are driven by netplay sync.
+        if (embeddedNetplay)
+        {
+            l_ControlInfo.Controls[i].Present = 1;
+            if (i != embeddedLocalSlot)
+            {
+                l_ControlInfo.Controls[i].Plugin = PLUGIN_NONE;
+                l_ControlInfo.Controls[i].RawData = 0;
+                l_ControlInfo.Controls[i].Type = CONT_TYPE_STANDARD;
+                continue;
+            }
+        }
+        else
+        {
+            l_ControlInfo.Controls[i].Present = profile->PluggedIn ? 1 : 0;
+        }
+
         l_ControlInfo.Controls[i].Plugin  = emulateVRU ? PLUGIN_NONE : plugin;
         l_ControlInfo.Controls[i].RawData = 0;
         l_ControlInfo.Controls[i].Type    = emulateVRU ? CONT_TYPE_VRU : CONT_TYPE_STANDARD;
@@ -1326,83 +1355,113 @@ EXPORT void CALL ControllerCommand(int Control, unsigned char* Command)
 
 EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
 {
-    InputProfile* profile = &l_InputProfiles[Control];
-
-    if (!profile->PluggedIn || l_IsConfigGuiOpen)
+    if (Keys == nullptr || Control < 0 || Control >= NUM_CONTROLLERS)
     {
         return;
     }
 
-#ifdef VRU
-    // when we're emulating the VRU,
-    // we need to check the mic state
-    if (profile->DeviceType == InputDeviceType::EmulateVRU)
-    {
-        if (GetVRUMicState())
+    Keys->Value = 0;
+
+    const auto fillLocalKeys = [&](int localControl, BUTTONS* outKeys) {
+        outKeys->Value = 0;
+
+        InputProfile* profile = &l_InputProfiles[localControl];
+
+        if (!profile->PluggedIn || l_IsConfigGuiOpen)
         {
-            Keys->Value = 0x0020;
+            return;
         }
-        else
+
+    #ifdef VRU
+        if (profile->DeviceType == InputDeviceType::EmulateVRU)
         {
-            Keys->Value = 0x0000;
+            outKeys->Value = GetVRUMicState() ? 0x0020 : 0x0000;
+            return;
         }
-        return;
-    }
-#endif // VRU
+    #endif // VRU
 
-    // when we've matched a hotkey,
-    // we don't need to check anything
-    // else
-    if (check_hotkeys(Control))
+        if (check_hotkeys(localControl))
+        {
+            return;
+        }
+
+        outKeys->A_BUTTON     = get_button_state(profile, &profile->Button_A);
+        outKeys->B_BUTTON     = get_button_state(profile, &profile->Button_B);
+        outKeys->START_BUTTON = get_button_state(profile, &profile->Button_Start);
+        outKeys->U_DPAD       = get_button_state(profile, &profile->Button_DpadUp);
+        outKeys->D_DPAD       = get_button_state(profile, &profile->Button_DpadDown);
+        outKeys->L_DPAD       = get_button_state(profile, &profile->Button_DpadLeft);
+        outKeys->R_DPAD       = get_button_state(profile, &profile->Button_DpadRight);
+        outKeys->U_CBUTTON    = get_button_state(profile, &profile->Button_CButtonUp);
+        outKeys->D_CBUTTON    = get_button_state(profile, &profile->Button_CButtonDown);
+        outKeys->L_CBUTTON    = get_button_state(profile, &profile->Button_CButtonLeft);
+        outKeys->R_CBUTTON    = get_button_state(profile, &profile->Button_CButtonRight);
+        outKeys->L_TRIG       = get_button_state(profile, &profile->Button_LeftShoulder);
+        outKeys->R_TRIG       = get_button_state(profile, &profile->Button_RightShoulder);
+        outKeys->Z_TRIG       = get_button_state(profile, &profile->Button_ZTrigger);
+
+        double inputX = 0, inputY = 0;
+        bool useButtonMapping = false;
+        inputY = get_axis_state(profile, &profile->AnalogStick_Up,    1, inputY, useButtonMapping);
+        inputY = get_axis_state(profile, &profile->AnalogStick_Down, -1, inputY, useButtonMapping);
+        inputX = get_axis_state(profile, &profile->AnalogStick_Left, -1, inputX, useButtonMapping);
+        inputX = get_axis_state(profile, &profile->AnalogStick_Right, 1, inputX, useButtonMapping);
+
+        const double deadzone = profile->DeadzoneValue;
+        inputX = apply_deadzone(inputX, deadzone);
+        inputY = apply_deadzone(inputY, deadzone);
+
+        const double sensitivityRatio = profile->SensitivityValue;
+        const double lowerInputLimit = std::max(-1.0, -sensitivityRatio);
+        const double upperInputLimit = std::min(1.0, sensitivityRatio);
+        inputX = std::clamp(inputX * sensitivityRatio, lowerInputLimit, upperInputLimit);
+        inputY = std::clamp(inputY * sensitivityRatio, lowerInputLimit, upperInputLimit);
+
+        int octagonX = 0, octagonY = 0;
+        simulate_octagon(deadzone, inputX, inputY, octagonX, octagonY);
+
+        outKeys->X_AXIS = octagonX;
+        outKeys->Y_AXIS = octagonY;
+    };
+
+    const bool embeddedNetplay = CoreIsEmbeddedNetplayActive();
+    if (embeddedNetplay)
     {
+        int embeddedLocalSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
+        if (embeddedLocalSlot < 0 || embeddedLocalSlot >= NUM_CONTROLLERS)
+        {
+            embeddedLocalSlot = 0;
+        }
+
+        if (Control == 0)
+        {
+            l_EmbeddedNetplayLocalSubmitted = false;
+            l_EmbeddedNetplayFrameAdvanced = false;
+        }
+
+        if (!l_EmbeddedNetplayLocalSubmitted)
+        {
+            BUTTONS localKeys = {};
+            fillLocalKeys(embeddedLocalSlot, &localKeys);
+            CoreSubmitEmbeddedNetplayFrameInput(localKeys.Value);
+            l_EmbeddedNetplayLocalSubmitted = true;
+        }
+
+        if (!l_EmbeddedNetplayFrameAdvanced)
+        {
+            CoreAdvanceEmbeddedNetplayFrame();
+            for (int i = 0; i < NUM_CONTROLLERS; i++)
+            {
+                l_EmbeddedNetplaySyncedState[i] = CoreGetEmbeddedNetplayFrameInput(i);
+            }
+            l_EmbeddedNetplayFrameAdvanced = true;
+        }
+
+        Keys->Value = l_EmbeddedNetplaySyncedState[Control];
         return;
     }
 
-    Keys->A_BUTTON     = get_button_state(profile, &profile->Button_A);
-    Keys->B_BUTTON     = get_button_state(profile, &profile->Button_B);
-    Keys->START_BUTTON = get_button_state(profile, &profile->Button_Start);
-    Keys->U_DPAD       = get_button_state(profile, &profile->Button_DpadUp);
-    Keys->D_DPAD       = get_button_state(profile, &profile->Button_DpadDown);
-    Keys->L_DPAD       = get_button_state(profile, &profile->Button_DpadLeft);
-    Keys->R_DPAD       = get_button_state(profile, &profile->Button_DpadRight);
-    Keys->U_CBUTTON    = get_button_state(profile, &profile->Button_CButtonUp);
-    Keys->D_CBUTTON    = get_button_state(profile, &profile->Button_CButtonDown);
-    Keys->L_CBUTTON    = get_button_state(profile, &profile->Button_CButtonLeft);
-    Keys->R_CBUTTON    = get_button_state(profile, &profile->Button_CButtonRight);
-    Keys->L_TRIG       = get_button_state(profile, &profile->Button_LeftShoulder);
-    Keys->R_TRIG       = get_button_state(profile, &profile->Button_RightShoulder);
-    Keys->Z_TRIG       = get_button_state(profile, &profile->Button_ZTrigger);
-
-    double inputX = 0, inputY = 0;
-    bool useButtonMapping = false;
-    inputY = get_axis_state(profile, &profile->AnalogStick_Up,    1, inputY, useButtonMapping);
-    inputY = get_axis_state(profile, &profile->AnalogStick_Down, -1, inputY, useButtonMapping);
-    inputX = get_axis_state(profile, &profile->AnalogStick_Left, -1, inputX, useButtonMapping);
-    inputX = get_axis_state(profile, &profile->AnalogStick_Right, 1, inputX, useButtonMapping);
-
-    // take deadzone into account
-    const double deadzone = profile->DeadzoneValue;
-    inputX = apply_deadzone(inputX, deadzone);
-    inputY = apply_deadzone(inputY, deadzone);
-
-    // take sensitivity into account
-    const double sensitivityRatio = profile->SensitivityValue;
-    const double lowerInputLimit = std::max(-1.0, -sensitivityRatio);
-    const double upperInputLimit = std::min(1.0, sensitivityRatio);
-    inputX = std::clamp(inputX * sensitivityRatio, lowerInputLimit, upperInputLimit);
-    inputY = std::clamp(inputY * sensitivityRatio, lowerInputLimit, upperInputLimit);
-
-    int octagonX = 0, octagonY = 0;
-    simulate_octagon(
-        deadzone, // deadzone
-        inputX, // inputX
-        inputY, // inputY
-        octagonX, // outputX
-        octagonY  // outputY
-    );
-
-    Keys->X_AXIS = octagonX;
-    Keys->Y_AXIS = octagonY;
+    fillLocalKeys(Control, Keys);
 }
 
 EXPORT void CALL InitiateControllers(CONTROL_INFO ControlInfo)
@@ -1432,6 +1491,12 @@ EXPORT void CALL ReadController(int Control, unsigned char *Command)
 EXPORT int CALL RomOpen(void)
 {
     l_HotkeysThread->SetState(HotkeysThreadState::RomOpened);
+    l_EmbeddedNetplayLocalSubmitted = false;
+    l_EmbeddedNetplayFrameAdvanced = false;
+    for (int i = 0; i < NUM_CONTROLLERS; i++)
+    {
+        l_EmbeddedNetplaySyncedState[i] = 0;
+    }
     return 1;
 }
 

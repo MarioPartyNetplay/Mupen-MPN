@@ -21,6 +21,7 @@
 
 #ifdef NETPLAY
 #include "Dialog/Netplay/NetplaySessionDialog.hpp"
+#include "Netplay/NetplayCoordinator.hpp"
 #endif // NETPLAY
 #include "Dialog/LogDialog.hpp"
 
@@ -120,6 +121,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 
     Dialog::LogDialog logDialog;
 #ifdef NETPLAY
+    Netplay::NetplayCoordinator* netplayCoordinator = nullptr;
     Dialog::NetplaySessionDialog* netplaySessionDialog = nullptr;
 #endif // NETPLAY
 
@@ -165,7 +167,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 #endif // UPDATER
 
 #ifdef NETPLAY
-    void showNetplaySessionDialog(QWebSocket* webSocket, QJsonObject json, QString sessionFile);
+    void showNetplaySessionDialog(QString sessionFile);
 #endif // NETPLAY
   protected:
     void timerEvent(QTimerEvent *event) Q_DECL_OVERRIDE;

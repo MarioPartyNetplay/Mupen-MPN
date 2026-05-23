@@ -10,6 +10,7 @@
 #ifndef CREATENETPLAYSESSIONDIALOG_HPP
 #define CREATENETPLAYSESSIONDIALOG_HPP
 
+#include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QJsonObject>
 #include <QTimerEvent>
@@ -22,6 +23,11 @@
 
 #include <RMG-Core/RomSettings.hpp>
 
+// Forward declaration
+namespace UserInterface::Netplay {
+class NetplayCoordinator;
+}
+
 namespace UserInterface
 {
 namespace Dialog
@@ -31,17 +37,23 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
     Q_OBJECT
 
   public:
-    CreateNetplaySessionDialog(QWidget *parent, QWebSocket* webSocket, QMap<QString, CoreRomSettings> data);
+    CreateNetplaySessionDialog(QWidget *parent, UserInterface::Netplay::NetplayCoordinator* coordinator, QMap<QString, CoreRomSettings> data);
     ~CreateNetplaySessionDialog(void);
 
     QJsonObject GetSessionJson(void);
     QString     GetSessionFile(void);
 
   private:
-  	QWebSocket* webSocket;
+  	UserInterface::Netplay::NetplayCoordinator* coordinator;
     QUdpSocket broadcastSocket;
+    QNetworkAccessManager networkManager;
+    QNetworkReply* publicIpReply = nullptr;
 
     int pingTimerId = -1;
+    int hostingPort = 27886;  // Default port for hosting
+    int publicIpTimeoutTimerId = -1;
+    
+    QString publicIpAddress;  // Store the public IP
 
   	QJsonObject sessionJson;
     QString sessionFile;
@@ -56,6 +68,8 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
     void validateCreateButton(void);
 
     void createSession(void);
+    void fetchPublicIpAddress(void);
+    void finalizeSession(void);
 
     void toggleUI(bool enable, bool enableCreateButton);
 
@@ -67,16 +81,13 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
     void on_webSocket_pong(quint64 elapsedTime, const QByteArray&);
     void on_webSocket_connected(void);
     void on_broadcastSocket_readyRead(void);
+    void on_publicIpFetch_Finished(QNetworkReply* reply);
 
     void on_jsonServerListDownload_Finished(QNetworkReply* reply);
     void on_dispatcherRegionListDownload_Finished(QNetworkReply* reply);
     void on_dispatcherServerCreate_Finished(QNetworkReply* reply);
 
-    void on_serverComboBox_currentIndexChanged(int index);
-
     void on_nickNameLineEdit_textChanged(void);
-    void on_sessionNameLineEdit_textChanged(void);
-    void on_passwordLineEdit_textChanged(void);
 
     void on_romListWidget_OnRomChanged(bool valid);
 

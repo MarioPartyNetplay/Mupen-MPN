@@ -14,12 +14,11 @@
 #include <QNetworkReply>
 #include <QTimerEvent>
 #include <QJsonObject>
-#include <QWebSocket>
-#include <QUdpSocket>
 #include <QDialog>
 #include <QString>
 
 #include "ui_NetplaySessionBrowserDialog.h"
+#include "Netplay/NetplayCoordinator.hpp"
 
 #include <RMG-Core/RomSettings.hpp>
 
@@ -32,68 +31,31 @@ class NetplaySessionBrowserDialog : public QDialog, private Ui::NetplaySessionBr
     Q_OBJECT
 
   public:
-    NetplaySessionBrowserDialog(QWidget *parent, QWebSocket* webSocket, QMap<QString, CoreRomSettings> data);
+    NetplaySessionBrowserDialog(QWidget *parent, Netplay::NetplayCoordinator* coordinator, QMap<QString, CoreRomSettings> data);
     ~NetplaySessionBrowserDialog(void);
 
     QJsonObject GetSessionJson(void);
     QString     GetSessionFile(void);
 
   private:
-  	QWebSocket* webSocket;
-    QUdpSocket broadcastSocket;
+  	Netplay::NetplayCoordinator* coordinator;
     QJsonObject sessionJson;
     QString sessionFile;
-    QString sessionPassword;
-    NetplaySessionData sessionData;
     QMap<QString, CoreRomSettings> romData;
-
-    int pingTimerId = -1;
-    int dispatcherTimerId = -1;
-    int dispatcherTimeoutTimerId = -1;
-
-    bool dispatcherMoveThroughList = false;
-    bool dispatcherJoinSession = false;
-    QNetworkAccessManager* dispatcherNetworkAccessManager = nullptr;
-    QNetworkReply* dispatcherNetworkReply = nullptr;
-    QString dispatcherUrl;
-    
-    QStringList dispatcherAddressList;
-    int dispatcherAddressListIndex = 0;
+    bool isWaitingForConnection;  // Track if we're waiting for server connection
+    QString targetAddress;
+    int targetPort = 27886;
 
     QString showROMDialog(QString name, QString md5);
 
     bool validate(void);
     void validateJoinButton(void);
 
-    void toggleUI(bool enable, bool enableJoinButton, bool toggleOtherUI = true);
-
-    void refreshSessions(void);
-    void joinSession(void);
-
-    void resetDispatcherState(void);
-
-  protected:
-    void timerEvent(QTimerEvent *event) Q_DECL_OVERRIDE;
-
   private slots:
-    void on_webSocket_connected(void);
-    void on_webSocket_textMessageReceived(QString message);
-    void on_webSocket_pong(quint64 elapsedTime, const QByteArray&);
-    void on_webSocket_disconnected(void);
-
-    void on_broadcastSocket_readyRead(void);
-    void on_jsonServerListDownload_Finished(QNetworkReply* reply);
-
-    void on_dispatcherRegionListDownload_Finished(QNetworkReply* reply);
-    void on_dispatcherRetrieveServers_Finished(QNetworkReply* reply);
-
-    void on_serverComboBox_currentIndexChanged(int index);
-    void on_sessionBrowserWidget_OnSessionChanged(bool valid);
-    void on_sessionBrowserWidget_OnRefreshDone(void);
-    
     void on_nickNameLineEdit_textChanged(void);
-
-    void on_buttonBox_clicked(QAbstractButton* button);
+    void onCoordinatorConnected(void);
+    void onCoordinatorConnectionError(const QString& error);
+    void onCoordinatorRoomJoined(const QString& roomId, int slot);
 
     void accept(void) Q_DECL_OVERRIDE;
 
