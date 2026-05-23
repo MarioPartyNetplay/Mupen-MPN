@@ -24,6 +24,14 @@
 static CoreRomSettings l_DefaultRomSettings;
 static bool            l_HasDefaultRomSettings = false;
 
+static void apply_gameid_save_overrides(const CoreRomHeader& header, CoreRomSettings& settings)
+{
+    if (header.GameID == "NMVE")
+    {
+        settings.SaveType = SAVETYPE_EEPROM_16KB;
+    }
+}
+
 //
 // Exported Functions
 //
@@ -66,6 +74,7 @@ CORE_EXPORT bool CoreGetCurrentRomSettings(CoreRomSettings& settings)
     settings.TransferPak = m64p_settings.transferpak;
     settings.CountPerOp = m64p_settings.countperop;
     settings.SiDMADuration = m64p_settings.sidmaduration;
+    apply_gameid_save_overrides(header, settings);
     return true;
 }
 
@@ -158,8 +167,14 @@ CORE_EXPORT bool CoreApplyRomSettings(CoreRomSettings settings)
 CORE_EXPORT bool CoreApplyRomSettingsOverlay(void)
 {
     CoreRomSettings settings;
+    CoreRomHeader header;
 
     if (!CoreGetCurrentDefaultRomSettings(settings))
+    {
+        return false;
+    }
+
+    if (!CoreGetCurrentRomHeader(header))
     {
         return false;
     }
@@ -189,6 +204,7 @@ CORE_EXPORT bool CoreApplyRomSettingsOverlay(void)
     settings.TransferPak = CoreSettingsGetBoolValue(SettingsID::Game_TransferPak, section);
     settings.CountPerOp = CoreSettingsGetIntValue(SettingsID::Game_CountPerOp, section);
     settings.SiDMADuration = CoreSettingsGetIntValue(SettingsID::Game_SiDmaDuration, section);
+    apply_gameid_save_overrides(header, settings);
 
     return CoreApplyRomSettings(settings);
 }
