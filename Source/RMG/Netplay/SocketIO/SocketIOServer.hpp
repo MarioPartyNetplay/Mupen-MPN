@@ -66,6 +66,7 @@ public:
     void broadcastCheatsUpdate(const QString& roomId, const QJsonArray& cheats);
     void broadcastSaveSync(const QString& roomId, const QJsonArray& saveFiles);
     void broadcastChatMessage(const QString& roomId, const QString& playerName, const QString& message);
+    void broadcastInputDelayUpdate(const QString& roomId, int frames);
 
     /**
      * @brief Check if server is running
@@ -196,6 +197,7 @@ private:
     void handle_CheatsUpdate(QWebSocket* socket, const QJsonObject& msg);
     void handle_SaveSyncUpdate(QWebSocket* socket, const QJsonObject& msg);
     void handle_ControllerInput(QWebSocket* socket, const QJsonObject& msg);
+    void handle_InputDelayUpdate(QWebSocket* socket, const QJsonObject& msg);
 
     // Utilities
     ClientConnection* getClientFromSocket(QWebSocket* socket);

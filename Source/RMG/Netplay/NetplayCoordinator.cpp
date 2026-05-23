@@ -71,6 +71,8 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
             this, &NetplayCoordinator::on_socketIO_saveSyncReceived);
     connect(m_socketIO.get(), &SocketIOClient::roomsListed,
             this, &NetplayCoordinator::on_socketIO_roomsListed);
+    connect(m_socketIO.get(), &SocketIOClient::inputDelayReceived,
+            this, &NetplayCoordinator::on_socketIO_inputDelayReceived);
 
     // Initialize lockstep config
     m_lockstepConfig.numPlayers = 4;
@@ -955,11 +957,14 @@ void NetplayCoordinator::setInputDelayFrames(int frames)
 {
     if (frames < 0) {
         frames = 0;
-    } else if (frames > 8) {
-        frames = 8;
+    } else if (frames > 99) {
+        frames = 99;
     }
 
     m_lockstepConfig.inputDelayFrames = frames;
+    if (m_lockstepEngine) {
+        m_lockstepEngine->setInputDelayFrames(frames);
+    }
 }
 
 int NetplayCoordinator::getInputDelayFrames() const
@@ -1135,26 +1140,32 @@ void NetplayCoordinator::addICECandidate(int slot, const QString& candidate, int
     }
 }
 
-void NetplayCoordinator::sendInputDelayUpdate(int frames) {
-    if (!isHost()) return;
-
-    if (m_lockstepEngine) {
-        m_lockstepEngine->setInputDelayFrames(frames);
+void NetplayCoordinator::sendInputDelayUpdate(int frames)
+{
+    if (!isHost()) {
+        return;
     }
 
-    // Use the new public function we just created instead of emitEvent
-    if (m_socketIO) {
+    setInputDelayFrames(frames);
+
+    if (isHostingServer() && m_server && !m_gameSession.roomId.isEmpty()) {
+        m_server->broadcastInputDelayUpdate(m_gameSession.roomId, frames);
+    } else if (m_socketIO) {
         m_socketIO->sendInputDelayUpdate(frames);
     }
+
+    emit inputDelayChanged(frames);
 }
 
-// In your Socket.IO message handler (on_socketIO_eventReceived):
-// When a guest receives "update-input-delay":
-void NetplayCoordinator::on_socketIO_inputDelayReceived(int frames) {
-    m_lockstepConfig.inputDelayFrames = frames;
-    if (m_lockstepEngine) {
-        m_lockstepEngine->setInputDelayFrames(frames);
+void NetplayCoordinator::on_socketIO_inputDelayReceived(int frames)
+{
+    if (frames < 0) {
+        frames = 0;
+    } else if (frames > 99) {
+        frames = 99;
     }
+
+    setInputDelayFrames(frames);
     emit inputDelayChanged(frames);
 }
 

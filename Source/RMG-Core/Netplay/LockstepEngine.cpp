@@ -248,7 +248,14 @@ void LockstepEngine::resetStatistics()
 void LockstepEngine::setInputDelayFrames(int frames)
 {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    if (frames < 0) {
+        frames = 0;
+    } else if (frames > 99) {
+        frames = 99;
+    }
     m_config.inputDelayFrames = frames;
+    // Higher buffer waits longer for peer input before timing out (smoother FPS, more latency).
+    m_config.stallTimeoutMilliseconds = frames == 0 ? 100 : std::min(frames * 33, 3300);
     std::cout << "LockstepEngine: Input delay changed to " << frames << " frames" << std::endl;
 }
 

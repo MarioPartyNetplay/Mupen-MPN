@@ -87,6 +87,33 @@
     </layout>
    </item>
    <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_buffer">
+     <item>
+      <widget class="QLabel" name="bufferLabel">
+       <property name="text">
+        <string>Buffer</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="bufferDelaySpinBox">
+       <property name="toolTip">
+        <string>Higher buffer improves frame rate stability on slow connections (more latency). Lower values reduce input lag.</string>
+       </property>
+       <property name="minimum">
+        <number>0</number>
+       </property>
+       <property name="maximum">
+        <number>99</number>
+       </property>
+       <property name="value">
+        <number>4</number>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
     <layout class="QHBoxLayout" name="horizontalLayout_2">
      <item>
       <widget class="QGroupBox" name="groupBox_2">

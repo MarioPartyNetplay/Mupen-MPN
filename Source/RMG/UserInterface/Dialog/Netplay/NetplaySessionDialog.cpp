@@ -23,6 +23,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSignalBlocker>
 
 #include <RMG-Core/Error.hpp>
 #include <RMG-Core/Directories.hpp>
@@ -143,9 +144,15 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
             this, &NetplaySessionDialog::on_coordinator_motdReceived);
     connect(this->coordinator, &Netplay::NetplayCoordinator::cheatsUpdated,
             this, &NetplaySessionDialog::on_coordinator_cheatsUpdated);
-        connect(this->coordinator, &Netplay::NetplayCoordinator::saveSyncReceived,
+    connect(this->coordinator, &Netplay::NetplayCoordinator::saveSyncReceived,
             this, &NetplaySessionDialog::on_coordinator_saveSyncReceived);
-
+    connect(this->coordinator, &Netplay::NetplayCoordinator::inputDelayChanged,
+            this, [this](int frames) {
+        QSignalBlocker blocker(this->bufferDelaySpinBox);
+        this->bufferDelaySpinBox->setValue(frames);
+        this->coordinator->setInputDelayFrames(frames); 
+    });
+    
     // Auto-enable pre-toggled cheats for host
     if (this->sessionSlot == 0)
     {
@@ -156,6 +163,28 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     connect(this->coordinator, &Netplay::NetplayCoordinator::connected, this, &NetplaySessionDialog::on_netplay_connected);
     connect(this->coordinator, &Netplay::NetplayCoordinator::disconnected, this, &NetplaySessionDialog::on_netplay_disconnected);
     connect(this->coordinator, &Netplay::NetplayCoordinator::stateChanged, this, &NetplaySessionDialog::on_coordinator_stateChanged);
+    const int initialBufferDelay = sessionJson.value("buffer_delay").toInt(this->coordinator->getInputDelayFrames());
+    this->bufferDelaySpinBox->setValue(initialBufferDelay);
+    this->coordinator->setInputDelayFrames(initialBufferDelay);
+    const bool isHost = this->sessionSlot == 0;
+    this->bufferDelaySpinBox->setReadOnly(!isHost);
+    connect(this->bufferDelaySpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [this, isHost](int value) {
+        if (!isHost) {
+            return;
+        }
+        this->coordinator->sendInputDelayUpdate(value);
+    });
+    if (isHost) {
+        this->coordinator->sendInputDelayUpdate(initialBufferDelay);
+    }
+    connect(this->coordinator, &Netplay::NetplayCoordinator::inputDelayChanged,
+            this, [this](int frames) {
+        QSignalBlocker blocker(this->bufferDelaySpinBox);
+        this->bufferDelaySpinBox->setValue(frames);
+        this->coordinator->setInputDelayFrames(frames); 
+    });
+
 
     // Disable chat input and send button by default
     this->chatLineEdit->setEnabled(false);

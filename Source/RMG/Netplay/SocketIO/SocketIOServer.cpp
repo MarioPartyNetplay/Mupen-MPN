@@ -181,6 +181,26 @@ void SocketIOServer::broadcastSaveSync(const QString& roomId, const QJsonArray& 
     emitToRoom(roomId, "save-sync", payload);
 }
 
+void SocketIOServer::broadcastInputDelayUpdate(const QString& roomId, int frames)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room)
+    {
+        qWarning() << "SocketIOServer: Cannot broadcast input delay, room not found" << roomId;
+        return;
+    }
+
+    if (frames < 0) {
+        frames = 0;
+    } else if (frames > 99) {
+        frames = 99;
+    }
+
+    QJsonObject payload;
+    payload["frames"] = frames;
+    emitToRoom(roomId, "update-input-delay", payload);
+}
+
 void SocketIOServer::broadcastChatMessage(const QString& roomId, const QString& playerName, const QString& message)
 {
     SignalingRoom* room = getRoomById(roomId);
@@ -378,6 +398,8 @@ void SocketIOServer::handleEvent(QWebSocket* socket, const QJsonArray& args)
             handle_SaveSyncUpdate(socket, data);
         else if (eventName == "controller-input")
             handle_ControllerInput(socket, data);
+        else if (eventName == "update-input-delay")
+            handle_InputDelayUpdate(socket, data);
     }
 }
 
@@ -790,6 +812,26 @@ void SocketIOServer::handle_ControllerInput(QWebSocket* socket, const QJsonObjec
     uint32_t controllerState = static_cast<uint32_t>(msg.value("input").toInteger());
     emit controllerInputReceived(client->roomId, client->slotIndex, frameNumber, controllerState);
     broadcastControllerInput(client->roomId, client->slotIndex, frameNumber, controllerState);
+}
+
+void SocketIOServer::handle_InputDelayUpdate(QWebSocket* socket, const QJsonObject& msg)
+{
+    ClientConnection* client = getClientFromSocket(socket);
+    if (!client || client->roomId.isEmpty())
+        return;
+
+    SignalingRoom* room = getRoomById(client->roomId);
+    if (!room || room->hostId != client->id)
+        return;
+
+    int frames = msg.value("frames").toInt(4);
+    if (frames < 0) {
+        frames = 0;
+    } else if (frames > 99) {
+        frames = 99;
+    }
+
+    broadcastInputDelayUpdate(client->roomId, frames);
 }
 
 SocketIOServer::ClientConnection* SocketIOServer::getClientFromSocket(QWebSocket* socket)

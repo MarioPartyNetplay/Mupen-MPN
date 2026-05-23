@@ -610,6 +610,10 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
         QJsonObject data = args[0].toObject();
         emit saveSyncReceived(data["files"].toArray());
 
+    } else if (eventName == "update-input-delay" && args.size() > 0) {
+        QJsonObject data = args[0].toObject();
+        emit inputDelayReceived(data["frames"].toInt(4));
+
     } else if (eventName == "rooms-list" && args.size() > 0) {
         QJsonObject data = args[0].toObject();
         QJsonArray rooms = data["rooms"].toArray();

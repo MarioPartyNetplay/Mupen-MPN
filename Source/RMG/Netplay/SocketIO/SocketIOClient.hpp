@@ -183,6 +183,9 @@ signals:
     // Save sync signals
     void saveSyncReceived(const QJsonArray& saveFiles);
 
+    // Input delay sync
+    void inputDelayReceived(int frames);
+
 private slots:
     void on_connected();
     void on_disconnected();
