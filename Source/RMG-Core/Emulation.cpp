@@ -9,6 +9,7 @@
  */
 #define CORE_INTERNAL
 #include "MediaLoader.hpp"
+#include "Discord.hpp"
 #include "RomSettings.hpp"
 #include "Emulation.hpp"
 #include "RomHeader.hpp"
@@ -231,6 +232,9 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
     // apply pif rom settings
     apply_pif_rom_settings();
 
+    CoreRomSettings discordSettings;
+    CoreRomHeader discordHeader;
+
 #ifdef NETPLAY
     if (netplay)
     {
@@ -246,6 +250,12 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
     // is successful or if there's no netplay requested
     if (!netplay || netplay_ret)
     {
+        if (CoreGetCurrentDefaultRomSettings(discordSettings) &&
+            CoreGetCurrentRomHeader(discordHeader))
+        {
+            CoreDiscordStart(discordHeader, discordSettings);
+        }
+
         m64p_ret = m64p::Core.DoCommand(M64CMD_EXECUTE, 0, nullptr);
         if (m64p_ret != M64ERR_SUCCESS)
         {
@@ -260,6 +270,8 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
         CoreShutdownNetplay();
     }
 #endif // NETPLAY
+
+    CoreDiscordShutdown();
 
     CoreClearCheats();
     CoreDetachPlugins();

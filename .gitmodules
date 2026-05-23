@@ -1,6 +1,3 @@
 [submodule "Source/3rdParty/libdatachannel"]
 	path = Source/3rdParty/libdatachannel
 	url = https://github.com/paullouisageneau/libdatachannel
-[submodule "Source/3rdParty/discord-rpc"]
-	path = Source/3rdParty/discord-rpc
-	url = https://github.com/discord/discord-rpc

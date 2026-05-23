@@ -48,6 +48,7 @@ set(RMG_CORE_SOURCES
     VidExt.cpp
     Video.cpp
     Error.cpp
+    Discord.cpp
     Core.cpp
     File.cpp
     Key.cpp
@@ -79,6 +80,11 @@ endif(WIN32)
 target_link_libraries(RMG-Core
     ${MINIZIP_LIBRARIES}
     lzma
+    discord-rpc
+)
+
+target_include_directories(RMG-Core PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdParty/discord-rpc/include
 )
 
 if (NETPLAY)

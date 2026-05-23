@@ -23,7 +23,7 @@ mkdir -p "$build_dir"
 
 cmake -S "$toplvl_dir" -B "$build_dir" \
     -DCMAKE_BUILD_TYPE="$build_config" \
-    -DPORTABLE_INSTALL=ON -DUSE_ANGRYLION=ON \
+    -DPORTABLE_INSTALL=ON -DUSE_ANGRYLION=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     -G "$generator"
 
 cmake --build "$build_dir" --parallel "$threads"

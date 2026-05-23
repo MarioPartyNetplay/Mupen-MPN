@@ -9,6 +9,7 @@
  */
 #define CORE_INTERNAL
 #include "CachedRomHeaderAndSettings.hpp"
+#include "Discord.hpp"
 #include "Directories.hpp"
 #include "MediaLoader.hpp"
 #include "Callback.hpp"
@@ -169,6 +170,8 @@ CORE_EXPORT bool CoreInit(void)
 
 CORE_EXPORT void CoreShutdown(void)
 {
+    CoreDiscordShutdown();
+
     CorePluginsShutdown();
 
     CoreSaveRomHeaderAndSettingsCache();

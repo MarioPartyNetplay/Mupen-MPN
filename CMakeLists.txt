@@ -3,7 +3,8 @@
 #
 cmake_minimum_required(VERSION 3.15)
 
-option(PORTABLE_INSTALL "Portable Installation" ON)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Minimum policy version" FORCE)
+set(PORTABLE_INSTALL ON CACHE BOOL "Portable Installation" FORCE)
 option(UPDATER          "Enables updater" ${WIN32})
 option(APPIMAGE_UPDATER "Enables AppImage updater" OFF)
 option(KCA_DRAG_DROP    "Enables drag and drop using KCoreAddons" OFF) # https://bugreports.qt.io/browse/QTBUG-91357
