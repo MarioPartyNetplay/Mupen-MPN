@@ -405,11 +405,6 @@ static void apply_controller_profiles(void)
     }
 
     const bool embeddedNetplay = CoreIsEmbeddedNetplayActive();
-    int embeddedLocalSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
-    if (embeddedLocalSlot < 0 || embeddedLocalSlot >= NUM_CONTROLLERS)
-    {
-        embeddedLocalSlot = 0;
-    }
 
     for (int i = 0; i < NUM_CONTROLLERS; i++)
     {
@@ -450,11 +445,11 @@ static void apply_controller_profiles(void)
 #endif // VRU
 
         // In embedded netplay, all controller ports should appear present to the ROM.
-        // Only the local assigned slot uses local physical input; remote slots are driven by netplay sync.
+        // Port 0 remains the local physical controller; the assigned netplay slot is carried in synced frame data.
         if (embeddedNetplay)
         {
             l_ControlInfo.Controls[i].Present = 1;
-            if (i != embeddedLocalSlot)
+            if (i != 0)
             {
                 l_ControlInfo.Controls[i].Plugin = PLUGIN_NONE;
                 l_ControlInfo.Controls[i].RawData = 0;
@@ -1427,12 +1422,6 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
     const bool embeddedNetplay = CoreIsEmbeddedNetplayActive();
     if (embeddedNetplay)
     {
-        int embeddedLocalSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
-        if (embeddedLocalSlot < 0 || embeddedLocalSlot >= NUM_CONTROLLERS)
-        {
-            embeddedLocalSlot = 0;
-        }
-
         if (Control == 0)
         {
             l_EmbeddedNetplayLocalSubmitted = false;
@@ -1442,7 +1431,7 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
         if (!l_EmbeddedNetplayLocalSubmitted)
         {
             BUTTONS localKeys = {};
-            fillLocalKeys(embeddedLocalSlot, &localKeys);
+            fillLocalKeys(0, &localKeys);
             CoreSubmitEmbeddedNetplayFrameInput(localKeys.Value);
             l_EmbeddedNetplayLocalSubmitted = true;
         }
