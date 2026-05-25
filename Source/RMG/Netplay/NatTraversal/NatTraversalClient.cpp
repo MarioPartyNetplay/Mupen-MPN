@@ -559,8 +559,56 @@ bool parseStunBindingSuccess(const QByteArray& data, const QByteArray& transacti
 
 void NatTraversalClient::queryStunServer(const QString& hostname, uint16_t port)
 {
-    m_stunQueryPrimaryHost = hostname.trimmed();
-    m_stunQueryPrimaryPort = port;
+    QString normalizedHost = hostname.trimmed();
+    quint16 normalizedPort = port;
+
+    if (normalizedHost.startsWith("stun://", Qt::CaseInsensitive)) {
+        normalizedHost = normalizedHost.mid(7);
+    } else if (normalizedHost.startsWith("stuns://", Qt::CaseInsensitive)) {
+        normalizedHost = normalizedHost.mid(8);
+        if (normalizedPort == 19302) {
+            normalizedPort = 5349;
+        }
+    } else if (normalizedHost.startsWith("stun:", Qt::CaseInsensitive)) {
+        normalizedHost = normalizedHost.mid(5);
+    } else if (normalizedHost.startsWith("stuns:", Qt::CaseInsensitive)) {
+        normalizedHost = normalizedHost.mid(6);
+        if (normalizedPort == 19302) {
+            normalizedPort = 5349;
+        }
+    }
+
+    const int slashIndex = normalizedHost.indexOf('/');
+    if (slashIndex != -1) {
+        normalizedHost = normalizedHost.left(slashIndex);
+    }
+
+    if (normalizedHost.startsWith('[') && normalizedHost.contains(']')) {
+        const int closeIndex = normalizedHost.indexOf(']');
+        const QString hostPart = normalizedHost.mid(1, closeIndex - 1).trimmed();
+        const QString portPart = normalizedHost.mid(closeIndex + 1).trimmed();
+        if (portPart.startsWith(':')) {
+            bool ok = false;
+            const int parsedPort = portPart.mid(1).toInt(&ok);
+            if (ok && parsedPort >= 1 && parsedPort <= 65535) {
+                normalizedPort = static_cast<quint16>(parsedPort);
+            }
+        }
+        normalizedHost = hostPart;
+    } else {
+        const int colonIndex = normalizedHost.lastIndexOf(':');
+        if (colonIndex > 0 && normalizedHost.indexOf(':') == colonIndex) {
+            bool ok = false;
+            const int parsedPort = normalizedHost.mid(colonIndex + 1).toInt(&ok);
+            if (ok && parsedPort >= 1 && parsedPort <= 65535) {
+                normalizedPort = static_cast<quint16>(parsedPort);
+                normalizedHost = normalizedHost.left(colonIndex);
+            }
+        }
+    }
+
+    m_stunQueryPrimaryHost = normalizedHost;
+    m_stunQueryPrimaryPort = normalizedPort;
     m_stunQueryIndex = 0;
     tryStunServer(0);
 }

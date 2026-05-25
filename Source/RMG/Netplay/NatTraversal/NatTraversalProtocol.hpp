@@ -152,6 +152,15 @@ inline QString natTraversalServerHostname()
     return QString::fromLatin1(kNatTraversalHost);
 }
 
+inline QString stunServerHostname()
+{
+    const QByteArray overrideHost = qgetenv("RMG_STUN_SERVER");
+    if (!overrideHost.isEmpty()) {
+        return QString::fromUtf8(overrideHost);
+    }
+    return QStringLiteral("stun.dolphin-emu.org:6262");
+}
+
 } // namespace UserInterface::Netplay
 
 #endif // NATTRAVERSALPROTOCOL_HPP

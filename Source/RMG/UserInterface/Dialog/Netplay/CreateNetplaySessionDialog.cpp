@@ -21,6 +21,8 @@
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QJsonDocument>
+#include <QSharedPointer>
+#include <QTimer>
 #include <QPushButton>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -318,32 +320,77 @@ void CreateNetplaySessionDialog::registerNatTraversalHost(void)
         this->sessionJson.insert("server_port", signalingPort > 0 ? signalingPort : this->hostingPort);
         this->sessionJson.insert("public_port", signalingPort > 0 ? signalingPort : this->hostingPort);
         this->sessionJson.insert("connect_port", signalingPort > 0 ? signalingPort : this->hostingPort);
-        if (Netplay::isUsableConnectAddress(publicAddress)) {
-            this->sessionJson.insert("public_address", publicAddress);
-            this->sessionJson.insert("connect_address", publicAddress);
-            this->publishSessionIndex(hostCode);
-            this->finalizeSession();
-            return;
-        }
 
-        qDebug() << "NAT server did not provide a public IP; querying STUN";
+        // Always prefer STUN-derived public address when available. Start a STUN query
+        // and use its result if it arrives within the timeout. Otherwise fall back
+        // to the NAT server-provided address (if usable) or HTTP lookup.
+        QSharedPointer<bool> stunHandled = QSharedPointer<bool>::create(false);
+
         connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::publicAddressResolved,
-                this, [this, hostCode](const QString& ip, int port) {
-            Q_UNUSED(port);
+                this, [this, hostCode, stunHandled](const QString& ip, int port) {
+            if (stunHandled && *stunHandled) {
+                return;
+            }
+            if (stunHandled) {
+                *stunHandled = true;
+            }
             if (Netplay::isUsableConnectAddress(ip)) {
                 this->sessionJson.insert("public_address", ip);
                 this->sessionJson.insert("connect_address", ip);
+                if (port > 0) {
+                    this->sessionJson.insert("public_port", port);
+                    this->sessionJson.insert("connect_port", port);
+                }
             }
             this->publishSessionIndex(hostCode);
             this->finalizeSession();
         }, Qt::SingleShotConnection);
+
         connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::publicAddressFailed,
-                this, [this, hostCode](const QString& reason) {
-            qWarning() << "STUN after register failed:" << reason << "- using HTTP public IP lookup";
+                this, [this, hostCode, stunHandled](const QString& reason) {
+            if (stunHandled && *stunHandled) {
+                return;
+            }
+            if (stunHandled) {
+                *stunHandled = true;
+            }
+            qWarning() << "STUN after register failed:" << reason << "- using NAT server/public fallback";
+            // Fall back to NAT server-provided endpoint if usable
+            const QString natAddr = this->sessionJson.value("public_address").toString();
+            if (Netplay::isUsableConnectAddress(natAddr)) {
+                this->sessionJson.insert("connect_address", natAddr);
+                this->publishSessionIndex(hostCode);
+                this->finalizeSession();
+                return;
+            }
+            // Try HTTP public IP lookup as a last resort
             this->pendingNatHostCode = hostCode;
             this->fetchPublicIpAddress();
         }, Qt::SingleShotConnection);
-        this->natTraversalClient->queryStunServer(QStringLiteral("stun.l.google.com"), 19302);
+
+        // Start the STUN query and wait briefly before falling back.
+        qDebug() << "Querying STUN server for public IP:" << Netplay::stunServerHostname() << 19302;
+        this->natTraversalClient->queryStunServer(Netplay::stunServerHostname(), 19302);
+
+        // If STUN doesn't respond quickly, fall back to the NAT-provided public address.
+        QTimer::singleShot(2000, this, [this, hostCode, publicAddress, stunHandled]() {
+            if (stunHandled && *stunHandled) {
+                return;
+            }
+            if (stunHandled) {
+                *stunHandled = true;
+            }
+            if (Netplay::isUsableConnectAddress(publicAddress)) {
+                this->sessionJson.insert("public_address", publicAddress);
+                this->sessionJson.insert("connect_address", publicAddress);
+                this->publishSessionIndex(hostCode);
+                this->finalizeSession();
+                return;
+            }
+            // Otherwise fall back to HTTP public IP lookup
+            this->pendingNatHostCode = hostCode;
+            this->fetchPublicIpAddress();
+        });
     });
 
     connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostRegistrationFailed,
@@ -370,7 +417,7 @@ void CreateNetplaySessionDialog::registerNatTraversalHost(void)
         });
 
         // Use a common public STUN server; this is configurable later
-        this->natTraversalClient->queryStunServer("stun.l.google.com", 19302);
+        this->natTraversalClient->queryStunServer(Netplay::stunServerHostname(), 19302);
     });
 
     this->natTraversalClient->startHosting(static_cast<uint16_t>(this->hostingPort));
