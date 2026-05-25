@@ -20,10 +20,10 @@ using namespace RMGCore;
 
 namespace {
 
-// Gentle catch-up: only slow the faster peer once a peer is clearly behind on inputs.
-constexpr int kPeerLagThrottleOnFrames = 5;
-constexpr int kPeerLagThrottleOffFrames = 3;
-constexpr int kPeerLagThrottleMaxSleepMs = 3;
+// Gentle catch-up: only slow the faster peer once a peer is severely behind on inputs.
+constexpr int kPeerLagThrottleOnFrames = 30;
+constexpr int kPeerLagThrottleOffFrames = 20;
+constexpr int kPeerLagThrottleMaxSleepMs = 1;
 constexpr std::chrono::milliseconds kPeerFrameReportStale{2000};
 
 } // namespace
@@ -158,6 +158,12 @@ bool LockstepEngine::advanceFrame()
         applyPeerLagThrottleIfNeeded(frameNumber);
         bool ready = waitForAllInputs(frameNumber, m_config.stallTimeoutMilliseconds);
         if (!ready) {
+            {
+                std::lock_guard<std::recursive_mutex> lock(m_mutex);
+                applyTimeoutFallback(frameNumber);
+                m_stats.timeoutOccurrences++;
+            }
+
             if (m_callbacks.peerInputTimedOut) {
                 for (int slot = 0; slot < m_config.numPlayers; ++slot) {
                     if (slot == m_config.localPlayerSlot) {
@@ -166,7 +172,6 @@ bool LockstepEngine::advanceFrame()
                     m_callbacks.peerInputTimedOut(slot, frameNumber);
                 }
             }
-            return false;
         }
     }
 
@@ -313,8 +318,10 @@ int LockstepEngine::stallTimeoutForDelayFrames(int inputDelayFrames)
         // Zero delay: strict lockstep, short wait per frame.
         return 100;
     }
-    // With delay buffering, inputs should already be in the buffer; only wait briefly on loss.
-    return std::min(std::max(50, inputDelayFrames * 8), 500);
+    // Higher delay gives the network more time to absorb jitter before the emulator stalls.
+    const int scaledTimeout = inputDelayFrames * 25;
+    const int lowerBoundTimeout = (scaledTimeout < 100) ? 100 : scaledTimeout;
+    return (lowerBoundTimeout > 1500) ? 1500 : lowerBoundTimeout;
 }
 
 void LockstepEngine::pruneOldFrames(uint32_t oldestFrameToKeep)
@@ -490,11 +497,19 @@ bool LockstepEngine::hasAllInputsForFrame(uint32_t frameNumber) const
 
 void LockstepEngine::applyPeerLagThrottleIfNeeded(uint32_t frameNumber)
 {
+    // When the input delay is already in the normal netplay range, let the buffer
+    // absorb jitter instead of layering extra pacing on top.
+    if (m_config.inputDelayFrames >= 4) {
+        return;
+    }
+
     if (!hasAllInputsForFrame(frameNumber)) {
         return;
     }
 
-    const int maxLag = std::max(getMaxPeerInputLagFrames(), getMaxPeerEmulationLagFrames());
+    const int peerInputLag = getMaxPeerInputLagFrames();
+    const int peerEmulationLag = getMaxPeerEmulationLagFrames();
+    const int maxLag = (peerInputLag > peerEmulationLag) ? peerInputLag : peerEmulationLag;
 
     if (maxLag >= kPeerLagThrottleOnFrames) {
         m_peerLagThrottlingActive = true;
@@ -507,7 +522,9 @@ void LockstepEngine::applyPeerLagThrottleIfNeeded(uint32_t frameNumber)
     }
 
     const int framesOver = maxLag - (kPeerLagThrottleOnFrames - 1);
-    const int sleepMs = std::min(framesOver, kPeerLagThrottleMaxSleepMs);
+    const int sleepMs = (framesOver < kPeerLagThrottleMaxSleepMs)
+        ? framesOver
+        : kPeerLagThrottleMaxSleepMs;
     if (sleepMs > 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
     }

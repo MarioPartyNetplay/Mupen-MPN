@@ -138,7 +138,7 @@ static void update_presence_from_memory(void)
     const char* smallImageKey = nullptr;
     const char* smallImageText = nullptr;
 
-    details += "Players: " + std::to_string(m_DiscordCurrentPlayers) + "/4)";
+    details = "Players: (" + std::to_string(m_DiscordCurrentPlayers) + "/4)";
 
     if (is_mario_party_3(l_DiscordHeader, l_DiscordSettings))
     {

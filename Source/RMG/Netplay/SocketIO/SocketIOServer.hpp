@@ -7,6 +7,7 @@
 #include <QWebSocket>
 #include <QMap>
 #include <QSet>
+#include <QList>
 #include <QString>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -184,6 +185,7 @@ private:
         QString gameId;
         int maxPlayers = 4;
         QMap<int, ClientConnection*> players;  // slot -> player
+        QList<ClientConnection*> lobbyOrder;    // join order -> player
         bool started = false;
 
         // --- ADD THESE FIELDS TO STORE STATE ---
@@ -233,6 +235,7 @@ private:
     void emitToClient(const QString& clientId, const QString& eventName, const QJsonObject& data);
     void emitToClient(const QString& clientId, const QString& eventName, const QJsonArray& data);
     void broadcastRoomUpdate(const QString& roomId);
+    void rebuildLobbySlots(SignalingRoom& room);
 };
 
 #endif // SOCKET_IO_SERVER_HPP

@@ -8,6 +8,25 @@
 #include <QTimer>
 #include <algorithm>
 
+void SocketIOServer::rebuildLobbySlots(SignalingRoom& room)
+{
+    room.players.clear();
+
+    int slotIndex = 0;
+    for (auto* player : room.lobbyOrder)
+    {
+        if (!player)
+        {
+            continue;
+        }
+
+        player->slotIndex = slotIndex;
+        player->playerId = QString("p%1").arg(slotIndex);
+        room.players[slotIndex] = player;
+        ++slotIndex;
+    }
+}
+
 SocketIOServer::SocketIOServer(QObject* parent)
     : QObject(parent)
 {
@@ -95,7 +114,8 @@ void SocketIOServer::createInitialRoom(const QString& roomId, const QString& hos
     hostClient->slotIndex = 0;
     hostClient->playerId = "p0";
     hostClient->socket = nullptr;
-    room.players[0] = hostClient;
+    room.lobbyOrder.append(hostClient);
+    rebuildLobbySlots(room);
     
     m_rooms[roomId] = room;
     qInfo() << "SocketIOServer: Created initial room" << roomId << "for host" << hostName;
@@ -131,17 +151,7 @@ void SocketIOServer::handle_JoinRoom(QWebSocket* socket, const QJsonObject& msg)
         return;
     }
 
-    int slotIndex = -1;
-    for (int i = 0; i < room->maxPlayers; i++)
-    {
-        if (!room->players.contains(i))
-        {
-            slotIndex = i;
-            break;
-        }
-    }
-
-    if (slotIndex == -1)
+    if (room->lobbyOrder.size() >= room->maxPlayers)
     {
         QJsonObject error;
         error["error"] = "Room is full";
@@ -150,8 +160,8 @@ void SocketIOServer::handle_JoinRoom(QWebSocket* socket, const QJsonObject& msg)
     }
 
     client->roomId = roomId;
-    client->slotIndex = slotIndex;
-    client->playerId = QString("p%1").arg(slotIndex);
+    room->lobbyOrder.append(client);
+    rebuildLobbySlots(*room);
 
     QJsonObject extra = msg["extra"].toObject();
     QString requestedName = extra["player_name"].toString().trimmed();
@@ -161,15 +171,13 @@ void SocketIOServer::handle_JoinRoom(QWebSocket* socket, const QJsonObject& msg)
     }
     if (client->name.isEmpty())
     {
-        client->name = QString("P%1").arg(slotIndex + 1);
+        client->name = QString("P%1").arg(client->slotIndex + 1);
     }
-
-    room->players[slotIndex] = client;
 
     // 1. Acknowledge successful entry to client
     QJsonObject response;
     response["roomId"] = roomId;
-    response["slotIndex"] = slotIndex;
+    response["slotIndex"] = client->slotIndex;
     response["playerId"] = client->playerId;
     emitToClient(client->id, "room-joined", response);
 
@@ -194,8 +202,8 @@ void SocketIOServer::handle_JoinRoom(QWebSocket* socket, const QJsonObject& msg)
     // 3. Inform everyone else about structural change
     broadcastRoomUpdate(roomId);
 
-    qInfo() << "Player joined room:" << roomId << "slot:" << slotIndex << "and caught up on game states.";
-    emit playerJoined(roomId, client->id, slotIndex);
+    qInfo() << "Player joined room:" << roomId << "slot:" << client->slotIndex << "and caught up on game states.";
+    emit playerJoined(roomId, client->id, client->slotIndex);
 }
 
 void SocketIOServer::handle_CheatsUpdate(QWebSocket* socket, const QJsonObject& msg)
@@ -691,9 +699,10 @@ void SocketIOServer::handle_LeaveRoom(QWebSocket* socket, const QJsonObject& msg
     QString roomId = client->roomId;
     SignalingRoom* room = getRoomById(roomId);
 
-    if (room && client->slotIndex >= 0)
+    if (room)
     {
-        room->players.remove(client->slotIndex);
+        room->lobbyOrder.removeAll(client);
+        rebuildLobbySlots(*room);
         broadcastRoomUpdate(roomId);
 
         // If host left, close room
@@ -717,29 +726,8 @@ void SocketIOServer::handle_ClaimSlot(QWebSocket* socket, const QJsonObject& msg
     if (!client || client->roomId.isEmpty())
         return;
 
-    int slotIndex = msg["slotIndex"].toInt(-1);
-    if (slotIndex < 0 || slotIndex >= 4)
-        return;
-
-    SignalingRoom* room = getRoomById(client->roomId);
-    if (!room)
-        return;
-
-    // Release old slot
-    if (client->slotIndex >= 0 && client->slotIndex != slotIndex)
-    {
-        room->players.remove(client->slotIndex);
-    }
-
-    // Check if new slot is available
-    if (room->players.contains(slotIndex) && room->players[slotIndex] != client)
-        return;
-
-    client->slotIndex = slotIndex;
-    client->playerId = QString("p%1").arg(slotIndex);
-    room->players[slotIndex] = client;
-
-    broadcastRoomUpdate(client->roomId);
+    // Lobby controller ports are fixed to join order.
+    Q_UNUSED(msg);
 }
 
 void SocketIOServer::handle_SetName(QWebSocket* socket, const QJsonObject& msg)
@@ -1040,7 +1028,7 @@ void SocketIOServer::broadcastRoomUpdate(const QString& roomId)
         return;
 
     QJsonArray playersArray;
-    for (auto* player : room->players)
+    for (auto* player : room->lobbyOrder)
     {
         if (player)
         {
@@ -1057,7 +1045,7 @@ void SocketIOServer::broadcastRoomUpdate(const QString& roomId)
 
     QJsonObject update;
     update["players"] = playersArray;
-    update["playerCount"] = room->players.size();
+    update["playerCount"] = room->lobbyOrder.size();
     update["started"] = room->started;
 
     emit roomPlayersUpdated(roomId, playersArray);
