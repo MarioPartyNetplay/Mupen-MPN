@@ -159,6 +159,7 @@
      void on_socketIO_saveSyncReceived(const QJsonArray& saveFiles);
      void on_socketIO_controllerInputReceived(int slot, uint32_t frameNumber, uint32_t controllerState);
      void on_socketIO_inputDelayReceived(int frames);
+     void on_peerFrameSyncReceived(int slot, uint32_t frameNumber);
 
      void on_lockstep_frameReady(uint32_t frameNumber, const QMap<int, uint32_t>& inputs);
      void on_lockstep_peerStalled(int playerSlot, uint32_t frameNumber);
@@ -176,6 +177,7 @@
      void setState(State newState);
      void setupPeerConnections(const QList<SocketIOClient::PlayerInfo>& players);
      void initializeLockstepEngine();
+     void broadcastFrameSyncIfNeeded(uint32_t frameNumber);
  
      // Internal components
      std::unique_ptr<SocketIOClient> m_socketIO;
@@ -197,6 +199,9 @@
      RMGCore::LockstepEngine::Config m_lockstepConfig;
 
      std::map<int, uint32_t> m_currentFrameInputs;
+
+     QJsonArray m_sessionSyncCheats;
+     QJsonArray m_sessionSyncSaves;
      
      mutable std::recursive_mutex m_mutex;
  };

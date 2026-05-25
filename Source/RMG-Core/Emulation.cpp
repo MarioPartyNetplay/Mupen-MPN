@@ -162,7 +162,9 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
     m64p_error  m64p_ret;
     bool        netplay_ret = false;
     CoreRomType type;
-    bool        netplay = !address.empty();
+    const bool  remoteNetplay = !address.empty();
+    const bool  embeddedNetplay = CoreIsEmbeddedNetplayActive();
+    const bool  useNetplayCheats = remoteNetplay || embeddedNetplay;
 
     if (!CoreOpenRom(n64rom))
     {
@@ -190,7 +192,7 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
         return false;
     }
 
-    if (netplay)
+    if (useNetplayCheats)
     { // netplay cheats
         if (!CoreApplyNetplayCheats())
         {
@@ -239,7 +241,7 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
     CoreRomHeader discordHeader;
 
 #ifdef NETPLAY
-    if (netplay)
+    if (remoteNetplay)
     {
         netplay_ret = CoreInitNetplay(address, port, player);
         if (!netplay_ret)
@@ -251,7 +253,7 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
 
     // only start emulation when initializing netplay
     // is successful or if there's no netplay requested
-    if (!netplay || netplay_ret)
+    if (!remoteNetplay || netplay_ret)
     {
         if (CoreGetCurrentDefaultRomSettings(discordSettings) &&
             CoreGetCurrentRomHeader(discordHeader))
@@ -268,7 +270,7 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
     }
 
 #ifdef NETPLAY
-    if (netplay && netplay_ret)
+    if (remoteNetplay && netplay_ret)
     {
         CoreShutdownNetplay();
     }
@@ -286,7 +288,7 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
     // reset media loader state
     CoreResetMediaLoader();
 
-    if (!netplay || netplay_ret)
+    if (!remoteNetplay || netplay_ret)
     {
         // we need to set the emulation error last,
         // to prevent the other functions from

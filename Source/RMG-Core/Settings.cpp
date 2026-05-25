@@ -168,7 +168,7 @@ static l_Setting get_setting(SettingsID settingId)
         break;
 
     case SettingsID::Netplay_Nickname:
-        setting = {SETTING_SECTION_NETPLAY, "Nickname", std::string("MPN PLayer")};
+        setting = {SETTING_SECTION_NETPLAY, "Nickname", std::string("MPNPlayer")};
         break;
 
     case SettingsID::Core_GFX_Plugin:

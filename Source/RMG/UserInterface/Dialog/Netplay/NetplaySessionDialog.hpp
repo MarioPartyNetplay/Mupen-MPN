@@ -44,8 +44,13 @@ private:
     std::unique_ptr<Netplay::NatTraversalClient> natTraversalClient;
     std::unique_ptr<Netplay::NatTraversalIndexClient> natIndexClient;
 
+    bool m_pendingGameStart = false;
+    bool m_sessionSavesApplied = false;
+    int m_pendingPlayerSlot = 0;
+
     void syncHostSessionState(void);
     void publishHostSessionIndex(bool started);
+    void tryStartPendingGame(void);
     bool getCheats(std::vector<CoreCheat>& cheats, QJsonArray& cheatsArray);
     bool setCheats(const QJsonArray& cheatsArray);
     bool applyCheats(void);

@@ -227,6 +227,14 @@ static void prune_hosts(void)
     for (int i = 0; i < g_host_count; ++i) {
         if (g_hosts[i].in_use && now - g_hosts[i].last_seen > HOST_TTL_SEC) {
             g_hosts[i].in_use = 0;
+
+            // Fix: Clean up index data if the room drops due to TTL timeout
+            char code_text[8];
+            if (format_host_code(g_hosts[i].code, code_text, sizeof(code_text))) {
+                char session_key[MAX_KEY_LEN];
+                snprintf(session_key, sizeof(session_key), "session/%s", code_text);
+                index_del(session_key);
+            }
         }
     }
 }
@@ -573,6 +581,11 @@ static void handle_udp(socket_t sock, const char* buffer, int length, const stru
                 host_entry_t* entry = find_host(code);
                 if (entry != NULL) {
                     entry->in_use = 0;
+                    
+                    // Fix: Explicitly remove the corresponding session details from index
+                    char session_key[MAX_KEY_LEN];
+                    snprintf(session_key, sizeof(session_key), "session/%s", parts[2]);
+                    index_del(session_key);
                 }
             }
         }

@@ -194,6 +194,17 @@ void SocketIOClient::sendControllerInput(uint32_t frameNumber, uint32_t controll
     emitEvent("controller-input", payload);
 }
 
+void SocketIOClient::sendFrameSync(uint32_t frameNumber)
+{
+    if (m_connectionState != Connected) {
+        return;
+    }
+
+    QJsonObject payload;
+    payload["frame"] = static_cast<qint64>(frameNumber);
+    emitEvent("frame-sync", payload);
+}
+
 void SocketIOClient::sendOffer(const QString& targetPlayerId, const QString& sdpOffer)
 {
     if (m_connectionState != Connected) {
@@ -555,7 +566,11 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
         m_gameConfig.resyncEnabled = data["resyncEnabled"].toBool();
         m_gameConfig.romHash = data["romHash"].toString();
         QString matchId = data["matchId"].toString();
-        
+
+        if (data.contains("cheats")) {
+            emit cheatsUpdated(data["cheats"].toArray());
+        }
+
         emit gameStarted(m_gameConfig.mode, m_gameConfig.resyncEnabled, matchId);
 
     } else if (eventName == "game-ended") {
@@ -567,6 +582,12 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
         uint32_t frameNumber = static_cast<uint32_t>(data["frame"].toInteger());
         uint32_t controllerState = static_cast<uint32_t>(data["input"].toInteger());
         emit controllerInputReceived(slot, frameNumber, controllerState);
+
+    } else if (eventName == "frame-sync" && args.size() > 0) {
+        QJsonObject data = args[0].toObject();
+        int slot = data["slot"].toInt(-1);
+        uint32_t frameNumber = static_cast<uint32_t>(data["frame"].toInteger());
+        emit frameSyncReceived(slot, frameNumber);
 
     } else if (eventName == "webrtc-signal" && args.size() > 0) {
         QJsonObject signal = args[0].toObject();
@@ -603,8 +624,15 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
         emit chatMessageReceived(playerName, message);
 
     } else if (eventName == "cheats-updated" && args.size() > 0) {
-        QJsonObject data = args[0].toObject();
-        emit cheatsUpdated(data["cheats"].toArray());
+        QJsonArray cheats;
+        if (args[0].isObject()) {
+            const QJsonObject data = args[0].toObject();
+            cheats = data["cheats"].toArray();
+        } else if (args[0].isArray()) {
+            // Backward compatibility for older servers that emitted the raw array directly.
+            cheats = args[0].toArray();
+        }
+        emit cheatsUpdated(cheats);
 
     } else if (eventName == "save-sync" && args.size() > 0) {
         QJsonObject data = args[0].toObject();

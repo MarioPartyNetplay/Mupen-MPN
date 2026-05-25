@@ -18,6 +18,16 @@
 using namespace UserInterface::Netplay;
 using namespace RMGCore;
 
+namespace {
+
+// Gentle catch-up: only slow the faster peer once a peer is clearly behind on inputs.
+constexpr int kPeerLagThrottleOnFrames = 5;
+constexpr int kPeerLagThrottleOffFrames = 3;
+constexpr int kPeerLagThrottleMaxSleepMs = 3;
+constexpr std::chrono::milliseconds kPeerFrameReportStale{2000};
+
+} // namespace
+
 LockstepEngine::LockstepEngine(const Config& config)
     : m_config(config)
     , m_currentFrameNumber(0)
@@ -121,11 +131,31 @@ void LockstepEngine::submitRemoteInput(int fromSlot, uint32_t frameNumber, uint3
     }
 }
 
+void LockstepEngine::submitPeerReportedFrame(int fromSlot, uint32_t frameNumber)
+{
+    if (fromSlot < 0 || fromSlot >= m_config.numPlayers || fromSlot == m_config.localPlayerSlot) {
+        return;
+    }
+
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    constexpr uint32_t kFrameSlack = 120;
+    if (frameNumber + kFrameSlack < m_currentFrameNumber) {
+        return;
+    }
+
+    m_peerReportedEmulationFrames[fromSlot] = frameNumber;
+    m_peerReportedFrameTimes[fromSlot] = std::chrono::steady_clock::now();
+}
+
 bool LockstepEngine::advanceFrame()
 {
     const uint32_t frameNumber = m_currentFrameNumber;
 
     if (m_config.numPlayers > 1) {
+        // Only slow down when we already have this frame's inputs and would advance
+        // ahead of the slowest peer's input stream (not while stalled waiting).
+        applyPeerLagThrottleIfNeeded(frameNumber);
         bool ready = waitForAllInputs(frameNumber, m_config.stallTimeoutMilliseconds);
         if (!ready) {
             std::lock_guard<std::recursive_mutex> lock(m_mutex);
@@ -232,8 +262,13 @@ int LockstepEngine::getPendingInputsCount() const
 
 std::string LockstepEngine::getEngineStatus() const
 {
+    const int inputLag = getMaxPeerInputLagFrames();
+    const int emuLag = getMaxPeerEmulationLagFrames();
     return "Frame: " + std::to_string(m_currentFrameNumber) +
            ", Pending: " + std::to_string(getPendingInputsCount()) +
+           ", InputLag: " + std::to_string(inputLag) +
+           ", EmuLag: " + std::to_string(emuLag) +
+           ", Throttle: " + (m_peerLagThrottlingActive ? "ON" : "OFF") +
            ", Desync: " + (m_isDesynchronized ? "YES" : "NO");
 }
 
@@ -297,8 +332,11 @@ void LockstepEngine::onDataChannelClosed(int peerSlot)
     
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (peerSlot >= 0 && peerSlot < m_dataChannels.size()) {
-        m_dataChannels[peerSlot] = nullptr; 
-        m_lastKnownInputs[peerSlot] = 0; 
+        m_dataChannels[peerSlot] = nullptr;
+        m_lastKnownInputs[peerSlot] = 0;
+        m_lastKnownInputFrames.erase(peerSlot);
+        m_peerReportedEmulationFrames.erase(peerSlot);
+        m_peerReportedFrameTimes.erase(peerSlot);
         m_frameReceived[peerSlot] = true; // Let the engine advance immediately
     }
 }
@@ -353,6 +391,119 @@ void LockstepEngine::processInputPacket(int fromSlot, const std::vector<uint8_t>
 
     m_lastKnownInputs[fromSlot] = controllerState;
     m_lastKnownInputFrames[fromSlot] = frameNumber;
+}
+
+int LockstepEngine::getMaxPeerInputLagFrames() const
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    const uint32_t sendFrame = m_currentFrameNumber + static_cast<uint32_t>(m_config.inputDelayFrames);
+    int maxLag = 0;
+
+    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
+        if (slot == m_config.localPlayerSlot) {
+            continue;
+        }
+
+        const auto it = m_lastKnownInputFrames.find(slot);
+        if (it == m_lastKnownInputFrames.end()) {
+            continue;
+        }
+
+        if (sendFrame <= it->second) {
+            continue;
+        }
+
+        const int lag = static_cast<int>(sendFrame - it->second);
+        if (lag > maxLag) {
+            maxLag = lag;
+        }
+    }
+
+    return maxLag;
+}
+
+int LockstepEngine::getMaxPeerEmulationLagFrames() const
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    const auto now = std::chrono::steady_clock::now();
+    int maxLag = 0;
+
+    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
+        if (slot == m_config.localPlayerSlot) {
+            continue;
+        }
+
+        const auto frameIt = m_peerReportedEmulationFrames.find(slot);
+        const auto timeIt = m_peerReportedFrameTimes.find(slot);
+        if (frameIt == m_peerReportedEmulationFrames.end() ||
+            timeIt == m_peerReportedFrameTimes.end()) {
+            continue;
+        }
+
+        if (now - timeIt->second > kPeerFrameReportStale) {
+            continue;
+        }
+
+        if (m_currentFrameNumber <= frameIt->second) {
+            continue;
+        }
+
+        const int lag = static_cast<int>(m_currentFrameNumber - frameIt->second);
+        if (lag > maxLag) {
+            maxLag = lag;
+        }
+    }
+
+    return maxLag;
+}
+
+bool LockstepEngine::hasAllInputsForFrame(uint32_t frameNumber) const
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    const auto frameIt = m_frameBuffer.find(frameNumber);
+    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
+        if (slot == m_config.localPlayerSlot) {
+            continue;
+        }
+
+        const bool hasInputForFrame =
+            (frameIt != m_frameBuffer.end() &&
+             frameIt->second.playerInputs.find(slot) != frameIt->second.playerInputs.end());
+
+        if (!hasInputForFrame) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void LockstepEngine::applyPeerLagThrottleIfNeeded(uint32_t frameNumber)
+{
+    if (!hasAllInputsForFrame(frameNumber)) {
+        return;
+    }
+
+    const int maxLag = std::max(getMaxPeerInputLagFrames(), getMaxPeerEmulationLagFrames());
+
+    if (maxLag >= kPeerLagThrottleOnFrames) {
+        m_peerLagThrottlingActive = true;
+    } else if (maxLag <= kPeerLagThrottleOffFrames) {
+        m_peerLagThrottlingActive = false;
+    }
+
+    if (!m_peerLagThrottlingActive) {
+        return;
+    }
+
+    const int framesOver = maxLag - (kPeerLagThrottleOnFrames - 1);
+    const int sleepMs = std::min(framesOver, kPeerLagThrottleMaxSleepMs);
+    if (sleepMs > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+    }
 }
 
 bool LockstepEngine::waitForAllInputs(uint32_t frameNumber, int timeoutMs) {

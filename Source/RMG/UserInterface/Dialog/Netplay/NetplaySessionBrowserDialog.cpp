@@ -216,7 +216,10 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
         }
 
         if (romPath.isEmpty() && !this->pendingIndexSession.isEmpty()) {
-            romPath = this->pendingIndexSession.value("rom_path").toString();
+            const QString indexedRomPath = this->pendingIndexSession.value("rom_path").toString();
+            if (!indexedRomPath.isEmpty() && QFileInfo::exists(indexedRomPath)) {
+                romPath = indexedRomPath;
+            }
         }
 
         if (romPath.isEmpty())

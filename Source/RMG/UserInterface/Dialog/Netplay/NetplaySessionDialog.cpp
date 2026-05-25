@@ -27,6 +27,9 @@
 
 #include <RMG-Core/Error.hpp>
 #include <RMG-Core/Directories.hpp>
+#include <RMG-Core/Settings.hpp>
+#include <RMG-Core/CachedRomHeaderAndSettings.hpp>
+#include <QTimer>
 #include <RMG-Core/Netplay.hpp>
 #include <RMG-Core/Rom.hpp>
 
@@ -37,8 +40,62 @@ namespace {
 
 const QStringList& netplaySaveExtensions()
 {
-    static const QStringList extensions = { ".eep", ".sra", ".srm" };
+    static const QStringList extensions = { ".eep", ".sra", ".srm", ".fla", ".mpk" };
     return extensions;
+}
+
+QString sanitizeSaveBaseName(QString name)
+{
+    const QString invalidChars = QStringLiteral(":<>\"/\\|?*");
+    for (const QChar ch : invalidChars) {
+        name.replace(ch, '_');
+    }
+    return name;
+}
+
+QString buildMupenSaveBaseName(const CoreRomHeader& header, const CoreRomSettings& settings)
+{
+    const int format = CoreSettingsGetIntValue(SettingsID::Core_SaveFileNameFormat);
+    if (format == 0) {
+        return sanitizeSaveBaseName(QString::fromStdString(header.Name));
+    }
+
+    QString base;
+    const QString goodName = QString::fromStdString(settings.GoodName);
+    if (!goodName.contains(QStringLiteral("(unknown rom)"))) {
+        base = goodName.left(32);
+    } else if (!header.Name.empty()) {
+        base = QString::fromStdString(header.Name);
+    } else {
+        base = QStringLiteral("unknown");
+    }
+
+    const QString md5Prefix = QString::fromStdString(settings.MD5).left(8);
+    return sanitizeSaveBaseName(base + "-" + md5Prefix);
+}
+
+void appendSaveFileIfExists(QJsonArray& saveFiles, const QDir& directory, const QString& filename)
+{
+    for (const auto& value : saveFiles) {
+        if (value.toObject().value("filename").toString() == filename) {
+            return;
+        }
+    }
+
+    const QString filePath = directory.filePath(filename);
+    QFile file(filePath);
+    if (!file.exists() || !file.open(QIODevice::ReadOnly)) {
+        return;
+    }
+
+    const QByteArray data = file.readAll();
+    file.close();
+
+    QJsonObject saveFile;
+    saveFile["filename"] = filename;
+    saveFile["size"] = static_cast<qint64>(data.size());
+    saveFile["data"] = QString::fromLatin1(data.toBase64());
+    saveFiles.append(saveFile);
 }
 
 QJsonArray buildEnabledCheatsSnapshot(const QString& romFile)
@@ -67,24 +124,30 @@ QJsonArray buildSaveSyncFiles(const QString& romFile)
     QJsonArray saveFiles;
     const auto saveDirectory = CoreGetSaveDirectory();
     const QDir directory(QString::fromStdString(saveDirectory.string()));
-    const QString romBaseName = QFileInfo(romFile).completeBaseName();
 
-    for (const QString& extension : netplaySaveExtensions())
-    {
-        const QString filename = romBaseName + extension;
-        const QString filePath = directory.filePath(filename);
-        QFile file(filePath);
-        if (!file.exists() || !file.open(QIODevice::ReadOnly))
-        {
-            continue;
+    QStringList saveBaseNames;
+    saveBaseNames << QFileInfo(romFile).completeBaseName();
+
+    CoreRomType type = {};
+    CoreRomHeader header = {};
+    CoreRomSettings defaultSettings = {};
+    CoreRomSettings settings = {};
+    if (CoreGetCachedRomHeaderAndSettings(romFile.toStdU32String(), &type, &header, &defaultSettings, &settings)) {
+        saveBaseNames << buildMupenSaveBaseName(header, settings);
+        if (!settings.GoodName.empty()) {
+            saveBaseNames << sanitizeSaveBaseName(QString::fromStdString(settings.GoodName));
         }
+        if (!header.Name.empty()) {
+            saveBaseNames << sanitizeSaveBaseName(QString::fromStdString(header.Name));
+        }
+    }
 
-        const QByteArray data = file.readAll();
-        QJsonObject saveFile;
-        saveFile["filename"] = filename;
-        saveFile["size"] = static_cast<qint64>(data.size());
-        saveFile["data"] = QString::fromLatin1(data.toBase64());
-        saveFiles.append(saveFile);
+    saveBaseNames.removeDuplicates();
+
+    for (const QString& baseName : saveBaseNames) {
+        for (const QString& extension : netplaySaveExtensions()) {
+            appendSaveFileIfExists(saveFiles, directory, baseName + extension);
+        }
     }
 
     return saveFiles;
@@ -550,42 +613,76 @@ void NetplaySessionDialog::on_coordinator_playersUpdated(const QStringList& play
     }
 }
 
+void NetplaySessionDialog::tryStartPendingGame(void)
+{
+    if (!this->m_pendingGameStart) {
+        return;
+    }
+
+    if (!this->isLocalSessionHost() && !this->m_sessionSavesApplied) {
+        return;
+    }
+
+    this->m_pendingGameStart = false;
+
+    const QString romFile = this->romFile;
+    const int selectedSlot = this->m_pendingPlayerSlot;
+
+    if (romFile.isEmpty() || !QFileInfo::exists(romFile)) {
+        QtMessageBox::Error(this, "ROM Missing", "The ROM path from this netplay session does not exist locally. Please reselect the ROM.");
+        this->m_pendingGameStart = true;
+        return;
+    }
+
+    this->applyCheats();
+    CoreSetEmbeddedNetplayState(true, selectedSlot);
+    emit OnPlayGame(romFile, "", 0, selectedSlot);
+}
+
 void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
 {
-    // Apply cheats before starting game
-    this->applyCheats();
-    this->syncHostSessionState();
+    if (this->isLocalSessionHost()) {
+        this->syncHostSessionState();
+    }
 
-    QJsonDocument sessionDoc = QJsonDocument::fromJson(this->sessionFile.toUtf8());
-    QJsonObject sessionJson = sessionDoc.object();
-
-    QString address = sessionJson.value("server_address").toString(this->coordinator->getPeerAddress());
-    int port = sessionJson.value("server_port").toInt(this->coordinator->getGamePort());
-
-    // Prefer session-assigned slot when available to avoid duplicate slot claims.
-    int selectedSlot = (this->sessionSlot >= 0 ? this->sessionSlot : playerSlot);
+    int selectedSlot = playerSlot;
+    if (this->coordinator) {
+        const int coordinatorSlot = this->coordinator->getGameSession().localSlot;
+        if (coordinatorSlot >= 0) {
+            selectedSlot = coordinatorSlot;
+        }
+    }
+    if (selectedSlot < 0 && this->sessionSlot >= 0) {
+        selectedSlot = this->sessionSlot;
+    }
     if (selectedSlot < 0) {
         selectedSlot = 0;
     } else if (selectedSlot > 3) {
         selectedSlot = 3;
     }
 
-    // Core netplay uses player index range [1, 4].
-    int corePlayer = selectedSlot + 1;
-    if (corePlayer < 1) {
-        corePlayer = 1;
-    } else if (corePlayer > 4) {
-        corePlayer = 4;
+    this->m_pendingGameStart = true;
+    this->m_pendingPlayerSlot = selectedSlot;
+
+    if (this->isLocalSessionHost()) {
+        this->m_sessionSavesApplied = true;
+        this->tryStartPendingGame();
+        return;
     }
 
-    // P2P netplay is handled by coordinator/socket lockstep; do not trigger
-    // legacy core netplay init (M64CMD_NETPLAY_*), which causes slot assertions.
-    Q_UNUSED(address);
-    Q_UNUSED(port);
-    Q_UNUSED(corePlayer);
+    if (this->m_sessionSavesApplied) {
+        this->tryStartPendingGame();
+        return;
+    }
 
-    CoreSetEmbeddedNetplayState(true, selectedSlot);
-    emit OnPlayGame(this->romFile, "", 0, selectedSlot);
+    // Saves travel on their own save-sync message (too large for game-started).
+    QTimer::singleShot(750, this, [this]() {
+        if (!this->m_pendingGameStart) {
+            return;
+        }
+        this->m_sessionSavesApplied = true;
+        this->tryStartPendingGame();
+    });
 }
 
 void NetplaySessionDialog::on_coordinator_cheatsUpdated(const QJsonArray& cheats)
@@ -596,10 +693,17 @@ void NetplaySessionDialog::on_coordinator_cheatsUpdated(const QJsonArray& cheats
     }
 
     this->updateCheatsTreeWidget();
+
+    // Always push synced cheats into core state immediately so frame 0 starts with the right set.
+    this->applyCheats();
 }
 
 void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& saveFiles)
 {
+    if (saveFiles.isEmpty()) {
+        return;
+    }
+
     const auto saveDirectory = CoreGetSaveDirectory();
     QDir directory(QString::fromStdString(saveDirectory.string()));
     if (!directory.exists())
@@ -607,10 +711,16 @@ void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& sav
         directory.mkpath(".");
     }
 
-    const QString romBaseName = QFileInfo(this->romFile).completeBaseName();
-    for (const QString& extension : netplaySaveExtensions())
-    {
-        QFile::remove(directory.filePath(romBaseName + extension));
+    QStringList filenamesToReplace;
+    for (const auto& value : saveFiles) {
+        const QString filename = value.toObject().value("filename").toString();
+        if (!filename.isEmpty()) {
+            filenamesToReplace << filename;
+        }
+    }
+
+    for (const QString& filename : filenamesToReplace) {
+        QFile::remove(directory.filePath(filename));
     }
 
     for (const auto& value : saveFiles)
@@ -644,11 +754,14 @@ void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& sav
         }
         file.close();
     }
+
+    this->m_sessionSavesApplied = true;
+    this->tryStartPendingGame();
 }
 
 void NetplaySessionDialog::syncHostSessionState(void)
 {
-    if (!this->coordinator || this->sessionSlot != 0)
+    if (!this->coordinator || !this->isLocalSessionHost())
     {
         return;
     }
@@ -806,8 +919,12 @@ void NetplaySessionDialog::accept()
 
     this->syncHostSessionState();
 
-    // Signal coordinator to start the game
-    this->coordinator->startGame();
+    // Let save-sync reach clients before game-started.
+    QTimer::singleShot(200, this, [this]() {
+        if (this->coordinator) {
+            this->coordinator->startGame();
+        }
+    });
 
     // Keep session dialog open while game starts, per netplay UX.
 }

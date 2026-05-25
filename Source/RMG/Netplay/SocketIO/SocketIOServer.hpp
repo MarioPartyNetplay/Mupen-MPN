@@ -56,9 +56,11 @@ public:
     /**
      * @brief Start game for a hosted room (host is embedded, not a websocket client)
      */
-    bool startHostedGame(const QString& roomId, const QString& mode, bool resyncEnabled, const QString& romHash);
+    bool startHostedGame(const QString& roomId, const QString& mode, bool resyncEnabled, const QString& romHash,
+                         const QJsonArray& cheats = QJsonArray(), const QJsonArray& saveFiles = QJsonArray());
 
     void broadcastControllerInput(const QString& roomId, int slot, uint32_t frameNumber, uint32_t controllerState);
+    void broadcastFrameSync(const QString& roomId, int slot, uint32_t frameNumber);
 
     /**
      * @brief Broadcast updated cheats to all clients in a room
@@ -123,6 +125,7 @@ signals:
      * @brief Emitted when controller input is received for a room
      */
     void controllerInputReceived(const QString& roomId, int slot, uint32_t frameNumber, uint32_t controllerState);
+    void frameSyncReceived(const QString& roomId, int slot, uint32_t frameNumber);
 
     /**
      * @brief Emitted when a chat message is received from a client in a room
@@ -182,6 +185,11 @@ private:
         int maxPlayers = 4;
         QMap<int, ClientConnection*> players;  // slot -> player
         bool started = false;
+
+        // --- ADD THESE FIELDS TO STORE STATE ---
+        QJsonArray activeCheats;
+        QJsonArray activeSaves;
+        int inputDelayFrames = 4; // Default standard netplay lag buffer
     };
 
     // Server state
@@ -207,7 +215,9 @@ private:
     void handle_CheatsUpdate(QWebSocket* socket, const QJsonObject& msg);
     void handle_SaveSyncUpdate(QWebSocket* socket, const QJsonObject& msg);
     void handle_ControllerInput(QWebSocket* socket, const QJsonObject& msg);
+    void handle_FrameSync(QWebSocket* socket, const QJsonObject& msg);
     void handle_InputDelayUpdate(QWebSocket* socket, const QJsonObject& msg);
+    void handle_DirectRamPatch(QWebSocket* socket, const QJsonObject& msg);
 
     // Utilities
     ClientConnection* getClientFromSocket(QWebSocket* socket);
@@ -219,7 +229,9 @@ private:
     // Response helpers
     void sendSocketIOMessage(QWebSocket* socket, int type, const QJsonArray& args);
     void emitToRoom(const QString& roomId, const QString& eventName, const QJsonObject& data);
+    void emitToConnectedRoomClients(const QString& roomId, const QString& eventName, const QJsonObject& data);
     void emitToClient(const QString& clientId, const QString& eventName, const QJsonObject& data);
+    void emitToClient(const QString& clientId, const QString& eventName, const QJsonArray& data);
     void broadcastRoomUpdate(const QString& roomId);
 };
 

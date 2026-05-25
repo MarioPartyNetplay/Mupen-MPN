@@ -55,6 +55,8 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
             this, &NetplayCoordinator::on_socketIO_gameEnded);
         connect(m_socketIO.get(), &SocketIOClient::controllerInputReceived,
             this, &NetplayCoordinator::on_socketIO_controllerInputReceived);
+    connect(m_socketIO.get(), &SocketIOClient::frameSyncReceived,
+            this, &NetplayCoordinator::on_peerFrameSyncReceived);
 
     connect(m_socketIO.get(), &SocketIOClient::offerReceived,
             this, &NetplayCoordinator::on_socketIO_offerReceived);
@@ -193,6 +195,13 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
             m_lockstepEngine->submitRemoteInput(slot, frameNumber, controllerState);
         });
 
+    connect(m_server.get(), &SocketIOServer::frameSyncReceived,
+        this, [this](const QString& roomId, int slot, uint32_t frameNumber) {
+            if (roomId != m_gameSession.roomId)
+                return;
+            on_peerFrameSyncReceived(slot, frameNumber);
+        });
+
     connect(m_server.get(), &SocketIOServer::chatMessageReceived,
             this, [this](const QString& roomId, const QString& playerName, const QString& message) {
                 if (roomId != m_gameSession.roomId)
@@ -304,6 +313,8 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
             this, &NetplayCoordinator::on_socketIO_gameEnded);
         connect(m_socketIO.get(), &SocketIOClient::controllerInputReceived,
             this, &NetplayCoordinator::on_socketIO_controllerInputReceived);
+    connect(m_socketIO.get(), &SocketIOClient::frameSyncReceived,
+            this, &NetplayCoordinator::on_peerFrameSyncReceived);
 
     connect(m_socketIO.get(), &SocketIOClient::offerReceived,
             this, &NetplayCoordinator::on_socketIO_offerReceived);
@@ -382,7 +393,8 @@ void NetplayCoordinator::startGame(const QString& gameMode, bool resyncEnabled, 
         }
 
         setState(StartingGame);
-        if (!m_server->startHostedGame(m_gameSession.roomId, gameMode, resyncEnabled, romHash)) {
+        if (!m_server->startHostedGame(m_gameSession.roomId, gameMode, resyncEnabled, romHash,
+                                        m_sessionSyncCheats, m_sessionSyncSaves)) {
             qWarning() << "NetplayCoordinator: Failed to start hosted game";
             setState(InLobby);
         }
@@ -435,7 +447,11 @@ bool NetplayCoordinator::advanceFrame()
         return false;
     }
 
-    return m_lockstepEngine->advanceFrame();
+    const bool advanced = m_lockstepEngine->advanceFrame();
+    if (advanced) {
+        broadcastFrameSyncIfNeeded(m_lockstepEngine->getCurrentFrameNumber());
+    }
+    return advanced;
 }
 
 void NetplayCoordinator::onDesyncDetected(const QString& reason)
@@ -666,6 +682,10 @@ void NetplayCoordinator::on_socketIO_gameStarted(const QString& mode, bool resyn
     
     // Tell the Core which slot WE are
     CoreSetEmbeddedNetplayState(true, m_gameSession.localSlot);
+
+    if (!m_sessionSyncCheats.isEmpty()) {
+        emit cheatsUpdated(m_sessionSyncCheats);
+    }
 
     setState(InGame);
     emit gameStarted(m_gameSession);
@@ -944,6 +964,8 @@ void NetplayCoordinator::sendChatMessage(const QString& message)
 
 void NetplayCoordinator::sendCheatsUpdate(const QJsonArray& cheats)
 {
+    m_sessionSyncCheats = cheats;
+
     if (isHostingServer()) {
         if (m_server && !m_gameSession.roomId.isEmpty()) {
             m_server->broadcastCheatsUpdate(m_gameSession.roomId, cheats);
@@ -959,9 +981,15 @@ void NetplayCoordinator::sendCheatsUpdate(const QJsonArray& cheats)
 
 void NetplayCoordinator::sendSaveSync(const QJsonArray& saveFiles)
 {
+    m_sessionSyncSaves = saveFiles;
+
     if (isHostingServer()) {
         if (m_server && !m_gameSession.roomId.isEmpty()) {
-            m_server->broadcastSaveSync(m_gameSession.roomId, saveFiles);
+            if (!saveFiles.isEmpty()) {
+                m_server->broadcastSaveSync(m_gameSession.roomId, saveFiles);
+            } else {
+                qDebug() << "NetplayCoordinator: No save files found to sync for this ROM";
+            }
         }
         return;
     }
@@ -992,6 +1020,7 @@ int NetplayCoordinator::getInputDelayFrames() const
 
 void NetplayCoordinator::on_socketIO_cheatsUpdated(const QJsonArray& cheats)
 {
+    m_sessionSyncCheats = cheats;
     emit cheatsUpdated(cheats);
 }
 
@@ -1019,6 +1048,45 @@ void NetplayCoordinator::on_socketIO_controllerInputReceived(int slot, uint32_t 
     }
 }
 
+void NetplayCoordinator::on_peerFrameSyncReceived(int slot, uint32_t frameNumber)
+{
+    if (m_state != InGame || !m_lockstepEngine) {
+        return;
+    }
+
+    if (slot == m_gameSession.localSlot) {
+        return;
+    }
+
+    if (slot >= 0 && slot < m_lockstepConfig.numPlayers) {
+        m_lockstepEngine->submitPeerReportedFrame(slot, frameNumber);
+    } else if (slot == -1 && m_lockstepConfig.numPlayers == 2) {
+        const int inferredSlot = (m_gameSession.localSlot == 0) ? 1 : 0;
+        m_lockstepEngine->submitPeerReportedFrame(inferredSlot, frameNumber);
+    }
+}
+
+void NetplayCoordinator::broadcastFrameSyncIfNeeded(uint32_t frameNumber)
+{
+    if (m_state != InGame || frameNumber == 0) {
+        return;
+    }
+
+    constexpr uint32_t kFrameSyncIntervalFrames = 15;
+    if (frameNumber % kFrameSyncIntervalFrames != 0) {
+        return;
+    }
+
+    if (isHostingServer()) {
+        QMetaObject::invokeMethod(m_server.get(), [this, frameNumber]() {
+            m_server->broadcastFrameSync(m_gameSession.roomId, m_lockstepConfig.localPlayerSlot, frameNumber);
+        }, Qt::BlockingQueuedConnection);
+    } else if (m_socketIO) {
+        QMetaObject::invokeMethod(m_socketIO.get(), [this, frameNumber]() {
+            m_socketIO->sendFrameSync(frameNumber);
+        }, Qt::BlockingQueuedConnection);
+    }
+}
 
 QString NetplayCoordinator::getPeerAddress() const
 {

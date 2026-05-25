@@ -28,6 +28,8 @@ bool SocketIOServer::startServer(int port)
         QWebSocketServer::SslMode::NonSecureMode,
         this);
 
+    const qint64 maxPayloadLimit = 128 * 1024 * 1024; 
+
     if (!m_server->listen(QHostAddress::Any, port))
     {
         qWarning() << "Signaling server failed to listen on port" << port;
@@ -72,17 +74,20 @@ int SocketIOServer::getPort() const
 
 void SocketIOServer::createInitialRoom(const QString& roomId, const QString& hostName, const QString& gameName)
 {
-    // Create room for hosting and reserve slot 0 for host.
     SignalingRoom room;
     room.id = roomId;
-    room.hostId = hostName;
+    room.hostId = "host"; // Match placeholder ID
     room.roomName = hostName;
     room.gameName = gameName;
     room.gameId = gameName;
     room.maxPlayers = 4;
     room.started = false;
     
-    // Add a host placeholder so remote clients start at slot 1.
+    // Explicitly initialize state storage
+    room.activeCheats = QJsonArray();
+    room.activeSaves = QJsonArray();
+    room.inputDelayFrames = 4;
+    
     auto* hostClient = new ClientConnection();
     hostClient->id = "host";
     hostClient->name = hostName;
@@ -96,7 +101,193 @@ void SocketIOServer::createInitialRoom(const QString& roomId, const QString& hos
     qInfo() << "SocketIOServer: Created initial room" << roomId << "for host" << hostName;
 }
 
-bool SocketIOServer::startHostedGame(const QString& roomId, const QString& mode, bool resyncEnabled, const QString& romHash)
+void SocketIOServer::handle_JoinRoom(QWebSocket* socket, const QJsonObject& msg)
+{
+    ClientConnection* client = getClientFromSocket(socket);
+    if (!client)
+        return;
+
+    QString roomId = msg["roomId"].toString();
+    if (roomId.isEmpty())
+    {
+        QJsonObject extra = msg["extra"].toObject();
+        roomId = extra["roomId"].toString();
+    }
+
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room)
+    {
+        QJsonObject error;
+        error["error"] = "Room not found";
+        emitToClient(client->id, "join-failed", error);
+        return;
+    }
+
+    if (room->started)
+    {
+        QJsonObject error;
+        error["error"] = "Game already started";
+        emitToClient(client->id, "join-failed", error);
+        return;
+    }
+
+    int slotIndex = -1;
+    for (int i = 0; i < room->maxPlayers; i++)
+    {
+        if (!room->players.contains(i))
+        {
+            slotIndex = i;
+            break;
+        }
+    }
+
+    if (slotIndex == -1)
+    {
+        QJsonObject error;
+        error["error"] = "Room is full";
+        emitToClient(client->id, "join-failed", error);
+        return;
+    }
+
+    client->roomId = roomId;
+    client->slotIndex = slotIndex;
+    client->playerId = QString("p%1").arg(slotIndex);
+
+    QJsonObject extra = msg["extra"].toObject();
+    QString requestedName = extra["player_name"].toString().trimmed();
+    if (client->name.isEmpty() && !requestedName.isEmpty())
+    {
+        client->name = requestedName;
+    }
+    if (client->name.isEmpty())
+    {
+        client->name = QString("P%1").arg(slotIndex + 1);
+    }
+
+    room->players[slotIndex] = client;
+
+    // 1. Acknowledge successful entry to client
+    QJsonObject response;
+    response["roomId"] = roomId;
+    response["slotIndex"] = slotIndex;
+    response["playerId"] = client->playerId;
+    emitToClient(client->id, "room-joined", response);
+
+    // 2. WORKAROUND: Catch up the joining user instantly on current room configurations
+    if (!room->activeCheats.isEmpty())
+    {
+        QJsonObject cheatsPayload;
+        cheatsPayload["cheats"] = room->activeCheats;
+        emitToClient(client->id, "cheats-updated", cheatsPayload);
+    }
+    if (!room->activeSaves.isEmpty())
+    {
+        QJsonObject savePayload;
+        savePayload["files"] = room->activeSaves;
+        emitToClient(client->id, "save-sync", savePayload);
+    }
+    
+    QJsonObject delayPayload;
+    delayPayload["frames"] = room->inputDelayFrames;
+    emitToClient(client->id, "update-input-delay", delayPayload);
+
+    // 3. Inform everyone else about structural change
+    broadcastRoomUpdate(roomId);
+
+    qInfo() << "Player joined room:" << roomId << "slot:" << slotIndex << "and caught up on game states.";
+    emit playerJoined(roomId, client->id, slotIndex);
+}
+
+void SocketIOServer::handle_CheatsUpdate(QWebSocket* socket, const QJsonObject& msg)
+{
+    ClientConnection* client = getClientFromSocket(socket);
+    if (!client || client->roomId.isEmpty())
+        return;
+
+    SignalingRoom* room = getRoomById(client->roomId);
+    if (!room)
+        return;
+
+    // 1. Extract the array cleanly from the incoming JSON object
+    QJsonArray cheatsArray = msg.value("cheats").toArray();
+
+    // 2. Cache it on the server for future joiners
+    room->activeCheats = cheatsArray;
+
+    // 3. Broadcast a stable payload shape used by SocketIOClient.
+    QJsonObject payload;
+    payload["cheats"] = cheatsArray;
+
+    // 4. Broadcast to everyone else in the room
+    for (auto it = room->players.constBegin(); it != room->players.constEnd(); ++it)
+    {
+        ClientConnection* player = it.value();
+        // Check player validity, ensure it's not the sender, and make sure their socket is alive
+        if (player && player->id != client->id && player->socket && player->socket->isValid())
+        {
+            emitToClient(player->id, "cheats-updated", payload);
+        }
+    }
+
+    emit cheatsUpdated(client->roomId, room->activeCheats);
+}
+
+
+void SocketIOServer::handle_SaveSyncUpdate(QWebSocket* socket, const QJsonObject& msg)
+{
+    ClientConnection* client = getClientFromSocket(socket);
+    if (!client || client->roomId.isEmpty())
+        return;
+
+    SignalingRoom* room = getRoomById(client->roomId);
+    if (!room)
+        return;
+
+    // Cache structural save files
+    room->activeSaves = msg.value("files").toArray();
+
+    QJsonObject payload;
+    payload["files"] = room->activeSaves;
+
+    for (auto it = room->players.constBegin(); it != room->players.constEnd(); ++it)
+    {
+        ClientConnection* player = it.value();
+        if (player && player->id != client->id && player->socket && player->socket->isValid())
+        {
+            emitToClient(player->id, "save-sync", payload);
+        }
+    }
+    emit saveSyncReceived(client->roomId, room->activeSaves);
+}
+
+void SocketIOServer::handle_InputDelayUpdate(QWebSocket* socket, const QJsonObject& msg)
+{
+    ClientConnection* client = getClientFromSocket(socket);
+    if (!client || client->roomId.isEmpty())
+        return;
+
+    SignalingRoom* room = getRoomById(client->roomId);
+    if (!room || room->hostId != client->id)
+        return; // Only host should configure latency properties
+
+    int frames = msg.value("frames").toInt(4);
+    room->inputDelayFrames = qBound(0, frames, 99);
+
+    QJsonObject payload;
+    payload["frames"] = room->inputDelayFrames;
+    
+    // Distribute frame delay configuration across active clients securely
+    for (auto* player : room->players)
+    {
+        if (player && player->socket && player->socket->isValid())
+        {
+            emitToClient(player->id, "update-input-delay", payload);
+        }
+    }
+}
+
+bool SocketIOServer::startHostedGame(const QString& roomId, const QString& mode, bool resyncEnabled, const QString& romHash,
+                                     const QJsonArray& cheats, const QJsonArray& saveFiles)
 {
     SignalingRoom* room = getRoomById(roomId);
     if (!room)
@@ -123,7 +314,12 @@ bool SocketIOServer::startHostedGame(const QString& roomId, const QString& mode,
     payload["resyncEnabled"] = resyncEnabled;
     payload["romHash"] = romHash;
     payload["matchId"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    emitToRoom(roomId, "game-started", payload);
+    // Cheats only: save data is sent on the dedicated save-sync channel (often too large for one frame).
+    if (!cheats.isEmpty()) {
+        payload["cheats"] = cheats;
+    }
+    Q_UNUSED(saveFiles);
+    emitToConnectedRoomClients(roomId, "game-started", payload);
 
     qInfo() << "SocketIOServer: Hosted game started in room" << roomId;
     emit gameStarted(roomId);
@@ -153,6 +349,27 @@ void SocketIOServer::broadcastControllerInput(const QString& roomId, int slot, u
     }
 }
 
+void SocketIOServer::broadcastFrameSync(const QString& roomId, int slot, uint32_t frameNumber)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room)
+    {
+        return;
+    }
+
+    QJsonObject payload;
+    payload["slot"] = slot;
+    payload["frame"] = static_cast<qint64>(frameNumber);
+
+    for (auto* player : room->players)
+    {
+        if (player && player->slotIndex != slot)
+        {
+            emitToClient(player->id, "frame-sync", payload);
+        }
+    }
+}
+
 void SocketIOServer::broadcastCheatsUpdate(const QString& roomId, const QJsonArray& cheats)
 {
     SignalingRoom* room = getRoomById(roomId);
@@ -162,9 +379,13 @@ void SocketIOServer::broadcastCheatsUpdate(const QString& roomId, const QJsonArr
         return;
     }
 
+    room->activeCheats = cheats;
+
     QJsonObject payload;
     payload["cheats"] = cheats;
-    emitToRoom(roomId, "cheats-updated", payload);
+    
+    // Use the safe connected client emitter
+    emitToConnectedRoomClients(roomId, "cheats-updated", payload);
 }
 
 void SocketIOServer::broadcastSaveSync(const QString& roomId, const QJsonArray& saveFiles)
@@ -178,7 +399,7 @@ void SocketIOServer::broadcastSaveSync(const QString& roomId, const QJsonArray& 
 
     QJsonObject payload;
     payload["files"] = saveFiles;
-    emitToRoom(roomId, "save-sync", payload);
+    emitToConnectedRoomClients(roomId, "save-sync", payload);
 }
 
 void SocketIOServer::broadcastInputDelayUpdate(const QString& roomId, int frames)
@@ -226,13 +447,18 @@ void SocketIOServer::onNewConnection()
     if (!m_server)
         return;
 
+    // Loop through all pending connections waiting in the queue
     while (true)
     {
         QWebSocket* socket = m_server->nextPendingConnection();
         if (!socket)
-            break;
+            break; // No more clients waiting, exit cleanly
 
-        // Create client connection
+        // 1. Set payload limits immediately on every connection as they come in
+        socket->setMaxAllowedIncomingMessageSize(15728640);
+        socket->setMaxAllowedIncomingFrameSize(15728640);
+
+        // 2. Create and configure your client connection safely
         auto* client = new ClientConnection();
         client->id = generateClientId();
         client->socket = socket;
@@ -398,6 +624,8 @@ void SocketIOServer::handleEvent(QWebSocket* socket, const QJsonArray& args)
             handle_SaveSyncUpdate(socket, data);
         else if (eventName == "controller-input")
             handle_ControllerInput(socket, data);
+        else if (eventName == "frame-sync")
+            handle_FrameSync(socket, data);
         else if (eventName == "update-input-delay")
             handle_InputDelayUpdate(socket, data);
     }
@@ -449,93 +677,6 @@ void SocketIOServer::handle_OpenRoom(QWebSocket* socket, const QJsonObject& msg)
 
     qInfo() << "Room created:" << roomId << "by" << client->id;
     emit roomCreated(roomId);
-}
-
-void SocketIOServer::handle_JoinRoom(QWebSocket* socket, const QJsonObject& msg)
-{
-    ClientConnection* client = getClientFromSocket(socket);
-    if (!client)
-        return;
-
-    QString roomId = msg["roomId"].toString();
-    if (roomId.isEmpty())
-    {
-        QJsonObject extra = msg["extra"].toObject();
-        roomId = extra["roomId"].toString();
-    }
-
-    SignalingRoom* room = getRoomById(roomId);
-
-    if (!room)
-    {
-        QJsonObject error;
-        error["error"] = "Room not found";
-        qWarning() << "Join failed: room not found for id" << roomId;
-        emitToClient(client->id, "join-failed", error);
-        return;
-    }
-
-    if (room->started)
-    {
-        QJsonObject error;
-        error["error"] = "Game already started";
-        qWarning() << "Join failed: game already started for room" << roomId;
-        emitToClient(client->id, "join-failed", error);
-        return;
-    }
-
-    // Find available slot
-    int slotIndex = -1;
-    for (int i = 0; i < room->maxPlayers; i++)
-    {
-        if (!room->players.contains(i))
-        {
-            slotIndex = i;
-            break;
-        }
-    }
-
-    if (slotIndex == -1)
-    {
-        QJsonObject error;
-        error["error"] = "Room is full";
-        qWarning() << "Join failed: room full for room" << roomId;
-        emitToClient(client->id, "join-failed", error);
-        return;
-    }
-
-    // Add to room
-    client->roomId = roomId;
-    client->slotIndex = slotIndex;
-    client->playerId = QString("p%1").arg(slotIndex);
-
-    // Preserve/display player name as soon as the client joins.
-    // Some clients may send set-name before or after join-room, so apply a fallback here.
-    QJsonObject extra = msg["extra"].toObject();
-    QString requestedName = extra["player_name"].toString().trimmed();
-    if (client->name.isEmpty() && !requestedName.isEmpty())
-    {
-        client->name = requestedName;
-    }
-    if (client->name.isEmpty())
-    {
-        client->name = QString("P%1").arg(slotIndex + 1);
-    }
-
-    room->players[slotIndex] = client;
-
-    // Send join response
-    QJsonObject response;
-    response["roomId"] = roomId;
-    response["slotIndex"] = slotIndex;
-    response["playerId"] = client->playerId;
-    emitToClient(client->id, "room-joined", response);
-
-    // Broadcast room update
-    broadcastRoomUpdate(roomId);
-
-    qInfo() << "Player joined room:" << roomId << "slot:" << slotIndex;
-    emit playerJoined(roomId, client->id, slotIndex);
 }
 
 void SocketIOServer::handle_LeaveRoom(QWebSocket* socket, const QJsonObject& msg)
@@ -778,32 +919,6 @@ void SocketIOServer::handle_ChatMessage(QWebSocket* socket, const QJsonObject& m
     }
 }
 
-void SocketIOServer::handle_CheatsUpdate(QWebSocket* socket, const QJsonObject& msg)
-{
-    ClientConnection* client = getClientFromSocket(socket);
-    if (!client || client->roomId.isEmpty())
-        return;
-
-    QJsonArray cheats = msg.value("cheats").toArray();
-    QJsonObject payload;
-    payload["cheats"] = cheats;
-    emitToRoom(client->roomId, "cheats-updated", payload);
-    emit cheatsUpdated(client->roomId, cheats);
-}
-
-void SocketIOServer::handle_SaveSyncUpdate(QWebSocket* socket, const QJsonObject& msg)
-{
-    ClientConnection* client = getClientFromSocket(socket);
-    if (!client || client->roomId.isEmpty())
-        return;
-
-    QJsonArray saveFiles = msg.value("files").toArray();
-    QJsonObject payload;
-    payload["files"] = saveFiles;
-    emitToRoom(client->roomId, "save-sync", payload);
-    emit saveSyncReceived(client->roomId, saveFiles);
-}
-
 void SocketIOServer::handle_ControllerInput(QWebSocket* socket, const QJsonObject& msg)
 {
     ClientConnection* client = getClientFromSocket(socket);
@@ -816,24 +931,15 @@ void SocketIOServer::handle_ControllerInput(QWebSocket* socket, const QJsonObjec
     broadcastControllerInput(client->roomId, client->slotIndex, frameNumber, controllerState);
 }
 
-void SocketIOServer::handle_InputDelayUpdate(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_FrameSync(QWebSocket* socket, const QJsonObject& msg)
 {
     ClientConnection* client = getClientFromSocket(socket);
-    if (!client || client->roomId.isEmpty())
+    if (!client || client->roomId.isEmpty() || client->slotIndex < 0)
         return;
 
-    SignalingRoom* room = getRoomById(client->roomId);
-    if (!room || room->hostId != client->id)
-        return;
-
-    int frames = msg.value("frames").toInt(4);
-    if (frames < 0) {
-        frames = 0;
-    } else if (frames > 99) {
-        frames = 99;
-    }
-
-    broadcastInputDelayUpdate(client->roomId, frames);
+    uint32_t frameNumber = static_cast<uint32_t>(msg.value("frame").toInteger());
+    emit frameSyncReceived(client->roomId, client->slotIndex, frameNumber);
+    broadcastFrameSync(client->roomId, client->slotIndex, frameNumber);
 }
 
 SocketIOServer::ClientConnection* SocketIOServer::getClientFromSocket(QWebSocket* socket)
@@ -884,8 +990,7 @@ void SocketIOServer::sendSocketIOMessage(QWebSocket* socket, int type, const QJs
 
     QJsonArray message;
     message.append(type);
-    for (const auto& arg : args)
-    {
+    for (const auto& arg : args) {
         message.append(arg);
     }
 
@@ -896,6 +1001,7 @@ void SocketIOServer::sendSocketIOMessage(QWebSocket* socket, int type, const QJs
     socket->sendTextMessage("2" + payload);
 }
 
+
 void SocketIOServer::emitToRoom(const QString& roomId, const QString& eventName, const QJsonObject& data)
 {
     SignalingRoom* room = getRoomById(roomId);
@@ -904,24 +1010,27 @@ void SocketIOServer::emitToRoom(const QString& roomId, const QString& eventName,
 
     for (auto* player : room->players)
     {
-        if (player)
+        if (player && player->socket && player->socket->isValid())
         {
             emitToClient(player->id, eventName, data);
         }
     }
 }
 
-void SocketIOServer::emitToClient(const QString& clientId, const QString& eventName, const QJsonObject& data)
+void SocketIOServer::emitToConnectedRoomClients(const QString& roomId, const QString& eventName, const QJsonObject& data)
 {
-    ClientConnection* client = getClientById(clientId);
-    if (!client || !client->socket)
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room)
         return;
 
-    QJsonArray args;
-    args.append(eventName);
-    args.append(data);
-
-    sendSocketIOMessage(client->socket, 2, args);  // 2 = Socket.IO EVENT type
+    for (auto it = room->players.constBegin(); it != room->players.constEnd(); ++it)
+    {
+        ClientConnection* player = it.value();
+        if (player && player->socket && player->socket->isValid())
+        {
+            emitToClient(player->id, eventName, data);
+        }
+    }
 }
 
 void SocketIOServer::broadcastRoomUpdate(const QString& roomId)
@@ -953,4 +1062,26 @@ void SocketIOServer::broadcastRoomUpdate(const QString& roomId)
 
     emit roomPlayersUpdated(roomId, playersArray);
     emitToRoom(roomId, "users-updated", update);
+}
+
+void SocketIOServer::emitToClient(const QString& clientId, const QString& eventName, const QJsonObject& data)
+{
+    ClientConnection* client = getClientById(clientId);
+    if (!client || !client->socket) return;
+
+    QJsonArray args;
+    args.append(eventName);
+    args.append(data);
+    sendSocketIOMessage(client->socket, 2, args);
+}
+
+void SocketIOServer::emitToClient(const QString& clientId, const QString& eventName, const QJsonArray& data)
+{
+    ClientConnection* client = getClientById(clientId);
+    if (!client || !client->socket) return;
+
+    QJsonArray args;
+    args.append(eventName);
+    args.append(data);
+    sendSocketIOMessage(client->socket, 2, args);
 }
