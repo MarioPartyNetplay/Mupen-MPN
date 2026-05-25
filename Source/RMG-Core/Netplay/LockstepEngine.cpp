@@ -158,8 +158,15 @@ bool LockstepEngine::advanceFrame()
         applyPeerLagThrottleIfNeeded(frameNumber);
         bool ready = waitForAllInputs(frameNumber, m_config.stallTimeoutMilliseconds);
         if (!ready) {
-            std::lock_guard<std::recursive_mutex> lock(m_mutex);
-            applyTimeoutFallback(frameNumber);
+            if (m_callbacks.peerInputTimedOut) {
+                for (int slot = 0; slot < m_config.numPlayers; ++slot) {
+                    if (slot == m_config.localPlayerSlot) {
+                        continue;
+                    }
+                    m_callbacks.peerInputTimedOut(slot, frameNumber);
+                }
+            }
+            return false;
         }
     }
 

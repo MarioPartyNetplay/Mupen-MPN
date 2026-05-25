@@ -1449,12 +1449,15 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
 
         if (Control == (NUM_CONTROLLERS - 1) && !l_EmbeddedNetplayFrameAdvanced)
         {
-            CoreAdvanceEmbeddedNetplayFrame();
-            for (int i = 0; i < NUM_CONTROLLERS; i++)
+            const bool advanced = CoreAdvanceEmbeddedNetplayFrame();
+            if (advanced)
             {
-                l_EmbeddedNetplaySyncedState[i] = CoreGetEmbeddedNetplayFrameInput(i);
+                for (int i = 0; i < NUM_CONTROLLERS; i++)
+                {
+                    l_EmbeddedNetplaySyncedState[i] = CoreGetEmbeddedNetplayFrameInput(i);
+                }
             }
-            l_EmbeddedNetplayFrameAdvanced = true;
+            l_EmbeddedNetplayFrameAdvanced = advanced;
         }
 
         Keys->Value = l_EmbeddedNetplaySyncedState[Control];
