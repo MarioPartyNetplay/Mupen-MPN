@@ -1447,7 +1447,7 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
             l_EmbeddedNetplayLocalSubmitted = true;
         }
 
-        if (!l_EmbeddedNetplayFrameAdvanced)
+        if (Control == (NUM_CONTROLLERS - 1) && !l_EmbeddedNetplayFrameAdvanced)
         {
             CoreAdvanceEmbeddedNetplayFrame();
             for (int i = 0; i < NUM_CONTROLLERS; i++)
