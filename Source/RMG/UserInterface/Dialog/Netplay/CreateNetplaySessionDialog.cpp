@@ -379,7 +379,31 @@ void CreateNetplaySessionDialog::registerNatTraversalHost(void)
 void CreateNetplaySessionDialog::publishSessionIndex(const QString& hostCode)
 {
     this->natIndexClient = std::make_unique<Netplay::NatTraversalIndexClient>(this);
-    const QByteArray payload = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
+
+    // Publish only the lobby metadata needed for discovery.
+    // The full session JSON can still keep local-only data like cheat lists,
+    // but the NAT index has a small per-value limit and cannot store the full blob.
+    QJsonObject indexJson;
+    indexJson.insert("room_name", this->sessionJson.value("room_name"));
+    indexJson.insert("game_name", this->sessionJson.value("game_name"));
+    indexJson.insert("gameId", this->sessionJson.value("gameId"));
+    indexJson.insert("player_name", this->sessionJson.value("player_name"));
+    indexJson.insert("host_name", this->sessionJson.value("host_name"));
+    indexJson.insert("max_players", this->sessionJson.value("max_players"));
+    indexJson.insert("lobby_size", this->sessionJson.value("lobby_size"));
+    indexJson.insert("currentPlayers", this->sessionJson.value("currentPlayers"));
+    indexJson.insert("players", this->sessionJson.value("players"));
+    indexJson.insert("host_code", this->sessionJson.value("host_code"));
+    indexJson.insert("use_nat_traversal", this->sessionJson.value("use_nat_traversal"));
+    indexJson.insert("server_address", this->sessionJson.value("server_address"));
+    indexJson.insert("server_port", this->sessionJson.value("server_port"));
+    indexJson.insert("public_address", this->sessionJson.value("public_address"));
+    indexJson.insert("public_port", this->sessionJson.value("public_port"));
+    indexJson.insert("connect_address", this->sessionJson.value("connect_address"));
+    indexJson.insert("connect_port", this->sessionJson.value("connect_port"));
+    indexJson.insert("rom_path", this->sessionJson.value("rom_path"));
+
+    const QByteArray payload = QJsonDocument(indexJson).toJson(QJsonDocument::Compact);
 
     connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::published,
             this, [hostCode](const QString& key) {

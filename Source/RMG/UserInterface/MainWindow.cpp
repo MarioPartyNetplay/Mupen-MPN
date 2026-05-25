@@ -22,6 +22,7 @@
 #include "Dialog/Netplay/NetplaySessionBrowserDialog.hpp"
 #include "Dialog/Netplay/CreateNetplaySessionDialog.hpp"
 #include "Dialog/Netplay/NetplaySessionDialog.hpp"
+#include "Netplay.hpp"
 #include "Netplay/NetplayCoordinator.hpp"
 #endif // NETPLAY
 #include "UserInterface/EventFilter.hpp"
@@ -1769,6 +1770,13 @@ void MainWindow::on_Action_System_Pause(void)
 
     this->updateUI(true, (!isPaused && ret));
     this->ui_ManuallyPaused = true;
+
+#ifdef NETPLAY
+    if (ret && UserInterface::Netplay::g_netplayCoordinator && UserInterface::Netplay::g_netplayCoordinator->isInGame())
+    {
+        UserInterface::Netplay::g_netplayCoordinator->sendEmulationPauseUpdate(!isPaused);
+    }
+#endif // NETPLAY
 }
 
 void MainWindow::on_Action_System_Screenshot(void)

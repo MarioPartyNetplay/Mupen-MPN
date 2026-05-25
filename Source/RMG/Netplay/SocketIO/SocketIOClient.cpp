@@ -15,8 +15,37 @@
 #include <QDebug>
 #include <QUrl>
 #include <QUuid>
+#include <algorithm>
 
 using namespace UserInterface::Netplay;
+
+namespace {
+constexpr int kCheatsChunkSize = 32;
+
+QJsonArray sliceJsonArray(const QJsonArray& source, int startIndex, int count)
+{
+    QJsonArray result;
+    const int endIndex = std::min(startIndex + count, static_cast<int>(source.size()));
+    for (int index = startIndex; index < endIndex; ++index)
+    {
+        result.append(source.at(index));
+    }
+    return result;
+}
+
+QJsonObject buildCheatsPayload(const QJsonArray& cheats, const QString& chunkId = QString(), int chunkIndex = -1, int chunkCount = 0)
+{
+    QJsonObject payload;
+    payload["cheats"] = cheats;
+    if (chunkCount > 1)
+    {
+        payload["chunkId"] = chunkId;
+        payload["chunkIndex"] = chunkIndex;
+        payload["chunkCount"] = chunkCount;
+    }
+    return payload;
+}
+} // namespace
 
 SocketIOClient::SocketIOClient(const QString& serverUrl, QObject* parent)
     : QObject(parent)
@@ -322,9 +351,17 @@ void SocketIOClient::sendCheatsUpdate(const QJsonArray& cheats)
         return;
     }
 
-    QJsonObject payload;
-    payload["cheats"] = cheats;
-    emitEvent("cheats-update", payload);
+    const int chunkCount = (cheats.size() + kCheatsChunkSize - 1) / kCheatsChunkSize;
+    if (chunkCount <= 1) {
+        emitEvent("cheats-update", buildCheatsPayload(cheats));
+        return;
+    }
+
+    const QString chunkId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    for (int chunkIndex = 0; chunkIndex < chunkCount; ++chunkIndex) {
+        const QJsonArray chunk = sliceJsonArray(cheats, chunkIndex * kCheatsChunkSize, kCheatsChunkSize);
+        emitEvent("cheats-update", buildCheatsPayload(chunk, chunkId, chunkIndex, chunkCount));
+    }
 }
 
 void SocketIOClient::sendSaveSync(const QJsonArray& saveFiles)
@@ -336,6 +373,17 @@ void SocketIOClient::sendSaveSync(const QJsonArray& saveFiles)
     QJsonObject payload;
     payload["files"] = saveFiles;
     emitEvent("save-sync", payload);
+}
+
+void SocketIOClient::sendEmulationPauseUpdate(bool paused)
+{
+    if (m_connectionState != Connected) {
+        return;
+    }
+
+    QJsonObject payload;
+    payload["paused"] = paused;
+    emitEvent("emulation-paused", payload);
 }
 
 void SocketIOClient::requestRoomList(bool waiting)
@@ -625,14 +673,40 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
 
     } else if (eventName == "cheats-updated" && args.size() > 0) {
         QJsonArray cheats;
+        QString chunkId;
+        int chunkIndex = -1;
+        int chunkCount = 0;
         if (args[0].isObject()) {
             const QJsonObject data = args[0].toObject();
             cheats = data["cheats"].toArray();
+            chunkId = data["chunkId"].toString();
+            chunkIndex = data["chunkIndex"].toInt(-1);
+            chunkCount = data["chunkCount"].toInt(0);
         } else if (args[0].isArray()) {
             // Backward compatibility for older servers that emitted the raw array directly.
             cheats = args[0].toArray();
         }
-        emit cheatsUpdated(cheats);
+
+        if (chunkCount > 1 && !chunkId.isEmpty() && chunkIndex >= 0) {
+            ChunkedCheatUpdate& update = m_pendingCheatUpdates[chunkId];
+            update.chunkCount = chunkCount;
+            update.chunks[chunkIndex] = cheats;
+
+            if (update.chunkCount > 0 && update.chunks.size() >= update.chunkCount) {
+                QJsonArray combinedCheats;
+                for (auto chunkIt = update.chunks.constBegin(); chunkIt != update.chunks.constEnd(); ++chunkIt) {
+                    const QJsonArray& chunk = chunkIt.value();
+                    for (const auto& cheatValue : chunk) {
+                        combinedCheats.append(cheatValue);
+                    }
+                }
+
+                m_pendingCheatUpdates.remove(chunkId);
+                emit cheatsUpdated(combinedCheats);
+            }
+        } else {
+            emit cheatsUpdated(cheats);
+        }
 
     } else if (eventName == "save-sync" && args.size() > 0) {
         QJsonObject data = args[0].toObject();
@@ -641,6 +715,10 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
     } else if (eventName == "update-input-delay" && args.size() > 0) {
         QJsonObject data = args[0].toObject();
         emit inputDelayReceived(data["frames"].toInt(4));
+
+    } else if (eventName == "emulation-paused" && args.size() > 0) {
+        QJsonObject data = args[0].toObject();
+        emit emulationPauseReceived(data["paused"].toBool(false));
 
     } else if (eventName == "rooms-list" && args.size() > 0) {
         QJsonObject data = args[0].toObject();

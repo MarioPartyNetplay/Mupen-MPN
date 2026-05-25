@@ -572,7 +572,6 @@ void LockstepEngine::applyTimeoutFallback(uint32_t frameNumber)
         }
 
         if (frameInputs.playerInputs.find(slot) == frameInputs.playerInputs.end()) {
-            // Use last known input instead of zeroing out to maintain continuity during network jitter
             if (m_lastKnownInputs.count(slot)) {
                 frameInputs.playerInputs[slot] = m_lastKnownInputs[slot];
             } else {

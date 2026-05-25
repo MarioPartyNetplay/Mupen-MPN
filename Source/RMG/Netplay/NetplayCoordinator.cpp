@@ -11,6 +11,7 @@
 #include "NatTraversal/NatTraversalProtocol.hpp"
 #include "Netplay.hpp"
 #include <RMG-Core/Netplay.hpp>
+#include <RMG-Core/Emulation.hpp>
 #include <algorithm>
 #include <QDir>
 #include <QFile>
@@ -75,6 +76,8 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
             this, &NetplayCoordinator::on_socketIO_roomsListed);
     connect(m_socketIO.get(), &SocketIOClient::inputDelayReceived,
             this, &NetplayCoordinator::on_socketIO_inputDelayReceived);
+        connect(m_socketIO.get(), &SocketIOClient::emulationPauseReceived,
+            this, &NetplayCoordinator::on_socketIO_emulationPauseReceived);
 
     // Initialize lockstep config
     m_lockstepConfig.numPlayers = 4;
@@ -329,6 +332,8 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
             this, &NetplayCoordinator::on_socketIO_cheatsUpdated);
         connect(m_socketIO.get(), &SocketIOClient::saveSyncReceived,
             this, &NetplayCoordinator::on_socketIO_saveSyncReceived);
+        connect(m_socketIO.get(), &SocketIOClient::emulationPauseReceived,
+            this, &NetplayCoordinator::on_socketIO_emulationPauseReceived);
     
     // Now connect to the server
     setState(Connecting);
@@ -999,6 +1004,24 @@ void NetplayCoordinator::sendSaveSync(const QJsonArray& saveFiles)
     }
 }
 
+void NetplayCoordinator::sendEmulationPauseUpdate(bool paused)
+{
+    if (!isInGame()) {
+        return;
+    }
+
+    if (isHostingServer()) {
+        if (m_server && !m_gameSession.roomId.isEmpty()) {
+            m_server->broadcastEmulationPauseUpdate(m_gameSession.roomId, paused);
+        }
+        return;
+    }
+
+    if (m_socketIO && m_socketIO->getConnectionState() == SocketIOClient::Connected) {
+        m_socketIO->sendEmulationPauseUpdate(paused);
+    }
+}
+
 void NetplayCoordinator::setInputDelayFrames(int frames)
 {
     if (frames < 0) {
@@ -1027,6 +1050,23 @@ void NetplayCoordinator::on_socketIO_cheatsUpdated(const QJsonArray& cheats)
 void NetplayCoordinator::on_socketIO_saveSyncReceived(const QJsonArray& saveFiles)
 {
     emit saveSyncReceived(saveFiles);
+}
+
+void NetplayCoordinator::on_socketIO_emulationPauseReceived(bool paused)
+{
+    if (paused)
+    {
+        if (CoreIsEmulationRunning() && !CoreIsEmulationPaused())
+        {
+            CorePauseEmulation();
+        }
+        return;
+    }
+
+    if (CoreIsEmulationPaused())
+    {
+        CoreResumeEmulation();
+    }
 }
 
 void NetplayCoordinator::on_socketIO_controllerInputReceived(int slot, uint32_t frameNumber, uint32_t controllerState)

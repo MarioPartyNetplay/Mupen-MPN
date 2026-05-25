@@ -86,6 +86,8 @@
      void setInputDelayFrames(int frames);
      int getInputDelayFrames() const;
      void sendInputDelayUpdate(int frames);
+
+    void sendEmulationPauseUpdate(bool paused);
  
      // State Queries
      State getCurrentState() const;
@@ -159,6 +161,7 @@
      void on_socketIO_saveSyncReceived(const QJsonArray& saveFiles);
      void on_socketIO_controllerInputReceived(int slot, uint32_t frameNumber, uint32_t controllerState);
      void on_socketIO_inputDelayReceived(int frames);
+    void on_socketIO_emulationPauseReceived(bool paused);
      void on_peerFrameSyncReceived(int slot, uint32_t frameNumber);
 
      void on_lockstep_frameReady(uint32_t frameNumber, const QMap<int, uint32_t>& inputs);

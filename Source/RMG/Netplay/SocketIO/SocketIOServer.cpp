@@ -8,6 +8,34 @@
 #include <QTimer>
 #include <algorithm>
 
+namespace {
+constexpr int kCheatsChunkSize = 32;
+
+QJsonArray sliceJsonArray(const QJsonArray& source, int startIndex, int count)
+{
+    QJsonArray result;
+    const int endIndex = std::min(startIndex + count, static_cast<int>(source.size()));
+    for (int index = startIndex; index < endIndex; ++index)
+    {
+        result.append(source.at(index));
+    }
+    return result;
+}
+
+QJsonObject buildCheatsPayload(const QJsonArray& cheats, const QString& chunkId = QString(), int chunkIndex = -1, int chunkCount = 0)
+{
+    QJsonObject payload;
+    payload["cheats"] = cheats;
+    if (chunkCount > 1)
+    {
+        payload["chunkId"] = chunkId;
+        payload["chunkIndex"] = chunkIndex;
+        payload["chunkCount"] = chunkCount;
+    }
+    return payload;
+}
+} // namespace
+
 void SocketIOServer::rebuildLobbySlots(SignalingRoom& room)
 {
     room.players.clear();
@@ -184,9 +212,20 @@ void SocketIOServer::handle_JoinRoom(QWebSocket* socket, const QJsonObject& msg)
     // 2. WORKAROUND: Catch up the joining user instantly on current room configurations
     if (!room->activeCheats.isEmpty())
     {
-        QJsonObject cheatsPayload;
-        cheatsPayload["cheats"] = room->activeCheats;
-        emitToClient(client->id, "cheats-updated", cheatsPayload);
+        const int chunkCount = (room->activeCheats.size() + kCheatsChunkSize - 1) / kCheatsChunkSize;
+        if (chunkCount <= 1)
+        {
+            emitToClient(client->id, "cheats-updated", buildCheatsPayload(room->activeCheats));
+        }
+        else
+        {
+            const QString chunkId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            for (int chunkIndex = 0; chunkIndex < chunkCount; ++chunkIndex)
+            {
+                const QJsonArray chunk = sliceJsonArray(room->activeCheats, chunkIndex * kCheatsChunkSize, kCheatsChunkSize);
+                emitToClient(client->id, "cheats-updated", buildCheatsPayload(chunk, chunkId, chunkIndex, chunkCount));
+            }
+        }
     }
     if (!room->activeSaves.isEmpty())
     {
@@ -218,13 +257,53 @@ void SocketIOServer::handle_CheatsUpdate(QWebSocket* socket, const QJsonObject& 
 
     // 1. Extract the array cleanly from the incoming JSON object
     QJsonArray cheatsArray = msg.value("cheats").toArray();
+    const QString chunkId = msg.value("chunkId").toString();
+    const int chunkIndex = msg.value("chunkIndex").toInt(-1);
+    const int chunkCount = msg.value("chunkCount").toInt(0);
+
+    if (chunkCount > 1 && !chunkId.isEmpty() && chunkIndex >= 0)
+    {
+        const QString batchKey = client->roomId + ":" + chunkId;
+        ChunkedCheatUpdate& update = m_pendingCheatUpdates[batchKey];
+        update.chunkCount = chunkCount;
+        update.chunks[chunkIndex] = cheatsArray;
+
+        QJsonObject payload = buildCheatsPayload(cheatsArray, chunkId, chunkIndex, chunkCount);
+
+        for (auto it = room->players.constBegin(); it != room->players.constEnd(); ++it)
+        {
+            ClientConnection* player = it.value();
+            if (player && player->id != client->id && player->socket && player->socket->isValid())
+            {
+                emitToClient(player->id, "cheats-updated", payload);
+            }
+        }
+
+        if (update.chunkCount > 0 && update.chunks.size() >= update.chunkCount)
+        {
+            QJsonArray combinedCheats;
+            for (auto chunkIt = update.chunks.constBegin(); chunkIt != update.chunks.constEnd(); ++chunkIt)
+            {
+                const QJsonArray& chunk = chunkIt.value();
+                for (const auto& cheatValue : chunk)
+                {
+                    combinedCheats.append(cheatValue);
+                }
+            }
+
+            room->activeCheats = combinedCheats;
+            m_pendingCheatUpdates.remove(batchKey);
+            emit cheatsUpdated(client->roomId, room->activeCheats);
+        }
+
+        return;
+    }
 
     // 2. Cache it on the server for future joiners
     room->activeCheats = cheatsArray;
 
     // 3. Broadcast a stable payload shape used by SocketIOClient.
-    QJsonObject payload;
-    payload["cheats"] = cheatsArray;
+    QJsonObject payload = buildCheatsPayload(cheatsArray);
 
     // 4. Broadcast to everyone else in the room
     for (auto it = room->players.constBegin(); it != room->players.constEnd(); ++it)
@@ -294,6 +373,21 @@ void SocketIOServer::handle_InputDelayUpdate(QWebSocket* socket, const QJsonObje
     }
 }
 
+void SocketIOServer::handle_EmulationPauseUpdate(QWebSocket* socket, const QJsonObject& msg)
+{
+    ClientConnection* client = getClientFromSocket(socket);
+    if (!client || client->roomId.isEmpty())
+        return;
+
+    SignalingRoom* room = getRoomById(client->roomId);
+    if (!room)
+        return;
+
+    QJsonObject payload;
+    payload["paused"] = msg.value("paused").toBool(false);
+    emitToRoom(client->roomId, "emulation-paused", payload);
+}
+
 bool SocketIOServer::startHostedGame(const QString& roomId, const QString& mode, bool resyncEnabled, const QString& romHash,
                                      const QJsonArray& cheats, const QJsonArray& saveFiles)
 {
@@ -322,12 +416,13 @@ bool SocketIOServer::startHostedGame(const QString& roomId, const QString& mode,
     payload["resyncEnabled"] = resyncEnabled;
     payload["romHash"] = romHash;
     payload["matchId"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    // Cheats only: save data is sent on the dedicated save-sync channel (often too large for one frame).
-    if (!cheats.isEmpty()) {
-        payload["cheats"] = cheats;
-    }
     Q_UNUSED(saveFiles);
     emitToConnectedRoomClients(roomId, "game-started", payload);
+
+    if (!cheats.isEmpty())
+    {
+        broadcastCheatsUpdate(roomId, cheats);
+    }
 
     qInfo() << "SocketIOServer: Hosted game started in room" << roomId;
     emit gameStarted(roomId);
@@ -389,11 +484,22 @@ void SocketIOServer::broadcastCheatsUpdate(const QString& roomId, const QJsonArr
 
     room->activeCheats = cheats;
 
-    QJsonObject payload;
-    payload["cheats"] = cheats;
-    
-    // Use the safe connected client emitter
-    emitToConnectedRoomClients(roomId, "cheats-updated", payload);
+    const int chunkCount = (cheats.size() + kCheatsChunkSize - 1) / kCheatsChunkSize;
+    if (chunkCount <= 1)
+    {
+        emitToConnectedRoomClients(roomId, "cheats-updated", buildCheatsPayload(cheats));
+    }
+    else
+    {
+        const QString chunkId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        for (int chunkIndex = 0; chunkIndex < chunkCount; ++chunkIndex)
+        {
+            const QJsonArray chunk = sliceJsonArray(cheats, chunkIndex * kCheatsChunkSize, kCheatsChunkSize);
+            emitToConnectedRoomClients(roomId, "cheats-updated", buildCheatsPayload(chunk, chunkId, chunkIndex, chunkCount));
+        }
+    }
+
+    emit cheatsUpdated(roomId, room->activeCheats);
 }
 
 void SocketIOServer::broadcastSaveSync(const QString& roomId, const QJsonArray& saveFiles)
@@ -428,6 +534,20 @@ void SocketIOServer::broadcastInputDelayUpdate(const QString& roomId, int frames
     QJsonObject payload;
     payload["frames"] = frames;
     emitToRoom(roomId, "update-input-delay", payload);
+}
+
+void SocketIOServer::broadcastEmulationPauseUpdate(const QString& roomId, bool paused)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room)
+    {
+        qWarning() << "SocketIOServer: Cannot broadcast emulation pause, room not found" << roomId;
+        return;
+    }
+
+    QJsonObject payload;
+    payload["paused"] = paused;
+    emitToRoom(roomId, "emulation-paused", payload);
 }
 
 void SocketIOServer::broadcastChatMessage(const QString& roomId, const QString& playerName, const QString& message)
@@ -636,6 +756,8 @@ void SocketIOServer::handleEvent(QWebSocket* socket, const QJsonArray& args)
             handle_FrameSync(socket, data);
         else if (eventName == "update-input-delay")
             handle_InputDelayUpdate(socket, data);
+        else if (eventName == "emulation-paused")
+            handle_EmulationPauseUpdate(socket, data);
     }
 }
 

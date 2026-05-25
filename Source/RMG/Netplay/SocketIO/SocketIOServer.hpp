@@ -6,6 +6,7 @@
 #include <QWebSocketServer>
 #include <QWebSocket>
 #include <QMap>
+#include <QHash>
 #include <QSet>
 #include <QList>
 #include <QString>
@@ -70,6 +71,7 @@ public:
     void broadcastSaveSync(const QString& roomId, const QJsonArray& saveFiles);
     void broadcastChatMessage(const QString& roomId, const QString& playerName, const QString& message);
     void broadcastInputDelayUpdate(const QString& roomId, int frames);
+    void broadcastEmulationPauseUpdate(const QString& roomId, bool paused);
 
     /**
      * @brief Check if server is running
@@ -194,11 +196,18 @@ private:
         int inputDelayFrames = 4; // Default standard netplay lag buffer
     };
 
+    struct ChunkedCheatUpdate
+    {
+        QMap<int, QJsonArray> chunks;
+        int chunkCount = 0;
+    };
+
     // Server state
     std::unique_ptr<QWebSocketServer> m_server;
     QMap<QWebSocket*, ClientConnection*> m_clients;  // socket -> client
     QMap<QString, ClientConnection*> m_clientsById;  // id -> client
     QMap<QString, SignalingRoom> m_rooms;  // roomId -> room
+    QHash<QString, ChunkedCheatUpdate> m_pendingCheatUpdates;
 
     // Message dispatch
     void handleSocketIOMessage(QWebSocket* socket, const QString& message);
@@ -219,6 +228,7 @@ private:
     void handle_ControllerInput(QWebSocket* socket, const QJsonObject& msg);
     void handle_FrameSync(QWebSocket* socket, const QJsonObject& msg);
     void handle_InputDelayUpdate(QWebSocket* socket, const QJsonObject& msg);
+    void handle_EmulationPauseUpdate(QWebSocket* socket, const QJsonObject& msg);
     void handle_DirectRamPatch(QWebSocket* socket, const QJsonObject& msg);
 
     // Utilities

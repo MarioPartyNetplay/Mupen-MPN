@@ -12,6 +12,7 @@
 
 #include <QString>
 #include <QMap>
+#include <QHash>
 #include <QWebSocket>
 #include <QObject>
 #include <QUrl>
@@ -80,6 +81,12 @@ public:
         QString romHash;
     };
 
+    struct ChunkedCheatUpdate
+    {
+        QMap<int, QJsonArray> chunks;
+        int chunkCount = 0;
+    };
+
     // Constructor/Destructor
     explicit SocketIOClient(const QString& serverUrl = "http://localhost:2626", QObject* parent = nullptr);
     ~SocketIOClient();
@@ -130,6 +137,7 @@ public:
     void requestRoomList(bool waiting = false);
     
     void sendInputDelayUpdate(int frames);
+    void sendEmulationPauseUpdate(bool paused);
 
     // Getters
     QString getPlayerId() const;
@@ -188,6 +196,9 @@ signals:
     // Input delay sync
     void inputDelayReceived(int frames);
 
+    // Pause sync
+    void emulationPauseReceived(bool paused);
+
 private slots:
     void on_connected();
     void on_disconnected();
@@ -226,6 +237,7 @@ private:
     GameConfig m_gameConfig;
     QString m_sessionId;
     QString m_persistentId;
+    QHash<QString, ChunkedCheatUpdate> m_pendingCheatUpdates;
 
     // Keep-alive
     QTimer* m_pingTimer;
