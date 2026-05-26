@@ -34,6 +34,9 @@ public:
     using TextMessageCallback = std::function<void(const std::string&)>;
     using StateChangedCallback = std::function<void(ChannelState)>;
     using BufferedAmountLowCallback = std::function<void()>;
+    using SendBinaryHandler = std::function<bool(const std::vector<uint8_t>&)>;
+    using SendTextHandler = std::function<bool(const std::string&)>;
+    using CloseHandler = std::function<void()>;
 
     explicit WebRTCDataChannel(const std::string& label);
     ~WebRTCDataChannel();
@@ -42,6 +45,10 @@ public:
     bool sendText(const std::string& text);
     void close();
     void open();
+    void notifyOpen();
+    void notifyClosed();
+    void notifyError(const std::string& error);
+    void setBackendHandlers(SendBinaryHandler sendBinary, SendTextHandler sendText, CloseHandler close);
 
     ChannelState getState() const;
     const std::string& getLabel() const;
@@ -58,6 +65,9 @@ public:
 private:
     std::string m_label;
     ChannelState m_state;
+    SendBinaryHandler m_sendBinaryHandler;
+    SendTextHandler m_sendTextHandler;
+    CloseHandler m_closeHandler;
 };
 
 } // namespace UserInterface::Netplay

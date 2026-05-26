@@ -32,6 +32,42 @@
 // Local Functions
 //
 
+static void loadEnvironmentFile(const QString& filePath)
+{
+    QFile file(filePath);
+    if (!file.exists() || !file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return;
+    }
+
+    while (!file.atEnd()) {
+        QString line = QString::fromUtf8(file.readLine()).trimmed();
+        if (line.isEmpty() || line.startsWith('#')) {
+            continue;
+        }
+
+        if (line.startsWith(QStringLiteral("export "))) {
+            line = line.mid(7).trimmed();
+        }
+
+        const int equalsIndex = line.indexOf('=');
+        if (equalsIndex <= 0) {
+            continue;
+        }
+
+        const QString key = line.left(equalsIndex).trimmed();
+        QString value = line.mid(equalsIndex + 1).trimmed();
+
+        if ((value.startsWith('"') && value.endsWith('"')) ||
+            (value.startsWith('\'') && value.endsWith('\''))) {
+            value = value.mid(1, value.size() - 2);
+        }
+
+        if (!key.isEmpty() && !qEnvironmentVariableIsSet(key.toUtf8().constData())) {
+            qputenv(key.toUtf8(), value.toUtf8());
+        }
+    }
+}
+
 static void message_handler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
 {
     // personally I think that there should be a better
@@ -126,6 +162,8 @@ static void signal_handler(int sig)
 
 int main(int argc, char **argv)
 {
+    loadEnvironmentFile(QDir::current().filePath(QStringLiteral(".env")));
+
     // install message handler
     qInstallMessageHandler(message_handler);
 
@@ -180,6 +218,8 @@ int main(int argc, char **argv)
 #endif
 
     QApplication app(argc, argv);
+
+    loadEnvironmentFile(QDir(app.applicationDirPath()).filePath(QStringLiteral(".env")));
 
     UserInterface::MainWindow window;
 

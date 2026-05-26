@@ -731,6 +731,9 @@ void NetplayCoordinator::on_socketIO_offerReceived(const QString& fromPlayerId, 
         connect(peer.get(), &WebRTCPeer::offerCreated, this, [this, id = fromPlayerId](const QString& offer) {
             m_socketIO->sendOffer(id, offer);
         });
+        connect(peer.get(), &WebRTCPeer::answerReceived, this, [this, id = fromPlayerId](const QString& answer) {
+            m_socketIO->sendAnswer(id, answer);
+        });
         connect(peer.get(), &WebRTCPeer::iceCandidateGenerated, this, [this, id = fromPlayerId](const QString& candidate, int mLineIndex) {
             m_socketIO->sendICECandidate(id, candidate, mLineIndex);
         });
@@ -1207,6 +1210,9 @@ void NetplayCoordinator::setupPeerConnections(const QList<SocketIOClient::Player
         // Connect WebRTC peer signals
         connect(peer.get(), &WebRTCPeer::offerCreated, this, [this, id = player.id](const QString& offer) {
             m_socketIO->sendOffer(id, offer);
+        });
+        connect(peer.get(), &WebRTCPeer::answerReceived, this, [this, id = player.id](const QString& answer) {
+            m_socketIO->sendAnswer(id, answer);
         });
         connect(peer.get(), &WebRTCPeer::iceCandidateGenerated, this, [this, id = player.id](const QString& candidate, int mLineIndex) {
             m_socketIO->sendICECandidate(id, candidate, mLineIndex);

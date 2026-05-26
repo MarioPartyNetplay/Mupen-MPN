@@ -9,6 +9,7 @@
 #include <QAbstractSocket>
 #include <QJsonObject>
 #include <QRegularExpression>
+#include <QStringList>
 #include <QString>
 #include <cstdint>
 
@@ -158,7 +159,69 @@ inline QString stunServerHostname()
     if (!overrideHost.isEmpty()) {
         return QString::fromUtf8(overrideHost);
     }
+
+    const QByteArray legacyOverrideHost = qgetenv("STUN_SERVER");
+    if (!legacyOverrideHost.isEmpty()) {
+        return QString::fromUtf8(legacyOverrideHost);
+    }
+
     return QStringLiteral("stun.dolphin-emu.org:6262");
+}
+
+inline QStringList turnServerUrls()
+{
+    const QByteArray overrideUrls = qgetenv("RMG_TURN_URLS");
+    if (!overrideUrls.isEmpty()) {
+        const QStringList urls = QString::fromUtf8(overrideUrls).split(QRegularExpression(QStringLiteral("[;,\\n\\r]+")), Qt::SkipEmptyParts);
+        if (!urls.isEmpty()) {
+            return urls;
+        }
+    }
+
+    const QByteArray legacyOverrideUrls = qgetenv("TURN_URLS");
+    if (!legacyOverrideUrls.isEmpty()) {
+        const QStringList urls = QString::fromUtf8(legacyOverrideUrls).split(QRegularExpression(QStringLiteral("[;,\\n\\r]+")), Qt::SkipEmptyParts);
+        if (!urls.isEmpty()) {
+            return urls;
+        }
+    }
+
+    const QByteArray legacySingleUrl = qgetenv("TURN_URL");
+    if (!legacySingleUrl.isEmpty()) {
+        return { QString::fromUtf8(legacySingleUrl) };
+    }
+
+    return {};
+}
+
+inline QString turnServerUsername()
+{
+    const QByteArray overrideUsername = qgetenv("RMG_TURN_USERNAME");
+    if (!overrideUsername.isEmpty()) {
+        return QString::fromUtf8(overrideUsername);
+    }
+
+    const QByteArray legacyOverrideUsername = qgetenv("TURN_USERNAME");
+    if (!legacyOverrideUsername.isEmpty()) {
+        return QString::fromUtf8(legacyOverrideUsername);
+    }
+
+    return {};
+}
+
+inline QString turnServerCredential()
+{
+    const QByteArray overrideCredential = qgetenv("RMG_TURN_CREDENTIAL");
+    if (!overrideCredential.isEmpty()) {
+        return QString::fromUtf8(overrideCredential);
+    }
+
+    const QByteArray legacyOverrideCredential = qgetenv("TURN_CREDENTIAL");
+    if (!legacyOverrideCredential.isEmpty()) {
+        return QString::fromUtf8(legacyOverrideCredential);
+    }
+
+    return {};
 }
 
 } // namespace UserInterface::Netplay

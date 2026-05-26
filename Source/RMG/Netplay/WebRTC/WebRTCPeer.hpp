@@ -14,8 +14,16 @@
 #include <QObject>
 #include <QByteArray>
 #include <QMap>
-#include <memory>
 #include <functional>
+#include <memory>
+
+namespace rtc {
+class PeerConnection;
+class DataChannel;
+struct Configuration;
+class Candidate;
+class Description;
+}
 
 namespace UserInterface::Netplay {
 
@@ -98,19 +106,20 @@ private slots:
     void on_dataChannelCreated(const QString& label);
 
 private:
-    // WebRTC implementation would go here
-    // Using libdatachannel as the backend
+    static rtc::Configuration buildConfiguration();
+    void initializePeerConnection();
+    void bindPeerConnectionCallbacks();
+    void registerDataChannel(const std::shared_ptr<rtc::DataChannel>& backendChannel);
+    void updateConnectionState(ConnectionState state);
 
     QString m_peerId;
     bool m_initiator;
     ConnectionState m_connectionState;
     QString m_lastError;
+    bool m_localDescriptionSent = false;
 
     QMap<QString, std::shared_ptr<WebRTCDataChannel>> m_dataChannels;
-
-    // TODO: Actual WebRTC peer connection object from libdatachannel
-    // std::shared_ptr<rtc::PeerConnection> m_peerConnection;
-    // std::map<QString, std::shared_ptr<WebRTCDataChannel>> m_dataChannels;
+    std::shared_ptr<rtc::PeerConnection> m_peerConnection;
 };
 
 } // namespace UserInterface::Netplay

@@ -9,6 +9,7 @@
  */
 #include "WebRTCDataChannel.hpp"
 #include <iostream>
+#include <utility>
 
 using namespace UserInterface::Netplay;
 
@@ -26,23 +27,29 @@ WebRTCDataChannel::~WebRTCDataChannel()
 
 bool WebRTCDataChannel::sendBinary(const std::vector<uint8_t>& data)
 {
+    if (m_sendBinaryHandler) {
+        return m_sendBinaryHandler(data);
+    }
+
     if (m_state != ChannelState::Open) {
         std::cerr << "WebRTCDataChannel: Cannot send - channel not open" << std::endl;
         return false;
     }
 
-    // TODO: Send binary data using libdatachannel
     return true;
 }
 
 bool WebRTCDataChannel::sendText(const std::string& text)
 {
+    if (m_sendTextHandler) {
+        return m_sendTextHandler(text);
+    }
+
     if (m_state != ChannelState::Open) {
         std::cerr << "WebRTCDataChannel: Cannot send - channel not open" << std::endl;
         return false;
     }
 
-    // TODO: Send text data using libdatachannel
     return true;
 }
 
@@ -53,10 +60,12 @@ void WebRTCDataChannel::close()
     }
 
     std::cerr << "WebRTCDataChannel: Closing " << m_label << std::endl;
-    m_state = ChannelState::Closed;
-    if (onClosed) {
-        onClosed();
+
+    if (m_closeHandler) {
+        m_closeHandler();
     }
+
+    notifyClosed();
 }
 
 void WebRTCDataChannel::open()
@@ -69,6 +78,47 @@ void WebRTCDataChannel::open()
     if (onStateChanged) {
         onStateChanged(m_state);
     }
+}
+
+void WebRTCDataChannel::notifyOpen()
+{
+    if (m_state == ChannelState::Open) {
+        return;
+    }
+
+    m_state = ChannelState::Open;
+    if (onStateChanged) {
+        onStateChanged(m_state);
+    }
+}
+
+void WebRTCDataChannel::notifyClosed()
+{
+    if (m_state == ChannelState::Closed) {
+        return;
+    }
+
+    m_state = ChannelState::Closed;
+    if (onClosed) {
+        onClosed();
+    }
+    if (onStateChanged) {
+        onStateChanged(m_state);
+    }
+}
+
+void WebRTCDataChannel::notifyError(const std::string& error)
+{
+    if (onError) {
+        onError(error);
+    }
+}
+
+void WebRTCDataChannel::setBackendHandlers(SendBinaryHandler sendBinary, SendTextHandler sendText, CloseHandler close)
+{
+    m_sendBinaryHandler = std::move(sendBinary);
+    m_sendTextHandler = std::move(sendText);
+    m_closeHandler = std::move(close);
 }
 
 WebRTCDataChannel::ChannelState WebRTCDataChannel::getState() const
