@@ -1,4 +1,4 @@
-# RMG NAT traversal + index server (UDP 6364, HTTP index 6365)
+# RMG NAT traversal + index server (UDP 9290, HTTP index 9291)
 CC ?= gcc
 CFLAGS ?= -O2 -Wall -Wextra
 TARGET = nat_traversal_server

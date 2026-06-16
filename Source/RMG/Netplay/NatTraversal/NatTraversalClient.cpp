@@ -331,10 +331,21 @@ void NatTraversalClient::handleServerMessage(const QByteArray& datagram)
             return;
         }
 
+        sendHolePunch(address, static_cast<uint16_t>(port), 0);
+
         resetJoinState();
         m_mode = Mode::Idle;
         m_housekeepingTimer.stop();
         emit hostLookupSucceeded(address, port);
+        return;
+    }
+
+    if (type == "PUNCH" && parts.size() >= 4) {
+        const QString address = QString::fromUtf8(parts[2]).trimmed();
+        const int port = QString::fromUtf8(parts[3]).toInt();
+        if (!address.isEmpty() && port > 0) {
+            handlePunchRequest(address, port);
+        }
         return;
     }
 
@@ -453,6 +464,7 @@ struct StunServerEndpoint {
 };
 
 constexpr StunServerEndpoint kDefaultStunServers[] = {
+    {"stun.dolphin-emu.org", 6262},
     {"stun.l.google.com", 19302},
     {"stun1.l.google.com", 19302},
     {"stun.cloudflare.com", 3478},
@@ -557,23 +569,30 @@ bool parseStunBindingSuccess(const QByteArray& data, const QByteArray& transacti
 
 } // namespace
 
-void NatTraversalClient::queryStunServer(const QString& hostname, uint16_t port)
+void NatTraversalClient::queryStunServer(const QString& hostname, uint16_t port, uint16_t localBindPort)
 {
     QString normalizedHost = hostname.trimmed();
+    if (normalizedHost.isEmpty()) {
+        normalizedHost = stunServerHost();
+    }
+
     quint16 normalizedPort = port;
+    if (normalizedPort == 0) {
+        normalizedPort = stunServerPort();
+    }
 
     if (normalizedHost.startsWith("stun://", Qt::CaseInsensitive)) {
         normalizedHost = normalizedHost.mid(7);
     } else if (normalizedHost.startsWith("stuns://", Qt::CaseInsensitive)) {
         normalizedHost = normalizedHost.mid(8);
-        if (normalizedPort == 19302) {
+        if (normalizedPort == kDefaultStunPort) {
             normalizedPort = 5349;
         }
     } else if (normalizedHost.startsWith("stun:", Qt::CaseInsensitive)) {
         normalizedHost = normalizedHost.mid(5);
     } else if (normalizedHost.startsWith("stuns:", Qt::CaseInsensitive)) {
         normalizedHost = normalizedHost.mid(6);
-        if (normalizedPort == 19302) {
+        if (normalizedPort == kDefaultStunPort) {
             normalizedPort = 5349;
         }
     }
@@ -609,6 +628,10 @@ void NatTraversalClient::queryStunServer(const QString& hostname, uint16_t port)
 
     m_stunQueryPrimaryHost = normalizedHost;
     m_stunQueryPrimaryPort = normalizedPort;
+    m_stunQueryLocalPort = localBindPort;
+    if (m_stunQueryLocalPort == 0 && m_mode == Mode::Hosting && m_signalingPort > 0) {
+        m_stunQueryLocalPort = m_signalingPort;
+    }
     m_stunQueryIndex = 0;
     tryStunServer(0);
 }
@@ -673,8 +696,12 @@ void NatTraversalClient::sendStunBindingRequest(const QHostAddress& serverAddr, 
     const int serverIndex = m_stunQueryIndex;
 
     QUdpSocket* stunSocket = new QUdpSocket(this);
-    if (!stunSocket->bind(QHostAddress::AnyIPv4, 0, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
-        qWarning() << "Failed to bind STUN socket:" << stunSocket->errorString();
+    const quint16 bindPort = m_stunQueryLocalPort;
+    const bool bound = bindPort > 0
+        ? stunSocket->bind(QHostAddress::AnyIPv4, bindPort, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)
+        : stunSocket->bind(QHostAddress::AnyIPv4, 0, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);
+    if (!bound) {
+        qWarning() << "Failed to bind STUN socket on port" << bindPort << ":" << stunSocket->errorString();
         stunSocket->deleteLater();
         tryStunServer(serverIndex + 1);
         return;
@@ -748,6 +775,47 @@ void NatTraversalClient::sendStunBindingRequest(const QHostAddress& serverAddr, 
     }
 
     timeoutTimer->start();
+}
+
+void NatTraversalClient::sendHolePunch(const QString& address, uint16_t targetPort, uint16_t localPort)
+{
+    QHostAddress targetAddr;
+    if (!targetAddr.setAddress(address.trimmed()) || targetPort < 1024 || targetPort > 65535) {
+        return;
+    }
+
+    quint16 sourcePort = localPort;
+    if (sourcePort == 0 && m_mode == Mode::Hosting && m_signalingPort > 0) {
+        sourcePort = m_signalingPort;
+    }
+
+    auto* punchSocket = new QUdpSocket(this);
+    const bool bound = sourcePort > 0
+        ? punchSocket->bind(QHostAddress::AnyIPv4, sourcePort, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)
+        : punchSocket->bind(QHostAddress::AnyIPv4, 0, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);
+    if (!bound) {
+        qWarning() << "Hole punch bind failed on port" << sourcePort << ":" << punchSocket->errorString();
+        punchSocket->deleteLater();
+        return;
+    }
+
+    static const QByteArray kPunchPayload = QByteArrayLiteral("RMG-PUNCH");
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        if (punchSocket->writeDatagram(kPunchPayload, targetAddr, targetPort) < 0) {
+            qWarning() << "Hole punch send failed to" << address << targetPort << punchSocket->errorString();
+            break;
+        }
+    }
+
+    qDebug() << "Sent hole punch to" << address << targetPort << "from local port" << punchSocket->localPort();
+    punchSocket->close();
+    punchSocket->deleteLater();
+}
+
+void NatTraversalClient::handlePunchRequest(const QString& address, int port)
+{
+    qDebug() << "NAT traversal punch request for" << address << port;
+    sendHolePunch(address, static_cast<uint16_t>(port), 0);
 }
 
 } // namespace UserInterface::Netplay

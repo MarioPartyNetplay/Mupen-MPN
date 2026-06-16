@@ -10,8 +10,6 @@
 #ifndef CREATENETPLAYSESSIONDIALOG_HPP
 #define CREATENETPLAYSESSIONDIALOG_HPP
 
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
 #include <QCheckBox>
 #include <QJsonObject>
 #include <QTimerEvent>
@@ -20,11 +18,9 @@
 #include <QUdpSocket>
 #include <QDialog>
 #include <QString>
-#include <memory>
 
 #include "ui_CreateNetplaySessionDialog.h"
-#include "Netplay/NatTraversal/NatTraversalClient.hpp"
-#include "Netplay/NatTraversal/NatTraversalIndexClient.hpp"
+#include "Netplay/NatTraversal/NatTraversalProtocol.hpp"
 
 #include <RMG-Core/RomSettings.hpp>
 
@@ -51,20 +47,14 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
   private:
   	UserInterface::Netplay::NetplayCoordinator* coordinator;
     QUdpSocket broadcastSocket;
-    QNetworkAccessManager networkManager;
-    QNetworkReply* publicIpReply = nullptr;
 
     int pingTimerId = -1;
     int hostingPort = Netplay::kDefaultNetplayHostingPort;
-    int publicIpTimeoutTimerId = -1;
     bool directConnection = false;
     
-    QString publicIpAddress;  // Store the public IP
-    QString pendingNatHostCode;  // Finish NAT publish/finalize after public IP lookup
+    QString publicIpAddress;
     QCheckBox* directConnectionCheckBox = nullptr;
     QSpinBox* hostingPortSpinBox = nullptr;
-    std::unique_ptr<UserInterface::Netplay::NatTraversalClient> natTraversalClient;
-    std::unique_ptr<UserInterface::Netplay::NatTraversalIndexClient> natIndexClient;
 
   	QJsonObject sessionJson;
     QString sessionFile;
@@ -79,9 +69,6 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
     void validateCreateButton(void);
 
     void createSession(void);
-    void registerNatTraversalHost(void);
-    void publishSessionIndex(const QString& hostCode);
-    void fetchPublicIpAddress(void);
     void finalizeSession(void);
 
     void toggleUI(bool enable, bool enableCreateButton);
@@ -94,7 +81,6 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
     void on_webSocket_pong(quint64 elapsedTime, const QByteArray&);
     void on_webSocket_connected(void);
     void on_broadcastSocket_readyRead(void);
-    void on_publicIpFetch_Finished(QNetworkReply* reply);
 
     void on_nickNameLineEdit_textChanged(void);
 

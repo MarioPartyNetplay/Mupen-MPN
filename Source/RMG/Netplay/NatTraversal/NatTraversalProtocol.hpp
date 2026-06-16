@@ -18,7 +18,7 @@ namespace UserInterface::Netplay {
 // Nat has to implement server protocol in Source/Server.
 // as of writing im not sure if im going to make it public...
 // Maybe unelss abuse arises...
-static constexpr const char* kNatTraversalHost = "216.225.154.31";
+static constexpr const char* kNatTraversalHost = "216.201.72.143";
 // NAT traversal service (Source/Server/nat_traversal_server) — not the game port.
 static constexpr int kNatTraversalPort = 9290;   // UDP: N02TRAV1 + N02IDX1
 static constexpr int kNatIndexHttpPort = 9291;   // HTTP index browser
@@ -153,7 +153,9 @@ inline QString natTraversalServerHostname()
     return QString::fromLatin1(kNatTraversalHost);
 }
 
-inline QString stunServerHostname()
+static constexpr quint16 kDefaultStunPort = 6262;
+
+inline QString stunServerConfig()
 {
     const QByteArray overrideHost = qgetenv("RMG_STUN_SERVER");
     if (!overrideHost.isEmpty()) {
@@ -168,60 +170,77 @@ inline QString stunServerHostname()
     return QStringLiteral("stun.dolphin-emu.org:6262");
 }
 
-inline QStringList turnServerUrls()
+inline QString stunServerHostname()
 {
-    const QByteArray overrideUrls = qgetenv("RMG_TURN_URLS");
-    if (!overrideUrls.isEmpty()) {
-        const QStringList urls = QString::fromUtf8(overrideUrls).split(QRegularExpression(QStringLiteral("[;,\\n\\r]+")), Qt::SkipEmptyParts);
-        if (!urls.isEmpty()) {
-            return urls;
+    return stunServerConfig();
+}
+
+inline quint16 stunServerPort()
+{
+    const QByteArray overridePort = qgetenv("RMG_STUN_PORT");
+    if (!overridePort.isEmpty()) {
+        bool ok = false;
+        const int parsed = QString::fromUtf8(overridePort).toInt(&ok);
+        if (ok && parsed >= 1 && parsed <= 65535) {
+            return static_cast<quint16>(parsed);
         }
     }
 
-    const QByteArray legacyOverrideUrls = qgetenv("TURN_URLS");
-    if (!legacyOverrideUrls.isEmpty()) {
-        const QStringList urls = QString::fromUtf8(legacyOverrideUrls).split(QRegularExpression(QStringLiteral("[;,\\n\\r]+")), Qt::SkipEmptyParts);
-        if (!urls.isEmpty()) {
-            return urls;
+    QString config = stunServerConfig().trimmed();
+    if (config.startsWith('[') && config.contains(']')) {
+        const int closeIndex = config.indexOf(']');
+        const QString portPart = config.mid(closeIndex + 1).trimmed();
+        if (portPart.startsWith(':')) {
+            bool ok = false;
+            const int parsed = portPart.mid(1).toInt(&ok);
+            if (ok && parsed >= 1 && parsed <= 65535) {
+                return static_cast<quint16>(parsed);
+            }
+        }
+    } else {
+        const int colonIndex = config.lastIndexOf(':');
+        if (colonIndex > 0 && config.indexOf(':') == colonIndex) {
+            bool ok = false;
+            const int parsed = config.mid(colonIndex + 1).toInt(&ok);
+            if (ok && parsed >= 1 && parsed <= 65535) {
+                return static_cast<quint16>(parsed);
+            }
         }
     }
 
-    const QByteArray legacySingleUrl = qgetenv("TURN_URL");
-    if (!legacySingleUrl.isEmpty()) {
-        return { QString::fromUtf8(legacySingleUrl) };
-    }
-
-    return {};
+    return kDefaultStunPort;
 }
 
-inline QString turnServerUsername()
+inline QString stunServerHost()
 {
-    const QByteArray overrideUsername = qgetenv("RMG_TURN_USERNAME");
-    if (!overrideUsername.isEmpty()) {
-        return QString::fromUtf8(overrideUsername);
+    QString host = stunServerConfig().trimmed();
+
+    if (host.startsWith("stun://", Qt::CaseInsensitive)) {
+        host = host.mid(7);
+    } else if (host.startsWith("stuns://", Qt::CaseInsensitive)) {
+        host = host.mid(8);
+    } else if (host.startsWith("stun:", Qt::CaseInsensitive)) {
+        host = host.mid(5);
+    } else if (host.startsWith("stuns:", Qt::CaseInsensitive)) {
+        host = host.mid(6);
     }
 
-    const QByteArray legacyOverrideUsername = qgetenv("TURN_USERNAME");
-    if (!legacyOverrideUsername.isEmpty()) {
-        return QString::fromUtf8(legacyOverrideUsername);
+    const int slashIndex = host.indexOf('/');
+    if (slashIndex != -1) {
+        host = host.left(slashIndex);
     }
 
-    return {};
-}
-
-inline QString turnServerCredential()
-{
-    const QByteArray overrideCredential = qgetenv("RMG_TURN_CREDENTIAL");
-    if (!overrideCredential.isEmpty()) {
-        return QString::fromUtf8(overrideCredential);
+    if (host.startsWith('[') && host.contains(']')) {
+        const int closeIndex = host.indexOf(']');
+        return host.mid(1, closeIndex - 1).trimmed();
     }
 
-    const QByteArray legacyOverrideCredential = qgetenv("TURN_CREDENTIAL");
-    if (!legacyOverrideCredential.isEmpty()) {
-        return QString::fromUtf8(legacyOverrideCredential);
+    const int colonIndex = host.lastIndexOf(':');
+    if (colonIndex > 0 && host.indexOf(':') == colonIndex) {
+        return host.left(colonIndex);
     }
 
-    return {};
+    return host;
 }
 
 } // namespace UserInterface::Netplay

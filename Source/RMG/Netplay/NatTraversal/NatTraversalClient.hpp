@@ -31,11 +31,9 @@ public:
 
     void lookupHost(const QString& hostCode);
     void cancelLookup();
-    // Perform a STUN binding request to discover the externally mapped
-    // address for this client. `hostname` may be a DNS name or IP.
-    // Emits `publicAddressResolved` on success or `publicAddressFailed` on error/timeout.
-    void queryStunServer(const QString& hostname, uint16_t port = 19302);
-    
+    // STUN binding on the signaling port when hosting (port-restricted cone NAT).
+    void queryStunServer(const QString& hostname = QString(), uint16_t port = 0, uint16_t localBindPort = 0);
+    void sendHolePunch(const QString& address, uint16_t targetPort, uint16_t localPort = 0);
 
 signals:
     void hostRegistered(const QString& hostCode, const QString& publicAddress, int signalingPort);
@@ -67,6 +65,7 @@ private:
     void resetHostState();
     void tryStunServer(int serverIndex);
     void sendStunBindingRequest(const QHostAddress& serverAddr, quint16 port);
+    void handlePunchRequest(const QString& address, int port);
 
     static QList<QByteArray> splitTraversalParts(QByteArray datagram);
 
@@ -88,7 +87,8 @@ private:
     qint64 m_nextJoinRequestMs = 0;
 
     QString m_stunQueryPrimaryHost;
-    quint16 m_stunQueryPrimaryPort = 19302;
+    quint16 m_stunQueryPrimaryPort = kDefaultStunPort;
+    quint16 m_stunQueryLocalPort = 0;
     int m_stunQueryIndex = -1;
 };
 

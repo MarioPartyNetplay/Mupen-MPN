@@ -12,7 +12,6 @@
 #include "NetplayCommon.hpp"
 #include "Netplay/NetplayCoordinator.hpp"
 #include "Netplay/NatTraversal/NatTraversalProtocol.hpp"
-#include "Netplay/NatTraversal/NatTraversalClient.hpp"
 
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
@@ -189,10 +188,6 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
 
 CreateNetplaySessionDialog::~CreateNetplaySessionDialog(void)
 {
-    if (this->natTraversalClient) {
-        this->natTraversalClient->stopHosting(false);
-    }
-
     QString nickname = this->nickNameLineEdit->text();
     if (!nickname.isEmpty())
     {
@@ -300,264 +295,16 @@ void CreateNetplaySessionDialog::createSession(void)
     
     qDebug() << "Created session via coordinator, hosting on port" << this->hostingPort << "as" << playerName;
 
-    if (directConnection) {
-        this->finalizeSession();
-        return;
-    }
-
-    this->registerNatTraversalHost();
-}
-
-void CreateNetplaySessionDialog::registerNatTraversalHost(void)
-{
-    this->natTraversalClient = std::make_unique<Netplay::NatTraversalClient>(this);
-
-    connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostRegistered,
-            this, [this](const QString& hostCode, const QString& publicAddress, int signalingPort) {
-        qDebug() << "NAT traversal host code:" << hostCode << "endpoint:" << publicAddress << signalingPort;
-        this->sessionJson.insert("host_code", hostCode);
-        this->sessionJson.insert("use_nat_traversal", true);
-        this->sessionJson.insert("server_port", signalingPort > 0 ? signalingPort : this->hostingPort);
-        this->sessionJson.insert("public_port", signalingPort > 0 ? signalingPort : this->hostingPort);
-        this->sessionJson.insert("connect_port", signalingPort > 0 ? signalingPort : this->hostingPort);
-
-        // Always prefer STUN-derived public address when available. Start a STUN query
-        // and use its result if it arrives within the timeout. Otherwise fall back
-        // to the NAT server-provided address (if usable) or HTTP lookup.
-        QSharedPointer<bool> stunHandled = QSharedPointer<bool>::create(false);
-
-        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::publicAddressResolved,
-                this, [this, hostCode, stunHandled](const QString& ip, int port) {
-            if (stunHandled && *stunHandled) {
-                return;
-            }
-            if (stunHandled) {
-                *stunHandled = true;
-            }
-            if (Netplay::isUsableConnectAddress(ip)) {
-                this->sessionJson.insert("public_address", ip);
-                this->sessionJson.insert("connect_address", ip);
-                if (port > 0) {
-                    this->sessionJson.insert("public_port", port);
-                    this->sessionJson.insert("connect_port", port);
-                }
-            }
-            this->publishSessionIndex(hostCode);
-            this->finalizeSession();
-        }, Qt::SingleShotConnection);
-
-        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::publicAddressFailed,
-                this, [this, hostCode, stunHandled](const QString& reason) {
-            if (stunHandled && *stunHandled) {
-                return;
-            }
-            if (stunHandled) {
-                *stunHandled = true;
-            }
-            qWarning() << "STUN after register failed:" << reason << "- using NAT server/public fallback";
-            // Fall back to NAT server-provided endpoint if usable
-            const QString natAddr = this->sessionJson.value("public_address").toString();
-            if (Netplay::isUsableConnectAddress(natAddr)) {
-                this->sessionJson.insert("connect_address", natAddr);
-                this->publishSessionIndex(hostCode);
-                this->finalizeSession();
-                return;
-            }
-            // Try HTTP public IP lookup as a last resort
-            this->pendingNatHostCode = hostCode;
-            this->fetchPublicIpAddress();
-        }, Qt::SingleShotConnection);
-
-        // Start the STUN query and wait briefly before falling back.
-        qDebug() << "Querying STUN server for public IP:" << Netplay::stunServerHostname() << 19302;
-        this->natTraversalClient->queryStunServer(Netplay::stunServerHostname(), 19302);
-
-        // If STUN doesn't respond quickly, fall back to the NAT-provided public address.
-        QTimer::singleShot(2000, this, [this, hostCode, publicAddress, stunHandled]() {
-            if (stunHandled && *stunHandled) {
-                return;
-            }
-            if (stunHandled) {
-                *stunHandled = true;
-            }
-            if (Netplay::isUsableConnectAddress(publicAddress)) {
-                this->sessionJson.insert("public_address", publicAddress);
-                this->sessionJson.insert("connect_address", publicAddress);
-                this->publishSessionIndex(hostCode);
-                this->finalizeSession();
-                return;
-            }
-            // Otherwise fall back to HTTP public IP lookup
-            this->pendingNatHostCode = hostCode;
-            this->fetchPublicIpAddress();
-        });
-    });
-
-    connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostRegistrationFailed,
-            this, [this](const QString& reason) {
-        qWarning() << "NAT traversal registration failed:" << reason;
-        QtMessageBox::Error(this, "NAT Traversal Failed",
-                            QString("Could not register host code (%1). Attempting STUN public IP discovery.").arg(reason));
-        // Try STUN first; if it fails, fall back to HTTP checkip
-        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::publicAddressResolved,
-                this, [this](const QString& ip, int port) {
-            qDebug() << "STUN resolved public address:" << ip << port;
-            this->publicIpAddress = ip;
-            this->sessionJson.insert("public_address", ip);
-            this->sessionJson.insert("connect_address", ip);
-            this->sessionJson.insert("server_port", port);
-            this->sessionJson.insert("public_port", port);
-            this->sessionJson.insert("connect_port", port);
-            this->finalizeSession();
-        });
-        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::publicAddressFailed,
-                this, [this](const QString& reason) {
-            qWarning() << "STUN public address discovery failed:" << reason << "- falling back to HTTP lookup";
-            this->fetchPublicIpAddress();
-        });
-
-        // Use a common public STUN server; this is configurable later
-        this->natTraversalClient->queryStunServer(Netplay::stunServerHostname(), 19302);
-    });
-
-    this->natTraversalClient->startHosting(static_cast<uint16_t>(this->hostingPort));
-}
-
-void CreateNetplaySessionDialog::publishSessionIndex(const QString& hostCode)
-{
-    this->natIndexClient = std::make_unique<Netplay::NatTraversalIndexClient>(this);
-
-    // Publish only the lobby metadata needed for discovery.
-    // The full session JSON can still keep local-only data like cheat lists,
-    // but the NAT index has a small per-value limit and cannot store the full blob.
-    QJsonObject indexJson;
-    indexJson.insert("room_name", this->sessionJson.value("room_name"));
-    indexJson.insert("game_name", this->sessionJson.value("game_name"));
-    indexJson.insert("gameId", this->sessionJson.value("gameId"));
-    indexJson.insert("player_name", this->sessionJson.value("player_name"));
-    indexJson.insert("host_name", this->sessionJson.value("host_name"));
-    indexJson.insert("max_players", this->sessionJson.value("max_players"));
-    indexJson.insert("lobby_size", this->sessionJson.value("lobby_size"));
-    indexJson.insert("currentPlayers", this->sessionJson.value("currentPlayers"));
-    indexJson.insert("players", this->sessionJson.value("players"));
-    indexJson.insert("host_code", this->sessionJson.value("host_code"));
-    indexJson.insert("use_nat_traversal", this->sessionJson.value("use_nat_traversal"));
-    indexJson.insert("server_address", this->sessionJson.value("server_address"));
-    indexJson.insert("server_port", this->sessionJson.value("server_port"));
-    indexJson.insert("public_address", this->sessionJson.value("public_address"));
-    indexJson.insert("public_port", this->sessionJson.value("public_port"));
-    indexJson.insert("connect_address", this->sessionJson.value("connect_address"));
-    indexJson.insert("connect_port", this->sessionJson.value("connect_port"));
-    indexJson.insert("rom_path", this->sessionJson.value("rom_path"));
-
-    const QByteArray payload = QJsonDocument(indexJson).toJson(QJsonDocument::Compact);
-
-    connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::published,
-            this, [hostCode](const QString& key) {
-        qDebug() << "Published session index:" << key << "for host" << hostCode;
-    });
-    connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::publishFailed,
-            this, [](const QString& reason) {
-        qWarning() << "Failed to publish session index:" << reason;
-    });
-
-    this->natIndexClient->publishSession(hostCode, payload);
-}
-
-void CreateNetplaySessionDialog::fetchPublicIpAddress(void)
-{
-    // Set a 3-second timeout for the public IP fetch
-    this->publicIpTimeoutTimerId = this->startTimer(3000);
-    
-    // Make GET request to AWS checkip service
-    QUrl url("http://checkip.amazonaws.com/");
-    QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader, "RMG-Netplay/1.0");
-    
-    this->publicIpReply = this->networkManager.get(request);
-    connect(this->publicIpReply, QOverload<QNetworkReply::NetworkError>::of(&QNetworkReply::errorOccurred),
-            this, [this](QNetworkReply::NetworkError error) {
-        qDebug() << "Public IP fetch network error:" << error;
-    });
-    // finished() signal doesn't pass any parameters, so we use a lambda
-    connect(this->publicIpReply, &QNetworkReply::finished, this, [this]() {
-        this->on_publicIpFetch_Finished(nullptr);
-    });
-}
-
-void CreateNetplaySessionDialog::on_publicIpFetch_Finished(QNetworkReply* reply)
-{
-    // Handle timeout timer
-    if (this->publicIpTimeoutTimerId != -1)
-    {
-        this->killTimer(this->publicIpTimeoutTimerId);
-        this->publicIpTimeoutTimerId = -1;
-    }
-    
-    // Use the stored member reply since the signal doesn't pass it
-    QNetworkReply* networkReply = this->publicIpReply;
-    if (!networkReply) {
-        qWarning() << "Public IP reply is null";
-        this->publicIpAddress = "localhost";
-        this->finalizeSession();
-        return;
-    }
-    
-    if (networkReply->error() == QNetworkReply::NoError)
-    {
-        QString responseData = QString::fromUtf8(networkReply->readAll()).trimmed();
-        qDebug() << "Public IP response:" << responseData;
-        
-        // AWS returns just the IP address, e.g., "203.0.113.42\n"
-        if (!responseData.isEmpty())
-        {
-            this->publicIpAddress = responseData;
-        }
-        else
-        {
-            qWarning() << "Empty response from public IP service";
-            this->publicIpAddress = "localhost";
-        }
-    }
-    else
-    {
-        qWarning() << "Failed to fetch public IP:" << networkReply->errorString();
-        this->publicIpAddress = "localhost";
-    }
-    
-    networkReply->deleteLater();
-    this->publicIpReply = nullptr;
-
-    if (!this->pendingNatHostCode.isEmpty()) {
-        const QString hostCode = this->pendingNatHostCode;
-        this->pendingNatHostCode.clear();
-        if (Netplay::isUsableConnectAddress(this->publicIpAddress)) {
-            this->sessionJson.insert("public_address", this->publicIpAddress);
-            this->sessionJson.insert("connect_address", this->publicIpAddress);
-        }
-        this->publishSessionIndex(hostCode);
-        this->finalizeSession();
-        return;
-    }
-
     this->finalizeSession();
 }
 
 void CreateNetplaySessionDialog::finalizeSession(void)
 {
-    if (!this->sessionJson.contains("host_code")) {
-        if (!this->directConnection) {
-            this->sessionJson.insert("public_address", this->publicIpAddress);
-        }
-        this->sessionJson.insert("use_nat_traversal", false);
-    }
-
     this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
 
     const QString connectInfo = this->sessionJson.value("host_code").toString(this->publicIpAddress);
     qDebug() << "Finalized session with connect info:" << connectInfo;
-    
-    // Close dialog to proceed to session screen
+
     QDialog::accept();
 }
 
@@ -580,27 +327,6 @@ void CreateNetplaySessionDialog::timerEvent(QTimerEvent* event)
     if (event->timerId() == this->pingTimerId)
     {
         // Keep-alive is handled by coordinator internally
-        // No additional ping needed
-    }
-    else if (event->timerId() == this->publicIpTimeoutTimerId)
-    {
-        // Public IP fetch timed out, use fallback
-        qWarning() << "Public IP fetch timed out, using fallback";
-        this->publicIpAddress = "localhost";
-        
-        this->killTimer(this->publicIpTimeoutTimerId);
-        this->publicIpTimeoutTimerId = -1;
-        
-        // Cancel the ongoing request
-        if (this->publicIpReply)
-        {
-            this->publicIpReply->abort();
-            this->publicIpReply->deleteLater();
-            this->publicIpReply = nullptr;
-        }
-        
-        // Finalize the session with fallback IP
-        this->finalizeSession();
     }
 }
 

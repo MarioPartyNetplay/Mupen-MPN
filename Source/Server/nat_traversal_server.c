@@ -62,6 +62,7 @@ typedef struct {
     uint32_t code;
     uint32_t host_ip;
     uint16_t signaling_port;
+    uint16_t traversal_port;
     uint64_t last_seen;
     int in_use;
 } host_entry_t;
@@ -221,6 +222,8 @@ static host_entry_t* find_host(uint32_t code)
     return NULL;
 }
 
+static void index_del(const char* key);
+
 static void prune_hosts(void)
 {
     const uint64_t now = now_seconds();
@@ -251,12 +254,13 @@ static uint32_t allocate_code(void)
     return 0;
 }
 
-static host_entry_t* upsert_host(uint32_t code, uint32_t host_ip, uint16_t port, uint64_t now)
+static host_entry_t* upsert_host(uint32_t code, uint32_t host_ip, uint16_t port, uint16_t traversal_port, uint64_t now)
 {
     host_entry_t* entry = find_host(code);
     if (entry != NULL) {
         entry->host_ip = host_ip;
         entry->signaling_port = port;
+        entry->traversal_port = traversal_port;
         entry->last_seen = now;
         return entry;
     }
@@ -267,6 +271,7 @@ static host_entry_t* upsert_host(uint32_t code, uint32_t host_ip, uint16_t port,
             entry->code = code;
             entry->host_ip = host_ip;
             entry->signaling_port = port;
+            entry->traversal_port = traversal_port;
             entry->last_seen = now;
             return entry;
         }
@@ -280,6 +285,7 @@ static host_entry_t* upsert_host(uint32_t code, uint32_t host_ip, uint16_t port,
     entry->code = code;
     entry->host_ip = host_ip;
     entry->signaling_port = port;
+    entry->traversal_port = traversal_port;
     entry->last_seen = now;
     return entry;
 }
@@ -288,20 +294,22 @@ static void trav_register(socket_t sock, const struct sockaddr_in* client, sockl
 {
     char code_text[8];
     char reply[96];
-    uint16_t port = (uint16_t)atoi(port_text);
+    int parsed_port = atoi(port_text);
+    uint16_t port;
     uint32_t code;
 
-    if (port < 1024 || port > 65535) {
+    if (parsed_port < 1024 || parsed_port > 65535) {
         send_reply(sock, (const struct sockaddr*)client, client_len, TRAV_PROTOCOL "|ERR|BADPORT");
         return;
     }
+    port = (uint16_t)parsed_port;
 
     code = allocate_code();
     if (code == 0 || !format_host_code(code, code_text, sizeof(code_text))) {
         send_reply(sock, (const struct sockaddr*)client, client_len, TRAV_PROTOCOL "|ERR|NOCODE");
         return;
     }
-    if (upsert_host(code, client->sin_addr.s_addr, port, now_seconds()) == NULL) {
+    if (upsert_host(code, client->sin_addr.s_addr, port, ntohs(client->sin_port), now_seconds()) == NULL) {
         send_reply(sock, (const struct sockaddr*)client, client_len, TRAV_PROTOCOL "|ERR|FULL");
         return;
     }
@@ -313,6 +321,16 @@ static void trav_register(socket_t sock, const struct sockaddr_in* client, sockl
     }
     printf("[trav] REGISTER %s -> %s:%u (signaling port %u)\n", code_text, inet_ntoa(client->sin_addr),
            (unsigned)ntohs(client->sin_port), (unsigned)port);
+}
+
+static void trav_send_punch(socket_t sock, const struct sockaddr_in* target, socklen_t target_len, const char* ip_text,
+                            unsigned target_port)
+{
+    char reply[96];
+    snprintf(reply, sizeof(reply), TRAV_PROTOCOL "|PUNCH|%s|%u", ip_text, target_port);
+    for (int i = 0; i < 3; ++i) {
+        send_reply(sock, (const struct sockaddr*)target, target_len, reply);
+    }
 }
 
 static void trav_lookup(socket_t sock, const struct sockaddr_in* client, socklen_t client_len, const char* code_text)
@@ -337,6 +355,19 @@ static void trav_lookup(socket_t sock, const struct sockaddr_in* client, socklen
     snprintf(reply, sizeof(reply), TRAV_PROTOCOL "|LOOKUPOK|%s|%s|%u", code_text, inet_ntoa(addr),
              (unsigned)entry->signaling_port);
     send_reply(sock, (const struct sockaddr*)client, client_len, reply);
+
+    /* Coordinate UDP hole punching for port-restricted cone NAT (Dolphin-style). */
+    {
+        struct sockaddr_in host_addr;
+        memset(&host_addr, 0, sizeof(host_addr));
+        host_addr.sin_family = AF_INET;
+        host_addr.sin_addr.s_addr = entry->host_ip;
+        host_addr.sin_port = htons(entry->traversal_port > 0 ? entry->traversal_port : entry->signaling_port);
+
+        trav_send_punch(sock, &host_addr, sizeof(host_addr), inet_ntoa(client->sin_addr),
+                        (unsigned)ntohs(client->sin_port));
+        trav_send_punch(sock, client, client_len, inet_ntoa(addr), (unsigned)entry->signaling_port);
+    }
 }
 
 /* ---- Index (N02IDX1) ---- */

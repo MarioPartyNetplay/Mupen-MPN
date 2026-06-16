@@ -15,7 +15,6 @@
 
 #include <QDebug>
 #include <QMap>
-#include <QStringList>
 
 #include <sstream>
 
@@ -27,34 +26,13 @@ std::vector<rtc::IceServer> buildIceServers()
 {
     std::vector<rtc::IceServer> servers;
 
-    const QString stunHost = stunServerHostname().trimmed();
+    const QString stunHost = stunServerHost().trimmed();
+    const quint16 stunPort = stunServerPort();
     if (!stunHost.isEmpty()) {
-        servers.emplace_back(stunHost.toStdString());
-    }
-
-    const QString username = turnServerUsername().trimmed();
-    const QString credential = turnServerCredential().trimmed();
-    const QStringList turnUrls = turnServerUrls();
-
-    for (QString url : turnUrls) {
-        url = url.trimmed();
-        if (url.isEmpty()) {
-            continue;
-        }
-
-        if (!username.isEmpty() && !credential.isEmpty() && !url.contains('@')) {
-            const int schemeSeparator = url.indexOf(':');
-            if (schemeSeparator > 0) {
-                url = url.left(schemeSeparator + 1)
-                    + username
-                    + ':'
-                    + credential
-                    + '@'
-                    + url.mid(schemeSeparator + 1);
-            }
-        }
-
-        servers.emplace_back(url.toStdString());
+        const std::string endpoint = stunPort > 0
+            ? QStringLiteral("%1:%2").arg(stunHost).arg(stunPort).toStdString()
+            : stunHost.toStdString();
+        servers.emplace_back(endpoint);
     }
 
     return servers;

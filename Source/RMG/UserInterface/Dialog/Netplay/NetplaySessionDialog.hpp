@@ -15,6 +15,8 @@
 #include <QString>
 #include <memory>
 
+#include <QNetworkAccessManager>
+
 #include "Netplay/NatTraversal/NatTraversalClient.hpp"
 #include "Netplay/NatTraversal/NatTraversalIndexClient.hpp"
 
@@ -43,6 +45,9 @@ private:
     Netplay::NetplayCoordinator* coordinator;
     std::unique_ptr<Netplay::NatTraversalClient> natTraversalClient;
     std::unique_ptr<Netplay::NatTraversalIndexClient> natIndexClient;
+    QNetworkAccessManager networkManager;
+    QString publicIpAddress;
+    QString pendingNatHostCode;
 
     bool m_pendingGameStart = false;
     bool m_sessionSavesApplied = false;
@@ -50,6 +55,9 @@ private:
     int m_lastDisplayedBufferDelay = -1;
 
     void syncHostSessionState(void);
+    void beginNatTraversalRegistration(uint16_t hostingPort);
+    void updateConnectInfoDisplay(void);
+    void fetchPublicIpAddress(void);
     void publishHostSessionIndex(bool started);
     void tryStartPendingGame(void);
     bool getCheats(std::vector<CoreCheat>& cheats, QJsonArray& cheatsArray);
