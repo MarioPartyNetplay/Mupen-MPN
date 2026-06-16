@@ -195,6 +195,10 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
             if (roomId != m_gameSession.roomId || m_state != InGame || !m_lockstepEngine)
                 return;
 
+            if (slot == m_gameSession.localSlot) {
+                return;
+            }
+
             m_lockstepEngine->submitRemoteInput(slot, frameNumber, controllerState);
         });
 
@@ -429,21 +433,24 @@ void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
 {
     if (m_state != InGame || !m_lockstepEngine) return;
 
-    // Tag outbound packets with the delayed frame so peers receive them before we execute.
-    const uint32_t sendFrameNumber = m_lockstepEngine->getSendFrameNumber();
+    const auto outbound =
+        m_lockstepEngine->submitLocalInput(controllerState);
 
-    if (isHostingServer()) {
-        QMetaObject::invokeMethod(m_server.get(), [this, sendFrameNumber, controllerState]() {
-            m_server->broadcastControllerInput(m_gameSession.roomId, m_lockstepConfig.localPlayerSlot,
-                                               sendFrameNumber, controllerState);
-        }, Qt::BlockingQueuedConnection);
-    } else if (m_socketIO) {
-        QMetaObject::invokeMethod(m_socketIO.get(), [this, sendFrameNumber, controllerState]() {
-            m_socketIO->sendControllerInput(sendFrameNumber, controllerState);
-        }, Qt::BlockingQueuedConnection);
+    for (const auto& [sendFrameNumber, state] : outbound) {
+        if (isHostingServer()) {
+            QMetaObject::invokeMethod(m_server.get(), [this, sendFrameNumber, state]() {
+                m_server->broadcastControllerInput(
+                    m_gameSession.roomId,
+                    m_lockstepConfig.localPlayerSlot,
+                    sendFrameNumber,
+                    state);
+            }, Qt::BlockingQueuedConnection);
+        } else if (m_socketIO) {
+            QMetaObject::invokeMethod(m_socketIO.get(), [this, sendFrameNumber, state]() {
+                m_socketIO->sendControllerInput(sendFrameNumber, state);
+            }, Qt::BlockingQueuedConnection);
+        }
     }
-
-    m_lockstepEngine->submitLocalInput(controllerState);
 }
 
 bool NetplayCoordinator::advanceFrame()

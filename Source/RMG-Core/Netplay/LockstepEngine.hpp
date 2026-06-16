@@ -17,6 +17,7 @@
 #include <vector>
 #include <string>
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include "../Library.hpp"
 
@@ -76,7 +77,8 @@ public:
 
     void setCallbacks(Callbacks callbacks);
     void setDataChannel(int peerSlot, std::shared_ptr<UserInterface::Netplay::WebRTCDataChannel> channel);
-    void submitLocalInput(uint32_t controllerState);
+    /** Stores local input and returns (frame, state) pairs that need network relay. */
+    std::vector<std::pair<uint32_t, uint32_t>> submitLocalInput(uint32_t controllerState);
     void submitRemoteInput(int fromSlot, uint32_t frameNumber, uint32_t controllerState);
     /** Peer-reported emulation frame (from periodic frame-sync over signaling). */
     void submitPeerReportedFrame(int fromSlot, uint32_t frameNumber);
@@ -97,7 +99,7 @@ public:
     void setNumPlayers(int numPlayers);
     void setLocalPlayerSlot(int slot);
 
-    /** Stall timeout (ms) used when waiting for missing inputs at a frame. */
+    /** Stall timeout (ms) when waiting for missing inputs; 0 waits indefinitely. */
     static int stallTimeoutForDelayFrames(int inputDelayFrames);
 
 private:
@@ -112,17 +114,13 @@ private:
     void pruneOldFrames(uint32_t oldestFrameToKeep);
     void processInputPacket(int fromSlot, const std::vector<uint8_t>& packet);
     bool waitForAllInputs(uint32_t frameNumber, int timeoutMs);
-    void applyTimeoutFallback(uint32_t frameNumber);
-    /** How many frames our send timeline is ahead of the slowest peer's last input. */
-    int getMaxPeerInputLagFrames() const;
-    /** How many emulation frames we are ahead of the slowest peer's last report. */
-    int getMaxPeerEmulationLagFrames() const;
-    bool hasAllInputsForFrame(uint32_t frameNumber) const;
-    void applyPeerLagThrottleIfNeeded(uint32_t frameNumber);
+    bool hasAllInputsForFrameUnlocked(uint32_t frameNumber) const;
+    void notifyInputProgressUnlocked(uint32_t frameNumber);
 
     Config m_config;
     uint32_t m_currentFrameNumber = 0;
     mutable std::recursive_mutex m_mutex;
+    std::condition_variable_any m_inputCv;
     bool m_isDesynchronized = false;
     uint32_t m_lastVerifiedFrame = 0;
     Stats m_stats;
@@ -132,7 +130,6 @@ private:
     std::map<int, uint32_t> m_lastKnownInputFrames;
     std::map<int, uint32_t> m_peerReportedEmulationFrames;
     std::map<int, std::chrono::steady_clock::time_point> m_peerReportedFrameTimes;
-    bool m_peerLagThrottlingActive = false;
     std::vector<std::shared_ptr<UserInterface::Netplay::WebRTCDataChannel>> m_dataChannels;
     std::vector<SyncCheckpoint> m_syncCheckpoints;
     Callbacks m_callbacks;

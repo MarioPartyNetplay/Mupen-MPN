@@ -6,7 +6,11 @@ project(RMG-Core)
 set(CMAKE_CXX_STANDARD 20)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(MINIZIP REQUIRED minizip)
+pkg_check_modules(MINIZIP minizip)
+if (NOT MINIZIP_FOUND)
+    pkg_check_modules(MINIZIP REQUIRED minizip-ng)
+endif()
+
 if (WIN32)
     pkg_check_modules(ICONV REQUIRED iconv)
 endif(WIN32)
@@ -117,6 +121,7 @@ target_include_directories(RMG-Core PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../
     ${CMAKE_CURRENT_SOURCE_DIR}/../RMG/Netplay
     ${MINIZIP_INCLUDE_DIRS}
+    ${MINIZIP_UNZIP_INCLUDE_DIR}
 )
 
 set_target_properties(RMG-Core PROPERTIES CXX_VISIBILITY_PRESET hidden)

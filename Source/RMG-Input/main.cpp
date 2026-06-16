@@ -35,6 +35,9 @@
 #include <RMG-Core/Settings.hpp>
 #include <RMG-Core/Netplay.hpp>
 #include <RMG-Core/Cheats.hpp>
+
+#include <chrono>
+#include <thread>
 #include <RMG-Core/Video.hpp>
 
 #include <QGuiApplication>
@@ -1438,15 +1441,17 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
 
         if (Control == (NUM_CONTROLLERS - 1) && !l_EmbeddedNetplayFrameAdvanced)
         {
-            const bool advanced = CoreAdvanceEmbeddedNetplayFrame();
-            if (advanced)
+            while (!CoreAdvanceEmbeddedNetplayFrame())
             {
-                for (int i = 0; i < NUM_CONTROLLERS; i++)
-                {
-                    l_EmbeddedNetplaySyncedState[i] = CoreGetEmbeddedNetplayFrameInput(i);
-                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
-            l_EmbeddedNetplayFrameAdvanced = advanced;
+
+            for (int i = 0; i < NUM_CONTROLLERS; i++)
+            {
+                l_EmbeddedNetplaySyncedState[i] =
+                    CoreGetEmbeddedNetplayFrameInput(i);
+            }
+            l_EmbeddedNetplayFrameAdvanced = true;
         }
 
         Keys->Value = l_EmbeddedNetplaySyncedState[Control];

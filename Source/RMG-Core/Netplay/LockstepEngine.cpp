@@ -7,24 +7,24 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+
 #include "LockstepEngine.hpp"
 #include "WebRTC/WebRTCDataChannel.hpp"
+
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <iostream>
 #include <thread>
-#include <mutex>
 
 using namespace UserInterface::Netplay;
 using namespace RMGCore;
 
 namespace {
 
-// Gentle catch-up: only slow the faster peer once a peer is severely behind on inputs.
-constexpr int kPeerLagThrottleOnFrames = 30;
-constexpr int kPeerLagThrottleOffFrames = 20;
-constexpr int kPeerLagThrottleMaxSleepMs = 1;
-constexpr std::chrono::milliseconds kPeerFrameReportStale{2000};
+// Accept slightly late inputs; reject only packets that cannot affect the timeline.
+constexpr uint32_t kInputFrameSlack = 8;
+constexpr uint32_t kPeerFrameReportSlack = 120;
 
 } // namespace
 
@@ -34,12 +34,22 @@ LockstepEngine::LockstepEngine(const Config& config)
     , m_isDesynchronized(false)
     , m_lastVerifiedFrame(0)
 {
-    if (config.numPlayers < 2 || config.numPlayers > 4) {
-        std::cerr << "LockstepEngine: numPlayers must be 2-4, got " << config.numPlayers << std::endl;
+    if (m_config.numPlayers < 2) {
+        m_config.numPlayers = 2;
     }
 
-    m_config.stallTimeoutMilliseconds = stallTimeoutForDelayFrames(m_config.inputDelayFrames);
-    m_dataChannels.resize(config.numPlayers);
+    if (m_config.numPlayers > 4) {
+        m_config.numPlayers = 4;
+    }
+
+    m_dataChannels.resize(m_config.numPlayers);
+
+    if (m_config.inputDelayFrames < 0) {
+        m_config.inputDelayFrames = 0;
+    }
+
+    m_config.stallTimeoutMilliseconds =
+        stallTimeoutForDelayFrames(m_config.inputDelayFrames);
 }
 
 LockstepEngine::~LockstepEngine()
@@ -56,96 +66,153 @@ void LockstepEngine::setCallbacks(Callbacks callbacks)
     m_callbacks = std::move(callbacks);
 }
 
-void LockstepEngine::setDataChannel(int peerSlot, std::shared_ptr<WebRTCDataChannel> channel)
+void LockstepEngine::setDataChannel(
+    int peerSlot,
+    std::shared_ptr<WebRTCDataChannel> channel)
 {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
     if (peerSlot < 0 || peerSlot >= m_config.numPlayers) {
-        std::cerr << "LockstepEngine: invalid peer slot " << peerSlot << std::endl;
         return;
     }
 
     m_dataChannels[peerSlot] = channel;
 
     if (channel) {
-        channel->onBinaryMessageReceived = [this, peerSlot](const std::vector<uint8_t>& data) {
-            onDataChannelBinaryMessageReceived(peerSlot, data);
-        };
-        channel->onClosed = [this, peerSlot]() {
-            onDataChannelClosed(peerSlot);
-        };
-        channel->onError = [this, peerSlot](const std::string& error) {
-            onDataChannelError(peerSlot, error);
-        };
+        channel->onBinaryMessageReceived =
+            [this, peerSlot](const std::vector<uint8_t>& data) {
+                onDataChannelBinaryMessageReceived(peerSlot, data);
+            };
+
+        channel->onClosed =
+            [this, peerSlot]() {
+                onDataChannelClosed(peerSlot);
+            };
+
+        channel->onError =
+            [this, peerSlot](const std::string& error) {
+                onDataChannelError(peerSlot, error);
+            };
     }
 }
 
-void LockstepEngine::submitLocalInput(uint32_t controllerState)
+std::vector<std::pair<uint32_t, uint32_t>>
+LockstepEngine::submitLocalInput(uint32_t controllerState)
 {
-    const uint32_t sendFrame = getSendFrameNumber();
+    std::vector<std::pair<uint32_t, uint32_t>> outbound;
 
     {
         std::lock_guard<std::recursive_mutex> lock(m_mutex);
-        FrameInputs& frameInputs = m_frameBuffer[sendFrame];
-        frameInputs.frameNumber = sendFrame;
-        frameInputs.playerInputs[m_config.localPlayerSlot] = controllerState;
+
+        const uint32_t sendFrame =
+            m_currentFrameNumber +
+            static_cast<uint32_t>(m_config.inputDelayFrames);
+
+        // Dolphin-style pad buffer: keep the delay window filled so frame 0
+        // has usable input instead of waiting for the delay to elapse.
+        for (uint32_t frame = m_currentFrameNumber;
+             frame <= sendFrame;
+             ++frame) {
+
+            FrameInputs& frameInputs = m_frameBuffer[frame];
+            const auto existing =
+                frameInputs.playerInputs.find(m_config.localPlayerSlot);
+
+            if (existing != frameInputs.playerInputs.end()) {
+                continue;
+            }
+
+            frameInputs.frameNumber = frame;
+            frameInputs.playerInputs[m_config.localPlayerSlot] =
+                controllerState;
+
+            outbound.emplace_back(frame, controllerState);
+            notifyInputProgressUnlocked(frame);
+        }
+
         m_lastKnownInputs[m_config.localPlayerSlot] = controllerState;
+        m_lastKnownInputFrames[m_config.localPlayerSlot] = sendFrame;
     }
 
-    // Network send is handled by NetplayCoordinator (Socket.IO). WebRTC path only:
-    broadcastInput(controllerState, sendFrame);
+    for (const auto& [frameNumber, state] : outbound) {
+        broadcastInput(state, frameNumber);
+    }
+
+    return outbound;
 }
 
-void LockstepEngine::submitRemoteInput(int fromSlot, uint32_t frameNumber, uint32_t controllerState)
+void LockstepEngine::submitRemoteInput(
+    int fromSlot,
+    uint32_t frameNumber,
+    uint32_t controllerState)
 {
-    if (fromSlot < 0 || fromSlot >= m_config.numPlayers || fromSlot == m_config.localPlayerSlot) {
+    if (fromSlot < 0 ||
+        fromSlot >= m_config.numPlayers ||
+        fromSlot == m_config.localPlayerSlot) {
         return;
     }
 
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
-    // Socket.IO-relayed inputs and direct WebRTC packets both reach this path.
-    // Do not require a WebRTC channel here, or host-relayed inputs will be dropped
-    // before they can enter the lockstep buffer.
-
-    // Allow slightly late packets; with input delay, early (future) packets are normal.
-    constexpr uint32_t kFrameSlack = 4;
-    if (frameNumber + kFrameSlack < m_currentFrameNumber) {
+    if (frameNumber + kInputFrameSlack < m_currentFrameNumber) {
         return;
     }
-    const uint32_t targetFrame = frameNumber;
 
-    FrameInputs& frameInputs = m_frameBuffer[targetFrame];
-    frameInputs.frameNumber = targetFrame;
+    FrameInputs& frameInputs = m_frameBuffer[frameNumber];
+    const auto existing = frameInputs.playerInputs.find(fromSlot);
+    if (existing != frameInputs.playerInputs.end() &&
+        existing->second != controllerState) {
+        m_stats.desyncDetections++;
+        m_isDesynchronized = true;
+        if (m_callbacks.desyncDetected) {
+            m_callbacks.desyncDetected(
+                frameNumber,
+                "Conflicting remote input for frame " +
+                    std::to_string(frameNumber));
+        }
+        return;
+    }
+
+    frameInputs.frameNumber = frameNumber;
     frameInputs.playerInputs[fromSlot] = controllerState;
     frameInputs.receivedTime = std::chrono::steady_clock::now();
-    m_lastKnownInputs[fromSlot] = controllerState;
-    m_lastKnownInputFrames[fromSlot] = targetFrame;
 
-    if (targetFrame == m_currentFrameNumber) {
+    m_lastKnownInputs[fromSlot] = controllerState;
+    m_lastKnownInputFrames[fromSlot] = frameNumber;
+
+    if (frameNumber == m_currentFrameNumber) {
         m_frameReceived[fromSlot] = true;
     }
 
+    notifyInputProgressUnlocked(frameNumber);
+
     if (m_callbacks.inputReceived) {
-        m_callbacks.inputReceived(fromSlot, targetFrame, controllerState);
+        m_callbacks.inputReceived(
+            fromSlot,
+            frameNumber,
+            controllerState);
     }
 }
 
-void LockstepEngine::submitPeerReportedFrame(int fromSlot, uint32_t frameNumber)
+void LockstepEngine::submitPeerReportedFrame(
+    int fromSlot,
+    uint32_t frameNumber)
 {
-    if (fromSlot < 0 || fromSlot >= m_config.numPlayers || fromSlot == m_config.localPlayerSlot) {
+    if (fromSlot < 0 ||
+        fromSlot >= m_config.numPlayers ||
+        fromSlot == m_config.localPlayerSlot) {
         return;
     }
 
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
-    constexpr uint32_t kFrameSlack = 120;
-    if (frameNumber + kFrameSlack < m_currentFrameNumber) {
+    if (frameNumber + kPeerFrameReportSlack < m_currentFrameNumber) {
         return;
     }
 
     m_peerReportedEmulationFrames[fromSlot] = frameNumber;
-    m_peerReportedFrameTimes[fromSlot] = std::chrono::steady_clock::now();
+    m_peerReportedFrameTimes[fromSlot] =
+        std::chrono::steady_clock::now();
 }
 
 bool LockstepEngine::advanceFrame()
@@ -153,39 +220,38 @@ bool LockstepEngine::advanceFrame()
     const uint32_t frameNumber = m_currentFrameNumber;
 
     if (m_config.numPlayers > 1) {
-        // Only slow down when we already have this frame's inputs and would advance
-        // ahead of the slowest peer's input stream (not while stalled waiting).
-        applyPeerLagThrottleIfNeeded(frameNumber);
-        bool ready = waitForAllInputs(frameNumber, m_config.stallTimeoutMilliseconds);
-        if (!ready) {
-            {
-                std::lock_guard<std::recursive_mutex> lock(m_mutex);
-                applyTimeoutFallback(frameNumber);
-                m_stats.timeoutOccurrences++;
-            }
-
-            if (m_callbacks.peerInputTimedOut) {
-                for (int slot = 0; slot < m_config.numPlayers; ++slot) {
-                    if (slot == m_config.localPlayerSlot) {
-                        continue;
-                    }
-                    m_callbacks.peerInputTimedOut(slot, frameNumber);
-                }
-            }
-        }
+        waitForAllInputs(
+            frameNumber,
+            m_config.stallTimeoutMilliseconds);
     }
 
     std::map<int, uint32_t> frameInputs;
+
     {
         std::lock_guard<std::recursive_mutex> lock(m_mutex);
-        frameInputs = m_frameBuffer[frameNumber].playerInputs;
+
+        auto it = m_frameBuffer.find(frameNumber);
+
+        if (it != m_frameBuffer.end()) {
+            frameInputs = it->second.playerInputs;
+        }
+
         m_frameReceived.clear();
+
         m_currentFrameNumber++;
-        pruneOldFrames(m_currentFrameNumber > 120 ? m_currentFrameNumber - 120 : 0);
+
+        pruneOldFrames(
+            m_currentFrameNumber > 120
+                ? m_currentFrameNumber - 120
+                : 0);
+
+        m_stats.totalFramesProcessed++;
     }
 
     if (m_callbacks.frameReady) {
-        m_callbacks.frameReady(frameNumber, frameInputs);
+        m_callbacks.frameReady(
+            frameNumber,
+            frameInputs);
     }
 
     return true;
@@ -197,33 +263,42 @@ void LockstepEngine::checkDesync(uint32_t romChecksum)
     checkpoint.frameNumber = m_currentFrameNumber;
     checkpoint.romChecksum = romChecksum;
     checkpoint.timestamp = std::chrono::steady_clock::now();
+
     m_syncCheckpoints.push_back(checkpoint);
 
     if (m_syncCheckpoints.size() >= 2) {
-        const SyncCheckpoint& prev = m_syncCheckpoints[m_syncCheckpoints.size() - 2];
-        if (prev.romChecksum != romChecksum && m_lastVerifiedFrame != prev.frameNumber) {
+
+        const SyncCheckpoint& prev =
+            m_syncCheckpoints[m_syncCheckpoints.size() - 2];
+
+        if (prev.romChecksum != romChecksum &&
+            m_lastVerifiedFrame != prev.frameNumber) {
+
             m_stats.desyncDetections++;
             m_isDesynchronized = true;
+
             if (m_callbacks.desyncDetected) {
-                m_callbacks.desyncDetected(m_currentFrameNumber, "ROM state mismatch");
+                m_callbacks.desyncDetected(
+                    m_currentFrameNumber,
+                    "ROM state mismatch");
             }
-            std::cerr << "LockstepEngine: DESYNC detected at frame " << m_currentFrameNumber << std::endl;
 
             if (m_config.resyncEnabled) {
                 requestResync();
             }
         }
     }
+
     m_lastVerifiedFrame = m_currentFrameNumber;
 }
 
 void LockstepEngine::requestResync()
 {
     m_stats.resyncAttempts++;
+
     if (m_callbacks.attemptingResync) {
         m_callbacks.attemptingResync();
     }
-    std::cerr << "LockstepEngine: Attempting resync..." << std::endl;
 }
 
 uint32_t LockstepEngine::getCurrentFrameNumber() const
@@ -233,15 +308,21 @@ uint32_t LockstepEngine::getCurrentFrameNumber() const
 
 uint32_t LockstepEngine::getSendFrameNumber() const
 {
-    return m_currentFrameNumber + static_cast<uint32_t>(m_config.inputDelayFrames);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return
+        m_currentFrameNumber +
+        static_cast<uint32_t>(m_config.inputDelayFrames);
 }
 
-std::map<int, uint32_t> LockstepEngine::getCurrentFrameInputs() const
+std::map<int, uint32_t>
+LockstepEngine::getCurrentFrameInputs() const
 {
     auto it = m_frameBuffer.find(m_currentFrameNumber);
+
     if (it == m_frameBuffer.end()) {
         return {};
     }
+
     return it->second.playerInputs;
 }
 
@@ -255,33 +336,40 @@ int LockstepEngine::getPendingInputsCount() const
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
     auto frameIt = m_frameBuffer.find(m_currentFrameNumber);
-    const std::map<int, uint32_t>* inputs = (frameIt != m_frameBuffer.end())
-        ? &frameIt->second.playerInputs
-        : nullptr;
 
     int pending = 0;
+
     for (int i = 0; i < m_config.numPlayers; ++i) {
+
         if (i == m_config.localPlayerSlot) {
             continue;
         }
 
-        if (!inputs || inputs->find(i) == inputs->end()) {
+        bool found = false;
+
+        if (frameIt != m_frameBuffer.end()) {
+            found =
+                frameIt->second.playerInputs.find(i) !=
+                frameIt->second.playerInputs.end();
+        }
+
+        if (!found) {
             pending++;
         }
     }
+
     return pending;
 }
 
 std::string LockstepEngine::getEngineStatus() const
 {
-    const int inputLag = getMaxPeerInputLagFrames();
-    const int emuLag = getMaxPeerEmulationLagFrames();
-    return "Frame: " + std::to_string(m_currentFrameNumber) +
-           ", Pending: " + std::to_string(getPendingInputsCount()) +
-           ", InputLag: " + std::to_string(inputLag) +
-           ", EmuLag: " + std::to_string(emuLag) +
-           ", Throttle: " + (m_peerLagThrottlingActive ? "ON" : "OFF") +
-           ", Desync: " + (m_isDesynchronized ? "YES" : "NO");
+    return
+        "Frame: " +
+        std::to_string(m_currentFrameNumber) +
+        ", Pending: " +
+        std::to_string(getPendingInputsCount()) +
+        ", Desync: " +
+        (m_isDesynchronized ? "YES" : "NO");
 }
 
 LockstepEngine::Stats LockstepEngine::getStatistics() const
@@ -302,31 +390,32 @@ void LockstepEngine::resetStatistics()
 void LockstepEngine::setInputDelayFrames(int frames)
 {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
     if (frames < 0) {
         frames = 0;
-    } else if (frames > 99) {
+    }
+
+    if (frames > 99) {
         frames = 99;
     }
+
     m_config.inputDelayFrames = frames;
-    m_config.stallTimeoutMilliseconds = stallTimeoutForDelayFrames(frames);
-    std::cout << "LockstepEngine: Input delay changed to " << frames << " frames" << std::endl;
+
+    m_config.stallTimeoutMilliseconds =
+        stallTimeoutForDelayFrames(frames);
 }
 
-int LockstepEngine::stallTimeoutForDelayFrames(int inputDelayFrames)
+int LockstepEngine::stallTimeoutForDelayFrames(int)
 {
-    if (inputDelayFrames <= 0) {
-        // Zero delay: strict lockstep, short wait per frame.
-        return 100;
-    }
-    // Higher delay gives the network more time to absorb jitter before the emulator stalls.
-    const int scaledTimeout = inputDelayFrames * 25;
-    const int lowerBoundTimeout = (scaledTimeout < 100) ? 100 : scaledTimeout;
-    return (lowerBoundTimeout > 1500) ? 1500 : lowerBoundTimeout;
+    // Dolphin-style lockstep: wait indefinitely for peer inputs.
+    return 0;
 }
 
 void LockstepEngine::pruneOldFrames(uint32_t oldestFrameToKeep)
 {
-    for (auto it = m_frameBuffer.begin(); it != m_frameBuffer.end();) {
+    for (auto it = m_frameBuffer.begin();
+         it != m_frameBuffer.end();) {
+
         if (it->first < oldestFrameToKeep) {
             it = m_frameBuffer.erase(it);
         } else {
@@ -335,38 +424,47 @@ void LockstepEngine::pruneOldFrames(uint32_t oldestFrameToKeep)
     }
 }
 
-void LockstepEngine::onDataChannelBinaryMessageReceived(int peerSlot, const std::vector<uint8_t>& data)
+void LockstepEngine::onDataChannelBinaryMessageReceived(
+    int peerSlot,
+    const std::vector<uint8_t>& data)
 {
     processInputPacket(peerSlot, data);
 }
 
 void LockstepEngine::onDataChannelClosed(int peerSlot)
 {
-    std::cerr << "LockstepEngine: DataChannel closed for slot " << peerSlot << std::endl;
-    
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    if (peerSlot >= 0 && peerSlot < m_dataChannels.size()) {
+
+    if (peerSlot >= 0 &&
+        peerSlot < static_cast<int>(m_dataChannels.size())) {
+
         m_dataChannels[peerSlot] = nullptr;
-        m_lastKnownInputs[peerSlot] = 0;
-        m_lastKnownInputFrames.erase(peerSlot);
-        m_peerReportedEmulationFrames.erase(peerSlot);
-        m_peerReportedFrameTimes.erase(peerSlot);
-        m_frameReceived[peerSlot] = true; // Let the engine advance immediately
     }
 }
 
-void LockstepEngine::onDataChannelError(int peerSlot, const std::string& error)
+void LockstepEngine::onDataChannelError(
+    int peerSlot,
+    const std::string& error)
 {
-    std::cerr << "LockstepEngine: Socket Error on slot " << peerSlot << ": " << error << std::endl;
+    std::cerr
+        << "LockstepEngine: DataChannel error on slot "
+        << peerSlot
+        << ": "
+        << error
+        << std::endl;
 
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    // Treat an error as a disconnect to prevent the engine from hanging/spamming
-    if (peerSlot >= 0 && peerSlot < m_dataChannels.size()) {
+
+    if (peerSlot >= 0 &&
+        peerSlot < static_cast<int>(m_dataChannels.size())) {
+
         m_dataChannels[peerSlot] = nullptr;
     }
 }
 
-void LockstepEngine::broadcastInput(uint32_t controllerState, uint32_t frameNumber)
+void LockstepEngine::broadcastInput(
+    uint32_t controllerState,
+    uint32_t frameNumber)
 {
     std::vector<uint8_t> packet(INPUT_PACKET_SIZE);
 
@@ -374,120 +472,109 @@ void LockstepEngine::broadcastInput(uint32_t controllerState, uint32_t frameNumb
     std::memcpy(packet.data() + 4, &controllerState, 4);
 
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
-        if (slot != m_config.localPlayerSlot && m_dataChannels[slot]) {
-            m_dataChannels[slot]->sendBinary(packet);
+
+    for (int slot = 0;
+         slot < m_config.numPlayers;
+         ++slot) {
+
+        if (slot == m_config.localPlayerSlot) {
+            continue;
         }
+
+        if (!m_dataChannels[slot]) {
+            continue;
+        }
+
+        m_dataChannels[slot]->sendBinary(packet);
     }
 }
 
-void LockstepEngine::processInputPacket(int fromSlot, const std::vector<uint8_t>& packet) {
-    if (packet.size() != INPUT_PACKET_SIZE) return;
+void LockstepEngine::processInputPacket(
+    int fromSlot,
+    const std::vector<uint8_t>& packet)
+{
+    if (packet.size() != INPUT_PACKET_SIZE) {
+        return;
+    }
 
     uint32_t frameNumber;
     uint32_t controllerState;
+
     std::memcpy(&frameNumber, packet.data(), 4);
     std::memcpy(&controllerState, packet.data() + 4, 4);
 
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    
-    if (fromSlot < 0 || fromSlot >= m_config.numPlayers || !m_dataChannels[fromSlot]) {
+
+    if (fromSlot < 0 ||
+        fromSlot >= m_config.numPlayers) {
         return;
-    }    
-    // Only update if it's relevant to our current timeline
-    FrameInputs& frameInputs = m_frameBuffer[frameNumber];
+    }
+
+    if (frameNumber + kInputFrameSlack < m_currentFrameNumber) {
+        return;
+    }
+
+    FrameInputs& frameInputs =
+        m_frameBuffer[frameNumber];
+
+    const auto existing = frameInputs.playerInputs.find(fromSlot);
+    if (existing != frameInputs.playerInputs.end() &&
+        existing->second != controllerState) {
+        m_stats.desyncDetections++;
+        m_isDesynchronized = true;
+        if (m_callbacks.desyncDetected) {
+            m_callbacks.desyncDetected(
+                frameNumber,
+                "Conflicting WebRTC input for frame " +
+                    std::to_string(frameNumber));
+        }
+        return;
+    }
+
     frameInputs.frameNumber = frameNumber;
     frameInputs.playerInputs[fromSlot] = controllerState;
-    
+    frameInputs.receivedTime =
+        std::chrono::steady_clock::now();
+
+    m_lastKnownInputs[fromSlot] = controllerState;
+    m_lastKnownInputFrames[fromSlot] = frameNumber;
+
     if (frameNumber == m_currentFrameNumber) {
         m_frameReceived[fromSlot] = true;
     }
 
-    m_lastKnownInputs[fromSlot] = controllerState;
-    m_lastKnownInputFrames[fromSlot] = frameNumber;
+    notifyInputProgressUnlocked(frameNumber);
 }
 
-int LockstepEngine::getMaxPeerInputLagFrames() const
+void LockstepEngine::notifyInputProgressUnlocked(uint32_t frameNumber)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
-
-    const uint32_t sendFrame = m_currentFrameNumber + static_cast<uint32_t>(m_config.inputDelayFrames);
-    int maxLag = 0;
-
-    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
-        if (slot == m_config.localPlayerSlot) {
-            continue;
-        }
-
-        const auto it = m_lastKnownInputFrames.find(slot);
-        if (it == m_lastKnownInputFrames.end()) {
-            continue;
-        }
-
-        if (sendFrame <= it->second) {
-            continue;
-        }
-
-        const int lag = static_cast<int>(sendFrame - it->second);
-        if (lag > maxLag) {
-            maxLag = lag;
-        }
+    if (frameNumber + kInputFrameSlack >= m_currentFrameNumber) {
+        m_inputCv.notify_all();
     }
-
-    return maxLag;
 }
 
-int LockstepEngine::getMaxPeerEmulationLagFrames() const
+bool LockstepEngine::hasAllInputsForFrameUnlocked(
+    uint32_t frameNumber) const
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
-
-    const auto now = std::chrono::steady_clock::now();
-    int maxLag = 0;
-
-    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
-        if (slot == m_config.localPlayerSlot) {
-            continue;
-        }
-
-        const auto frameIt = m_peerReportedEmulationFrames.find(slot);
-        const auto timeIt = m_peerReportedFrameTimes.find(slot);
-        if (frameIt == m_peerReportedEmulationFrames.end() ||
-            timeIt == m_peerReportedFrameTimes.end()) {
-            continue;
-        }
-
-        if (now - timeIt->second > kPeerFrameReportStale) {
-            continue;
-        }
-
-        if (m_currentFrameNumber <= frameIt->second) {
-            continue;
-        }
-
-        const int lag = static_cast<int>(m_currentFrameNumber - frameIt->second);
-        if (lag > maxLag) {
-            maxLag = lag;
-        }
-    }
-
-    return maxLag;
-}
-
-bool LockstepEngine::hasAllInputsForFrame(uint32_t frameNumber) const
-{
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
-
     const auto frameIt = m_frameBuffer.find(frameNumber);
-    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
+
+    for (int slot = 0;
+         slot < m_config.numPlayers;
+         ++slot) {
+
         if (slot == m_config.localPlayerSlot) {
             continue;
         }
 
-        const bool hasInputForFrame =
-            (frameIt != m_frameBuffer.end() &&
-             frameIt->second.playerInputs.find(slot) != frameIt->second.playerInputs.end());
+        bool found = false;
 
-        if (!hasInputForFrame) {
+        if (frameIt != m_frameBuffer.end()) {
+            found =
+                frameIt->second.playerInputs.find(slot) !=
+                frameIt->second.playerInputs.end();
+        }
+
+        if (!found) {
             return false;
         }
     }
@@ -495,112 +582,62 @@ bool LockstepEngine::hasAllInputsForFrame(uint32_t frameNumber) const
     return true;
 }
 
-void LockstepEngine::applyPeerLagThrottleIfNeeded(uint32_t frameNumber)
+bool LockstepEngine::waitForAllInputs(
+    uint32_t frameNumber,
+    int timeoutMs)
 {
-    // When the input delay is already in the normal netplay range, let the buffer
-    // absorb jitter instead of layering extra pacing on top.
-    if (m_config.inputDelayFrames >= 4) {
-        return;
-    }
+    const bool hasDeadline = timeoutMs > 0;
+    const auto deadline =
+        std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(timeoutMs);
 
-    if (!hasAllInputsForFrame(frameNumber)) {
-        return;
-    }
+    std::unique_lock<std::recursive_mutex> lock(m_mutex);
 
-    const int peerInputLag = getMaxPeerInputLagFrames();
-    const int peerEmulationLag = getMaxPeerEmulationLagFrames();
-    const int maxLag = (peerInputLag > peerEmulationLag) ? peerInputLag : peerEmulationLag;
-
-    if (maxLag >= kPeerLagThrottleOnFrames) {
-        m_peerLagThrottlingActive = true;
-    } else if (maxLag <= kPeerLagThrottleOffFrames) {
-        m_peerLagThrottlingActive = false;
-    }
-
-    if (!m_peerLagThrottlingActive) {
-        return;
-    }
-
-    const int framesOver = maxLag - (kPeerLagThrottleOnFrames - 1);
-    const int sleepMs = (framesOver < kPeerLagThrottleMaxSleepMs)
-        ? framesOver
-        : kPeerLagThrottleMaxSleepMs;
-    if (sleepMs > 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
-    }
-}
-
-bool LockstepEngine::waitForAllInputs(uint32_t frameNumber, int timeoutMs) {
-    auto start = std::chrono::steady_clock::now();
-    while (true) {
-        {
-            std::lock_guard<std::recursive_mutex> lock(m_mutex);
-            auto frameIt = m_frameBuffer.find(frameNumber);
-            bool allReceived = true;
-            for (int slot = 0; slot < m_config.numPlayers; ++slot) {
-                if (slot == m_config.localPlayerSlot) {
-                    continue;
-                }
-
-                // Check the frame buffer directly so pre-received future inputs are
-                // honored when that frame becomes current.
-                const bool hasInputForFrame =
-                    (frameIt != m_frameBuffer.end() &&
-                     frameIt->second.playerInputs.find(slot) != frameIt->second.playerInputs.end());
-
-                if (!hasInputForFrame) {
-                    allReceived = false;
-                    break;
-                }
-            }
-            if (allReceived) return true;
+    while (!hasAllInputsForFrameUnlocked(frameNumber)) {
+        if (hasDeadline &&
+            std::chrono::steady_clock::now() >= deadline) {
+            return false;
         }
 
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - start).count() > timeoutMs) return false;
-
-        std::this_thread::sleep_for(std::chrono::microseconds(500));
+        m_inputCv.wait_for(
+            lock,
+            std::chrono::milliseconds(2),
+            [this, frameNumber]() {
+                return hasAllInputsForFrameUnlocked(frameNumber);
+            });
     }
-}
 
-void LockstepEngine::applyTimeoutFallback(uint32_t frameNumber)
-{
-    FrameInputs& frameInputs = m_frameBuffer[frameNumber];
-    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
-        if (slot == m_config.localPlayerSlot) {
-            continue;
-        }
-
-        if (frameInputs.playerInputs.find(slot) == frameInputs.playerInputs.end()) {
-            if (m_lastKnownInputs.count(slot)) {
-                frameInputs.playerInputs[slot] = m_lastKnownInputs[slot];
-            } else {
-                frameInputs.playerInputs[slot] = FALLBACK_INPUT;
-            }
-            m_stats.stallFrameNumbers.push_back(frameNumber);
-            if (m_callbacks.peerInputStalled) {
-                m_callbacks.peerInputStalled(slot, frameNumber);
-            }
-        }
-    }
+    return true;
 }
 
 void LockstepEngine::setNumPlayers(int numPlayers)
 {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    
-    if (m_config.numPlayers != numPlayers) {
-        std::cout << "LockstepEngine: Player count changed from " 
-                  << m_config.numPlayers << " to " << numPlayers << std::endl;
-        m_config.numPlayers = numPlayers;
-        
-        // Note: If you are using a fixed-size array for buffers, 
-        // you might need to clear or re-validate the frame buffer here.
+
+    if (numPlayers < 2) {
+        numPlayers = 2;
     }
+
+    if (numPlayers > 4) {
+        numPlayers = 4;
+    }
+
+    m_config.numPlayers = numPlayers;
+
+    m_dataChannels.resize(numPlayers);
 }
 
 void LockstepEngine::setLocalPlayerSlot(int slot)
 {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    if (slot < 0) {
+        slot = 0;
+    }
+
+    if (slot >= m_config.numPlayers) {
+        slot = m_config.numPlayers - 1;
+    }
+
     m_config.localPlayerSlot = slot;
 }

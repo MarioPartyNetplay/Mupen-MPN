@@ -35,3 +35,6 @@ Source/RMG-Core/VersionHash.hpp
 
 # weird Discord RPC static library
 lib/libdiscord-rpc.a
+
+# Local environment overrides
+.env

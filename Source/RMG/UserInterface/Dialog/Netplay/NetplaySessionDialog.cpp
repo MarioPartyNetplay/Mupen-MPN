@@ -216,7 +216,14 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
             this, [this](int frames) {
         QSignalBlocker blocker(this->bufferDelaySpinBox);
         this->bufferDelaySpinBox->setValue(frames);
-        this->coordinator->setInputDelayFrames(frames); 
+        this->coordinator->setInputDelayFrames(frames);
+
+        if (this->m_lastDisplayedBufferDelay >= 0 &&
+            frames != this->m_lastDisplayedBufferDelay) {
+            this->chatPlainTextEdit->appendHtml(
+                QStringLiteral("<i>Buffer changed to %1</i>").arg(frames));
+        }
+        this->m_lastDisplayedBufferDelay = frames;
     });
     
     // Auto-enable pre-toggled cheats for host
@@ -259,12 +266,6 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     if (this->isLocalSessionHost()) {
         this->coordinator->sendInputDelayUpdate(initialBufferDelay);
     }
-    connect(this->coordinator, &Netplay::NetplayCoordinator::inputDelayChanged,
-            this, [this](int frames) {
-        QSignalBlocker blocker(this->bufferDelaySpinBox);
-        this->bufferDelaySpinBox->setValue(frames);
-        this->coordinator->setInputDelayFrames(frames); 
-    });
 
 
     // Disable chat input and send button by default

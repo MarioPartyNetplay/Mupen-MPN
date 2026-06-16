@@ -281,6 +281,12 @@ if (NETPLAY)
         -DNO_TESTS=ON
         -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     )
+
+    # libdatachannel defaults to shared libs; RMG links the static archive on Unix
+    # and MSVC. MinGW keeps shared so we get libdatachannel.dll + libdatachannel.dll.a.
+    if (NOT (WIN32 AND MINGW))
+        list(APPEND LIBDATACHANNEL_CMAKE_ARGS -DBUILD_SHARED_LIBS=OFF)
+    endif()
     
     ExternalProject_Add(libdatachannel
         SOURCE_DIR ${LIBDATACHANNEL_DIR}
@@ -325,6 +331,31 @@ if (NETPLAY)
     set_target_properties(libdatachannel_external PROPERTIES
         INTERFACE_INCLUDE_DIRECTORIES "${LIBDATACHANNEL_DIR}/include"
     )
+
+    # Static libdatachannel does not carry bundled deps or OpenSSL/libSRTP; propagate them.
+    if (NOT (WIN32 AND MINGW))
+        list(APPEND CMAKE_MODULE_PATH "${LIBDATACHANNEL_DIR}/cmake/Modules")
+        find_package(OpenSSL REQUIRED)
+        find_package(Threads REQUIRED)
+        find_package(libSRTP REQUIRED)
+        if (NOT TARGET libSRTP::srtp2)
+            add_library(libSRTP::srtp2 UNKNOWN IMPORTED)
+            set_target_properties(libSRTP::srtp2 PROPERTIES
+                INTERFACE_INCLUDE_DIRECTORIES "${SRTP_INCLUDE_DIRS}"
+                IMPORTED_LINK_INTERFACE_LANGUAGES C
+                IMPORTED_LOCATION "${SRTP_LIBRARIES}")
+        endif()
+        set(_LIBDATACHANNEL_DEPS
+            OpenSSL::SSL
+            libSRTP::srtp2
+            Threads::Threads
+            "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/deps/libjuice/libjuice.a"
+            "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/deps/usrsctp/usrsctplib/libusrsctp.a"
+        )
+        set_target_properties(libdatachannel_external PROPERTIES
+            INTERFACE_LINK_LIBRARIES "${_LIBDATACHANNEL_DEPS}"
+        )
+    endif()
     
 endif(NETPLAY)
 

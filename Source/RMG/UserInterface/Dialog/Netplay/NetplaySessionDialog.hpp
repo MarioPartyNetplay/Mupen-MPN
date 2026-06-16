@@ -47,6 +47,7 @@ private:
     bool m_pendingGameStart = false;
     bool m_sessionSavesApplied = false;
     int m_pendingPlayerSlot = 0;
+    int m_lastDisplayedBufferDelay = -1;
 
     void syncHostSessionState(void);
     void publishHostSessionIndex(bool started);

@@ -38,5 +38,22 @@ fi
 
 if [[ $(uname -s) = *MINGW64* ]]
 then
+    target_bin_dir="$toplvl_dir/Bin/$build_config"
+    mkdir -p "$target_bin_dir"
+
+    libdatachannel_dll=$(find "$build_dir" -name 'libdatachannel.dll' -o -name 'libdatachannel*.dll' | head -n 1 || true)
+    
+    if [[ -n "$libdatachannel_dll" && -f "$libdatachannel_dll" ]]
+    then
+        cp "$libdatachannel_dll" "$target_bin_dir/"
+        
+        echo "==> Resolving and copying deep dependencies for libdatachannel..."
+        ldd "$libdatachannel_dll" | grep -i 'mingw' | awk '{print $3}' | while read -r dll_path; do
+            if [[ -f "$dll_path" ]]; then
+                cp -n "$dll_path" "$target_bin_dir/"
+            fi
+        done
+    fi
+
     cmake --build "$build_dir" --target=bundle_dependencies
 fi
