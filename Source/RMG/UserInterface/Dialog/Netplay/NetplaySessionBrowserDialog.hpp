@@ -10,9 +10,6 @@
 #ifndef NETPLAYSESSIONBROWSERDIALOG_HPP
 #define NETPLAYSESSIONBROWSERDIALOG_HPP
 
-#include <QTableWidgetItem>
-#include <QNetworkReply>
-#include <QTimerEvent>
 #include <QJsonObject>
 #include <QDialog>
 #include <QString>
@@ -25,6 +22,9 @@
 #include "Netplay/NetplayCoordinator.hpp"
 
 #include <RMG-Core/RomSettings.hpp>
+
+class QNetworkAccessManager;
+class QNetworkReply;
 
 namespace UserInterface
 {
@@ -52,6 +52,7 @@ class NetplaySessionBrowserDialog : public QDialog, private Ui::NetplaySessionBr
     int targetPort = Netplay::kDefaultNetplayHostingPort;
     std::unique_ptr<Netplay::NatTraversalClient> natTraversalClient;
     std::unique_ptr<Netplay::NatTraversalIndexClient> natIndexClient;
+    QNetworkAccessManager* networkManager = nullptr;
 
     QString pendingHostCode;
     QJsonObject pendingIndexSession;
@@ -65,12 +66,16 @@ class NetplaySessionBrowserDialog : public QDialog, private Ui::NetplaySessionBr
 
     bool validate(void);
     void validateJoinButton(void);
+    void refreshRoomList(void);
     void connectToResolvedHost(const QString& address, int port);
     void beginHostCodeJoin(const QString& hostCode);
     void tryCompleteHostCodeJoin();
 
   private slots:
     void on_nickNameLineEdit_textChanged(void);
+    void on_refreshPushButton_clicked(void);
+    void onRoomsReplyFinished(QNetworkReply* reply);
+    void on_sessionBrowserWidget_OnSessionChanged(bool valid);
     void onCoordinatorConnected(void);
     void onCoordinatorConnectionError(const QString& error);
     void onCoordinatorRoomJoined(const QString& roomId, int slot);

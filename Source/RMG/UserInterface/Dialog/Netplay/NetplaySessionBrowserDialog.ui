@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>NetplaySessionBrowserDialog</class>
  <widget class="QDialog" name="NetplaySessionBrowserDialog">
@@ -5,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>400</width>
-    <height>150</height>
+    <width>720</width>
+    <height>480</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -32,14 +33,37 @@
        </property>
       </widget>
      </item>
+     <item>
+      <widget class="QPushButton" name="refreshPushButton">
+       <property name="text">
+        <string>Refresh</string>
+       </property>
+      </widget>
+     </item>
     </layout>
+   </item>
+   <item>
+    <widget class="UserInterface::Widget::NetplaySessionBrowserWidget" name="sessionBrowserWidget">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+       <horstretch>0</horstretch>
+       <verstretch>1</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>240</height>
+      </size>
+     </property>
+    </widget>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout_ip">
      <item>
       <widget class="QLabel" name="ipLabel">
        <property name="text">
-        <string>IP:Port</string>
+        <string>Direct connect</string>
        </property>
       </widget>
      </item>
@@ -52,7 +76,7 @@
         </sizepolicy>
        </property>
        <property name="placeholderText">
-        <string>a1b2cf3</string>
+        <string>Host code (7 hex) or IP:Port</string>
        </property>
       </widget>
      </item>
@@ -70,6 +94,14 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>UserInterface::Widget::NetplaySessionBrowserWidget</class>
+   <extends>QStackedWidget</extends>
+   <header>UserInterface/Widget/Netplay/NetplaySessionBrowserWidget.hpp</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections>
   <connection>

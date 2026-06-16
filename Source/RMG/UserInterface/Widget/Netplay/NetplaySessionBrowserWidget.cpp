@@ -18,23 +18,19 @@ using namespace UserInterface::Widget;
 
 //
 // Exported Functions
-// 
+//
 
 NetplaySessionBrowserWidget::NetplaySessionBrowserWidget(QWidget* parent) : QStackedWidget(parent)
 {
-    // configure signal types
     qRegisterMetaType<NetplaySessionData>("NetplaySessionData");
 
-    // configure empty widget
     this->emptyWidget = new Widget::NetplaySessionBrowserEmptyWidget(this);
     this->addWidget(this->emptyWidget);
 
-    // configure loading widget
-    this->loadingWidget = new Widget::NetplaySessionBrowserLoadingWidget(this);
+    this->loadingWidget = new Widget::NetplaySessionBrowserLoadingWidget(this, "Loading sessions");
     connect(this, &QStackedWidget::currentChanged, this->loadingWidget, &NetplaySessionBrowserLoadingWidget::on_NetplaySessionBrowserWidget_currentChanged);
     this->loadingWidget->SetWidgetIndex(this->addWidget(this->loadingWidget));
 
-    // configure table widget
     this->tableWidget = new QTableWidget(this);
     this->tableWidget->setFrameStyle(QFrame::NoFrame);
     this->tableWidget->setItemDelegate(new NoFocusDelegate(this));
@@ -57,12 +53,10 @@ NetplaySessionBrowserWidget::NetplaySessionBrowserWidget(QWidget* parent) : QSta
     this->addWidget(this->tableWidget);
     connect(this->tableWidget, &QTableWidget::currentItemChanged, this, &NetplaySessionBrowserWidget::on_tableWidget_currentItemChanged);
 
-    // set up table widget's columns
     QStringList labels;
-    labels << "Name";
+    labels << "Host";
     labels << "Game";
-    labels << "Game MD5";
-    labels << "Password?";
+    labels << "Players";
     this->tableWidget->setColumnCount(labels.size());
     this->tableWidget->setHorizontalHeaderLabels(labels);
 
@@ -86,41 +80,32 @@ void NetplaySessionBrowserWidget::StartRefresh(void)
     this->tableWidget->model()->removeRows(0, this->tableWidget->rowCount());
 }
 
-void NetplaySessionBrowserWidget::AddSessionData(QString name, QString game, QString md5, bool password, int port, 
-                                                 QString cpuEmulator, QString rspPlugin, QString gfxPlugin, QUrl address)
+void NetplaySessionBrowserWidget::AddSessionData(const QString& hostName, const QString& gameName,
+                                                 const QString& hostCode, const QString& lobbySize,
+                                                 int port, const QString& address)
 {
     const NetplaySessionData sessionData =
     {
-        name,
-        game,
-        md5,
-        password,
+        hostName,
+        gameName,
+        hostCode,
+        lobbySize,
+        address,
         port,
-        cpuEmulator,
-        rspPlugin,
-        gfxPlugin,
-        address
     };
 
     int row = this->tableWidget->rowCount();
     this->tableWidget->insertRow(row);
 
-    // Session name
-    QTableWidgetItem* tableWidgetItem1 = new QTableWidgetItem(name);
-    tableWidgetItem1->setData(Qt::UserRole, QVariant::fromValue<NetplaySessionData>(sessionData));
-    this->tableWidget->setItem(row, 0, tableWidgetItem1);
+    QTableWidgetItem* hostItem = new QTableWidgetItem(hostName);
+    hostItem->setData(Qt::UserRole, QVariant::fromValue<NetplaySessionData>(sessionData));
+    this->tableWidget->setItem(row, 0, hostItem);
 
-    // Game
-    QTableWidgetItem* tableWidgetItem2 = new QTableWidgetItem(game);
-    this->tableWidget->setItem(row, 1, tableWidgetItem2);
+    QTableWidgetItem* gameItem = new QTableWidgetItem(gameName);
+    this->tableWidget->setItem(row, 1, gameItem);
 
-    // MD5
-    QTableWidgetItem* tableWidgetItem3 = new QTableWidgetItem(md5);
-    this->tableWidget->setItem(row, 2, tableWidgetItem3);
-
-    // Password
-    QTableWidgetItem* tableWidgetItem4 = new QTableWidgetItem(password ? "Yes" : "No");
-    this->tableWidget->setItem(row, 3, tableWidgetItem4);
+    QTableWidgetItem* playersItem = new QTableWidgetItem(lobbySize);
+    this->tableWidget->setItem(row, 2, playersItem);
 }
 
 void NetplaySessionBrowserWidget::RefreshDone(void)
@@ -134,8 +119,6 @@ void NetplaySessionBrowserWidget::RefreshDone(void)
         this->currentViewWidget = this->tableWidget;
     }
 
-    // prevent flicker by forcing the loading screen
-    // to be shown at least 300ms
     qint64 elapsedTime = this->refreshTimer.elapsed();
     if (elapsedTime < 300)
     {
@@ -184,6 +167,8 @@ void NetplaySessionBrowserWidget::timerEvent(QTimerEvent *event)
 
 void NetplaySessionBrowserWidget::on_tableWidget_currentItemChanged(QTableWidgetItem* current, QTableWidgetItem* previous)
 {
+    Q_UNUSED(previous);
+
     if (this->currentWidget() == this->tableWidget)
     {
         emit this->OnSessionChanged(current != nullptr);

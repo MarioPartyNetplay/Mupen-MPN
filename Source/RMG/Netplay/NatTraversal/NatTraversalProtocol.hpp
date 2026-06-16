@@ -10,6 +10,8 @@
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QStringList>
+#include <QUrlQuery>
+#include <QUrl>
 #include <QString>
 #include <cstdint>
 
@@ -151,6 +153,17 @@ inline QString natTraversalServerHostname()
         return QString::fromUtf8(overrideHost);
     }
     return QString::fromLatin1(kNatTraversalHost);
+}
+
+inline QUrl natTraversalRoomsUrl(bool waitingOnly = true)
+{
+    QUrl url(QStringLiteral("http://%1:%2/rooms")
+                 .arg(natTraversalServerHostname())
+                 .arg(kNatIndexHttpPort));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("waiting"), waitingOnly ? QStringLiteral("1") : QStringLiteral("0"));
+    url.setQuery(query);
+    return url;
 }
 
 static constexpr quint16 kDefaultStunPort = 6262;

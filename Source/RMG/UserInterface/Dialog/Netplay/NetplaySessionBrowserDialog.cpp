@@ -8,12 +8,15 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "NetplaySessionBrowserDialog.hpp"
+#include "UserInterface/Widget/Netplay/NetplaySessionBrowserWidget.hpp"
 #include "Netplay/NatTraversal/NatTraversalProtocol.hpp"
 #include "NetplaySessionPasswordDialog.hpp"
 #include "Utilities/QtMessageBox.hpp"
 
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
 #include <QJsonDocument>
 #include <QInputDialog>
 #include <QPushButton>
@@ -39,7 +42,6 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
     this->setupUi(this);
 
     this->ipAddressLineEdit->setPlaceholderText("Host code (7 hex) or IP:Port");
-    this->ipLabel->setText("Host Code / IP:Port");
 
     // Set validator for nickname
     QRegularExpression re("^[a-zA-Z0-9_-]{1,16}$");
@@ -55,6 +57,10 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
             this, &NetplaySessionBrowserDialog::validateJoinButton);
     connect(this->nickNameLineEdit, &QLineEdit::textChanged,
             this, &NetplaySessionBrowserDialog::validateJoinButton);
+    connect(this->refreshPushButton, &QPushButton::clicked,
+            this, &NetplaySessionBrowserDialog::on_refreshPushButton_clicked);
+    connect(this->sessionBrowserWidget, &Widget::NetplaySessionBrowserWidget::OnSessionChanged,
+            this, &NetplaySessionBrowserDialog::on_sessionBrowserWidget_OnSessionChanged);
 
     // Connect coordinator signals for connection status
     connect(this->coordinator, &Netplay::NetplayCoordinator::connected,
@@ -64,7 +70,12 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
     connect(this->coordinator, &Netplay::NetplayCoordinator::roomJoined,
             this, &NetplaySessionBrowserDialog::onCoordinatorRoomJoined);
 
+    this->networkManager = new QNetworkAccessManager(this);
+    connect(this->networkManager, &QNetworkAccessManager::finished,
+            this, &NetplaySessionBrowserDialog::onRoomsReplyFinished);
+
     this->validateJoinButton();
+    this->refreshRoomList();
 }
 
 NetplaySessionBrowserDialog::~NetplaySessionBrowserDialog(void)
@@ -124,6 +135,10 @@ bool NetplaySessionBrowserDialog::validate(void)
         return false;
     }
 
+    if (this->sessionBrowserWidget->IsCurrentSessionValid()) {
+        return true;
+    }
+
     const QString addressInput = this->ipAddressLineEdit->text().trimmed();
     if (addressInput.isEmpty()) {
         return false;
@@ -152,6 +167,64 @@ void NetplaySessionBrowserDialog::on_nickNameLineEdit_textChanged(void)
     {
         this->coordinator->setPlayerName(this->nickNameLineEdit->text());
     }
+}
+
+void NetplaySessionBrowserDialog::on_refreshPushButton_clicked(void)
+{
+    this->refreshRoomList();
+}
+
+void NetplaySessionBrowserDialog::on_sessionBrowserWidget_OnSessionChanged(bool valid)
+{
+    Q_UNUSED(valid);
+    this->validateJoinButton();
+}
+
+void NetplaySessionBrowserDialog::refreshRoomList(void)
+{
+    this->sessionBrowserWidget->StartRefresh();
+
+    QNetworkRequest request(Netplay::natTraversalRoomsUrl());
+    request.setTransferTimeout(10000);
+    this->networkManager->get(request);
+}
+
+void NetplaySessionBrowserDialog::onRoomsReplyFinished(QNetworkReply* reply)
+{
+    reply->deleteLater();
+
+    if (reply->error() != QNetworkReply::NoError)
+    {
+        qWarning() << "Failed to fetch netplay room list:" << reply->errorString();
+        this->sessionBrowserWidget->RefreshDone();
+        return;
+    }
+
+    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+    if (!doc.isObject())
+    {
+        this->sessionBrowserWidget->RefreshDone();
+        return;
+    }
+
+    const QJsonArray rooms = doc.object().value(QStringLiteral("rooms")).toArray();
+    for (const QJsonValue& value : rooms)
+    {
+        if (!value.isObject()) {
+            continue;
+        }
+
+        const QJsonObject room = value.toObject();
+        this->sessionBrowserWidget->AddSessionData(
+            room.value(QStringLiteral("hostName")).toString(),
+            room.value(QStringLiteral("gameName")).toString(),
+            room.value(QStringLiteral("hostCode")).toString(),
+            room.value(QStringLiteral("lobbySize")).toString(),
+            room.value(QStringLiteral("port")).toInt(Netplay::kDefaultNetplayHostingPort),
+            room.value(QStringLiteral("address")).toString());
+    }
+
+    this->sessionBrowserWidget->RefreshDone();
 }
 
 void NetplaySessionBrowserDialog::onCoordinatorConnected(void)
@@ -375,6 +448,13 @@ void NetplaySessionBrowserDialog::tryCompleteHostCodeJoin()
 
 void NetplaySessionBrowserDialog::accept(void)
 {
+    NetplaySessionData selectedSession;
+    if (this->sessionBrowserWidget->GetCurrentSession(selectedSession))
+    {
+        this->beginHostCodeJoin(selectedSession.HostCode);
+        return;
+    }
+
     QString addressInput = this->ipAddressLineEdit->text().trimmed();
     if (addressInput.isEmpty()) {
         addressInput = "localhost";

@@ -16,20 +16,15 @@
 #include <QTableWidgetItem>
 #include <QStackedWidget>
 #include <QTableWidget>
-#include <QUrl>
 
-// session data
 struct NetplaySessionData
 {
-    QString SessionName;
+    QString HostName;
     QString GameName;
-    QString MD5;
-    bool PasswordProtected = false;
-    int  Port = 0;
-    QString CpuEmulator;
-    QString RspPlugin;
-    QString GfxPlugin;
-    QUrl Address;
+    QString HostCode;
+    QString LobbySize;
+    QString Address;
+    int Port = 0;
 };
 
 namespace UserInterface
@@ -48,8 +43,8 @@ class NetplaySessionBrowserWidget : public QStackedWidget
 
     void StartRefresh(void);
 
-    void AddSessionData(QString name, QString game, QString md5, bool password, int port, 
-                        QString cpuEmulator, QString rspPlugin, QString gfxPlugin, QUrl address);
+    void AddSessionData(const QString& hostName, const QString& gameName, const QString& hostCode,
+                        const QString& lobbySize, int port, const QString& address);
 
     void RefreshDone(void);
 
