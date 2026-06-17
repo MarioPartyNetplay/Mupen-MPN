@@ -11,7 +11,7 @@
 #define NETPLAYSESSIONBROWSERDIALOG_HPP
 
 #include <QJsonObject>
-#include <QDialog>
+#include <QWidget>
 #include <QString>
 #include <memory>
 
@@ -30,19 +30,30 @@ namespace UserInterface
 {
 namespace Dialog
 {
-class NetplaySessionBrowserDialog : public QDialog, private Ui::NetplaySessionBrowserDialog
+class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBrowserDialog
 {
     Q_OBJECT
 
   public:
-    NetplaySessionBrowserDialog(QWidget *parent, Netplay::NetplayCoordinator* coordinator, QMap<QString, CoreRomSettings> data);
+    NetplaySessionBrowserDialog(QWidget *parent, Netplay::NetplayCoordinator* coordinator, const QMap<QString, CoreRomSettings>& data);
     ~NetplaySessionBrowserDialog(void);
 
     QJsonObject GetSessionJson(void);
     QString     GetSessionFile(void);
 
+    void setEmbeddedMode(bool embedded);
+    void setNickname(const QString& nickname);
+    bool canSubmit(void) const;
+    void submit(void);
+    void refreshRoomList(void);
+
+  signals:
+    void sessionAccepted(void);
+    void canSubmitChanged(bool canSubmit);
+
   private:
   	Netplay::NetplayCoordinator* coordinator;
+    bool embeddedMode = false;
     QJsonObject sessionJson;
     QString sessionFile;
     QMap<QString, CoreRomSettings> romData;
@@ -64,9 +75,8 @@ class NetplaySessionBrowserDialog : public QDialog, private Ui::NetplaySessionBr
 
     QString showROMDialog(QString name, QString md5);
 
-    bool validate(void);
+    bool validate(void) const;
     void validateJoinButton(void);
-    void refreshRoomList(void);
     void connectToResolvedHost(const QString& address, int port);
     void beginHostCodeJoin(const QString& hostCode);
     void tryCompleteHostCodeJoin();
@@ -79,8 +89,6 @@ class NetplaySessionBrowserDialog : public QDialog, private Ui::NetplaySessionBr
     void onCoordinatorConnected(void);
     void onCoordinatorConnectionError(const QString& error);
     void onCoordinatorRoomJoined(const QString& roomId, int slot);
-
-    void accept(void) Q_DECL_OVERRIDE;
 
 };
 } // namespace Dialog

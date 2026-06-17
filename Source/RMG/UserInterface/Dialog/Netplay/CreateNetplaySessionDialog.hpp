@@ -16,7 +16,7 @@
 #include <QWebSocket>
 #include <QSpinBox>
 #include <QUdpSocket>
-#include <QDialog>
+#include <QWidget>
 #include <QString>
 
 #include "ui_CreateNetplaySessionDialog.h"
@@ -33,19 +33,29 @@ namespace UserInterface
 {
 namespace Dialog
 {
-class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySessionDialog
+class CreateNetplaySessionDialog : public QWidget, private Ui::CreateNetplaySessionDialog
 {
     Q_OBJECT
 
   public:
-    CreateNetplaySessionDialog(QWidget *parent, UserInterface::Netplay::NetplayCoordinator* coordinator, QMap<QString, CoreRomSettings> data);
+    CreateNetplaySessionDialog(QWidget *parent, UserInterface::Netplay::NetplayCoordinator* coordinator, const QMap<QString, CoreRomSettings>& data);
     ~CreateNetplaySessionDialog(void);
 
     QJsonObject GetSessionJson(void);
     QString     GetSessionFile(void);
 
+    void setEmbeddedMode(bool embedded);
+    void setNickname(const QString& nickname);
+    bool canSubmit(void) const;
+    void submit(void);
+
+  signals:
+    void sessionAccepted(void);
+    void canSubmitChanged(bool canSubmit);
+
   private:
   	UserInterface::Netplay::NetplayCoordinator* coordinator;
+    bool embeddedMode = false;
     QUdpSocket broadcastSocket;
 
     int pingTimerId = -1;
@@ -65,7 +75,7 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
 
     QString getGameName(QString goodName, QString file);
 
-    bool validate(void);
+    bool validate(void) const;
     void validateCreateButton(void);
 
     void createSession(void);
@@ -85,8 +95,6 @@ class CreateNetplaySessionDialog : public QDialog, private Ui::CreateNetplaySess
     void on_nickNameLineEdit_textChanged(void);
 
     void on_romListWidget_OnRomChanged(bool valid);
-
-  	void accept(void) Q_DECL_OVERRIDE;
 };
 } // namespace Dialog
 } // namespace UserInterface

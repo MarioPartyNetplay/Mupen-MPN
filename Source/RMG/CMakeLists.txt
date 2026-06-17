@@ -99,6 +99,8 @@ endif(UPDATER)
 if (NETPLAY)
     list(APPEND RMG_SOURCES
         UserInterface/Dialog/Netplay/NetplayCommon.cpp
+        UserInterface/Dialog/Netplay/NetplayLobbyDialog.cpp
+        UserInterface/Dialog/Netplay/NetplayLobbyDialog.ui
         UserInterface/Dialog/Netplay/CreateNetplaySessionDialog.cpp
         UserInterface/Dialog/Netplay/CreateNetplaySessionDialog.ui
         UserInterface/Dialog/Netplay/NetplaySessionBrowserDialog.cpp

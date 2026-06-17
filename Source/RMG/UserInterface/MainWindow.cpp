@@ -19,8 +19,7 @@
 #include "UserInterface/Dialog/Update/UpdateDialog.hpp"
 #endif // UPDATER
 #ifdef NETPLAY
-#include "Dialog/Netplay/NetplaySessionBrowserDialog.hpp"
-#include "Dialog/Netplay/CreateNetplaySessionDialog.hpp"
+#include "Dialog/Netplay/NetplayLobbyDialog.hpp"
 #include "Dialog/Netplay/NetplaySessionDialog.hpp"
 #include "Netplay.hpp"
 #include "Netplay/NetplayCoordinator.hpp"
@@ -909,8 +908,7 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     this->action_View_Search->setEnabled(!inEmulation);
 
 #ifdef NETPLAY
-    this->action_Netplay_CreateSession->setEnabled(!inEmulation && this->netplaySessionDialog == nullptr);
-    this->action_Netplay_JoinSession->setEnabled(!inEmulation && this->netplaySessionDialog == nullptr);
+    this->action_Netplay->setEnabled(!inEmulation && this->netplaySessionDialog == nullptr);
 #endif // NETPLAY
 
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_IncreaseVolume));
@@ -1238,8 +1236,7 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_View_ClearRomCache, &QAction::triggered, this, &MainWindow::on_Action_View_ClearRomCache);
     connect(this->action_View_Log, &QAction::triggered, this, &MainWindow::on_Action_View_Log);
     connect(this->action_View_Search, &QAction::triggered, this, &MainWindow::on_Action_View_Search);
-    connect(this->action_Netplay_CreateSession, &QAction::triggered, this, &MainWindow::on_Action_Netplay_CreateSession);
-    connect(this->action_Netplay_JoinSession, &QAction::triggered, this, &MainWindow::on_Action_Netplay_JoinSession);
+    connect(this->action_Netplay, &QAction::triggered, this, &MainWindow::on_Action_Netplay);
 
     connect(this->action_Help_Github, &QAction::triggered, this, &MainWindow::on_Action_Help_Github);
     connect(this->action_Help_About, &QAction::triggered, this, &MainWindow::on_Action_Help_About);
@@ -2041,7 +2038,7 @@ void MainWindow::on_Action_View_Search(void)
     this->ui_Widget_RomBrowser->SetToggleSearch();
 }
 
-void MainWindow::on_Action_Netplay_CreateSession(void)
+void MainWindow::on_Action_Netplay(void)
 {
 #ifdef NETPLAY
     if (this->netplayCoordinator == nullptr)
@@ -2049,24 +2046,7 @@ void MainWindow::on_Action_Netplay_CreateSession(void)
         this->netplayCoordinator = new Netplay::NetplayCoordinator("http://localhost:2626", this);
     }
 
-    Dialog::CreateNetplaySessionDialog dialog(this, this->netplayCoordinator, this->ui_Widget_RomBrowser->GetModelData());
-    int ret = dialog.exec();
-    if (ret == QDialog::Accepted)
-    {
-        this->showNetplaySessionDialog(dialog.GetSessionFile());
-    }
-#endif // NETPLAY
-}
-
-void MainWindow::on_Action_Netplay_JoinSession(void)
-{
-#ifdef NETPLAY
-    if (this->netplayCoordinator == nullptr)
-    {
-        this->netplayCoordinator = new Netplay::NetplayCoordinator("http://localhost:2626", this);
-    }
-
-    Dialog::NetplaySessionBrowserDialog dialog(this, this->netplayCoordinator, this->ui_Widget_RomBrowser->GetModelData());
+    Dialog::NetplayLobbyDialog dialog(this, this->netplayCoordinator, this->ui_Widget_RomBrowser->GetModelData());
     int ret = dialog.exec();
     if (ret == QDialog::Accepted)
     {

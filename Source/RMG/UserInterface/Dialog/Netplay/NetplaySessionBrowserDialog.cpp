@@ -36,8 +36,8 @@ using namespace Utilities;
 // Exported Functions
 //
 
-NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netplay::NetplayCoordinator* coordinator, QMap<QString, CoreRomSettings> modelData) 
-    : QDialog(parent), coordinator(coordinator), romData(modelData), isWaitingForConnection(false)
+NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netplay::NetplayCoordinator* coordinator, const QMap<QString, CoreRomSettings>& modelData) 
+    : QWidget(parent), coordinator(coordinator), romData(modelData), isWaitingForConnection(false)
 {
     this->setupUi(this);
 
@@ -47,10 +47,6 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
     QRegularExpression re("^[a-zA-Z0-9_-]{1,16}$");
     this->nickNameLineEdit->setValidator(new QRegularExpressionValidator(re, this));
     this->nickNameLineEdit->setText(QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_Nickname)));
-
-    // Change OK button to "Join"
-    QPushButton* joinButton = this->buttonBox->button(QDialogButtonBox::Ok);
-    joinButton->setText("Join");
 
     // Connect text change signals
     connect(this->ipAddressLineEdit, &QLineEdit::textChanged, 
@@ -75,7 +71,37 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
             this, &NetplaySessionBrowserDialog::onRoomsReplyFinished);
 
     this->validateJoinButton();
-    this->refreshRoomList();
+}
+
+void NetplaySessionBrowserDialog::setEmbeddedMode(bool embedded)
+{
+    this->embeddedMode = embedded;
+
+    if (this->label_4) {
+        this->label_4->setVisible(!embedded);
+    }
+    if (this->nickNameLineEdit) {
+        this->nickNameLineEdit->setVisible(!embedded);
+    }
+}
+
+void NetplaySessionBrowserDialog::setNickname(const QString& nickname)
+{
+    if (this->nickNameLineEdit == nullptr || this->coordinator == nullptr) {
+        return;
+    }
+
+    if (this->nickNameLineEdit->text() == nickname) {
+        return;
+    }
+
+    this->nickNameLineEdit->setText(nickname);
+    this->coordinator->setPlayerName(nickname);
+}
+
+bool NetplaySessionBrowserDialog::canSubmit(void) const
+{
+    return this->validate();
 }
 
 NetplaySessionBrowserDialog::~NetplaySessionBrowserDialog(void)
@@ -126,13 +152,15 @@ QString NetplaySessionBrowserDialog::showROMDialog(QString name, QString md5)
     return file;
 }
 
-bool NetplaySessionBrowserDialog::validate(void)
+bool NetplaySessionBrowserDialog::validate(void) const
 {
-    if (this->nickNameLineEdit->text().isEmpty() ||
-        this->nickNameLineEdit->text().contains(' ') ||
-        this->nickNameLineEdit->text().size() > 128)
-    {
-        return false;
+    if (!this->embeddedMode) {
+        if (this->nickNameLineEdit->text().isEmpty() ||
+            this->nickNameLineEdit->text().contains(' ') ||
+            this->nickNameLineEdit->text().size() > 128)
+        {
+            return false;
+        }
     }
 
     if (this->sessionBrowserWidget->IsCurrentSessionValid()) {
@@ -155,8 +183,7 @@ bool NetplaySessionBrowserDialog::validate(void)
 
 void NetplaySessionBrowserDialog::validateJoinButton(void)
 {
-    QPushButton* joinButton = this->buttonBox->button(QDialogButtonBox::Ok);
-    joinButton->setEnabled(this->validate());
+    emit this->canSubmitChanged(this->validate());
 }
 
 void NetplaySessionBrowserDialog::on_nickNameLineEdit_textChanged(void)
@@ -336,7 +363,7 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
         
         qDebug() << "Session JSON created:" << this->sessionFile;
         
-        QDialog::accept();
+        emit this->sessionAccepted();
     }
     else
     {
@@ -370,10 +397,7 @@ void NetplaySessionBrowserDialog::beginHostCodeJoin(const QString& hostCode)
     this->pendingLookupPort = Netplay::kDefaultNetplayHostingPort;
     this->isResolvingHostCode = true;
 
-    QPushButton* joinButton = this->buttonBox->button(QDialogButtonBox::Ok);
-    if (joinButton) {
-        joinButton->setEnabled(false);
-    }
+    emit this->canSubmitChanged(false);
 
     this->natTraversalClient = std::make_unique<Netplay::NatTraversalClient>(this);
     connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostLookupSucceeded,
@@ -446,7 +470,7 @@ void NetplaySessionBrowserDialog::tryCompleteHostCodeJoin()
                         "Host code is not registered and the session index has no connect address.");
 }
 
-void NetplaySessionBrowserDialog::accept(void)
+void NetplaySessionBrowserDialog::submit(void)
 {
     NetplaySessionData selectedSession;
     if (this->sessionBrowserWidget->GetCurrentSession(selectedSession))

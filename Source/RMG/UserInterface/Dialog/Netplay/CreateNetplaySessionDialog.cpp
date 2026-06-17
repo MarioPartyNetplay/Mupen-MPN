@@ -46,7 +46,7 @@ namespace Netplay = UserInterface::Netplay;
 //
 
 
-CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInterface::Netplay::NetplayCoordinator* coordinator, QMap<QString, CoreRomSettings> modelData) : QDialog(parent)
+CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInterface::Netplay::NetplayCoordinator* coordinator, const QMap<QString, CoreRomSettings>& modelData) : QWidget(parent)
 {
     this->setupUi(this);
 
@@ -55,9 +55,8 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     
     // Connect to coordinator signals
     connect(this->coordinator, &Netplay::NetplayCoordinator::roomCreated, this,
-            [this](const QString& roomId, int slot) {
+            [](const QString& roomId, int) {
         qDebug() << "Session created with room ID:" << roomId;
-        QDialog::accept();
     });
     connect(this->coordinator, &Netplay::NetplayCoordinator::connectionError, this,
             [this](const QString& error) {
@@ -71,11 +70,6 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     QByteArray multirequest;
     multirequest.append(1);
     broadcastSocket.writeDatagram(multirequest, QHostAddress::Broadcast, 45000);
-
-    // change ok button name
-    QPushButton* createButton = this->buttonBox->button(QDialogButtonBox::Ok);
-    createButton->setText("Create");
-    createButton->setEnabled(false);
 
     // set validator for nickname
     QRegularExpression nicknameRe(NETPLAYCOMMON_NICKNAME_REGEX);
@@ -170,8 +164,7 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     // Since we're using setupUi, we'll add it dynamically to the dialog
     QVBoxLayout* mainLayout = qobject_cast<QVBoxLayout*>(this->layout());
     if (mainLayout) {
-        // Insert before buttonBox
-        mainLayout->insertWidget(mainLayout->count() - 1, portWidget);
+        mainLayout->addWidget(portWidget);
     }
     
     // add data to widget
@@ -184,6 +177,37 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     this->romListWidget->RefreshDone();
 
     this->validateCreateButton();
+}
+
+void CreateNetplaySessionDialog::setEmbeddedMode(bool embedded)
+{
+    this->embeddedMode = embedded;
+
+    if (this->label_4) {
+        this->label_4->setVisible(!embedded);
+    }
+    if (this->nickNameLineEdit) {
+        this->nickNameLineEdit->setVisible(!embedded);
+    }
+}
+
+void CreateNetplaySessionDialog::setNickname(const QString& nickname)
+{
+    if (this->nickNameLineEdit == nullptr || this->coordinator == nullptr) {
+        return;
+    }
+
+    if (this->nickNameLineEdit->text() == nickname) {
+        return;
+    }
+
+    this->nickNameLineEdit->setText(nickname);
+    this->coordinator->setPlayerName(nickname);
+}
+
+bool CreateNetplaySessionDialog::canSubmit(void) const
+{
+    return this->validate();
 }
 
 CreateNetplaySessionDialog::~CreateNetplaySessionDialog(void)
@@ -220,13 +244,15 @@ QString CreateNetplaySessionDialog::getGameName(QString goodName, QString file)
     return gameName;
 }
 
-bool CreateNetplaySessionDialog::validate(void)
+bool CreateNetplaySessionDialog::validate(void) const
 {
-    if (this->nickNameLineEdit->text().isEmpty() ||
-        this->nickNameLineEdit->text().contains(' ') ||
-        this->nickNameLineEdit->text().size() > 128)
-    {
-        return false;
+    if (!this->embeddedMode) {
+        if (this->nickNameLineEdit->text().isEmpty() ||
+            this->nickNameLineEdit->text().contains(' ') ||
+            this->nickNameLineEdit->text().size() > 128)
+        {
+            return false;
+        }
     }
 
     if (!this->romListWidget->IsCurrentRomValid())
@@ -239,8 +265,7 @@ bool CreateNetplaySessionDialog::validate(void)
 
 void CreateNetplaySessionDialog::validateCreateButton(void)
 {
-    QPushButton* createButton = this->buttonBox->button(QDialogButtonBox::Ok);
-    createButton->setEnabled(this->validate());
+    emit this->canSubmitChanged(this->validate());
 }
 
 void CreateNetplaySessionDialog::createSession(void)
@@ -305,15 +330,16 @@ void CreateNetplaySessionDialog::finalizeSession(void)
     const QString connectInfo = this->sessionJson.value("host_code").toString(this->publicIpAddress);
     qDebug() << "Finalized session with connect info:" << connectInfo;
 
-    QDialog::accept();
+    emit this->sessionAccepted();
 }
 
 void CreateNetplaySessionDialog::toggleUI(bool enable, bool enableCreateButton)
 {
-    QPushButton* createButton = this->buttonBox->button(QDialogButtonBox::Ok);
-    createButton->setEnabled(enableCreateButton);
+    emit this->canSubmitChanged(enableCreateButton);
 
-    this->nickNameLineEdit->setReadOnly(!enable);
+    if (!this->embeddedMode) {
+        this->nickNameLineEdit->setReadOnly(!enable);
+    }
     if (this->directConnectionCheckBox) {
         this->directConnectionCheckBox->setEnabled(enable);
     }
@@ -369,7 +395,7 @@ void CreateNetplaySessionDialog::on_romListWidget_OnRomChanged(bool valid)
     this->validateCreateButton();
 }
 
-void CreateNetplaySessionDialog::accept()
+void CreateNetplaySessionDialog::submit()
 {
     // No need to check dispatcher - we use coordinator for hosting
 

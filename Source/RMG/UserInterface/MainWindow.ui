@@ -189,8 +189,7 @@
     <addaction name="action_View_RefreshRoms2"/>
     <addaction name="separator"/>
     <addaction name="action_System_StartRom3"/>
-    <addaction name="action_Netplay_CreateSession"/>
-    <addaction name="action_Netplay_JoinSession"/>
+    <addaction name="action_Netplay"/>
     <addaction name="separator"/>
     <addaction name="action_View_Fullscreen2"/>
     <addaction name="action_System_Screenshot2"/>
@@ -701,20 +700,12 @@
      <string>&amp;Check For Updates</string>
     </property>
    </action>
-   <action name="action_Netplay_CreateSession">
+   <action name="action_Netplay">
     <property name="icon">
      <iconset theme="online-play-mpn"/>
     </property>
     <property name="text">
-     <string>&amp;Host</string>
-    </property>
-   </action>
-   <action name="action_Netplay_JoinSession">
-    <property name="icon">
-     <iconset theme="online-play-mpn"/>
-    </property>
-    <property name="text">
-     <string>&amp;Connect</string>
+     <string>&amp;Online Play</string>
     </property>
    </action>
    <action name="action_View_Search">

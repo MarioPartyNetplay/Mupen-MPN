@@ -218,8 +218,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     void on_Action_View_Log(void);
     void on_Action_View_Search(void);
 
-    void on_Action_Netplay_CreateSession(void);
-    void on_Action_Netplay_JoinSession(void);
+     void on_Action_Netplay(void);
 
     void on_Action_Help_Github(void);
     void on_Action_Help_About(void);
