@@ -35,10 +35,13 @@ class OGLWidget : public QWindow
     QWidget* GetWidget(void);
 
   protected:
+    bool eventFilter(QObject *object, QEvent *event) override;
     void resizeEvent(QResizeEvent *) Q_DECL_OVERRIDE;
     void timerEvent(QTimerEvent *) Q_DECL_OVERRIDE;
 
   private:
+    void queueVideoSizeUpdate(QSize size);
+
     QWidget* widgetContainer      = nullptr;
     QOpenGLContext* openGLcontext = nullptr;
     int width                     = 0;

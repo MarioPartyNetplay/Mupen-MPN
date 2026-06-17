@@ -2546,15 +2546,9 @@ void MainWindow::on_VidExt_ResizeWindow(int width, int height)
         height += this->menuBar()->height();
     }
 
-    if (!this->toolBar->isHidden())
+    if (!this->toolBar->isHidden() && !this->toolBar->isFloating())
     {
         Qt::ToolBarArea area = this->toolBarArea(this->toolBar);
-
-        // dont resize when toolbar is floating
-        if (this->toolBar->isFloating())
-        {
-            return;
-        }
 
         if (area == Qt::ToolBarArea::TopToolBarArea ||
             area == Qt::ToolBarArea::BottomToolBarArea)
@@ -2573,12 +2567,12 @@ void MainWindow::on_VidExt_ResizeWindow(int width, int height)
         height += this->statusBar()->height();
     }
 
+    // Only auto-fit the outer window on the initial SetWindowedMode call.
+    // Later plugin ResizeWindow requests must not override manual resizing;
+    // the render widget keeps CoreSetVideoSize in sync via its resize handler.
     if (!this->ui_VidExtForceSetMode)
     {
-        if (this->size() == QSize(width, height))
-        {
-            return;
-        }
+        return;
     }
 
     if (this->isMaximized() || this->isMinimized())

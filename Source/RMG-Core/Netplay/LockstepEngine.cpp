@@ -219,8 +219,13 @@ void LockstepEngine::recordLocalFrameSync(uint32_t frameNumber, uint32_t stateHa
          ++pendingIt) {
         const auto peerIt = pendingIt->second.find(frameNumber);
         if (peerIt != pendingIt->second.end()) {
-            comparePeerFrameSyncUnlocked(pendingIt->first, frameNumber, peerIt->second);
-            pendingIt->second.erase(peerIt);
+            comparePeerFrameSyncUnlocked(
+                pendingIt->first,
+                frameNumber,
+                peerIt->second);
+            // Erase by key: comparePeerFrameSyncUnlocked may already remove
+            // the entry when hashes match, invalidating peerIt.
+            pendingIt->second.erase(frameNumber);
         }
     }
 
