@@ -47,8 +47,7 @@ jobs:
             libao-devel \
             SOIL-devel \
             libXrandr-devel \
-            SDL3-devel \
-            SDL2-devel \
+            SDL3 \
             SDL2_net \
             pulseaudio-libs-devel \
             bluez-libs-devel \
