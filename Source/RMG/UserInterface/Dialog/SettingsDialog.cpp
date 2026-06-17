@@ -505,6 +505,7 @@ void SettingsDialog::loadInterfaceOSDSettings(void)
     this->osdVerticalPaddingSpinBox->setValue(CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayPaddingY));
     this->osdHorizontalPaddingSpinBox->setValue(CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayPaddingX));
     this->osdDurationSpinBox->setValue(CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayDuration));
+    this->osdFpsCounterCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayFPSCounter));
 
     std::vector<int> backgroundColor = CoreSettingsGetIntListValue(SettingsID::GUI_OnScreenDisplayBackgroundColor);
     std::vector<int> textColor = CoreSettingsGetIntListValue(SettingsID::GUI_OnScreenDisplayTextColor);
@@ -533,6 +534,10 @@ void SettingsDialog::loadInterfaceNetplaySettings(void)
     }
 
     this->netplayNicknameLineEdit->setText(QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_Nickname)));
+    this->netplayHudBufferAlertsCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayBufferAlerts));
+    this->netplayHudDesyncAlertsCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayDesyncAlerts));
+    this->netplayHudChatMessagesCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayChatMessages));
+    this->netplayShareSystemMessagesCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_NetplayShareSystemMessagesInChat));
 }
 
 void SettingsDialog::loadDefaultCoreSettings(void)
@@ -668,6 +673,7 @@ void SettingsDialog::loadDefaultInterfaceOSDSettings(void)
     this->osdVerticalPaddingSpinBox->setValue(CoreSettingsGetDefaultIntValue(SettingsID::GUI_OnScreenDisplayPaddingY));
     this->osdHorizontalPaddingSpinBox->setValue(CoreSettingsGetDefaultIntValue(SettingsID::GUI_OnScreenDisplayPaddingX));
     this->osdDurationSpinBox->setValue(CoreSettingsGetDefaultIntValue(SettingsID::GUI_OnScreenDisplayDuration));
+    this->osdFpsCounterCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_OnScreenDisplayFPSCounter));
 
     const std::vector<int> backgroundColor = CoreSettingsGetDefaultIntListValue(SettingsID::GUI_OnScreenDisplayBackgroundColor);
     const std::vector<int> textColor = CoreSettingsGetDefaultIntListValue(SettingsID::GUI_OnScreenDisplayTextColor);
@@ -687,6 +693,10 @@ void SettingsDialog::loadDefaultInterfaceOSDSettings(void)
 void SettingsDialog::loadDefaultInterfaceNetplaySettings(void)
 {
     this->netplayNicknameLineEdit->setText(QString::fromStdString(CoreSettingsGetDefaultStringValue(SettingsID::Netplay_Nickname)));
+    this->netplayHudBufferAlertsCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_OnScreenDisplayNetplayBufferAlerts));
+    this->netplayHudDesyncAlertsCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_OnScreenDisplayNetplayDesyncAlerts));
+    this->netplayHudChatMessagesCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_OnScreenDisplayNetplayChatMessages));
+    this->netplayShareSystemMessagesCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_NetplayShareSystemMessagesInChat));
 }
 
 void SettingsDialog::saveSettings(void)
@@ -910,6 +920,7 @@ void SettingsDialog::saveInterfaceOSDSettings(void)
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayPaddingY, this->osdVerticalPaddingSpinBox->value());
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayPaddingX, this->osdHorizontalPaddingSpinBox->value());
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayDuration, this->osdDurationSpinBox->value());
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayFPSCounter, this->osdFpsCounterCheckBox->isChecked());
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayBackgroundColor, std::vector<int>({ this->currentBackgroundColor.red(),
                                                                                             this->currentBackgroundColor.green(),
                                                                                             this->currentBackgroundColor.blue(),
@@ -925,6 +936,10 @@ void SettingsDialog::saveInterfaceOSDSettings(void)
 void SettingsDialog::saveInterfaceNetplaySettings(void)
 {
     CoreSettingsSetValue(SettingsID::Netplay_Nickname, this->netplayNicknameLineEdit->text().toStdString());
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayNetplayBufferAlerts, this->netplayHudBufferAlertsCheckBox->isChecked());
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayNetplayDesyncAlerts, this->netplayHudDesyncAlertsCheckBox->isChecked());
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayNetplayChatMessages, this->netplayHudChatMessagesCheckBox->isChecked());
+    CoreSettingsSetValue(SettingsID::GUI_NetplayShareSystemMessagesInChat, this->netplayShareSystemMessagesCheckBox->isChecked());
 }
 
 void SettingsDialog::commonHotkeySettings(SettingsDialogAction action)
@@ -1581,4 +1596,34 @@ void SettingsDialog::on_changeNTSCPifRomButton_clicked(void)
 void SettingsDialog::on_changePALPifRomButton_clicked(void)
 {
     this->chooseFile(this->palPifRomLineEdit, tr("Open PAL PIF ROM"), "PIF ROMs (*.rom)", { "D4232DC935CAD0650AC2664D52281F3A", "2B6EEC586FAA43F3462333B844834554" });
+}
+
+void SettingsDialog::on_osdFpsCounterCheckBox_toggled(bool checked)
+{
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayFPSCounter, checked);
+    CoreSettingsSave();
+}
+
+void SettingsDialog::on_netplayHudBufferAlertsCheckBox_toggled(bool checked)
+{
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayNetplayBufferAlerts, checked);
+    CoreSettingsSave();
+}
+
+void SettingsDialog::on_netplayHudDesyncAlertsCheckBox_toggled(bool checked)
+{
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayNetplayDesyncAlerts, checked);
+    CoreSettingsSave();
+}
+
+void SettingsDialog::on_netplayHudChatMessagesCheckBox_toggled(bool checked)
+{
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayNetplayChatMessages, checked);
+    CoreSettingsSave();
+}
+
+void SettingsDialog::on_netplayShareSystemMessagesCheckBox_toggled(bool checked)
+{
+    CoreSettingsSetValue(SettingsID::GUI_NetplayShareSystemMessagesInChat, checked);
+    CoreSettingsSave();
 }

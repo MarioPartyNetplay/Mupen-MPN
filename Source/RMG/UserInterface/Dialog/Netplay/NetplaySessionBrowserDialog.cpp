@@ -44,7 +44,7 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
     this->ipAddressLineEdit->setPlaceholderText("Host code (7 hex) or IP:Port");
 
     // Set validator for nickname
-    QRegularExpression re("^[a-zA-Z0-9_-]{1,16}$");
+    QRegularExpression re("^[a-zA-Z0-9 _-]{1,16}$");
     this->nickNameLineEdit->setValidator(new QRegularExpressionValidator(re, this));
     this->nickNameLineEdit->setText(QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_Nickname)));
 

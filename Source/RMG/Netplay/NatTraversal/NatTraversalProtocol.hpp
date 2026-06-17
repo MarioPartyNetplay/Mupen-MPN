@@ -20,10 +20,10 @@ namespace UserInterface::Netplay {
 // Nat has to implement server protocol in Source/Server.
 // as of writing im not sure if im going to make it public...
 // Maybe unelss abuse arises...
-static constexpr const char* kNatTraversalHost = "216.201.72.143";
+static constexpr const char* kNatTraversalHost = "216.201.73.203";
 // NAT traversal service (Source/Server/nat_traversal_server) — not the game port.
-static constexpr int kNatTraversalPort = 9290;   // UDP: N02TRAV1 + N02IDX1
-static constexpr int kNatIndexHttpPort = 9291;   // HTTP index browser
+static constexpr int kNatTraversalPort = 9150;   // UDP: N02TRAV1 + N02IDX1
+static constexpr int kNatIndexHttpPort = 9151;   // HTTP index browser
 // Socket.IO netplay host listens here; register this port with NAT (REGISTER|port).
 static constexpr int kDefaultNetplayHostingPort = 2626;
 static constexpr const char* kNatTraversalProtocol = "N02TRAV1";

@@ -8,6 +8,7 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "OGLWidget.hpp"
+#include "OnScreenDisplay.hpp"
 
 #include <QGuiApplication>
 
@@ -84,6 +85,9 @@ void OGLWidget::resizeEvent(QResizeEvent *event)
 
     this->width  &= ~0x1;
     this->height &= ~0x1;
+
+    // Keep OSD anchored while user is actively resizing.
+    OnScreenDisplaySetDisplaySize(this->width, this->height);
 }
 
 void OGLWidget::timerEvent(QTimerEvent *event)

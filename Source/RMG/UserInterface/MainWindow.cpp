@@ -2822,6 +2822,15 @@ void MainWindow::on_Core_StateCallback(CoreStateCallbackType type, int value)
                 stream << std::fixed << std::setprecision(0) << (30000.0 / value) << " VI/s";
                 std::string result = stream.str();
                 this->ui_StatusBar_SpeedLabel->setText(result.c_str());
+
+                if (CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayFPSCounter))
+                {
+                    OnScreenDisplaySetOverlayText(result);
+                }
+                else
+                {
+                    OnScreenDisplaySetOverlayText("");
+                }
             }
         } break;
     }

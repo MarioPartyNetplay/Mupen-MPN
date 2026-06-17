@@ -10,6 +10,7 @@
 #include "UserInterface/Dialog/Cheats/CheatsCommon.hpp"
 #include "UserInterface/Dialog/Cheats/CheatsDialog.hpp"
 #include "Utilities/QtMessageBox.hpp"
+#include "OnScreenDisplay.hpp"
 #include "NetplaySessionDialog.hpp"
 #include "Netplay/NatTraversal/NatTraversalProtocol.hpp"
 
@@ -224,14 +225,39 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
             this, [this](int frames) {
         QSignalBlocker blocker(this->bufferDelaySpinBox);
         this->bufferDelaySpinBox->setValue(frames);
-        this->coordinator->setInputDelayFrames(frames);
 
         if (this->m_lastDisplayedBufferDelay >= 0 &&
             frames != this->m_lastDisplayedBufferDelay) {
-            this->chatPlainTextEdit->appendHtml(
-                QStringLiteral("<i>Buffer changed to %1</i>").arg(frames));
+            const QString changeMessage = QStringLiteral("Buffer changed to %1").arg(frames);
+            const bool shareInChat = CoreSettingsGetBoolValue(SettingsID::GUI_NetplayShareSystemMessagesInChat);
+
+            if (shareInChat && this->isLocalSessionHost()) {
+                this->coordinator->sendChatMessage(changeMessage);
+            } else if (!shareInChat) {
+                this->chatPlainTextEdit->appendHtml(QStringLiteral("<i>%1</i>").arg(changeMessage));
+                if (CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayBufferAlerts)) {
+                    OnScreenDisplaySetMessage(changeMessage.toStdString());
+                }
+            }
         }
         this->m_lastDisplayedBufferDelay = frames;
+    });
+    connect(this->coordinator, &Netplay::NetplayCoordinator::desyncDetected,
+            this, [this](const QString& reason) {
+        const QString message = QStringLiteral("Desync detected: %1").arg(reason);
+        const bool shareInChat = CoreSettingsGetBoolValue(SettingsID::GUI_NetplayShareSystemMessagesInChat);
+
+        if (shareInChat) {
+            this->coordinator->sendChatMessage(message);
+            return;
+        }
+
+        const QString escapedReason = reason.toHtmlEscaped();
+        this->chatPlainTextEdit->appendHtml(
+            QStringLiteral("<span style=\"color:#ff6666;\"><b>Desync detected:</b> %1</span>").arg(escapedReason));
+        if (CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayDesyncAlerts)) {
+            OnScreenDisplaySetMessage(message.toStdString());
+        }
     });
     
     // Auto-enable pre-toggled cheats for host
@@ -659,7 +685,6 @@ void NetplaySessionDialog::applyHostOnlyControlsVisibility(void)
 {
     const bool isHost = this->isLocalSessionHost();
 
-    this->setLayoutWidgetsVisible(this->horizontalLayout_buffer, isHost);
     if (this->bufferLabel) {
         this->bufferLabel->setVisible(isHost);
     }
@@ -1032,8 +1057,31 @@ void NetplaySessionDialog::publishHostSessionIndex(bool started)
 
 void NetplaySessionDialog::on_coordinator_chatMessageReceived(const QString& playerName, const QString& message)
 {
-    QString displayMessage = playerName + ": " + message;
+    if (message.startsWith(QStringLiteral("Buffer changed to "))) {
+        this->chatPlainTextEdit->appendHtml(
+            QStringLiteral("<i>%1 (%2)</i>").arg(message.toHtmlEscaped(), playerName.toHtmlEscaped()));
+        if (CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayBufferAlerts)) {
+            OnScreenDisplaySetMessage(message.toStdString());
+        }
+        return;
+    }
+
+    if (message.startsWith(QStringLiteral("Desync detected: "))) {
+        const QString reason = message.mid(QStringLiteral("Desync detected: ").size());
+        this->chatPlainTextEdit->appendHtml(
+            QStringLiteral("<span style=\"color:#ff6666;\"><b>Desync detected:</b> %1 (%2)</span>")
+                .arg(reason.toHtmlEscaped(), playerName.toHtmlEscaped()));
+        if (CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayDesyncAlerts)) {
+            OnScreenDisplaySetMessage(message.toStdString());
+        }
+        return;
+    }
+
+    const QString displayMessage = playerName + ": " + message;
     this->chatPlainTextEdit->appendPlainText(displayMessage);
+    if (CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayChatMessages)) {
+        OnScreenDisplaySetMessage(displayMessage.toStdString());
+    }
 }
 
 void NetplaySessionDialog::on_coordinator_motdReceived(const QString& message)

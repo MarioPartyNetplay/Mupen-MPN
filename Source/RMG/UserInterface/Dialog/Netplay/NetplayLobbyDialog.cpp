@@ -38,7 +38,7 @@ NetplayLobbyDialog::NetplayLobbyDialog(QWidget* parent, Netplay::NetplayCoordina
     this->joinPage->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     this->joinTabLayout->addWidget(this->joinPage);
 
-    QRegularExpression nicknameRe("^[a-zA-Z0-9_-]{1,16}$");
+    QRegularExpression nicknameRe("^[a-zA-Z0-9 _-]{1,16}$");
     this->nickNameLineEdit->setValidator(new QRegularExpressionValidator(nicknameRe, this));
     {
         QSignalBlocker blocker(this->nickNameLineEdit);

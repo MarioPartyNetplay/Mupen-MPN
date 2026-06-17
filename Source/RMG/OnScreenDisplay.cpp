@@ -25,6 +25,7 @@ static bool l_RenderingPaused = false;
 
 static std::chrono::time_point<std::chrono::high_resolution_clock> l_MessageTime;
 static std::string l_Message;
+static std::string l_OverlayText;
 static int         l_MessagePosition = 1;
 static float       l_MessagePaddingX = 20.0f;
 static float       l_MessagePaddingY = 20.0f;
@@ -73,6 +74,7 @@ void OnScreenDisplayShutdown(void)
     ImGui::DestroyContext();
 
     l_Message         = "";
+    l_OverlayText     = "";
     l_Initialized     = false;
     l_RenderingPaused = false;
 }
@@ -127,16 +129,33 @@ void OnScreenDisplaySetMessage(std::string message)
     l_MessageTime = std::chrono::high_resolution_clock::now();
 }
 
-void OnScreenDisplayRender(void)
+void OnScreenDisplaySetOverlayText(std::string text)
 {
-    if (!l_Initialized || !l_Enabled || l_RenderingPaused || l_Message.empty())
+    if (!l_Initialized)
     {
         return;
     }
 
-    const auto currentTime  = std::chrono::high_resolution_clock::now();
-    const int secondsPassed = std::chrono::duration_cast<std::chrono::seconds>(currentTime - l_MessageTime).count();
-    if (secondsPassed >= l_MessageDuration)
+    l_OverlayText = text;
+}
+
+void OnScreenDisplayRender(void)
+{
+    if (!l_Initialized || !l_Enabled || l_RenderingPaused)
+    {
+        return;
+    }
+
+    bool showMessage = false;
+    if (!l_Message.empty())
+    {
+        const auto currentTime  = std::chrono::high_resolution_clock::now();
+        const int secondsPassed = std::chrono::duration_cast<std::chrono::seconds>(currentTime - l_MessageTime).count();
+        showMessage = (secondsPassed < l_MessageDuration);
+    }
+
+    const bool showOverlay = !l_OverlayText.empty();
+    if (!showMessage && !showOverlay)
     {
         return;
     }
@@ -146,35 +165,47 @@ void OnScreenDisplayRender(void)
     
     ImGuiIO& io = ImGui::GetIO();
 
-    // right bottom = ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 20.0f, io.DisplaySize.y - 20.0f), ImGuiCond_Always, ImVec2(1.0f, 1.0f));
-    // right top    = ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 20.0f, 20.0f), ImGuiCond_Always, ImVec2(1.0f, 0));
-    // left  bottom = ImGui::SetNextWindowPos(ImVec2(20.0f, io.DisplaySize.y - 20.0f), ImGuiCond_Always, ImVec2(0.0f, 1.0f));
-    // left  top    = ImGui::SetNextWindowPos(ImVec2(20.0f, 20.0f), ImGuiCond_Always, ImVec2(0.0f, 0.0f));
-    switch (l_MessagePosition)
+    if (showMessage)
     {
-    default:
-    case 0: // left bottom
-        ImGui::SetNextWindowPos(ImVec2(l_MessagePaddingX, io.DisplaySize.y - l_MessagePaddingY), ImGuiCond_Always, ImVec2(0.0f, 1.0f));
-        break;
-    case 1: // left top
-        ImGui::SetNextWindowPos(ImVec2(l_MessagePaddingX, l_MessagePaddingY), ImGuiCond_Always, ImVec2(0.0f, 0.0f));
-        break;
-    case 2: // right top
-        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - l_MessagePaddingX, l_MessagePaddingY), ImGuiCond_Always, ImVec2(1.0f, 0));
-        break;
-    case 3: // right bottom
-        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - l_MessagePaddingX, io.DisplaySize.y - l_MessagePaddingY), ImGuiCond_Always, ImVec2(1.0f, 1.0f));
-        break;
+        switch (l_MessagePosition)
+        {
+        default:
+        case 0: // left bottom
+            ImGui::SetNextWindowPos(ImVec2(l_MessagePaddingX, io.DisplaySize.y - l_MessagePaddingY), ImGuiCond_Always, ImVec2(0.0f, 1.0f));
+            break;
+        case 1: // left top
+            ImGui::SetNextWindowPos(ImVec2(l_MessagePaddingX, l_MessagePaddingY), ImGuiCond_Always, ImVec2(0.0f, 0.0f));
+            break;
+        case 2: // right top
+            ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - l_MessagePaddingX, l_MessagePaddingY), ImGuiCond_Always, ImVec2(1.0f, 0));
+            break;
+        case 3: // right bottom
+            ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - l_MessagePaddingX, io.DisplaySize.y - l_MessagePaddingY), ImGuiCond_Always, ImVec2(1.0f, 1.0f));
+            break;
+        }
+
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(l_BackgroundRed, l_BackgroundGreen, l_BackgroundBlue, l_BackgroundAlpha));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(l_TextRed, l_TextGreen, l_TextBlue, l_TextAlpha));
+
+        ImGui::Begin("Message", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
+        ImGui::Text("%s", l_Message.c_str());
+        ImGui::End();
+
+        ImGui::PopStyleColor(2);
     }
 
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(l_BackgroundRed, l_BackgroundGreen, l_BackgroundBlue, l_BackgroundAlpha));
-    ImGui::PushStyleColor(ImGuiCol_Text,     ImVec4(l_TextRed, l_TextGreen, l_TextBlue, l_TextAlpha));
+    if (showOverlay)
+    {
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - l_MessagePaddingX, l_MessagePaddingY), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(l_BackgroundRed, l_BackgroundGreen, l_BackgroundBlue, l_BackgroundAlpha));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(l_TextRed, l_TextGreen, l_TextBlue, l_TextAlpha));
 
-    ImGui::Begin("Message", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
-    ImGui::Text("%s", l_Message.c_str());
-    ImGui::End();
+        ImGui::Begin("Overlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
+        ImGui::Text("%s", l_OverlayText.c_str());
+        ImGui::End();
 
-    ImGui::PopStyleColor(2);
+        ImGui::PopStyleColor(2);
+    }
 
     ImGui::Render();
 
