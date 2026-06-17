@@ -2,6 +2,9 @@
 
 A Nintendo 64 emulator built on [Rosalie's Mupen GUI (RMG)](https://github.com/Rosalie241/RMG) and Mupen64Plus, extended for Mario Party Netplay with online sessions, cheats, and NAT traversal support.
 
+Buildbots for Windows and Linux are powered by GitHub Actions's hosted runners.
+
+
 ---
 
 ## Contributors
