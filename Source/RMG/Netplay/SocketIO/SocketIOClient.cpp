@@ -375,6 +375,15 @@ void SocketIOClient::sendSaveSync(const QJsonArray& saveFiles)
     emitEvent("save-sync", payload);
 }
 
+void SocketIOClient::sendCoreSettingsSync(const QJsonObject& coreSettings)
+{
+    if (m_connectionState != Connected || coreSettings.isEmpty()) {
+        return;
+    }
+
+    emitEvent("core-settings-sync", coreSettings);
+}
+
 void SocketIOClient::sendEmulationPauseUpdate(bool paused)
 {
     if (m_connectionState != Connected) {
@@ -711,6 +720,9 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
     } else if (eventName == "save-sync" && args.size() > 0) {
         QJsonObject data = args[0].toObject();
         emit saveSyncReceived(data["files"].toArray());
+
+    } else if (eventName == "core-settings-sync" && args.size() > 0) {
+        emit coreSettingsSyncReceived(args[0].toObject());
 
     } else if (eventName == "update-input-delay" && args.size() > 0) {
         QJsonObject data = args[0].toObject();

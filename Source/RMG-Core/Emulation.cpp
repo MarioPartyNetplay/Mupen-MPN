@@ -54,6 +54,15 @@ static bool get_emulation_state(m64p_emu_state& state)
 
 static void apply_coresettings_overlay(void)
 {
+    if (CoreHasNetplaySyncSettings())
+    {
+        CoreApplyNetplaySyncedCoreSettings();
+        CoreSettingsSetValue(SettingsID::Core_EnableDebugger, CoreSettingsGetBoolValue(SettingsID::CoreOverlay_EnableDebugger));
+        CoreSettingsSetValue(SettingsID::Core_SaveFileNameFormat, CoreSettingsGetIntValue(SettingsID::CoreOverLay_SaveFileNameFormat));
+        CoreSettingsSetValue(SettingsID::Core_GbCameraVideoCaptureBackend1, CoreSettingsGetStringValue(SettingsID::CoreOverlay_GbCameraVideoCaptureBackend1));
+        return;
+    }
+
     CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, CoreSettingsGetBoolValue(SettingsID::CoreOverlay_RandomizeInterrupt));
     CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, CoreSettingsGetIntValue(SettingsID::CoreOverlay_CPU_Emulator));
     CoreSettingsSetValue(SettingsID::Core_DisableExtraMem, CoreSettingsGetBoolValue(SettingsID::CoreOverlay_DisableExtraMem));
@@ -63,10 +72,20 @@ static void apply_coresettings_overlay(void)
     CoreSettingsSetValue(SettingsID::Core_SiDmaDuration, CoreSettingsGetIntValue(SettingsID::CoreOverlay_SiDmaDuration));
     CoreSettingsSetValue(SettingsID::Core_SaveFileNameFormat, CoreSettingsGetIntValue(SettingsID::CoreOverLay_SaveFileNameFormat));
     CoreSettingsSetValue(SettingsID::Core_GbCameraVideoCaptureBackend1, CoreSettingsGetStringValue(SettingsID::CoreOverlay_GbCameraVideoCaptureBackend1));
+
+    if (CoreIsEmbeddedNetplayActive())
+    {
+        CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
+    }
 }
 
 static void apply_game_coresettings_overlay(void)
 {
+    if (CoreHasNetplaySyncSettings())
+    {
+        return;
+    }
+
     std::string section;
     CoreRomSettings romSettings;
     bool overrideCoreSettings;
@@ -88,6 +107,10 @@ static void apply_game_coresettings_overlay(void)
     overrideCoreSettings = CoreSettingsGetBoolValue(SettingsID::Game_OverrideCoreSettings, section);
     if (!overrideCoreSettings)
     {
+        if (CoreIsEmbeddedNetplayActive())
+        {
+            CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
+        }
         return;
     }
 
@@ -95,6 +118,11 @@ static void apply_game_coresettings_overlay(void)
     CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, CoreSettingsGetBoolValue(SettingsID::Game_RandomizeInterrupt, section));
     CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, CoreSettingsGetIntValue(SettingsID::Game_CPU_Emulator, section));
     CoreSettingsSetValue(SettingsID::Core_CountPerOpDenomPot, CoreSettingsGetIntValue(SettingsID::Game_CountPerOpDenomPot, section));
+
+    if (CoreIsEmbeddedNetplayActive())
+    {
+        CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
+    }
 }
 
 static void apply_pif_rom_settings(void)
@@ -233,6 +261,11 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
 
     // apply game core settings overrides
     apply_game_coresettings_overlay();
+
+    if (embeddedNetplay)
+    {
+        CoreApplyNetplaySyncedRomSettings();
+    }
 
     // apply pif rom settings
     apply_pif_rom_settings();

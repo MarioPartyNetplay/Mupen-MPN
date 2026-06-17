@@ -132,6 +132,7 @@ public:
 
     // Save sync
     void sendSaveSync(const QJsonArray& saveFiles);
+    void sendCoreSettingsSync(const QJsonObject& coreSettings);
 
     // Room List
     void requestRoomList(bool waiting = false);
@@ -192,6 +193,9 @@ signals:
 
     // Save sync signals
     void saveSyncReceived(const QJsonArray& saveFiles);
+
+    // Core timing settings sync
+    void coreSettingsSyncReceived(const QJsonObject& coreSettings);
 
     // Input delay sync
     void inputDelayReceived(int frames);

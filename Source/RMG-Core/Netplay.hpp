@@ -11,6 +11,7 @@
 #define CORE_NETPLAY_HPP
 
 #include <cstdint>
+#include <filesystem>
 #include <string>
 
 // attempts to initialize netplay
@@ -45,5 +46,31 @@ void CoreSetEmbeddedNetplayCallbacks(CoreEmbeddedNetplaySubmitInputCallback subm
 void CoreSubmitEmbeddedNetplayFrameInput(uint32_t controllerState);
 uint32_t CoreGetEmbeddedNetplayFrameInput(int playerSlot);
 bool CoreAdvanceEmbeddedNetplayFrame();
+
+// core timing settings synced from host (matches classic mupen64plus netplay fields)
+struct CoreNetplaySyncSettings
+{
+    int countPerOp = 0;
+    int countPerOpDenomPot = 0;
+    bool disableExtraMem = false;
+    int siDmaDuration = -1;
+    int cpuEmulator = 2;
+    bool valid = false;
+};
+
+// builds resolved host core settings for the given ROM (before emulation starts)
+bool CoreBuildNetplaySyncSettings(std::filesystem::path romPath, CoreNetplaySyncSettings& out);
+
+// stores settings received from the host; cleared when the session ends
+void CoreSetNetplaySyncSettings(const CoreNetplaySyncSettings& settings);
+void CoreClearNetplaySyncSettings(void);
+bool CoreHasNetplaySyncSettings(void);
+bool CoreGetNetplaySyncSettings(CoreNetplaySyncSettings& out);
+
+// applies synced ROM-side settings after CoreOpenRom (clients only)
+void CoreApplyNetplaySyncedRomSettings(void);
+
+// applies synced core config values before emulation starts (clients only)
+void CoreApplyNetplaySyncedCoreSettings(void);
 
 #endif // CORE_NETPLAY_HPP

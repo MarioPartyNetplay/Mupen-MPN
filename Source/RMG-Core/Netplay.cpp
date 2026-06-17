@@ -13,6 +13,9 @@
 #include <cstdlib>
 #endif // _WIN32
 #include "Netplay.hpp"
+#include "CachedRomHeaderAndSettings.hpp"
+#include "RomSettings.hpp"
+#include "Settings.hpp"
 #include "Library.hpp"
 #include "Error.hpp"
 
@@ -29,6 +32,22 @@ static int l_EmbeddedNetplayLocalPlayerSlot = 0;
 static CoreEmbeddedNetplaySubmitInputCallback l_EmbeddedSubmitInputCallback = nullptr;
 static CoreEmbeddedNetplayGetInputCallback l_EmbeddedGetInputCallback = nullptr;
 static CoreEmbeddedNetplayAdvanceFrameCallback l_EmbeddedAdvanceFrameCallback = nullptr;
+static CoreNetplaySyncSettings l_NetplaySyncSettings = {};
+static bool l_HasNetplaySyncSettings = false;
+
+//
+// Local Functions
+//
+
+static void apply_synced_core_config(const CoreNetplaySyncSettings& sync)
+{
+    CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
+    CoreSettingsSetValue(SettingsID::Core_CountPerOp, sync.countPerOp);
+    CoreSettingsSetValue(SettingsID::Core_CountPerOpDenomPot, sync.countPerOpDenomPot);
+    CoreSettingsSetValue(SettingsID::Core_DisableExtraMem, sync.disableExtraMem);
+    CoreSettingsSetValue(SettingsID::Core_SiDmaDuration, sync.siDmaDuration);
+    CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, sync.cpuEmulator);
+}
 
 //
 // Exported Functions
@@ -223,4 +242,130 @@ CORE_EXPORT bool CoreAdvanceEmbeddedNetplayFrame()
     }
 
     return true;
+}
+
+CORE_EXPORT bool CoreBuildNetplaySyncSettings(std::filesystem::path romPath, CoreNetplaySyncSettings& out)
+{
+    CoreRomType type = {};
+    CoreRomHeader header = {};
+    CoreRomSettings defaultSettings = {};
+    CoreRomSettings gameSettings = {};
+
+    if (!CoreGetCachedRomHeaderAndSettings(romPath, &type, &header, &defaultSettings, &gameSettings))
+    {
+        return false;
+    }
+
+    int countPerOp = CoreSettingsGetIntValue(SettingsID::CoreOverlay_CountPerOp);
+    int countPerOpDenomPot = CoreSettingsGetIntValue(SettingsID::CoreOverlay_CountPerOpDenomPot);
+    bool disableExtraMem = CoreSettingsGetBoolValue(SettingsID::CoreOverlay_DisableExtraMem);
+    int siDmaDuration = CoreSettingsGetIntValue(SettingsID::CoreOverlay_SiDmaDuration);
+    int cpuEmulator = CoreSettingsGetIntValue(SettingsID::CoreOverlay_CPU_Emulator);
+
+    std::string section;
+    const int format = CoreSettingsGetIntValue(SettingsID::Core_SaveFileNameFormat);
+    if (format == 0)
+    {
+        section = gameSettings.InternalName;
+    }
+    else
+    {
+        section = gameSettings.MD5;
+    }
+
+    if (CoreSettingsGetBoolValue(SettingsID::Game_OverrideCoreSettings, section))
+    {
+        cpuEmulator = CoreSettingsGetIntValue(SettingsID::Game_CPU_Emulator, section);
+        countPerOpDenomPot = CoreSettingsGetIntValue(SettingsID::Game_CountPerOpDenomPot, section);
+    }
+
+    if (gameSettings.DisableExtraMem)
+    {
+        disableExtraMem = true;
+    }
+
+    if (countPerOp <= 0)
+    {
+        countPerOp = gameSettings.CountPerOp > 0 ? gameSettings.CountPerOp : defaultSettings.CountPerOp;
+    }
+
+    if (siDmaDuration < 0)
+    {
+        siDmaDuration = gameSettings.SiDMADuration >= 0 ? gameSettings.SiDMADuration : defaultSettings.SiDMADuration;
+    }
+
+    if (countPerOp <= 0)
+    {
+        countPerOp = 2;
+    }
+
+    if (siDmaDuration < 0)
+    {
+        siDmaDuration = 2304;
+    }
+
+    out.countPerOp = countPerOp;
+    out.countPerOpDenomPot = countPerOpDenomPot;
+    out.disableExtraMem = disableExtraMem;
+    out.siDmaDuration = siDmaDuration;
+    out.cpuEmulator = cpuEmulator;
+    out.valid = true;
+    return true;
+}
+
+CORE_EXPORT void CoreSetNetplaySyncSettings(const CoreNetplaySyncSettings& settings)
+{
+    l_NetplaySyncSettings = settings;
+    l_HasNetplaySyncSettings = settings.valid;
+}
+
+CORE_EXPORT void CoreClearNetplaySyncSettings(void)
+{
+    l_NetplaySyncSettings = {};
+    l_HasNetplaySyncSettings = false;
+}
+
+CORE_EXPORT bool CoreHasNetplaySyncSettings(void)
+{
+    return l_HasNetplaySyncSettings;
+}
+
+CORE_EXPORT bool CoreGetNetplaySyncSettings(CoreNetplaySyncSettings& out)
+{
+    if (!l_HasNetplaySyncSettings)
+    {
+        return false;
+    }
+
+    out = l_NetplaySyncSettings;
+    return true;
+}
+
+CORE_EXPORT void CoreApplyNetplaySyncedRomSettings(void)
+{
+    if (!l_HasNetplaySyncSettings)
+    {
+        return;
+    }
+
+    CoreRomSettings romSettings;
+    if (!CoreGetCurrentRomSettings(romSettings))
+    {
+        return;
+    }
+
+    romSettings.CountPerOp = l_NetplaySyncSettings.countPerOp;
+    romSettings.SiDMADuration = l_NetplaySyncSettings.siDmaDuration;
+    romSettings.DisableExtraMem = l_NetplaySyncSettings.disableExtraMem ? 1 : 0;
+    CoreApplyRomSettings(romSettings);
+}
+
+CORE_EXPORT void CoreApplyNetplaySyncedCoreSettings(void)
+{
+    if (!l_HasNetplaySyncSettings)
+    {
+        return;
+    }
+
+    apply_synced_core_config(l_NetplaySyncSettings);
 }

@@ -51,6 +51,7 @@ private:
 
     bool m_pendingGameStart = false;
     bool m_sessionSavesApplied = false;
+    bool m_sessionCoreSettingsApplied = false;
     int m_pendingPlayerSlot = 0;
     int m_lastDisplayedBufferDelay = -1;
 
@@ -76,6 +77,7 @@ private slots:
     void on_coordinator_gameStarted(int playerSlot);
     void on_coordinator_cheatsUpdated(const QJsonArray& cheats);
     void on_coordinator_saveSyncReceived(const QJsonArray& saveFiles);
+    void on_coordinator_coreSettingsSyncReceived(const QJsonObject& coreSettings);
     void on_coordinator_chatMessageReceived(const QString& playerName, const QString& message);
     void on_coordinator_motdReceived(const QString& message);
     void on_chatLineEdit_textChanged(const QString& text);

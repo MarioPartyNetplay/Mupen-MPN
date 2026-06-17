@@ -83,6 +83,7 @@
      void sendChatMessage(const QString& message);
      void sendCheatsUpdate(const QJsonArray& cheats);
      void sendSaveSync(const QJsonArray& saveFiles);
+     void sendCoreSettingsSync(const QJsonObject& coreSettings);
      
      // Input Delay (In-Game support)
      void setInputDelayFrames(int frames);
@@ -142,6 +143,7 @@
      void chatMessageReceived(const QString& playerName, const QString& message);
      void cheatsUpdated(const QJsonArray& cheats);
      void saveSyncReceived(const QJsonArray& saveFiles);
+     void coreSettingsSyncReceived(const QJsonObject& coreSettings);
  
      void resyncAttempted();
      void resyncSucceeded();
@@ -161,6 +163,7 @@
      void on_socketIO_gameEnded();
      void on_socketIO_cheatsUpdated(const QJsonArray& cheats);
      void on_socketIO_saveSyncReceived(const QJsonArray& saveFiles);
+     void on_socketIO_coreSettingsSyncReceived(const QJsonObject& coreSettings);
      void on_socketIO_controllerInputReceived(int slot, uint32_t frameNumber, uint32_t controllerState);
      void on_socketIO_inputDelayReceived(int frames);
     void on_socketIO_emulationPauseReceived(bool paused);
@@ -214,6 +217,7 @@
 
      QJsonArray m_sessionSyncCheats;
      QJsonArray m_sessionSyncSaves;
+     QJsonObject m_sessionSyncCoreSettings;
      
      mutable std::recursive_mutex m_mutex;
  };

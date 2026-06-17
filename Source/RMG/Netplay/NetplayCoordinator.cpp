@@ -22,6 +22,41 @@
 using namespace UserInterface::Netplay;
 using namespace RMGCore;
 
+namespace {
+
+QJsonObject coreSettingsToJson(const CoreNetplaySyncSettings& settings)
+{
+    QJsonObject payload;
+    payload[QStringLiteral("countPerOp")] = settings.countPerOp;
+    payload[QStringLiteral("countPerOpDenomPot")] = settings.countPerOpDenomPot;
+    payload[QStringLiteral("disableExtraMem")] = settings.disableExtraMem;
+    payload[QStringLiteral("siDmaDuration")] = settings.siDmaDuration;
+    payload[QStringLiteral("cpuEmulator")] = settings.cpuEmulator;
+    return payload;
+}
+
+bool coreSettingsFromJson(const QJsonObject& payload, CoreNetplaySyncSettings& settings)
+{
+    if (!payload.contains(QStringLiteral("countPerOp")) ||
+        !payload.contains(QStringLiteral("countPerOpDenomPot")) ||
+        !payload.contains(QStringLiteral("disableExtraMem")) ||
+        !payload.contains(QStringLiteral("siDmaDuration")) ||
+        !payload.contains(QStringLiteral("cpuEmulator")))
+    {
+        return false;
+    }
+
+    settings.countPerOp = payload.value(QStringLiteral("countPerOp")).toInt(0);
+    settings.countPerOpDenomPot = payload.value(QStringLiteral("countPerOpDenomPot")).toInt(0);
+    settings.disableExtraMem = payload.value(QStringLiteral("disableExtraMem")).toBool(false);
+    settings.siDmaDuration = payload.value(QStringLiteral("siDmaDuration")).toInt(-1);
+    settings.cpuEmulator = payload.value(QStringLiteral("cpuEmulator")).toInt(2);
+    settings.valid = true;
+    return true;
+}
+
+} // namespace
+
 NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent)
     : QObject(parent)
     , m_state(Idle)
@@ -72,6 +107,8 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
             this, &NetplayCoordinator::on_socketIO_cheatsUpdated);
         connect(m_socketIO.get(), &SocketIOClient::saveSyncReceived,
             this, &NetplayCoordinator::on_socketIO_saveSyncReceived);
+    connect(m_socketIO.get(), &SocketIOClient::coreSettingsSyncReceived,
+            this, &NetplayCoordinator::on_socketIO_coreSettingsSyncReceived);
     connect(m_socketIO.get(), &SocketIOClient::roomsListed,
             this, &NetplayCoordinator::on_socketIO_roomsListed);
     connect(m_socketIO.get(), &SocketIOClient::inputDelayReceived,
@@ -230,6 +267,13 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
                 emit saveSyncReceived(saveFiles);
             });
 
+    connect(m_server.get(), &SocketIOServer::coreSettingsSyncReceived,
+            this, [this](const QString& roomId, const QJsonObject& coreSettings) {
+                if (roomId != m_gameSession.roomId)
+                    return;
+                on_socketIO_coreSettingsSyncReceived(coreSettings);
+            });
+
     connect(m_server.get(), &SocketIOServer::hostedWebRTCSignalReceived,
             this, &NetplayCoordinator::on_hostedWebRTCSignalReceived);
 
@@ -339,6 +383,8 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
             this, &NetplayCoordinator::on_socketIO_cheatsUpdated);
         connect(m_socketIO.get(), &SocketIOClient::saveSyncReceived,
             this, &NetplayCoordinator::on_socketIO_saveSyncReceived);
+    connect(m_socketIO.get(), &SocketIOClient::coreSettingsSyncReceived,
+            this, &NetplayCoordinator::on_socketIO_coreSettingsSyncReceived);
         connect(m_socketIO.get(), &SocketIOClient::emulationPauseReceived,
             this, &NetplayCoordinator::on_socketIO_emulationPauseReceived);
     
@@ -577,6 +623,7 @@ void NetplayCoordinator::on_socketIO_disconnected()
     
     m_peers.clear();
     m_cachedPlayers.clear();
+    CoreClearNetplaySyncSettings();
     setState(Idle);
     emit disconnected();
 }
@@ -786,8 +833,10 @@ void NetplayCoordinator::beginEmulationSync()
 void NetplayCoordinator::resetEmulationSync()
 {
     CoreSetEmbeddedNetplayState(false, 0);
+    CoreClearNetplaySyncSettings();
     m_lockstepEngine.reset();
     m_currentFrameInputs.clear();
+    m_sessionSyncCoreSettings = QJsonObject();
 
     if (m_state == InGame || m_state == EndingGame) {
         setState(InLobby);
@@ -1054,6 +1103,26 @@ void NetplayCoordinator::sendSaveSync(const QJsonArray& saveFiles)
     }
 }
 
+void NetplayCoordinator::sendCoreSettingsSync(const QJsonObject& coreSettings)
+{
+    if (coreSettings.isEmpty()) {
+        return;
+    }
+
+    m_sessionSyncCoreSettings = coreSettings;
+
+    if (isHostingServer()) {
+        if (m_server && !m_gameSession.roomId.isEmpty()) {
+            m_server->broadcastCoreSettingsSync(m_gameSession.roomId, coreSettings);
+        }
+        return;
+    }
+
+    if (m_socketIO && m_socketIO->getConnectionState() == SocketIOClient::Connected) {
+        m_socketIO->sendCoreSettingsSync(coreSettings);
+    }
+}
+
 void NetplayCoordinator::sendEmulationPauseUpdate(bool paused)
 {
     if (!isInGame()) {
@@ -1100,6 +1169,24 @@ void NetplayCoordinator::on_socketIO_cheatsUpdated(const QJsonArray& cheats)
 void NetplayCoordinator::on_socketIO_saveSyncReceived(const QJsonArray& saveFiles)
 {
     emit saveSyncReceived(saveFiles);
+}
+
+void NetplayCoordinator::on_socketIO_coreSettingsSyncReceived(const QJsonObject& coreSettings)
+{
+    if (isHostingServer()) {
+        return;
+    }
+
+    m_sessionSyncCoreSettings = coreSettings;
+
+    CoreNetplaySyncSettings settings;
+    if (!coreSettingsFromJson(coreSettings, settings)) {
+        qWarning() << "NetplayCoordinator: Ignoring invalid core settings sync payload";
+        return;
+    }
+
+    CoreSetNetplaySyncSettings(settings);
+    emit coreSettingsSyncReceived(coreSettings);
 }
 
 void NetplayCoordinator::on_socketIO_emulationPauseReceived(bool paused)

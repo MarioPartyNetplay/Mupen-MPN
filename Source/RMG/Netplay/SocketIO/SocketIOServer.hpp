@@ -69,6 +69,7 @@ public:
      */
     void broadcastCheatsUpdate(const QString& roomId, const QJsonArray& cheats);
     void broadcastSaveSync(const QString& roomId, const QJsonArray& saveFiles);
+    void broadcastCoreSettingsSync(const QString& roomId, const QJsonObject& coreSettings);
     void broadcastChatMessage(const QString& roomId, const QString& playerName, const QString& message);
     void broadcastInputDelayUpdate(const QString& roomId, int frames);
     void broadcastEmulationPauseUpdate(const QString& roomId, bool paused);
@@ -146,6 +147,11 @@ signals:
     void cheatsUpdated(const QString& roomId, const QJsonArray& cheats);
 
     /**
+     * @brief Emitted when core timing settings are synced by the embedded host
+     */
+    void coreSettingsSyncReceived(const QString& roomId, const QJsonObject& coreSettings);
+
+    /**
      * @brief Emitted when save data is synced by a client
      */
     void saveSyncReceived(const QString& roomId, const QJsonArray& saveFiles);
@@ -203,6 +209,7 @@ private:
         // --- ADD THESE FIELDS TO STORE STATE ---
         QJsonArray activeCheats;
         QJsonArray activeSaves;
+        QJsonObject activeCoreSettings;
         int inputDelayFrames = 4; // Default standard netplay lag buffer
     };
 

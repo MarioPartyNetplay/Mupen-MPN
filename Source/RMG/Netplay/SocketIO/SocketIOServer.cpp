@@ -233,6 +233,10 @@ void SocketIOServer::handle_JoinRoom(QWebSocket* socket, const QJsonObject& msg)
         savePayload["files"] = room->activeSaves;
         emitToClient(client->id, "save-sync", savePayload);
     }
+    if (!room->activeCoreSettings.isEmpty())
+    {
+        emitToClient(client->id, "core-settings-sync", room->activeCoreSettings);
+    }
     
     QJsonObject delayPayload;
     delayPayload["frames"] = room->inputDelayFrames;
@@ -500,6 +504,20 @@ void SocketIOServer::broadcastCheatsUpdate(const QString& roomId, const QJsonArr
     }
 
     emit cheatsUpdated(roomId, room->activeCheats);
+}
+
+void SocketIOServer::broadcastCoreSettingsSync(const QString& roomId, const QJsonObject& coreSettings)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room)
+    {
+        qWarning() << "SocketIOServer: Cannot broadcast core settings sync, room not found" << roomId;
+        return;
+    }
+
+    room->activeCoreSettings = coreSettings;
+    emitToConnectedRoomClients(roomId, "core-settings-sync", coreSettings);
+    emit coreSettingsSyncReceived(roomId, coreSettings);
 }
 
 void SocketIOServer::broadcastSaveSync(const QString& roomId, const QJsonArray& saveFiles)

@@ -156,6 +156,23 @@ QJsonArray buildSaveSyncFiles(const QString& romFile)
     return saveFiles;
 }
 
+QJsonObject buildCoreSettingsSyncPayload(const QString& romFile)
+{
+    CoreNetplaySyncSettings settings;
+    if (!CoreBuildNetplaySyncSettings(romFile.toStdU32String(), settings))
+    {
+        return {};
+    }
+
+    QJsonObject payload;
+    payload[QStringLiteral("countPerOp")] = settings.countPerOp;
+    payload[QStringLiteral("countPerOpDenomPot")] = settings.countPerOpDenomPot;
+    payload[QStringLiteral("disableExtraMem")] = settings.disableExtraMem;
+    payload[QStringLiteral("siDmaDuration")] = settings.siDmaDuration;
+    payload[QStringLiteral("cpuEmulator")] = settings.cpuEmulator;
+    return payload;
+}
+
 }
 
 NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoordinator* coordinator, QString sessionFile) 
@@ -230,6 +247,8 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
             this, &NetplaySessionDialog::on_coordinator_cheatsUpdated);
     connect(this->coordinator, &Netplay::NetplayCoordinator::saveSyncReceived,
             this, &NetplaySessionDialog::on_coordinator_saveSyncReceived);
+    connect(this->coordinator, &Netplay::NetplayCoordinator::coreSettingsSyncReceived,
+            this, &NetplaySessionDialog::on_coordinator_coreSettingsSyncReceived);
     connect(this->coordinator, &Netplay::NetplayCoordinator::inputDelayChanged,
             this, [this](int frames) {
         QSignalBlocker blocker(this->bufferDelaySpinBox);
@@ -865,6 +884,10 @@ void NetplaySessionDialog::tryStartPendingGame(void)
         return;
     }
 
+    if (!this->isLocalSessionHost() && !this->m_sessionCoreSettingsApplied) {
+        return;
+    }
+
     this->m_pendingGameStart = false;
 
     const QString romFile = this->romFile;
@@ -910,6 +933,7 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
 
     if (this->isLocalSessionHost()) {
         this->m_sessionSavesApplied = true;
+        this->m_sessionCoreSettingsApplied = true;
     }
 
     // Give every peer time to receive game-started and apply session state before
@@ -927,6 +951,17 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
                     return;
                 }
                 this->m_sessionSavesApplied = true;
+                this->tryStartPendingGame();
+            });
+            return;
+        }
+
+        if (!this->isLocalSessionHost() && !this->m_sessionCoreSettingsApplied) {
+            QTimer::singleShot(500, this, [this]() {
+                if (!this->m_pendingGameStart) {
+                    return;
+                }
+                this->m_sessionCoreSettingsApplied = true;
                 this->tryStartPendingGame();
             });
             return;
@@ -1010,6 +1045,13 @@ void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& sav
     this->tryStartPendingGame();
 }
 
+void NetplaySessionDialog::on_coordinator_coreSettingsSyncReceived(const QJsonObject& coreSettings)
+{
+    Q_UNUSED(coreSettings);
+    this->m_sessionCoreSettingsApplied = true;
+    this->tryStartPendingGame();
+}
+
 void NetplaySessionDialog::syncHostSessionState(void)
 {
     if (!this->coordinator || !this->isLocalSessionHost())
@@ -1024,6 +1066,12 @@ void NetplaySessionDialog::syncHostSessionState(void)
     }
 
     this->coordinator->sendSaveSync(buildSaveSyncFiles(this->romFile));
+
+    const QJsonObject coreSettings = buildCoreSettingsSyncPayload(this->romFile);
+    if (!coreSettings.isEmpty())
+    {
+        this->coordinator->sendCoreSettingsSync(coreSettings);
+    }
 }
 
 void NetplaySessionDialog::publishHostSessionIndex(bool started)
@@ -1236,6 +1284,7 @@ void NetplaySessionDialog::accept()
 void NetplaySessionDialog::reject(void)
 {
     CoreSetEmbeddedNetplayState(false, 0);
+    CoreClearNetplaySyncSettings();
 
     // Clean up netplay session when cancelling
     if (this->coordinator)
