@@ -31,6 +31,7 @@ jobs:
         run: |
           dnf install -y \
             cmake \
+            pkgconf-pkg-config \
             ninja-build \
             rust \
             cargo \
@@ -47,11 +48,15 @@ jobs:
             libao-devel \
             SOIL-devel \
             libXrandr-devel \
-            SDL3 \
+            SDL3-devel \
             SDL2_net \
             pulseaudio-libs-devel \
             bluez-libs-devel \
             p7zip
+
+      - name: Verify SDL3 pkg-config
+        run: |
+          pkg-config --modversion sdl3
 
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
