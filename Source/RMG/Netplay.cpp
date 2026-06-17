@@ -67,14 +67,11 @@ bool UserInterface::Netplay::shouldBlockFocusLossPause()
         return false;
     }
 
-    if (g_netplayCoordinator->isInGame())
-    {
-        return true;
-    }
-
     switch (g_netplayCoordinator->getCurrentState())
     {
+    case NetplayCoordinator::InLobby:
     case NetplayCoordinator::StartingGame:
+    case NetplayCoordinator::InGame:
     case NetplayCoordinator::EndingGame:
         return true;
     default:

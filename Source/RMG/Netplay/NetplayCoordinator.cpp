@@ -1181,6 +1181,13 @@ void NetplayCoordinator::sendCoreSettingsSync(const QJsonObject& coreSettings)
 
 void NetplayCoordinator::sendEmulationPauseUpdate(bool paused)
 {
+    Q_UNUSED(paused);
+
+    // Lockstep netplay cannot pause one peer without desyncing everyone.
+    if (CoreIsEmbeddedNetplayActive()) {
+        return;
+    }
+
     if (!isInGame()) {
         return;
     }
@@ -1247,6 +1254,13 @@ void NetplayCoordinator::on_socketIO_coreSettingsSyncReceived(const QJsonObject&
 
 void NetplayCoordinator::on_socketIO_emulationPauseReceived(bool paused)
 {
+    Q_UNUSED(paused);
+
+    // Lockstep netplay must keep all peers advancing frames together.
+    if (CoreIsEmbeddedNetplayActive()) {
+        return;
+    }
+
     if (paused)
     {
         if (CoreIsEmulationRunning() && !CoreIsEmulationPaused())

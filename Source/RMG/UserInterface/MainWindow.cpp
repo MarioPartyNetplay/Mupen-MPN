@@ -774,6 +774,8 @@ void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool re
 void MainWindow::updateActions(bool inEmulation, bool isPaused)
 {
     QString keyBinding;
+    const bool netplayRestrictions =
+        CoreHasInitNetplay() || CoreIsEmbeddedNetplayActive();
 
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_StartROM));
     this->action_System_StartRom->setShortcut(QKeySequence(keyBinding));
@@ -788,16 +790,16 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Shutdown));
     this->action_System_Shutdown->setShortcut(QKeySequence(keyBinding));
     this->action_System_Shutdown->setEnabled(inEmulation);
-    this->menuReset->setEnabled(inEmulation && !CoreHasInitNetplay());
+    this->menuReset->setEnabled(inEmulation && !netplayRestrictions);
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_SoftReset));
-    this->action_System_SoftReset->setEnabled(inEmulation && !CoreHasInitNetplay());
+    this->action_System_SoftReset->setEnabled(inEmulation && !netplayRestrictions);
     this->action_System_SoftReset->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_HardReset));
-    this->action_System_HardReset->setEnabled(inEmulation && !CoreHasInitNetplay());
+    this->action_System_HardReset->setEnabled(inEmulation && !netplayRestrictions);
     this->action_System_HardReset->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Resume));
     this->action_System_Pause->setChecked(isPaused);
-    this->action_System_Pause->setEnabled(inEmulation && !CoreHasInitNetplay());
+    this->action_System_Pause->setEnabled(inEmulation && !netplayRestrictions);
     this->action_System_Pause->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Screenshot));
     this->action_System_Screenshot->setEnabled(inEmulation);
@@ -805,10 +807,10 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     this->action_System_Screenshot2->setEnabled(inEmulation);
     this->action_System_Screenshot2->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_LimitFPS));
-    this->action_System_LimitFPS->setEnabled(inEmulation && !CoreHasInitNetplay());
+    this->action_System_LimitFPS->setEnabled(inEmulation && !netplayRestrictions);
     this->action_System_LimitFPS->setShortcut(QKeySequence(keyBinding));
     this->action_System_LimitFPS->setChecked(CoreIsSpeedLimiterEnabled());
-    this->menuSpeedFactor->setEnabled(inEmulation && !CoreHasInitNetplay());
+    this->menuSpeedFactor->setEnabled(inEmulation && !netplayRestrictions);
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_SaveState));
     this->action_System_SaveState->setEnabled(inEmulation);
     this->action_System_SaveState->setShortcut(QKeySequence(keyBinding));
@@ -816,17 +818,17 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     this->action_System_SaveAs->setEnabled(inEmulation);
     this->action_System_SaveAs->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_LoadState));
-    this->action_System_LoadState->setEnabled(inEmulation && !CoreHasInitNetplay());
+    this->action_System_LoadState->setEnabled(inEmulation && !netplayRestrictions);
     this->action_System_LoadState->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Load));
-    this->action_System_Load->setEnabled(inEmulation && !CoreHasInitNetplay());
+    this->action_System_Load->setEnabled(inEmulation && !netplayRestrictions);
     this->action_System_Load->setShortcut(QKeySequence(keyBinding));
     this->menuCurrent_Save_State->setEnabled(inEmulation);
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Cheats));
-    this->action_System_Cheats->setEnabled(inEmulation && !CoreHasInitNetplay());
+    this->action_System_Cheats->setEnabled(inEmulation && !netplayRestrictions);
     this->action_System_Cheats->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_GSButton));
-    this->action_System_GSButton->setEnabled(inEmulation && !CoreHasInitNetplay());
+    this->action_System_GSButton->setEnabled(inEmulation && !netplayRestrictions);
     this->action_System_GSButton->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Exit));
     this->action_System_Exit->setShortcut(QKeySequence(keyBinding));
@@ -1504,7 +1506,7 @@ void MainWindow::on_QGuiApplication_applicationStateChanged(Qt::ApplicationState
 {
 #ifdef NETPLAY
     if (UserInterface::Netplay::shouldBlockFocusLossPause() ||
-        (this->netplaySessionDialog != nullptr && CoreIsEmulationRunning()))
+        this->netplaySessionDialog != nullptr)
     {
         return;
     }
@@ -1783,13 +1785,6 @@ void MainWindow::on_Action_System_Pause(void)
 
     this->updateUI(true, (!isPaused && ret));
     this->ui_ManuallyPaused = true;
-
-#ifdef NETPLAY
-    if (ret && UserInterface::Netplay::g_netplayCoordinator && UserInterface::Netplay::g_netplayCoordinator->isInGame())
-    {
-        UserInterface::Netplay::g_netplayCoordinator->sendEmulationPauseUpdate(!isPaused);
-    }
-#endif // NETPLAY
 }
 
 void MainWindow::on_Action_System_Screenshot(void)

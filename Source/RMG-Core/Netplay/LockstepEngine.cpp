@@ -413,15 +413,11 @@ void LockstepEngine::setInputDelayFrames(int frames)
         stallTimeoutForDelayFrames(frames);
 }
 
-int LockstepEngine::stallTimeoutForDelayFrames(int inputDelayFrames)
+int LockstepEngine::stallTimeoutForDelayFrames(int /*inputDelayFrames*/)
 {
-    if (inputDelayFrames < 1) {
-        inputDelayFrames = 1;
-    }
-
-    // ~33 ms per emulated frame; keep a floor so brief jitter does not stall.
-    const int timeoutMs = inputDelayFrames * 33;
-    return std::min(std::max(timeoutMs, 500), 3300);
+    // Dolphin-style lockstep: never advance without every peer's input.
+    // Faster machines wait (lag) until the slowest peer catches up.
+    return 0;
 }
 
 void LockstepEngine::pruneOldFrames(uint32_t oldestFrameToKeep)
