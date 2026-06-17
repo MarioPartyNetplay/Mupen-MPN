@@ -24,6 +24,7 @@ OGLWidget::OGLWidget(QWidget *parent)
 {
     // create window container
     this->widgetContainer = QWidget::createWindowContainer(this, parent);
+    this->widgetContainer->installEventFilter(this);
 
     // on wayland we have to make sure that the widget
     // has a black background palette set, else
@@ -79,7 +80,22 @@ QWidget* OGLWidget::GetWidget(void)
     return this->widgetContainer;
 }
 
+bool OGLWidget::eventFilter(QObject *object, QEvent *event)
+{
+    if (object == this->widgetContainer && event->type() == QEvent::Resize)
+    {
+        this->queueVideoSizeUpdate(static_cast<QResizeEvent *>(event)->size());
+    }
+
+    return QWindow::eventFilter(object, event);
+}
+
 void OGLWidget::resizeEvent(QResizeEvent *event)
+{
+    this->queueVideoSizeUpdate(event->size());
+}
+
+void OGLWidget::queueVideoSizeUpdate(QSize size)
 {
     if (!this->isVisible())
     {
@@ -96,8 +112,8 @@ void OGLWidget::resizeEvent(QResizeEvent *event)
 
     // account for HiDPI scaling
     // see https://github.com/Rosalie241/RMG/issues/2
-    this->width  = event->size().width() * this->devicePixelRatio();
-    this->height = event->size().height() * this->devicePixelRatio();
+    this->width  = size.width() * this->devicePixelRatio();
+    this->height = size.height() * this->devicePixelRatio();
 
     this->width  &= ~0x1;
     this->height &= ~0x1;

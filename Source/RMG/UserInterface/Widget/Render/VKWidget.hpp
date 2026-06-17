@@ -33,10 +33,13 @@ class VKWidget : public QWindow
     void SetActive(bool value);
 
   protected:
+    bool eventFilter(QObject *object, QEvent *event) override;
     void resizeEvent(QResizeEvent *) Q_DECL_OVERRIDE;
     void timerEvent(QTimerEvent *) Q_DECL_OVERRIDE;
 
   private:
+    void queueVideoSizeUpdate(QSize size);
+
     QWidget* widgetContainer = nullptr;
     int width                = 0;
     int height               = 0;
