@@ -185,6 +185,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 
     void on_Action_System_OpenRom(void);
     void on_Action_System_OpenCombo(void);
+    void on_Action_System_OpenUserFolder(void);
     void on_Action_System_Shutdown(void);
     void on_Action_System_SoftReset(void);
     void on_Action_System_HardReset(void);

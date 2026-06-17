@@ -106,6 +106,8 @@
     <addaction name="action_System_Cheats"/>
     <addaction name="action_System_GSButton"/>
     <addaction name="separator"/>
+    <addaction name="action_System_OpenUserFolder"/>
+    <addaction name="separator"/>
     <addaction name="action_System_Exit"/>
    </widget>
    <widget class="QMenu" name="menuSettings">
@@ -292,6 +294,14 @@
     </property>
     <property name="text">
      <string>Start Co&amp;mbo</string>
+    </property>
+   </action>
+   <action name="action_System_OpenUserFolder">
+    <property name="icon">
+     <iconset theme="folder-open-line"/>
+    </property>
+    <property name="text">
+     <string>Open User &amp;Folder</string>
     </property>
    </action>
    <action name="action_System_Shutdown">

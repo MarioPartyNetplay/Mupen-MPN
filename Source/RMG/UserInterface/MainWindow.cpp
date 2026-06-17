@@ -1681,13 +1681,38 @@ void MainWindow::on_Action_System_OpenCombo(void)
 
 void MainWindow::on_Action_System_OpenUserFolder(void)
 {
-    const QString directory = QString::fromStdString(CoreGetUserDataDirectory().string());
+    std::filesystem::path dataPath = CoreGetUserDataDirectory();
+
+#ifdef PORTABLE_INSTALL
+    if (!dataPath.is_absolute())
+    {
+        dataPath = std::filesystem::absolute(dataPath);
+    }
+#endif
+
+    std::error_code errorCode;
+    if (!std::filesystem::exists(dataPath))
+    {
+        std::filesystem::create_directories(dataPath, errorCode);
+    }
+
+    const QString directory = QString::fromStdString(dataPath.make_preferred().string());
     if (directory.isEmpty())
     {
+        QtMessageBox::Error(this, "Failed to open user folder", "User data directory is empty.");
         return;
     }
 
-    QDesktopServices::openUrl(QUrl::fromLocalFile(directory));
+    if (errorCode)
+    {
+        QtMessageBox::Error(this, "Failed to open user folder", QString::fromStdString(errorCode.message()));
+        return;
+    }
+
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(directory)))
+    {
+        QtMessageBox::Error(this, "Failed to open user folder", directory);
+    }
 }
 
 void MainWindow::on_Action_System_Shutdown(void)
