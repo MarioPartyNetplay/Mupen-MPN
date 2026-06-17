@@ -184,6 +184,12 @@
      void synchronizeLockstepPlayerCount();
      void initializeLockstepEngine();
      void broadcastFrameSyncIfNeeded(uint32_t frameNumber);
+     void bindWebRTCPeerSignals(const std::shared_ptr<WebRTCPeer>& peer, const QString& peerId);
+     void attachExistingPeerDataChannels();
+     void sendWebRTCOffer(const QString& targetPlayerId, const QString& sdpOffer);
+     void sendWebRTCAnswer(const QString& targetPlayerId, const QString& sdpAnswer);
+     void sendWebRTCIceCandidate(const QString& targetPlayerId, const QString& candidate, int mLineIndex);
+     void on_hostedWebRTCSignalReceived(const QString& fromPlayerId, const QJsonObject& signal);
  
      // Internal components
      std::unique_ptr<SocketIOClient> m_socketIO;

@@ -74,6 +74,11 @@ public:
     void broadcastEmulationPauseUpdate(const QString& roomId, bool paused);
 
     /**
+     * @brief Relay a WebRTC signal from the embedded host to a connected client
+     */
+    bool relayHostedWebRTCSignal(const QString& roomId, const QString& fromPlayerId, const QJsonObject& signal);
+
+    /**
      * @brief Check if server is running
      */
     bool isRunning() const { return m_server != nullptr && m_server->isListening(); }
@@ -144,6 +149,11 @@ signals:
      * @brief Emitted when save data is synced by a client
      */
     void saveSyncReceived(const QString& roomId, const QJsonArray& saveFiles);
+
+    /**
+     * @brief Emitted when a WebRTC signal is destined for the embedded host (no websocket)
+     */
+    void hostedWebRTCSignalReceived(const QString& fromPlayerId, const QJsonObject& signal);
 
 private slots:
     /**

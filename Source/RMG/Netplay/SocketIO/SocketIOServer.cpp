@@ -868,16 +868,56 @@ void SocketIOServer::handle_SetName(QWebSocket* socket, const QJsonObject& msg)
     }
 }
 
+bool SocketIOServer::relayHostedWebRTCSignal(const QString& roomId, const QString& fromPlayerId,
+                                             const QJsonObject& msg)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room)
+        return false;
+
+    QString toPlayerId = msg.value(QStringLiteral("to")).toString();
+    if (toPlayerId.isEmpty()) {
+        toPlayerId = msg.value(QStringLiteral("target")).toString();
+    }
+    if (toPlayerId.isEmpty()) {
+        return false;
+    }
+
+    ClientConnection* targetClient = nullptr;
+    for (auto* player : room->players)
+    {
+        if (player && player->playerId == toPlayerId)
+        {
+            targetClient = player;
+            break;
+        }
+    }
+
+    if (!targetClient || !targetClient->socket || !targetClient->socket->isValid()) {
+        return false;
+    }
+
+    QJsonObject signal = msg;
+    signal[QStringLiteral("from")] = fromPlayerId;
+    emitToClient(targetClient->id, QStringLiteral("webrtc-signal"), signal);
+    return true;
+}
+
 void SocketIOServer::handle_WebRTCSignal(QWebSocket* socket, const QJsonObject& msg)
 {
     ClientConnection* client = getClientFromSocket(socket);
     if (!client || client->roomId.isEmpty())
         return;
 
-    QString signalType = msg["type"].toString();  // "offer", "answer", "ice-candidate"
-    QString toPlayerId = msg["to"].toString();    // Target player ID
+    QString toPlayerId = msg.value(QStringLiteral("to")).toString();
+    if (toPlayerId.isEmpty()) {
+        toPlayerId = msg.value(QStringLiteral("target")).toString();
+    }
+    if (toPlayerId.isEmpty()) {
+        qWarning() << "SocketIOServer: WebRTC signal missing target player";
+        return;
+    }
 
-    // Find target player in room
     SignalingRoom* room = getRoomById(client->roomId);
     if (!room)
         return;
@@ -892,16 +932,24 @@ void SocketIOServer::handle_WebRTCSignal(QWebSocket* socket, const QJsonObject& 
         }
     }
 
-    if (!targetClient)
+    if (!targetClient) {
+        qWarning() << "SocketIOServer: WebRTC target player not found:" << toPlayerId;
         return;
+    }
 
-    // Relay signal to target
     QJsonObject signal = msg;
-    signal["from"] = client->playerId;
-    emitToClient(targetClient->id, "webrtc-signal", signal);
+    signal[QStringLiteral("from")] = client->playerId;
 
-    qDebug() << "WebRTC signal relayed from" << client->playerId
-             << "to" << toPlayerId << "type:" << signalType;
+    if (!targetClient->socket || !targetClient->socket->isValid()) {
+        emit hostedWebRTCSignalReceived(client->playerId, signal);
+        qDebug() << "SocketIOServer: WebRTC signal delivered to embedded host from" << client->playerId;
+        return;
+    }
+
+    emitToClient(targetClient->id, QStringLiteral("webrtc-signal"), signal);
+
+    qDebug() << "SocketIOServer: WebRTC signal relayed from" << client->playerId
+             << "to" << toPlayerId;
 }
 
 void SocketIOServer::handle_StartGame(QWebSocket* socket, const QJsonObject& msg)

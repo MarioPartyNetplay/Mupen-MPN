@@ -27,13 +27,23 @@ WebRTCDataChannel::~WebRTCDataChannel()
 
 bool WebRTCDataChannel::sendBinary(const std::vector<uint8_t>& data)
 {
-    if (m_sendBinaryHandler) {
-        return m_sendBinaryHandler(data);
-    }
-
     if (m_state != ChannelState::Open) {
         std::cerr << "WebRTCDataChannel: Cannot send - channel not open" << std::endl;
         return false;
+    }
+
+    if (m_sendBinaryHandler) {
+        try {
+            return m_sendBinaryHandler(data);
+        } catch (const std::exception& exception) {
+            notifyError(exception.what());
+            notifyClosed();
+            return false;
+        } catch (...) {
+            notifyError("Unknown DataChannel sendBinary exception");
+            notifyClosed();
+            return false;
+        }
     }
 
     return true;
@@ -41,13 +51,23 @@ bool WebRTCDataChannel::sendBinary(const std::vector<uint8_t>& data)
 
 bool WebRTCDataChannel::sendText(const std::string& text)
 {
-    if (m_sendTextHandler) {
-        return m_sendTextHandler(text);
-    }
-
     if (m_state != ChannelState::Open) {
         std::cerr << "WebRTCDataChannel: Cannot send - channel not open" << std::endl;
         return false;
+    }
+
+    if (m_sendTextHandler) {
+        try {
+            return m_sendTextHandler(text);
+        } catch (const std::exception& exception) {
+            notifyError(exception.what());
+            notifyClosed();
+            return false;
+        } catch (...) {
+            notifyError("Unknown DataChannel sendText exception");
+            notifyClosed();
+            return false;
+        }
     }
 
     return true;

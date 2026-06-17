@@ -485,7 +485,14 @@ void LockstepEngine::broadcastInput(
             continue;
         }
 
-        m_dataChannels[slot]->sendBinary(packet);
+        if (!m_dataChannels[slot]->isOpen()) {
+            continue;
+        }
+
+        const bool sent = m_dataChannels[slot]->sendBinary(packet);
+        if (!sent) {
+            m_dataChannels[slot] = nullptr;
+        }
     }
 }
 

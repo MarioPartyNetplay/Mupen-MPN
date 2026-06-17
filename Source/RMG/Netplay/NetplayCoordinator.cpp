@@ -136,7 +136,8 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
     connect(m_server.get(), &SocketIOServer::playerJoined,
             this, [this](const QString& roomId, const QString& playerId, int slotIndex) {
                 qInfo() << "Hosting: Player joined room" << roomId << "slot" << slotIndex;
-                // Trigger peer connection setup when players join
+                Q_UNUSED(playerId);
+                synchronizeLockstepPlayerCount();
             });
 
     connect(m_server.get(), &SocketIOServer::gameStarted,
@@ -228,6 +229,9 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
                     return;
                 emit saveSyncReceived(saveFiles);
             });
+
+    connect(m_server.get(), &SocketIOServer::hostedWebRTCSignalReceived,
+            this, &NetplayCoordinator::on_hostedWebRTCSignalReceived);
 
     // Create initial room for remote players to join
     m_gameSession.roomId = QUuid::createUuid().toString(QUuid::WithoutBraces).left(8).toUpper();
@@ -707,7 +711,7 @@ void NetplayCoordinator::on_socketIO_offerReceived(const QString& fromPlayerId, 
 
     // Find which slot this player is in
     int slotIndex = -1;
-    for (const auto& player : m_socketIO->getPlayerList()) {
+    for (const auto& player : getPlayerList()) {
         if (player.id == fromPlayerId) {
             slotIndex = player.slot;
             break;
@@ -723,26 +727,7 @@ void NetplayCoordinator::on_socketIO_offerReceived(const QString& fromPlayerId, 
     if (!m_peers.contains(slotIndex)) {
         auto peer = std::make_shared<WebRTCPeer>(fromPlayerId, false, this);
         m_peers[slotIndex] = peer;
-
-        // Connect WebRTC peer signals
-        connect(peer.get(), &WebRTCPeer::offerCreated, this, [this, id = fromPlayerId](const QString& offer) {
-            m_socketIO->sendOffer(id, offer);
-        });
-        connect(peer.get(), &WebRTCPeer::answerReceived, this, [this, id = fromPlayerId](const QString& answer) {
-            m_socketIO->sendAnswer(id, answer);
-        });
-        connect(peer.get(), &WebRTCPeer::iceCandidateGenerated, this, [this, id = fromPlayerId](const QString& candidate, int mLineIndex) {
-            m_socketIO->sendICECandidate(id, candidate, mLineIndex);
-        });
-        connect(peer.get(), &WebRTCPeer::connectionEstablished, this, [this, id = fromPlayerId]() {
-            on_webRTC_connectionEstablished(id);
-        });
-        connect(peer.get(), &WebRTCPeer::connectionFailed, this, [this, id = fromPlayerId](const QString& reason) {
-            on_webRTC_connectionFailed(id, reason);
-        });
-        connect(peer.get(), &WebRTCPeer::dataChannelOpened, this, [this, id = fromPlayerId](const QString& label) {
-            on_webRTC_dataChannelOpened(id, label);
-        });
+        bindWebRTCPeerSignals(peer, fromPlayerId);
     }
 
     // Set remote description
@@ -840,6 +825,7 @@ void NetplayCoordinator::initializeLockstepEngine()
     };
 
     m_lockstepEngine->setCallbacks(callbacks);
+    attachExistingPeerDataChannels();
 
     // --- THE BRIDGE: Connect Coordinator to Emulator Core ---
     // This tells the Emulator: "When you need input or need to advance, call these!"
@@ -859,6 +845,29 @@ void NetplayCoordinator::initializeLockstepEngine()
             return false;
         }
     );
+}
+
+void NetplayCoordinator::attachExistingPeerDataChannels()
+{
+    if (!m_lockstepEngine) {
+        return;
+    }
+
+    for (auto it = m_peers.constBegin(); it != m_peers.constEnd(); ++it) {
+        const int slot = it.key();
+        const auto& peer = it.value();
+        if (!peer) {
+            continue;
+        }
+
+        auto channel = peer->getDataChannel(QStringLiteral("RMG-Input"));
+        if (!channel) {
+            continue;
+        }
+
+        m_lockstepEngine->setDataChannel(slot, channel);
+        qDebug() << "NetplayCoordinator: Attached existing data channel to LockstepEngine for slot" << slot;
+    }
 }
 
 void NetplayCoordinator::on_socketIO_iceCandidateReceived(const QString& fromPlayerId, const QString& candidate, int mLineIndex)
@@ -1231,6 +1240,93 @@ void NetplayCoordinator::setState(State newState)
     }
 }
 
+void NetplayCoordinator::bindWebRTCPeerSignals(const std::shared_ptr<WebRTCPeer>& peer, const QString& peerId)
+{
+    if (!peer) {
+        return;
+    }
+
+    connect(peer.get(), &WebRTCPeer::offerCreated, this, [this, peerId](const QString& offer) {
+        sendWebRTCOffer(peerId, offer);
+    });
+    connect(peer.get(), &WebRTCPeer::answerReceived, this, [this, peerId](const QString& answer) {
+        sendWebRTCAnswer(peerId, answer);
+    });
+    connect(peer.get(), &WebRTCPeer::iceCandidateGenerated, this,
+            [this, peerId](const QString& candidate, int mLineIndex) {
+        sendWebRTCIceCandidate(peerId, candidate, mLineIndex);
+    });
+    connect(peer.get(), &WebRTCPeer::connectionEstablished, this, [this, peerId]() {
+        on_webRTC_connectionEstablished(peerId);
+    });
+    connect(peer.get(), &WebRTCPeer::connectionFailed, this, [this, peerId](const QString& reason) {
+        on_webRTC_connectionFailed(peerId, reason);
+    });
+    connect(peer.get(), &WebRTCPeer::dataChannelOpened, this, [this, peerId](const QString& label) {
+        on_webRTC_dataChannelOpened(peerId, label);
+    });
+}
+
+void NetplayCoordinator::sendWebRTCOffer(const QString& targetPlayerId, const QString& sdpOffer)
+{
+    if (isHostingServer() && m_server && !m_gameSession.roomId.isEmpty()) {
+        QJsonObject signal;
+        signal[QStringLiteral("target")] = targetPlayerId;
+        signal[QStringLiteral("offer")] = sdpOffer;
+        m_server->relayHostedWebRTCSignal(m_gameSession.roomId, QStringLiteral("p0"), signal);
+        return;
+    }
+
+    if (m_socketIO) {
+        m_socketIO->sendOffer(targetPlayerId, sdpOffer);
+    }
+}
+
+void NetplayCoordinator::sendWebRTCAnswer(const QString& targetPlayerId, const QString& sdpAnswer)
+{
+    if (isHostingServer() && m_server && !m_gameSession.roomId.isEmpty()) {
+        QJsonObject signal;
+        signal[QStringLiteral("target")] = targetPlayerId;
+        signal[QStringLiteral("answer")] = sdpAnswer;
+        m_server->relayHostedWebRTCSignal(m_gameSession.roomId, QStringLiteral("p0"), signal);
+        return;
+    }
+
+    if (m_socketIO) {
+        m_socketIO->sendAnswer(targetPlayerId, sdpAnswer);
+    }
+}
+
+void NetplayCoordinator::sendWebRTCIceCandidate(const QString& targetPlayerId, const QString& candidate, int mLineIndex)
+{
+    if (isHostingServer() && m_server && !m_gameSession.roomId.isEmpty()) {
+        QJsonObject signal;
+        signal[QStringLiteral("target")] = targetPlayerId;
+        signal[QStringLiteral("candidate")] = candidate;
+        signal[QStringLiteral("sdpMLineIndex")] = mLineIndex;
+        m_server->relayHostedWebRTCSignal(m_gameSession.roomId, QStringLiteral("p0"), signal);
+        return;
+    }
+
+    if (m_socketIO) {
+        m_socketIO->sendICECandidate(targetPlayerId, candidate, mLineIndex);
+    }
+}
+
+void NetplayCoordinator::on_hostedWebRTCSignalReceived(const QString& fromPlayerId, const QJsonObject& signal)
+{
+    if (signal.contains(QStringLiteral("offer"))) {
+        on_socketIO_offerReceived(fromPlayerId, signal.value(QStringLiteral("offer")).toString());
+    } else if (signal.contains(QStringLiteral("answer"))) {
+        on_socketIO_answerReceived(fromPlayerId, signal.value(QStringLiteral("answer")).toString());
+    } else if (signal.contains(QStringLiteral("candidate"))) {
+        on_socketIO_iceCandidateReceived(
+            fromPlayerId,
+            signal.value(QStringLiteral("candidate")).toString(),
+            signal.value(QStringLiteral("sdpMLineIndex")).toInt(0));
+    }
+}
+
 void NetplayCoordinator::setupPeerConnections(const QList<SocketIOClient::PlayerInfo>& players)
 {
     qDebug() << "NetplayCoordinator: Setting up peer connections for" << players.size() << "players";
@@ -1244,26 +1340,7 @@ void NetplayCoordinator::setupPeerConnections(const QList<SocketIOClient::Player
         bool initiator = m_gameSession.localSlot < player.slot;
         auto peer = std::make_shared<WebRTCPeer>(player.id, initiator, this);
         m_peers[player.slot] = peer;
-
-        // Connect WebRTC peer signals
-        connect(peer.get(), &WebRTCPeer::offerCreated, this, [this, id = player.id](const QString& offer) {
-            m_socketIO->sendOffer(id, offer);
-        });
-        connect(peer.get(), &WebRTCPeer::answerReceived, this, [this, id = player.id](const QString& answer) {
-            m_socketIO->sendAnswer(id, answer);
-        });
-        connect(peer.get(), &WebRTCPeer::iceCandidateGenerated, this, [this, id = player.id](const QString& candidate, int mLineIndex) {
-            m_socketIO->sendICECandidate(id, candidate, mLineIndex);
-        });
-        connect(peer.get(), &WebRTCPeer::connectionEstablished, this, [this, id = player.id]() {
-            on_webRTC_connectionEstablished(id);
-        });
-        connect(peer.get(), &WebRTCPeer::connectionFailed, this, [this, id = player.id](const QString& reason) {
-            on_webRTC_connectionFailed(id, reason);
-        });
-        connect(peer.get(), &WebRTCPeer::dataChannelOpened, this, [this, id = player.id](const QString& label) {
-            on_webRTC_dataChannelOpened(id, label);
-        });
+        bindWebRTCPeerSignals(peer, player.id);
 
         if (initiator) {
             // We create the data channel and the offer
