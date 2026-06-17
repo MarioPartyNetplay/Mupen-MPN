@@ -90,12 +90,13 @@ add_custom_command(
     OUTPUT "${RMG_CORE_VERSION_HASH_HEADER}"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/make_version.py"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/VersionHash.hpp.in"
-            "${CMAKE_CURRENT_SOURCE_DIR}/make_version.py"
-    VERBATIM
+    COMMENT "Updating RMG-Core git version hash"
 )
-add_custom_target(RMG-Core-version-hash DEPENDS "${RMG_CORE_VERSION_HASH_HEADER}")
 add_dependencies(RMG-Core RMG-Core-version-hash)
+
+set_source_files_properties(Version.cpp PROPERTIES
+    OBJECT_DEPENDS "${RMG_CORE_VERSION_HASH_HEADER}"
+)
 
 target_link_libraries(RMG-Core
     ${MINIZIP_LIBRARIES}

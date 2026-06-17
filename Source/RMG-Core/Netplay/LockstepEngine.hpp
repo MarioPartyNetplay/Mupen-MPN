@@ -19,6 +19,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <functional>
+#include <unordered_set>
 #include "../Library.hpp"
 
 namespace UserInterface::Netplay {
@@ -44,12 +45,6 @@ public:
         uint32_t frameNumber = 0;
         std::map<int, uint32_t> playerInputs;
         std::chrono::steady_clock::time_point receivedTime;
-    };
-
-    struct SyncCheckpoint {
-        uint32_t frameNumber = 0;
-        uint32_t romChecksum = 0;
-        std::chrono::steady_clock::time_point timestamp;
     };
 
     struct Stats {
@@ -81,10 +76,12 @@ public:
     /** Stores local input and returns (frame, state) pairs that need network relay. */
     std::vector<std::pair<uint32_t, uint32_t>> submitLocalInput(uint32_t controllerState);
     void submitRemoteInput(int fromSlot, uint32_t frameNumber, uint32_t controllerState);
-    /** Peer-reported emulation frame (from periodic frame-sync over signaling). */
-    void submitPeerReportedFrame(int fromSlot, uint32_t frameNumber);
+    /** Peer-reported frame sync hash for a specific lockstep frame. */
+    void submitPeerFrameSync(int fromSlot, uint32_t frameNumber, uint32_t stateHash);
+    /** Stores this client's hash for a lockstep frame before broadcasting it. */
+    void recordLocalFrameSync(uint32_t frameNumber, uint32_t stateHash);
     bool advanceFrame();
-    void checkDesync(uint32_t romChecksum);
+    void checkDesync(uint32_t stateHash);
     void requestResync();
 
     uint32_t getCurrentFrameNumber() const;
@@ -117,23 +114,28 @@ private:
     bool waitForAllInputs(uint32_t frameNumber, int timeoutMs);
     bool hasAllInputsForFrameUnlocked(uint32_t frameNumber) const;
     void notifyInputProgressUnlocked(uint32_t frameNumber);
-    void checkPeerFrameDriftUnlocked(int fromSlot, uint32_t peerFrame);
+    void comparePeerFrameSyncUnlocked(int fromSlot, uint32_t frameNumber, uint32_t peerHash);
+    void reportStateHashMismatchUnlocked(
+        int fromSlot,
+        uint32_t frameNumber,
+        uint32_t localHash,
+        uint32_t peerHash);
+    void pruneOldFrameSyncDataUnlocked(uint32_t oldestFrameToKeep);
 
     Config m_config;
     uint32_t m_currentFrameNumber = 0;
     mutable std::recursive_mutex m_mutex;
     std::condition_variable_any m_inputCv;
     bool m_isDesynchronized = false;
-    uint32_t m_lastVerifiedFrame = 0;
     Stats m_stats;
     std::map<uint32_t, FrameInputs> m_frameBuffer;
     std::map<int, bool> m_frameReceived;
     std::map<int, uint32_t> m_lastKnownInputs;
     std::map<int, uint32_t> m_lastKnownInputFrames;
-    std::map<int, uint32_t> m_peerReportedEmulationFrames;
-    std::map<int, std::chrono::steady_clock::time_point> m_peerReportedFrameTimes;
+    std::map<uint32_t, uint32_t> m_localFrameSyncHashes;
+    std::map<int, std::map<uint32_t, uint32_t>> m_pendingPeerFrameSyncHashes;
+    std::unordered_set<uint64_t> m_reportedHashMismatches;
     std::vector<std::shared_ptr<UserInterface::Netplay::WebRTCDataChannel>> m_dataChannels;
-    std::vector<SyncCheckpoint> m_syncCheckpoints;
     Callbacks m_callbacks;
 };
 
