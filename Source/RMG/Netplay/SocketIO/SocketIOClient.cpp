@@ -225,9 +225,11 @@ void SocketIOClient::sendControllerInput(uint32_t frameNumber, uint32_t controll
 
 void SocketIOClient::sendFrameSync(uint32_t frameNumber)
 {
-    if (m_connectionState != Connected) {
+    if (m_connectionState != Connected || frameNumber == m_lastSentFrameSync) {
         return;
     }
+
+    m_lastSentFrameSync = frameNumber;
 
     QJsonObject payload;
     payload["frame"] = static_cast<qint64>(frameNumber);
@@ -464,6 +466,7 @@ void SocketIOClient::on_disconnected()
 {
     qDebug() << "Socket.IO disconnected";
     m_connectionState = Disconnected;
+    m_lastSentFrameSync = 0;
     if (m_pingTimer) {
         m_pingTimer->stop();
     }
@@ -759,7 +762,8 @@ void SocketIOClient::emitEvent(const QString& eventName, const QJsonObject& payl
     QString jsonStr = QJsonDocument(arr).toJson(QJsonDocument::Compact);
     QString message = QString("2") + jsonStr; // Engine.IO MESSAGE type is '2'
     
-    if (eventName != "controller-input") {
+    if (eventName != QLatin1String("controller-input") &&
+        eventName != QLatin1String("frame-sync")) {
         qDebug() << "SocketIOClient: Emitting event" << eventName;
     }
     

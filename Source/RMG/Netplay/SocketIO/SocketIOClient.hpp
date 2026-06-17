@@ -242,6 +242,7 @@ private:
     QString m_sessionId;
     QString m_persistentId;
     QHash<QString, ChunkedCheatUpdate> m_pendingCheatUpdates;
+    uint32_t m_lastSentFrameSync = 0;
 
     // Keep-alive
     QTimer* m_pingTimer;

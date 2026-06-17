@@ -211,6 +211,7 @@ private:
         QJsonArray activeSaves;
         QJsonObject activeCoreSettings;
         int inputDelayFrames = 4; // Default standard netplay lag buffer
+        QMap<int, uint32_t> lastFrameSyncBySlot;
     };
 
     struct ChunkedCheatUpdate

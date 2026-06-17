@@ -1113,7 +1113,16 @@ void SocketIOServer::handle_FrameSync(QWebSocket* socket, const QJsonObject& msg
     if (!client || client->roomId.isEmpty() || client->slotIndex < 0)
         return;
 
-    uint32_t frameNumber = static_cast<uint32_t>(msg.value("frame").toInteger());
+    SignalingRoom* room = getRoomById(client->roomId);
+    if (!room)
+        return;
+
+    const uint32_t frameNumber = static_cast<uint32_t>(msg.value("frame").toInteger());
+    if (room->lastFrameSyncBySlot.value(client->slotIndex) == frameNumber) {
+        return;
+    }
+
+    room->lastFrameSyncBySlot[client->slotIndex] = frameNumber;
     emit frameSyncReceived(client->roomId, client->slotIndex, frameNumber);
     broadcastFrameSync(client->roomId, client->slotIndex, frameNumber);
 }

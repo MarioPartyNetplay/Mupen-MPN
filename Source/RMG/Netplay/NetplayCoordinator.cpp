@@ -838,6 +838,7 @@ void NetplayCoordinator::resetEmulationSync()
     m_lockstepEngine.reset();
     m_currentFrameInputs.clear();
     m_sessionSyncCoreSettings = QJsonObject();
+    m_lastBroadcastFrameSync = 0;
 
     if (m_state == InGame || m_state == EndingGame) {
         setState(InLobby);
@@ -1250,19 +1251,23 @@ void NetplayCoordinator::broadcastFrameSyncIfNeeded(uint32_t frameNumber)
         return;
     }
 
-    constexpr uint32_t kFrameSyncIntervalFrames = 15;
-    if (frameNumber % kFrameSyncIntervalFrames != 0) {
+    // ~1 Hz at 60 FPS; enough for frame-drift desync checks without flooding signaling.
+    constexpr uint32_t kFrameSyncIntervalFrames = 60;
+    if (frameNumber % kFrameSyncIntervalFrames != 0 ||
+        frameNumber == m_lastBroadcastFrameSync) {
         return;
     }
+
+    m_lastBroadcastFrameSync = frameNumber;
 
     if (isHostingServer()) {
         QMetaObject::invokeMethod(m_server.get(), [this, frameNumber]() {
             m_server->broadcastFrameSync(m_gameSession.roomId, m_lockstepConfig.localPlayerSlot, frameNumber);
-        }, Qt::BlockingQueuedConnection);
+        }, Qt::QueuedConnection);
     } else if (m_socketIO) {
         QMetaObject::invokeMethod(m_socketIO.get(), [this, frameNumber]() {
             m_socketIO->sendFrameSync(frameNumber);
-        }, Qt::BlockingQueuedConnection);
+        }, Qt::QueuedConnection);
     }
 }
 
