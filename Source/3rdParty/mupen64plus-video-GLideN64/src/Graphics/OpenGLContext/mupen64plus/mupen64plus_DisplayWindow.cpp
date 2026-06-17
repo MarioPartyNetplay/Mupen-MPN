@@ -246,44 +246,65 @@ void DisplayWindowMupen64plus::_readScreen2(void * _dest, int * _width, int * _h
 	if (_width == nullptr || _height == nullptr)
 		return;
 
-	*_width = m_screenWidth;
-	*_height = m_screenHeight;
+	*_width = static_cast<int>(m_width);
+	*_height = static_cast<int>(m_height);
 
-	if (_dest == nullptr)
+	if (_dest == nullptr || m_width == 0 || m_height == 0)
 		return;
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
-	GLint oldMode;
-	glGetIntegerv(GL_READ_BUFFER, &oldMode);
+	GLint previousReadBuffer = GL_NONE;
+	glGetIntegerv(GL_READ_BUFFER, &previousReadBuffer);
 	gfxContext.bindFramebuffer(graphics::bufferTarget::READ_FRAMEBUFFER, graphics::ObjectHandle::defaultFramebuffer);
-	if (_front != 0)
+
+	// Qt (and other frontends) often render to an FBO; GL_BACK/GL_FRONT are invalid there.
+	const bool readFromFbo = graphics::ObjectHandle::defaultFramebuffer.isNotNull();
+	if (readFromFbo)
+		glReadBuffer(GL_COLOR_ATTACHMENT0);
+	else if (_front != 0)
 		glReadBuffer(GL_FRONT);
 	else
 		glReadBuffer(GL_BACK);
-	glReadPixels(0, m_heightOffset, m_screenWidth, m_screenHeight, GL_RGB, GL_UNSIGNED_BYTE, _dest);
-	if (graphics::BufferAttachmentParam(oldMode) == graphics::bufferAttachment::COLOR_ATTACHMENT0) {
-		FrameBuffer * pBuffer = frameBufferList().getCurrent();
-		if (pBuffer != nullptr)
-			gfxContext.bindFramebuffer(graphics::bufferTarget::READ_FRAMEBUFFER, pBuffer->m_FBO);
-	}
-	glReadBuffer(oldMode);
+
+	glReadPixels(
+		0,
+		static_cast<GLint>(m_heightOffset),
+		static_cast<GLsizei>(m_width),
+		static_cast<GLsizei>(m_height),
+		GL_RGB,
+		GL_UNSIGNED_BYTE,
+		_dest);
+	glFinish();
+
+	FrameBuffer * pBuffer = frameBufferList().getCurrent();
+	if (pBuffer != nullptr)
+		gfxContext.bindFramebuffer(graphics::bufferTarget::READ_FRAMEBUFFER, pBuffer->m_FBO);
+
+	glReadBuffer(previousReadBuffer);
 #else
-	u8 *pBufferData = (u8*)malloc((*_width)*(*_height) * 4);
+	u8 *pBufferData = (u8*)malloc(m_width * m_height * 4);
 	if (pBufferData == nullptr)
 		return;
 	u8 *pDest = (u8*)_dest;
-	glReadPixels(0, m_heightOffset, m_screenWidth, m_screenHeight, GL_RGBA, GL_UNSIGNED_BYTE, pBufferData);
+	glReadPixels(
+		0,
+		static_cast<GLint>(m_heightOffset),
+		static_cast<GLsizei>(m_width),
+		static_cast<GLsizei>(m_height),
+		GL_RGBA,
+		GL_UNSIGNED_BYTE,
+		pBufferData);
 
 	//Convert RGBA to RGB
-	for (s32 y = 0; y < *_height; ++y) {
-		u8 *ptr = pBufferData + ((*_width) * 4 * y);
-		for (s32 x = 0; x < *_width; ++x) {
+	for (s32 y = 0; y < static_cast<s32>(m_height); ++y) {
+		u8 *ptr = pBufferData + (m_width * 4 * y);
+		for (s32 x = 0; x < static_cast<s32>(m_width); ++x) {
 			pDest[x * 3] = ptr[0]; // red
 			pDest[x * 3 + 1] = ptr[1]; // green
 			pDest[x * 3 + 2] = ptr[2]; // blue
 			ptr += 4;
 		}
-		pDest += (*_width) * 3;
+		pDest += m_width * 3;
 	}
 
 	free(pBufferData);
