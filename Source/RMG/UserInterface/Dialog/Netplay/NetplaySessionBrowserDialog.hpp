@@ -73,6 +73,12 @@ class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBr
     QString pendingLookupAddress;
     int pendingLookupPort = Netplay::kDefaultNetplayHostingPort;
 
+    bool natJoinRetryActive = false;
+    qint64 natJoinDeadlineMs = 0;
+    QString natConnectAddress;
+    int natConnectPort = Netplay::kDefaultNetplayHostingPort;
+    QString natJoinRoomId;
+
     QString showROMDialog(QString name, QString md5);
 
     bool validate(void) const;
@@ -80,6 +86,9 @@ class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBr
     void connectToResolvedHost(const QString& address, int port);
     void beginHostCodeJoin(const QString& hostCode);
     void tryCompleteHostCodeJoin();
+    void beginNatJoinConnect(const QString& address, int port, const QString& roomId = QString());
+    void attemptNatJoinConnect();
+    void finishNatJoinFailure(const QString& error);
 
   private slots:
     void on_nickNameLineEdit_textChanged(void);

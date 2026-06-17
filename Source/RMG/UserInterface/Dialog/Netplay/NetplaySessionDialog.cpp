@@ -287,6 +287,28 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
             OnScreenDisplaySetMessage(message.toStdString());
         }
     });
+    connect(this->coordinator, &Netplay::NetplayCoordinator::peerInputStalled,
+            this, [this](int playerSlot, uint32_t frameNumber) {
+        const QString message =
+            QStringLiteral("Input stall: using last known input for player %1 (starting at frame %2)")
+                .arg(playerSlot)
+                .arg(frameNumber);
+        const bool shareInChat =
+            CoreSettingsGetBoolValue(SettingsID::GUI_NetplayShareSystemMessagesInChat);
+
+        if (shareInChat) {
+            this->coordinator->sendChatMessage(message);
+            return;
+        }
+
+        this->chatPlainTextEdit->appendHtml(
+            QStringLiteral("<span style=\"color:#ffaa44;\"><b>Input stall:</b> player %1 at frame %2</span>")
+                .arg(playerSlot)
+                .arg(frameNumber));
+        if (CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayBufferAlerts)) {
+            OnScreenDisplaySetMessage(message.toStdString());
+        }
+    });
     
     // Auto-enable pre-toggled cheats for host
     if (this->sessionSlot == 0)

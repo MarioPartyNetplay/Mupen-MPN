@@ -17,9 +17,12 @@ namespace UserInterface::Netplay {
 
 namespace {
 
-constexpr int kJoinTimeoutMs = 30000;
+constexpr int kJoinTimeoutMs = 45000;
 constexpr int kMaxHostRegisterAttempts = 30;
 constexpr int kHostRegisterIntervalMs = 1000;
+constexpr int kPunchPacketsPerAttempt = 10;
+constexpr int kPunchRetryIntervalMs = 1000;
+constexpr int kHostPeerPunchDurationMs = 30000;
 
 qint64 monotonicMs()
 {
@@ -71,6 +74,9 @@ void NatTraversalClient::startHosting(uint16_t signalingPort, bool listInBrowser
     if (!m_housekeepingTimer.isActive()) {
         m_housekeepingTimer.start();
     }
+
+    // Prime the signaling port mapping before registration (port-restricted cone NAT).
+    queryStunServer(QString(), 0, signalingPort);
 
     onHousekeepingTimer();
 }
@@ -338,12 +344,19 @@ void NatTraversalClient::handleServerMessage(const QByteArray& datagram)
             return;
         }
 
+        m_joinGotHost = true;
+        m_joinHostAddress = address;
+        m_joinHostPort = port;
+        m_nextJoinRequestMs = 0;
+        ++m_joinPunchAttempts;
+        m_nextJoinPunchMs = monotonicMs() + kPunchRetryIntervalMs;
+
         sendHolePunch(address, static_cast<uint16_t>(port), 0);
 
-        resetJoinState();
-        m_mode = Mode::Idle;
-        m_housekeepingTimer.stop();
-        emit hostLookupSucceeded(address, port);
+        if (!m_joinLookupSucceededEmitted) {
+            m_joinLookupSucceededEmitted = true;
+            emit hostLookupSucceeded(address, port);
+        }
         return;
     }
 
@@ -408,12 +421,29 @@ void NatTraversalClient::onHousekeepingTimer()
             sendToServer(keepMessage);
             m_nextHostKeepMs = now + 15000;
         }
+
+        if (!m_peerPunchAddress.isEmpty() && m_peerPunchPort > 0 && m_peerPunchDeadlineMs != 0 &&
+            now < m_peerPunchDeadlineMs) {
+            if (m_nextPeerPunchMs == 0 || now >= m_nextPeerPunchMs) {
+                sendHolePunch(m_peerPunchAddress, static_cast<uint16_t>(m_peerPunchPort), m_signalingPort);
+                m_nextPeerPunchMs = now + kPunchRetryIntervalMs;
+            }
+        }
         return;
     }
 
     if (m_mode == Mode::Joining) {
         if (m_joinDeadlineMs != 0 && now >= m_joinDeadlineMs) {
             failLookup("Timed out waiting for host");
+            return;
+        }
+
+        if (m_joinGotHost) {
+            if (m_nextJoinPunchMs == 0 || now >= m_nextJoinPunchMs) {
+                sendHolePunch(m_joinHostAddress, static_cast<uint16_t>(m_joinHostPort), 0);
+                ++m_joinPunchAttempts;
+                m_nextJoinPunchMs = now + kPunchRetryIntervalMs;
+            }
             return;
         }
 
@@ -454,6 +484,7 @@ void NatTraversalClient::resetHostState()
     m_hostRegisterAttempts = 0;
     m_nextHostRegisterMs = 0;
     m_nextHostKeepMs = 0;
+    resetPeerPunchState();
 }
 
 void NatTraversalClient::resetJoinState()
@@ -461,6 +492,34 @@ void NatTraversalClient::resetJoinState()
     m_joinCode.clear();
     m_joinDeadlineMs = 0;
     m_nextJoinRequestMs = 0;
+    m_joinGotHost = false;
+    m_joinHostAddress.clear();
+    m_joinHostPort = 0;
+    m_joinPunchAttempts = 0;
+    m_nextJoinPunchMs = 0;
+    m_joinLookupSucceededEmitted = false;
+}
+
+void NatTraversalClient::resetPeerPunchState()
+{
+    m_peerPunchAddress.clear();
+    m_peerPunchPort = 0;
+    m_peerPunchDeadlineMs = 0;
+    m_nextPeerPunchMs = 0;
+}
+
+void NatTraversalClient::schedulePeerPunch(const QString& address, int port)
+{
+    if (address.isEmpty() || port <= 0) {
+        return;
+    }
+
+    m_peerPunchAddress = address;
+    m_peerPunchPort = port;
+    if (m_peerPunchDeadlineMs == 0) {
+        m_peerPunchDeadlineMs = monotonicMs() + kHostPeerPunchDurationMs;
+    }
+    m_nextPeerPunchMs = 0;
 }
 
 namespace {
@@ -811,14 +870,15 @@ void NatTraversalClient::sendHolePunch(const QString& address, uint16_t targetPo
     }
 
     static const QByteArray kPunchPayload = QByteArrayLiteral("RMG-PUNCH");
-    for (int attempt = 0; attempt < 3; ++attempt) {
+    for (int attempt = 0; attempt < kPunchPacketsPerAttempt; ++attempt) {
         if (punchSocket->writeDatagram(kPunchPayload, targetAddr, targetPort) < 0) {
             qWarning() << "Hole punch send failed to" << address << targetPort << punchSocket->errorString();
             break;
         }
     }
 
-    qDebug() << "Sent hole punch to" << address << targetPort << "from local port" << punchSocket->localPort();
+    qDebug() << "Sent" << kPunchPacketsPerAttempt << "hole punch packets to" << address << targetPort
+             << "from local port" << punchSocket->localPort();
     punchSocket->close();
     punchSocket->deleteLater();
 }
@@ -826,6 +886,12 @@ void NatTraversalClient::sendHolePunch(const QString& address, uint16_t targetPo
 void NatTraversalClient::handlePunchRequest(const QString& address, int port)
 {
     qDebug() << "NAT traversal punch request for" << address << port;
+    if (m_mode == Mode::Hosting) {
+        schedulePeerPunch(address, port);
+        sendHolePunch(address, static_cast<uint16_t>(port), m_signalingPort);
+        return;
+    }
+
     sendHolePunch(address, static_cast<uint16_t>(port), 0);
 }
 
