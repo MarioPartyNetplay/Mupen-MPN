@@ -17,9 +17,11 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
+#include <QLockFile>
 
 #include <iostream>
 #include <cstdlib>
+#include <memory>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -165,6 +167,44 @@ static void signal_handler(int sig)
     QGuiApplication::quit();
 }
 #endif // _WIN32
+
+#ifdef PORTABLE_INSTALL
+static std::unique_ptr<QLockFile> l_PortableInstanceLock;
+
+static void configurePortableMultiInstanceProfile(QCoreApplication& app)
+{
+    if (!CoreGetPortableDirectoryMode())
+    {
+        return;
+    }
+
+    const QByteArray profileRootEnv = qgetenv("RMG_USER_DATA_DIR");
+    if (!profileRootEnv.isEmpty())
+    {
+        CoreSetPortableProfileRoot(profileRootEnv.toStdString());
+        std::cerr << "Using portable profile root from RMG_USER_DATA_DIR: "
+                  << profileRootEnv.constData() << std::endl;
+        return;
+    }
+
+    const QString lockPath =
+        QDir(app.applicationDirPath()).filePath(QStringLiteral(".rmg-instance.lock"));
+    l_PortableInstanceLock = std::make_unique<QLockFile>(lockPath);
+    l_PortableInstanceLock->setStaleLockTime(0);
+
+    if (l_PortableInstanceLock->tryLock(0))
+    {
+        return;
+    }
+
+    const QString isolatedProfile =
+        QStringLiteral("instances/%1").arg(QCoreApplication::applicationPid());
+    CoreSetPortableProfileRoot(isolatedProfile.toStdString());
+    std::cerr << "Portable install: another instance is using the default profile; "
+              << "using isolated profile '" << isolatedProfile.toStdString()
+              << "'" << std::endl;
+}
+#endif // PORTABLE_INSTALL
 
 #ifdef __APPLE__
 static QString macOSExecutableDirectory(void)
@@ -332,6 +372,13 @@ int main(int argc, char **argv)
     QCommandLineOption quitAfterEmulationOption({"q", "quit-after-emulation"}, "Quits RMG when emulation has finished");
     QCommandLineOption loadStateSlot("load-state-slot", "Loads save state slot when launching the ROM", "Slot Number");
     QCommandLineOption diskOption("disk", "64DD Disk to open ROM in combination with", "64DD Disk");
+#ifdef PORTABLE_INSTALL
+    QCommandLineOption userDataDirOption(
+        "user-data-dir",
+        "Use an isolated portable profile directory (Config/Data/Save/Cache). "
+        "Useful when running multiple instances from the same install.",
+        "path");
+#endif // PORTABLE_INSTALL
 
 #ifndef PORTABLE_INSTALL
     parser.addOption(libPathOption);
@@ -345,10 +392,23 @@ int main(int argc, char **argv)
     parser.addOption(quitAfterEmulationOption);
     parser.addOption(loadStateSlot);
     parser.addOption(diskOption);
+#ifdef PORTABLE_INSTALL
+    parser.addOption(userDataDirOption);
+#endif // PORTABLE_INSTALL
     parser.addPositionalArgument("ROM", "ROM to open");
 
     // parse arguments
     parser.process(app);
+
+#ifdef PORTABLE_INSTALL
+    configurePortableMultiInstanceProfile(app);
+    if (parser.isSet(userDataDirOption))
+    {
+        CoreSetPortableProfileRoot(parser.value(userDataDirOption).toStdString());
+        std::cerr << "Using portable profile root from --user-data-dir: "
+                  << parser.value(userDataDirOption).toStdString() << std::endl;
+    }
+#endif // PORTABLE_INSTALL
 
 #ifndef PORTABLE_INSTALL
     // set path overrides before initializing

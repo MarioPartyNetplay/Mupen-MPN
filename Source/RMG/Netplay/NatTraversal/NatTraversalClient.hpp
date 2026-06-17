@@ -64,9 +64,11 @@ private:
     void failLookup(const QString& reason);
     void resetJoinState();
     void resetHostState();
+    void resetPeerPunchState();
     void tryStunServer(int serverIndex);
     void sendStunBindingRequest(const QHostAddress& serverAddr, quint16 port);
     void handlePunchRequest(const QString& address, int port);
+    void schedulePeerPunch(const QString& address, int port);
 
     static QList<QByteArray> splitTraversalParts(QByteArray datagram);
 
@@ -87,6 +89,17 @@ private:
     QString m_joinCode;
     qint64 m_joinDeadlineMs = 0;
     qint64 m_nextJoinRequestMs = 0;
+    bool m_joinGotHost = false;
+    QString m_joinHostAddress;
+    int m_joinHostPort = 0;
+    int m_joinPunchAttempts = 0;
+    qint64 m_nextJoinPunchMs = 0;
+    bool m_joinLookupSucceededEmitted = false;
+
+    QString m_peerPunchAddress;
+    int m_peerPunchPort = 0;
+    qint64 m_peerPunchDeadlineMs = 0;
+    qint64 m_nextPeerPunchMs = 0;
 
     QString m_stunQueryPrimaryHost;
     quint16 m_stunQueryPrimaryPort = kDefaultStunPort;

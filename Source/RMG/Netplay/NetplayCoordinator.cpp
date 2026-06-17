@@ -17,12 +17,24 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QDebug>
+#include <QThread>
 #include <QUuid>
 
 using namespace UserInterface::Netplay;
 using namespace RMGCore;
 
 namespace {
+
+Qt::ConnectionType socketDispatchConnectionType(const QObject* target)
+{
+    if (QThread::currentThread() == target->thread()) {
+        return Qt::DirectConnection;
+    }
+
+    // Emulation runs off the UI thread; block until socket I/O is dispatched so
+    // peers receive inputs before this frame's stall timeout expires.
+    return Qt::BlockingQueuedConnection;
+}
 
 QJsonObject coreSettingsToJson(const CoreNetplaySyncSettings& settings)
 {
@@ -490,6 +502,11 @@ void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
     const auto outbound =
         m_lockstepEngine->submitLocalInput(controllerState);
 
+    const Qt::ConnectionType dispatchType =
+        isHostingServer()
+            ? socketDispatchConnectionType(m_server.get())
+            : socketDispatchConnectionType(m_socketIO.get());
+
     for (const auto& [sendFrameNumber, state] : outbound) {
         if (isHostingServer()) {
             QMetaObject::invokeMethod(m_server.get(), [this, sendFrameNumber, state]() {
@@ -498,11 +515,11 @@ void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
                     m_lockstepConfig.localPlayerSlot,
                     sendFrameNumber,
                     state);
-            }, Qt::BlockingQueuedConnection);
+            }, dispatchType);
         } else if (m_socketIO) {
             QMetaObject::invokeMethod(m_socketIO.get(), [this, sendFrameNumber, state]() {
                 m_socketIO->sendControllerInput(sendFrameNumber, state);
-            }, Qt::BlockingQueuedConnection);
+            }, dispatchType);
         }
     }
 }

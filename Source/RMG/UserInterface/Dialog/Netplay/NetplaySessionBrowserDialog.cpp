@@ -28,6 +28,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSharedPointer>
+#include <QDateTime>
+#include <QTimer>
 
 #include <RMG-Core/Settings.hpp>
 #include <RMG-Core/Rom.hpp>
@@ -416,12 +418,20 @@ void NetplaySessionBrowserDialog::onCoordinatorConnected(void)
 
 void NetplaySessionBrowserDialog::onCoordinatorConnectionError(const QString& error)
 {
+    if (natJoinRetryActive && QDateTime::currentMSecsSinceEpoch() < natJoinDeadlineMs) {
+        qDebug() << "NAT join connect failed, retrying:" << error;
+        isWaitingForConnection = true;
+        QTimer::singleShot(1000, this, [this]() {
+            if (this->natJoinRetryActive) {
+                this->attemptNatJoinConnect();
+            }
+        });
+        return;
+    }
+
     if (isWaitingForConnection || isResolvingHostCode)
     {
-        isWaitingForConnection = false;
-        isResolvingHostCode = false;
-        this->validateJoinButton();
-        QtMessageBox::Error(this, "Connection Failed", "Failed to connect to server: " + error);
+        finishNatJoinFailure(error);
     }
 }
 
@@ -431,7 +441,11 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
     
     if (isWaitingForConnection)
     {
+        natJoinRetryActive = false;
         isWaitingForConnection = false;
+        if (this->natTraversalClient) {
+            this->natTraversalClient->cancelLookup();
+        }
         qDebug() << "Joined room successfully:" << roomId << "slot:" << slot;
         
         // Build session data from the room metadata received during auto-join.
@@ -531,11 +545,50 @@ void NetplaySessionBrowserDialog::connectToResolvedHost(const QString& address, 
     }
 
     qDebug() << "Connecting to" << address << ":" << port << "room:" << roomId;
+    beginNatJoinConnect(address, port, roomId);
+}
 
+void NetplaySessionBrowserDialog::beginNatJoinConnect(const QString& address, int port, const QString& roomId)
+{
     this->targetAddress = address;
     this->targetPort = port;
+    this->natConnectAddress = address;
+    this->natConnectPort = port;
+    this->natJoinRoomId = roomId;
+    this->natJoinRetryActive = true;
+    this->natJoinDeadlineMs = QDateTime::currentMSecsSinceEpoch() + 30000;
     this->isWaitingForConnection = true;
-    this->coordinator->connectToDirectIPServer(address, port, this->nickNameLineEdit->text(), roomId);
+    this->attemptNatJoinConnect();
+}
+
+void NetplaySessionBrowserDialog::attemptNatJoinConnect()
+{
+    if (!this->natJoinRetryActive) {
+        return;
+    }
+
+    if (QDateTime::currentMSecsSinceEpoch() >= this->natJoinDeadlineMs) {
+        finishNatJoinFailure(QStringLiteral("NAT traversal timed out while connecting to host"));
+        return;
+    }
+
+    qDebug() << "NAT join connect attempt to" << this->natConnectAddress << ":" << this->natConnectPort;
+    this->isWaitingForConnection = true;
+    this->coordinator->connectToDirectIPServer(
+        this->natConnectAddress,
+        this->natConnectPort,
+        this->nickNameLineEdit->text(),
+        this->natJoinRoomId);
+}
+
+void NetplaySessionBrowserDialog::finishNatJoinFailure(const QString& error)
+{
+    this->natJoinRetryActive = false;
+    this->isWaitingForConnection = false;
+    this->isResolvingHostCode = false;
+    this->natTraversalClient.reset();
+    this->validateJoinButton();
+    QtMessageBox::Error(this, "Connection Failed", "Failed to connect to server: " + error);
 }
 
 void NetplaySessionBrowserDialog::beginHostCodeJoin(const QString& hostCode)
@@ -610,8 +663,22 @@ void NetplaySessionBrowserDialog::tryCompleteHostCodeJoin()
     }
 
     if (this->pendingLookupReady) {
+        QString connectAddress = this->pendingLookupAddress;
+        int connectPort = this->pendingLookupPort;
+
+        QString indexAddress;
+        int indexPort = 0;
+        if (Netplay::sessionConnectEndpoint(this->pendingIndexSession, &indexAddress, &indexPort)) {
+            if (Netplay::isUsableConnectAddress(indexAddress)) {
+                connectAddress = indexAddress;
+            }
+            if (indexPort > 0) {
+                connectPort = indexPort;
+            }
+        }
+
         this->isResolvingHostCode = false;
-        this->connectToResolvedHost(this->pendingLookupAddress, this->pendingLookupPort);
+        this->connectToResolvedHost(connectAddress, connectPort);
         return;
     }
 
