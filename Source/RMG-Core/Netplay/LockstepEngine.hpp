@@ -38,7 +38,7 @@ public:
         bool desyncDetectionEnabled = true;
         bool resyncEnabled = false;
         int resyncCheckIntervalFrames = 60;
-        int stallTimeoutMilliseconds = 1000; // allow up to 1 second for peer input
+        int stallTimeoutMilliseconds = 0;
     };
 
     struct FrameInputs {

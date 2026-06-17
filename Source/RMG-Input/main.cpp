@@ -1006,6 +1006,23 @@ static unsigned char data_crc(unsigned char *data, int length)
     return remainder;
 }
 
+static void toggle_emulation_pause(void)
+{
+    if (CoreIsEmbeddedNetplayActive())
+    {
+        return;
+    }
+
+    if (CoreIsEmulationPaused())
+    {
+        CoreResumeEmulation();
+    }
+    else
+    {
+        CorePauseEmulation();
+    }
+}
+
 static bool check_hotkeys(int Control)
 {
     InputProfile* profile = &l_InputProfiles[Control];
@@ -1039,7 +1056,7 @@ static bool check_hotkeys(int Control)
     DEFINE_HOTKEY(Hotkey_Shutdown,              Hotkey_Shutdown_Pressed,      CoreStopEmulation(), );
     DEFINE_HOTKEY(Hotkey_Exit,                  Hotkey_Exit_Pressed,          QGuiApplication::quit(), );
     DEFINE_HOTKEY(Hotkey_SoftReset,             Hotkey_SoftReset_Pressed,     CoreResetEmulation(false), );
-    DEFINE_HOTKEY(Hotkey_Resume,                Hotkey_Resume_Pressed,        CoreIsEmulationPaused() ? CoreResumeEmulation() : CorePauseEmulation(), );
+    DEFINE_HOTKEY(Hotkey_Resume,                Hotkey_Resume_Pressed,        toggle_emulation_pause(), );
     DEFINE_HOTKEY(Hotkey_Screenshot,            Hotkey_Screenshot_Pressed,    CoreTakeScreenshot(), );
     DEFINE_HOTKEY(Hotkey_LimitFPS,              Hotkey_LimitFPS_Pressed,      CoreSetSpeedLimiterState(!CoreIsSpeedLimiterEnabled()), );
     DEFINE_HOTKEY(Hotkey_SpeedFactor25,         Hotkey_SpeedFactor_Pressed,   CoreSetSpeedFactor(25), );
