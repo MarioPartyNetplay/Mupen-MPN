@@ -25,8 +25,9 @@ public:
     bool isLookupActive() const;
     QString hostCode() const;
 
-    void startHosting(uint16_t signalingPort);
-    void resumeHosting(const QString& hostCode, uint16_t signalingPort);
+    void startHosting(uint16_t signalingPort, bool listInBrowser = true);
+    void resumeHosting(const QString& hostCode, uint16_t signalingPort, bool listInBrowser = true);
+    void setListInBrowser(bool listInBrowser);
     void stopHosting(bool unregister = true);
 
     void lookupHost(const QString& hostCode);
@@ -78,6 +79,7 @@ private:
     uint16_t m_signalingPort = kDefaultNetplayHostingPort;
 
     QString m_hostCode;
+    bool m_listInBrowser = true;
     int m_hostRegisterAttempts = 0;
     qint64 m_nextHostRegisterMs = 0;
     qint64 m_nextHostKeepMs = 0;

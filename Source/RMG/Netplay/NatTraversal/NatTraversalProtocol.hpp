@@ -7,6 +7,7 @@
 
 #include <QHostAddress>
 #include <QAbstractSocket>
+#include <QNetworkInterface>
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QStringList>
@@ -84,6 +85,34 @@ inline bool looksLikeIpAddress(const QString& text)
     return address.setAddress(text.trimmed());
 }
 
+inline QString localNetworkAddress()
+{
+    QString linkLocalFallback;
+    for (const QNetworkInterface& iface : QNetworkInterface::allInterfaces()) {
+        if (!(iface.flags() & QNetworkInterface::IsUp) ||
+            !(iface.flags() & QNetworkInterface::IsRunning) ||
+            (iface.flags() & QNetworkInterface::IsLoopBack)) {
+            continue;
+        }
+
+        for (const QNetworkAddressEntry& entry : iface.addressEntries()) {
+            const QHostAddress addr = entry.ip();
+            if (addr.protocol() != QAbstractSocket::IPv4Protocol || addr.isLoopback()) {
+                continue;
+            }
+            if (addr.isLinkLocal()) {
+                if (linkLocalFallback.isEmpty()) {
+                    linkLocalFallback = addr.toString();
+                }
+                continue;
+            }
+            return addr.toString();
+        }
+    }
+
+    return linkLocalFallback;
+}
+
 inline bool isUsableConnectAddress(const QString& text)
 {
     QHostAddress address;
@@ -146,6 +175,46 @@ inline QString sessionIndexKey(const QString& hostCode)
     return QStringLiteral("session/") + normalized;
 }
 
+inline QJsonObject sessionIndexPublishObject(const QJsonObject& session)
+{
+    static const QStringList keys = {
+        QStringLiteral("room_name"),
+        QStringLiteral("room_id"),
+        QStringLiteral("roomId"),
+        QStringLiteral("host_name"),
+        QStringLiteral("host_code"),
+        QStringLiteral("player_name"),
+        QStringLiteral("game_name"),
+        QStringLiteral("gameId"),
+        QStringLiteral("md5_hash"),
+        QStringLiteral("MD5"),
+        QStringLiteral("rom_path"),
+        QStringLiteral("connect_address"),
+        QStringLiteral("public_address"),
+        QStringLiteral("server_address"),
+        QStringLiteral("connect_port"),
+        QStringLiteral("public_port"),
+        QStringLiteral("server_port"),
+        QStringLiteral("use_nat_traversal"),
+        QStringLiteral("show_in_browser"),
+        QStringLiteral("started"),
+        QStringLiteral("player_count"),
+        QStringLiteral("max_players"),
+        QStringLiteral("lobby_size"),
+        QStringLiteral("players"),
+        QStringLiteral("is_hosting"),
+        QStringLiteral("password"),
+    };
+
+    QJsonObject published;
+    for (const QString& key : keys) {
+        if (session.contains(key)) {
+            published.insert(key, session.value(key));
+        }
+    }
+    return published;
+}
+
 inline QString natTraversalServerHostname()
 {
     const QByteArray overrideHost = qgetenv("RMG_NAT_TRAVERSAL_HOST");
@@ -164,6 +233,19 @@ inline QUrl natTraversalRoomsUrl(bool waitingOnly = true)
     query.addQueryItem(QStringLiteral("waiting"), waitingOnly ? QStringLiteral("1") : QStringLiteral("0"));
     url.setQuery(query);
     return url;
+}
+
+inline QUrl natTraversalSessionIndexUrl(const QString& hostCode)
+{
+    const QString key = sessionIndexKey(hostCode);
+    if (key.isEmpty()) {
+        return {};
+    }
+
+    return QUrl(QStringLiteral("http://%1:%2/index/%3")
+                    .arg(natTraversalServerHostname())
+                    .arg(kNatIndexHttpPort)
+                    .arg(key));
 }
 
 static constexpr quint16 kDefaultStunPort = 6262;

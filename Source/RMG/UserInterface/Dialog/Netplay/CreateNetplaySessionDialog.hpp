@@ -64,6 +64,7 @@ class CreateNetplaySessionDialog : public QWidget, private Ui::CreateNetplaySess
     
     QString publicIpAddress;
     QCheckBox* directConnectionCheckBox = nullptr;
+    QCheckBox* showInBrowserCheckBox = nullptr;
     QSpinBox* hostingPortSpinBox = nullptr;
 
   	QJsonObject sessionJson;

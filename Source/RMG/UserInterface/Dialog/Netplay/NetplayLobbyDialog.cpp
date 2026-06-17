@@ -10,6 +10,7 @@
 #include "NetplayLobbyDialog.hpp"
 #include "CreateNetplaySessionDialog.hpp"
 #include "NetplaySessionBrowserDialog.hpp"
+#include "NetplayCommon.hpp"
 
 #include <QPushButton>
 #include <QRegularExpression>
@@ -38,7 +39,7 @@ NetplayLobbyDialog::NetplayLobbyDialog(QWidget* parent, Netplay::NetplayCoordina
     this->joinPage->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     this->joinTabLayout->addWidget(this->joinPage);
 
-    QRegularExpression nicknameRe("^[a-zA-Z0-9 _-]{1,16}$");
+    QRegularExpression nicknameRe(NETPLAYCOMMON_NICKNAME_REGEX);
     this->nickNameLineEdit->setValidator(new QRegularExpressionValidator(nicknameRe, this));
     {
         QSignalBlocker blocker(this->nickNameLineEdit);
@@ -113,9 +114,7 @@ void NetplayLobbyDialog::updateActionButton(void)
         return;
     }
 
-    const bool nicknameValid = !this->nickNameLineEdit->text().isEmpty() &&
-                               !this->nickNameLineEdit->text().contains(' ') &&
-                               this->nickNameLineEdit->text().size() <= 128;
+    const bool nicknameValid = NetplayCommon::IsValidNickname(this->nickNameLineEdit->text());
 
     if (this->tabWidget->currentIndex() == 0)
     {

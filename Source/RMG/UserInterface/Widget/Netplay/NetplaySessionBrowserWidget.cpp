@@ -54,7 +54,7 @@ NetplaySessionBrowserWidget::NetplaySessionBrowserWidget(QWidget* parent) : QSta
     connect(this->tableWidget, &QTableWidget::currentItemChanged, this, &NetplaySessionBrowserWidget::on_tableWidget_currentItemChanged);
 
     QStringList labels;
-    labels << "Host";
+    labels << "Name";
     labels << "Game";
     labels << "Players";
     this->tableWidget->setColumnCount(labels.size());

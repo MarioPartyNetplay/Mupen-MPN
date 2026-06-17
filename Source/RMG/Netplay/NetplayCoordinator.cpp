@@ -163,8 +163,6 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
                 m_lockstepConfig.localPlayerSlot = 0;
 
                 setupPeerConnections(this->m_cachedPlayers);
-                initializeLockstepEngine();
-                setState(InGame);
                 emit gameStarted(m_gameSession);
             });
 
@@ -187,6 +185,7 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
                 }
 
                 m_cachedPlayers = players;
+                synchronizeLockstepPlayerCount();
                 emit playersUpdated(players);
             });
 
@@ -421,12 +420,16 @@ void NetplayCoordinator::startGame(const QString& gameMode, bool resyncEnabled, 
 
 void NetplayCoordinator::endGame()
 {
-    if (m_state != InGame) {
+    if (m_state != InGame && m_state != StartingGame) {
         return;
     }
 
     setState(EndingGame);
-    m_socketIO->endGame();
+    if (!isHostingServer() && m_socketIO) {
+        m_socketIO->endGame();
+    }
+
+    resetEmulationSync();
 }
 
 void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
@@ -626,22 +629,13 @@ void NetplayCoordinator::on_socketIO_roomClosed(const QString& reason)
 void NetplayCoordinator::on_socketIO_playersUpdated(const QList<SocketIOClient::PlayerInfo>& players)
 {
     m_cachedPlayers = players;
-    int count = players.size();
-
-    // Update the config snapshot
-    m_lockstepConfig.numPlayers = count;
-
-    // CRITICAL: Tell the LIVE engine to update its requirements
-    if (m_lockstepEngine) {
-        m_lockstepEngine->setNumPlayers(count);
-    }
+    synchronizeLockstepPlayerCount();
 
     for (const auto& player : players) {
         if (player.id == m_socketIO->getPlayerId()) {
             m_gameSession.localSlot = player.slot;
             m_lockstepConfig.localPlayerSlot = player.slot;
-            
-            // Tell the engine who WE are
+
             if (m_lockstepEngine) {
                 m_lockstepEngine->setLocalPlayerSlot(player.slot);
             }
@@ -686,28 +680,24 @@ void NetplayCoordinator::on_socketIO_roomsListed(const QJsonArray& rooms)
 
 void NetplayCoordinator::on_socketIO_gameStarted(const QString& mode, bool resync, const QString& matchId)
 {
-    // Update the config with the actual assigned slot from the server
-    m_lockstepConfig.localPlayerSlot = m_gameSession.localSlot;
-    m_lockstepConfig.numPlayers = m_cachedPlayers.size();
+    Q_UNUSED(mode);
+    Q_UNUSED(resync);
+    Q_UNUSED(matchId);
 
-    initializeLockstepEngine();
-    
-    // Tell the Core which slot WE are
-    CoreSetEmbeddedNetplayState(true, m_gameSession.localSlot);
+    m_lockstepConfig.localPlayerSlot = m_gameSession.localSlot;
+    synchronizeLockstepPlayerCount();
 
     if (!m_sessionSyncCheats.isEmpty()) {
         emit cheatsUpdated(m_sessionSyncCheats);
     }
 
-    setState(InGame);
     emit gameStarted(m_gameSession);
 }
 
 void NetplayCoordinator::on_socketIO_gameEnded()
 {
     qDebug() << "NetplayCoordinator: Game ended";
-    m_lockstepEngine.reset();
-    setState(InLobby);
+    resetEmulationSync();
     emit gameEnded();
 }
 
@@ -777,11 +767,52 @@ void NetplayCoordinator::on_socketIO_answerReceived(const QString& fromPlayerId,
         }
     }
 }
+void NetplayCoordinator::synchronizeLockstepPlayerCount()
+{
+    int numPlayers = 2;
+
+    if (isHostingServer()) {
+        numPlayers = std::max(2, m_server ? (m_server->getConnectedClientCount() + 1) : 2);
+    }
+
+    numPlayers = std::max(numPlayers, static_cast<int>(m_cachedPlayers.size()));
+    if (numPlayers > 4) {
+        numPlayers = 4;
+    }
+
+    m_lockstepConfig.numPlayers = numPlayers;
+    m_gameSession.numPlayers = numPlayers;
+
+    if (m_lockstepEngine) {
+        m_lockstepEngine->setNumPlayers(numPlayers);
+    }
+}
+
+void NetplayCoordinator::beginEmulationSync()
+{
+    m_lockstepConfig.localPlayerSlot = m_gameSession.localSlot;
+    synchronizeLockstepPlayerCount();
+    initializeLockstepEngine();
+
+    CoreSetEmbeddedNetplayState(true, m_gameSession.localSlot);
+    setState(InGame);
+}
+
+void NetplayCoordinator::resetEmulationSync()
+{
+    CoreSetEmbeddedNetplayState(false, 0);
+    m_lockstepEngine.reset();
+    m_currentFrameInputs.clear();
+
+    if (m_state == InGame || m_state == EndingGame) {
+        setState(InLobby);
+    }
+}
+
 void NetplayCoordinator::initializeLockstepEngine()
 {
-    if (m_lockstepEngine) {
-        return;
-    }
+    m_lockstepEngine.reset();
+    m_currentFrameInputs.clear();
 
     m_lockstepEngine = std::make_unique<RMGCore::LockstepEngine>(m_lockstepConfig);
 

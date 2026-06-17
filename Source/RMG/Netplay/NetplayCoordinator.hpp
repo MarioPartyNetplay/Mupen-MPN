@@ -71,6 +71,8 @@
      void endGame();
  
      // Game Input & Emulation
+     void beginEmulationSync();
+     void resetEmulationSync();
      void submitFrameInput(uint32_t controllerState);
      bool advanceFrame();
      void verifyGameSync(uint32_t romChecksum);
@@ -179,6 +181,7 @@
  private:
      void setState(State newState);
      void setupPeerConnections(const QList<SocketIOClient::PlayerInfo>& players);
+     void synchronizeLockstepPlayerCount();
      void initializeLockstepEngine();
      void broadcastFrameSyncIfNeeded(uint32_t frameNumber);
  

@@ -56,13 +56,14 @@ QString NatTraversalClient::hostCode() const
     return m_hostCode;
 }
 
-void NatTraversalClient::startHosting(uint16_t signalingPort)
+void NatTraversalClient::startHosting(uint16_t signalingPort, bool listInBrowser)
 {
     cancelLookup();
     resetHostState();
 
     m_mode = Mode::Hosting;
     m_signalingPort = signalingPort;
+    m_listInBrowser = listInBrowser;
     m_hostRegisterAttempts = 0;
     m_nextHostRegisterMs = 0;
     m_nextHostKeepMs = 0;
@@ -74,7 +75,7 @@ void NatTraversalClient::startHosting(uint16_t signalingPort)
     onHousekeepingTimer();
 }
 
-void NatTraversalClient::resumeHosting(const QString& hostCode, uint16_t signalingPort)
+void NatTraversalClient::resumeHosting(const QString& hostCode, uint16_t signalingPort, bool listInBrowser)
 {
     cancelLookup();
 
@@ -85,6 +86,7 @@ void NatTraversalClient::resumeHosting(const QString& hostCode, uint16_t signali
 
     m_mode = Mode::Hosting;
     m_signalingPort = signalingPort;
+    m_listInBrowser = listInBrowser;
     m_hostCode = normalizedCode;
     m_hostRegisterAttempts = 0;
     m_nextHostRegisterMs = 0;
@@ -95,6 +97,11 @@ void NatTraversalClient::resumeHosting(const QString& hostCode, uint16_t signali
     }
 
     onHousekeepingTimer();
+}
+
+void NatTraversalClient::setListInBrowser(bool listInBrowser)
+{
+    m_listInBrowser = listInBrowser;
 }
 
 void NatTraversalClient::stopHosting(bool unregister)
@@ -385,8 +392,10 @@ void NatTraversalClient::onHousekeepingTimer()
                     return;
                 }
 
-                sendToServer(QByteArray(kNatTraversalProtocol) + "|REGISTER|" +
-                             QByteArray::number(m_signalingPort));
+                QByteArray registerMessage = QByteArray(kNatTraversalProtocol) + "|REGISTER|" +
+                                           QByteArray::number(m_signalingPort) + "|" +
+                                           (m_listInBrowser ? "1" : "0");
+                sendToServer(registerMessage);
                 ++m_hostRegisterAttempts;
                 m_nextHostRegisterMs = now + kHostRegisterIntervalMs;
             }
@@ -394,7 +403,9 @@ void NatTraversalClient::onHousekeepingTimer()
         }
 
         if (m_nextHostKeepMs == 0 || now >= m_nextHostKeepMs) {
-            sendToServer(QByteArray(kNatTraversalProtocol) + "|KEEP|" + m_hostCode.toUtf8());
+            QByteArray keepMessage = QByteArray(kNatTraversalProtocol) + "|KEEP|" + m_hostCode.toUtf8() + "|" +
+                                     (m_listInBrowser ? "1" : "0");
+            sendToServer(keepMessage);
             m_nextHostKeepMs = now + 15000;
         }
         return;

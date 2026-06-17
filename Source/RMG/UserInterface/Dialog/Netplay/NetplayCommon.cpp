@@ -26,6 +26,12 @@ using namespace NetplayCommon;
 // register type with qt
 Q_DECLARE_METATYPE(NetplayServerData);
 
+bool NetplayCommon::IsValidNickname(const QString& nickname)
+{
+    static const QRegularExpression re(NETPLAYCOMMON_NICKNAME_REGEX);
+    return re.match(nickname).hasMatch();
+}
+
 void NetplayCommon::AddCommonJson(QJsonObject& json)
 {
     QCryptographicHash hash = QCryptographicHash(QCryptographicHash::Sha256);

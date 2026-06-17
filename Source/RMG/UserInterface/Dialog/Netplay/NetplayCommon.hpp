@@ -14,6 +14,7 @@
 #include <QJsonObject>
 #include <QComboBox>
 #include <QString>
+#include <QRegularExpression>
 #ifdef NETPLAY
 #include <QNetworkRequest>
 #include <QUrl>
@@ -31,6 +32,8 @@ namespace NetplayCommon
     #define NETPLAYCOMMON_SESSION_REGEX "^[a-zA-Z0-9 _-]{1,16}$"
     #define NETPLAYCOMMON_NICKNAME_REGEX "^[a-zA-Z0-9 _-]{1,16}$"
     #define NETPLAYCOMMON_PASSWORD_REGEX "^[a-zA-Z0-9,.\\/<>?;:[\\]{}\\-=_+`~!@#$%^&*()]+$"
+
+    bool IsValidNickname(const QString& nickname);
 
     // Adds common json emulator and auth info
     void AddCommonJson(QJsonObject& json);

@@ -39,15 +39,21 @@ NatTraversalIndexClient::NatTraversalIndexClient(QObject* parent)
 
 void NatTraversalIndexClient::publish(const QString& key, const QByteArray& data)
 {
-    cancel();
+    const QString trimmedKey = key.trimmed();
 
-    if (!isValidIndexKey(key)) {
+    if (!isValidIndexKey(trimmedKey)) {
         emit publishFailed("Invalid index key");
         return;
     }
 
+    if (m_pendingOp == PendingOp::Fetch ||
+        (m_pendingOp == PendingOp::Publish && m_pendingKey != trimmedKey)) {
+        cancel();
+    }
+
     m_pendingOp = PendingOp::Publish;
-    m_pendingKey = key.trimmed();
+    m_pendingKey = trimmedKey;
+    m_timeoutTimer.stop();
 
     const QByteArray message = QByteArray(kNatIndexProtocol) + "|SET|" + m_pendingKey.toUtf8() + "|B64:" +
                                data.toBase64(QByteArray::Base64Encoding);

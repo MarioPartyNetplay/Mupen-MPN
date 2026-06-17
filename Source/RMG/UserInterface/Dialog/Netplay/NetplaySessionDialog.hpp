@@ -55,7 +55,7 @@ private:
     int m_lastDisplayedBufferDelay = -1;
 
     void syncHostSessionState(void);
-    void beginNatTraversalRegistration(uint16_t hostingPort);
+    void beginNatTraversalRegistration(uint16_t hostingPort, bool browserListingOnly, bool listInBrowser);
     void updateConnectInfoDisplay(void);
     void fetchPublicIpAddress(void);
     void publishHostSessionIndex(bool started);

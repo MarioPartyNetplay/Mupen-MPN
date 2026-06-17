@@ -1,5 +1,5 @@
 /*
- * RMG NAT traversal + index server
+ * Mupen MPN NAT traversal + index server
  *
  * UDP 9290 (default):
  *   N02TRAV1  host codes (REGISTER, LOOKUP, KEEP, UNREGISTER)
@@ -54,7 +54,7 @@ typedef int socket_t;
 #define INDEX_TTL_SEC 300
 #define MAX_HOST_CODE 0x0FFFFFFF
 #define MAX_KEY_LEN 128
-#define MAX_VALUE_LEN 4096
+#define MAX_VALUE_LEN 8192
 #define MAX_UDP_PACKET 8192
 #define MAX_HTTP_REQUEST 16384
 
@@ -65,6 +65,7 @@ typedef struct {
     uint16_t traversal_port;
     uint64_t last_seen;
     int in_use;
+    int list_in_browser;
 } host_entry_t;
 
 typedef struct {
@@ -222,6 +223,18 @@ static host_entry_t* find_host(uint32_t code)
     return NULL;
 }
 
+static host_entry_t* find_host_by_endpoint(uint32_t host_ip, uint16_t signaling_port)
+{
+    const uint64_t now = now_seconds();
+    for (int i = 0; i < g_host_count; ++i) {
+        if (g_hosts[i].in_use && g_hosts[i].host_ip == host_ip && g_hosts[i].signaling_port == signaling_port &&
+            now - g_hosts[i].last_seen <= HOST_TTL_SEC) {
+            return &g_hosts[i];
+        }
+    }
+    return NULL;
+}
+
 static void index_del(const char* key);
 
 static void prune_hosts(void)
@@ -254,7 +267,8 @@ static uint32_t allocate_code(void)
     return 0;
 }
 
-static host_entry_t* upsert_host(uint32_t code, uint32_t host_ip, uint16_t port, uint16_t traversal_port, uint64_t now)
+static host_entry_t* upsert_host(uint32_t code, uint32_t host_ip, uint16_t port, uint16_t traversal_port,
+                                 uint64_t now, int list_in_browser)
 {
     host_entry_t* entry = find_host(code);
     if (entry != NULL) {
@@ -262,6 +276,7 @@ static host_entry_t* upsert_host(uint32_t code, uint32_t host_ip, uint16_t port,
         entry->signaling_port = port;
         entry->traversal_port = traversal_port;
         entry->last_seen = now;
+        entry->list_in_browser = list_in_browser;
         return entry;
     }
     for (int i = 0; i < g_host_count; ++i) {
@@ -273,6 +288,7 @@ static host_entry_t* upsert_host(uint32_t code, uint32_t host_ip, uint16_t port,
             entry->signaling_port = port;
             entry->traversal_port = traversal_port;
             entry->last_seen = now;
+            entry->list_in_browser = list_in_browser;
             return entry;
         }
     }
@@ -287,10 +303,12 @@ static host_entry_t* upsert_host(uint32_t code, uint32_t host_ip, uint16_t port,
     entry->signaling_port = port;
     entry->traversal_port = traversal_port;
     entry->last_seen = now;
+    entry->list_in_browser = list_in_browser;
     return entry;
 }
 
-static void trav_register(socket_t sock, const struct sockaddr_in* client, socklen_t client_len, const char* port_text)
+static void trav_register(socket_t sock, const struct sockaddr_in* client, socklen_t client_len, const char* port_text,
+                          int list_in_browser)
 {
     char code_text[8];
     char reply[96];
@@ -304,12 +322,43 @@ static void trav_register(socket_t sock, const struct sockaddr_in* client, sockl
     }
     port = (uint16_t)parsed_port;
 
+    {
+        host_entry_t* existing = find_host_by_endpoint(client->sin_addr.s_addr, port);
+        if (existing != NULL) {
+            if (!format_host_code(existing->code, code_text, sizeof(code_text))) {
+                send_reply(sock, (const struct sockaddr*)client, client_len, TRAV_PROTOCOL "|ERR|NOCODE");
+                return;
+            }
+
+            existing->host_ip = client->sin_addr.s_addr;
+            existing->traversal_port = ntohs(client->sin_port);
+            existing->last_seen = now_seconds();
+            existing->list_in_browser = list_in_browser;
+
+            if (!list_in_browser) {
+                char session_key[MAX_KEY_LEN];
+                snprintf(session_key, sizeof(session_key), "session/%s", code_text);
+                index_del(session_key);
+            }
+
+            snprintf(reply, sizeof(reply), TRAV_PROTOCOL "|REGISTEROK|%s|%s|%u", code_text,
+                     inet_ntoa(client->sin_addr), (unsigned)port);
+            for (int i = 0; i < 3; ++i) {
+                send_reply(sock, (const struct sockaddr*)client, client_len, reply);
+            }
+            printf("[trav] RE-REGISTER %s -> %s:%u (signaling port %u, list=%d)\n", code_text,
+                   inet_ntoa(client->sin_addr), (unsigned)ntohs(client->sin_port), (unsigned)port, list_in_browser);
+            return;
+        }
+    }
+
     code = allocate_code();
     if (code == 0 || !format_host_code(code, code_text, sizeof(code_text))) {
         send_reply(sock, (const struct sockaddr*)client, client_len, TRAV_PROTOCOL "|ERR|NOCODE");
         return;
     }
-    if (upsert_host(code, client->sin_addr.s_addr, port, ntohs(client->sin_port), now_seconds()) == NULL) {
+    if (upsert_host(code, client->sin_addr.s_addr, port, ntohs(client->sin_port), now_seconds(), list_in_browser) ==
+        NULL) {
         send_reply(sock, (const struct sockaddr*)client, client_len, TRAV_PROTOCOL "|ERR|FULL");
         return;
     }
@@ -319,8 +368,14 @@ static void trav_register(socket_t sock, const struct sockaddr_in* client, sockl
     for (int i = 0; i < 3; ++i) {
         send_reply(sock, (const struct sockaddr*)client, client_len, reply);
     }
-    printf("[trav] REGISTER %s -> %s:%u (signaling port %u)\n", code_text, inet_ntoa(client->sin_addr),
-           (unsigned)ntohs(client->sin_port), (unsigned)port);
+    printf("[trav] REGISTER %s -> %s:%u (signaling port %u, list=%d)\n", code_text, inet_ntoa(client->sin_addr),
+           (unsigned)ntohs(client->sin_port), (unsigned)port, list_in_browser);
+
+    if (!list_in_browser) {
+        char session_key[MAX_KEY_LEN];
+        snprintf(session_key, sizeof(session_key), "session/%s", code_text);
+        index_del(session_key);
+    }
 }
 
 static void trav_send_punch(socket_t sock, const struct sockaddr_in* target, socklen_t target_len, const char* ip_text,
@@ -590,13 +645,25 @@ static void handle_udp(socket_t sock, const char* buffer, int length, const stru
     if (strcmp(parts[0], TRAV_PROTOCOL) == 0) {
         prune_hosts();
         if (strcmp(parts[1], "REGISTER") == 0 && part_count >= 3) {
-            trav_register(sock, client, client_len, parts[2]);
+            int list_in_browser = 1;
+            if (part_count >= 4) {
+                list_in_browser = (strcmp(parts[3], "0") != 0);
+            }
+            trav_register(sock, client, client_len, parts[2], list_in_browser);
         } else if (strcmp(parts[1], "KEEP") == 0 && part_count >= 3) {
             uint32_t code = 0;
             if (parse_host_code(parts[2], &code)) {
                 host_entry_t* entry = find_host(code);
                 if (entry != NULL) {
                     entry->last_seen = now_seconds();
+                    if (part_count >= 4) {
+                        entry->list_in_browser = (strcmp(parts[3], "0") != 0);
+                        if (!entry->list_in_browser) {
+                            char session_key[MAX_KEY_LEN];
+                            snprintf(session_key, sizeof(session_key), "session/%s", parts[2]);
+                            index_del(session_key);
+                        }
+                    }
                 }
             }
         } else if (strcmp(parts[1], "LOOKUP") == 0 && part_count >= 3) {
@@ -675,6 +742,88 @@ static void http_send_all(socket_t client, const char* data)
     }
 }
 
+static int http_parse_content_length(const char* headers)
+{
+    const char* cl = strstr(headers, "Content-Length:");
+    if (cl == NULL) {
+        cl = strstr(headers, "content-length:");
+    }
+    if (cl == NULL) {
+        return -1;
+    }
+
+    cl += 15;
+    while (*cl == ' ' || *cl == '\t') {
+        ++cl;
+    }
+    return atoi(cl);
+}
+
+static int http_recv_request(socket_t client, char* buffer, size_t buffer_size, char** body_out, size_t* body_len_out)
+{
+    size_t total = 0;
+    char* header_end = NULL;
+    size_t header_len = 0;
+    int content_length = -1;
+
+    if (body_out) {
+        *body_out = NULL;
+    }
+    if (body_len_out) {
+        *body_len_out = 0;
+    }
+
+    while (total < buffer_size - 1) {
+        int received = recv(client, buffer + total, (int)(buffer_size - 1 - total), 0);
+        if (received <= 0) {
+            break;
+        }
+
+        total += (size_t)received;
+        buffer[total] = '\0';
+
+        header_end = strstr(buffer, "\r\n\r\n");
+        if (header_end == NULL) {
+            continue;
+        }
+
+        header_len = (size_t)(header_end - buffer) + 4;
+        content_length = http_parse_content_length(buffer);
+        if (content_length < 0) {
+            break;
+        }
+
+        while (total < header_len + (size_t)content_length && total < buffer_size - 1) {
+            received = recv(client, buffer + total, (int)(buffer_size - 1 - total), 0);
+            if (received <= 0) {
+                break;
+            }
+            total += (size_t)received;
+        }
+
+        buffer[total < buffer_size ? total : buffer_size - 1] = '\0';
+        break;
+    }
+
+    if (header_end == NULL) {
+        return total > 0 ? (int)total : -1;
+    }
+
+    if (body_out) {
+        *body_out = buffer + header_len;
+    }
+    if (body_len_out) {
+        if (content_length >= 0) {
+            size_t available = total > header_len ? total - header_len : 0;
+            *body_len_out = available < (size_t)content_length ? available : (size_t)content_length;
+        } else {
+            *body_len_out = total > header_len ? total - header_len : 0;
+        }
+    }
+
+    return (int)total;
+}
+
 static void http_reply_index_page(socket_t client)
 {
     char body[65536];
@@ -683,7 +832,7 @@ static void http_reply_index_page(socket_t client)
 
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
                                "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
-                               "<title>RMG Index</title></head><body><h1>RMG Index</h1><ul>");
+                               "<title>Mupen MPN Index</title></head><body><h1>Mupen MPN Index</h1><ul>");
 
     for (int i = 0; i < g_index_count; ++i) {
         if (!g_index[i].in_use || now - g_index[i].last_seen > INDEX_TTL_SEC) {
@@ -857,6 +1006,103 @@ static int json_copy_array_field(const char* json, const char* key, char* out, s
     return 0;
 }
 
+static int is_public_ipv4_text(const char* text)
+{
+    struct in_addr addr;
+    uint32_t ip;
+    uint8_t b0;
+    uint8_t b1;
+
+    if (text == NULL || text[0] == '\0' || inet_pton(AF_INET, text, &addr) != 1) {
+        return 0;
+    }
+
+    ip = ntohl(addr.s_addr);
+    b0 = (uint8_t)((ip >> 24) & 0xFF);
+    b1 = (uint8_t)((ip >> 16) & 0xFF);
+    if (b0 == 0 || b0 == 10 || b0 == 127) {
+        return 0;
+    }
+    if (b0 == 192 && b1 == 168) {
+        return 0;
+    }
+    if (b0 == 172 && b1 >= 16 && b1 <= 31) {
+        return 0;
+    }
+    return 1;
+}
+
+static int room_index_is_browsable(const char* session_json)
+{
+    char game_name[128] = {0};
+    char connect_addr[INET_ADDRSTRLEN] = {0};
+    int show_in_browser = 1;
+    int use_nat = 1;
+
+    if (session_json == NULL) {
+        return 0;
+    }
+
+    if (json_get_bool_field(session_json, "show_in_browser", &show_in_browser) && !show_in_browser) {
+        return 0;
+    }
+
+    if (!json_get_string_field(session_json, "game_name", game_name, sizeof(game_name)) || game_name[0] == '\0') {
+        return 0;
+    }
+
+    if (json_get_bool_field(session_json, "use_nat_traversal", &use_nat) && !use_nat) {
+        if (!json_get_string_field(session_json, "connect_address", connect_addr, sizeof(connect_addr)) ||
+            !is_public_ipv4_text(connect_addr)) {
+            if (!json_get_string_field(session_json, "public_address", connect_addr, sizeof(connect_addr)) ||
+                !is_public_ipv4_text(connect_addr)) {
+                return 0;
+            }
+        }
+    }
+
+    return 1;
+}
+
+static void json_room_connect_endpoint(const char* session_json, const char* fallback_ip, uint16_t fallback_port,
+                                       char* out_ip, size_t out_ip_size, uint16_t* out_port)
+{
+    int use_nat = 1;
+    char connect_addr[INET_ADDRSTRLEN] = {0};
+    int connect_port = 0;
+
+    strncpy(out_ip, fallback_ip, out_ip_size - 1);
+    out_ip[out_ip_size - 1] = '\0';
+    *out_port = fallback_port;
+
+    if (session_json == NULL) {
+        return;
+    }
+
+    if (!json_get_bool_field(session_json, "use_nat_traversal", &use_nat) || use_nat) {
+        return;
+    }
+
+    if (!json_get_string_field(session_json, "connect_address", connect_addr, sizeof(connect_addr)) ||
+        connect_addr[0] == '\0') {
+        if (!json_get_string_field(session_json, "public_address", connect_addr, sizeof(connect_addr)) ||
+            connect_addr[0] == '\0') {
+            return;
+        }
+    }
+
+    strncpy(out_ip, connect_addr, out_ip_size - 1);
+    out_ip[out_ip_size - 1] = '\0';
+
+    if (json_get_int_field(session_json, "connect_port", &connect_port) && connect_port >= 1024 &&
+        connect_port <= 65535) {
+        *out_port = (uint16_t)connect_port;
+    } else if (json_get_int_field(session_json, "public_port", &connect_port) && connect_port >= 1024 &&
+               connect_port <= 65535) {
+        *out_port = (uint16_t)connect_port;
+    }
+}
+
 static void json_escape_string(const char* input, char* output, size_t output_size)
 {
     size_t offset = 0;
@@ -939,10 +1185,10 @@ static void http_reply_rooms_html(socket_t client)
 
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
                                "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
-                               "<title>RMG Active Rooms</title></head><body><h1>Active Rooms</h1><ul>");
+                               "<title>Mupen MPN Active Rooms</title></head><body><h1>Active Rooms</h1><ul>");
 
     for (int i = 0; i < g_host_count; ++i) {
-        if (!g_hosts[i].in_use || now - g_hosts[i].last_seen > HOST_TTL_SEC) {
+        if (!g_hosts[i].in_use || now - g_hosts[i].last_seen > HOST_TTL_SEC || !g_hosts[i].list_in_browser) {
             continue;
         }
 
@@ -997,7 +1243,7 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "{\"rooms\":[");
 
     for (int i = 0; i < g_host_count; ++i) {
-        if (!g_hosts[i].in_use || now - g_hosts[i].last_seen > HOST_TTL_SEC) {
+        if (!g_hosts[i].in_use || now - g_hosts[i].last_seen > HOST_TTL_SEC || !g_hosts[i].list_in_browser) {
             continue;
         }
 
@@ -1010,7 +1256,7 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
         char host_name_json[256];
         char game_name_json[256];
         char lobby_size[32];
-        char* session_json;
+        char* session_json = NULL;
         struct in_addr addr;
         int started = 0;
         int player_count = 1;
@@ -1046,6 +1292,10 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
             }
         }
 
+        if (!room_index_is_browsable(session_json)) {
+            continue;
+        }
+
         if (waitingOnly) {
             if (started) {
                 continue;
@@ -1060,11 +1310,6 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
             strncpy(host_name, code_text, sizeof(host_name) - 1);
         }
 
-        addr.s_addr = g_hosts[i].host_ip;
-        if (inet_ntop(AF_INET, &addr, ip_text, sizeof(ip_text)) == NULL) {
-            strncpy(ip_text, "0.0.0.0", sizeof(ip_text) - 1);
-        }
-
         json_escape_string(host_name, host_name_json, sizeof(host_name_json));
         json_escape_string(game_name, game_name_json, sizeof(game_name_json));
         snprintf(lobby_size, sizeof(lobby_size), "%d/%d", player_count, max_players > 0 ? max_players : 4);
@@ -1075,21 +1320,35 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
             players_json[sizeof(players_json) - 1] = '\0';
         }
 
-        if (wrote_room) {
-            if (offset + 1 < sizeof(body)) {
-                body[offset++] = ',';
-                body[offset] = '\0';
-            }
+        addr.s_addr = g_hosts[i].host_ip;
+        if (inet_ntop(AF_INET, &addr, ip_text, sizeof(ip_text)) == NULL) {
+            strncpy(ip_text, "0.0.0.0", sizeof(ip_text) - 1);
         }
 
-        offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
-                                   "{\"hostCode\":\"%s\",\"hostName\":\"%s\",\"gameName\":\"%s\","
-                                   "\"playerCount\":%d,\"maxPlayers\":%d,\"lobbySize\":\"%s\","
-                                   "\"started\":%s,\"players\":%s,\"address\":\"%s\",\"port\":%u}",
-                                   code_text, host_name_json, game_name_json, player_count,
-                                   (max_players > 0 ? max_players : 4), lobby_size,
-                                   started ? "true" : "false", players_json, ip_text,
-                                   (unsigned)g_hosts[i].signaling_port);
+        {
+            char listing_ip[INET_ADDRSTRLEN];
+            uint16_t listing_port = g_hosts[i].signaling_port;
+            json_room_connect_endpoint(session_json, ip_text, g_hosts[i].signaling_port, listing_ip,
+                                       sizeof(listing_ip), &listing_port);
+            strncpy(ip_text, listing_ip, sizeof(ip_text) - 1);
+            ip_text[sizeof(ip_text) - 1] = '\0';
+
+            if (wrote_room) {
+                if (offset + 1 < sizeof(body)) {
+                    body[offset++] = ',';
+                    body[offset] = '\0';
+                }
+            }
+
+            offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
+                                       "{\"hostCode\":\"%s\",\"hostName\":\"%s\",\"gameName\":\"%s\","
+                                       "\"playerCount\":%d,\"maxPlayers\":%d,\"lobbySize\":\"%s\","
+                                       "\"started\":%s,\"players\":%s,\"address\":\"%s\",\"port\":%u}",
+                                       code_text, host_name_json, game_name_json, player_count,
+                                       (max_players > 0 ? max_players : 4), lobby_size,
+                                       started ? "true" : "false", players_json, ip_text,
+                                       (unsigned)listing_port);
+        }
         wrote_room = 1;
 
         if (offset >= sizeof(body) - 256) {
@@ -1113,16 +1372,14 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
 static void handle_http_client(socket_t client)
 {
     char request[MAX_HTTP_REQUEST];
-    int received = recv(client, request, sizeof(request) - 1, 0);
-    const char* path;
-    const char* body;
+    char* body = NULL;
     size_t body_len = 0;
+    const char* path;
     char key[MAX_KEY_LEN];
 
-    if (received <= 0) {
+    if (http_recv_request(client, request, sizeof(request), &body, &body_len) <= 0) {
         return;
     }
-    request[received] = '\0';
 
     if (strncmp(request, "GET ", 4) != 0 && strncmp(request, "PUT ", 4) != 0 && strncmp(request, "POST ", 5) != 0) {
         http_send_all(client, "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
@@ -1139,12 +1396,6 @@ static void handle_http_client(socket_t client)
         if (end != NULL) {
             *end = '\0';
         }
-    }
-
-    body = strstr(request, "\r\n\r\n");
-    if (body != NULL) {
-        body += 4;
-        body_len = strlen(body);
     }
 
     prune_index();
@@ -1245,12 +1496,21 @@ static void handle_http_client(socket_t client)
             return;
         }
 
-        if (body != NULL && body_len > 0 && body_len < MAX_VALUE_LEN) {
+        if (body != NULL && body_len > 0) {
+            if (body_len >= MAX_VALUE_LEN) {
+                http_send_all(client,
+                              "HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                printf("[http] PUT /index/%s rejected: %zu bytes (max %d)\n", key, body_len, MAX_VALUE_LEN - 1);
+                return;
+            }
             if (upsert_index(key, (const unsigned char*)body, body_len, now_seconds()) != NULL) {
                 http_send_all(client, "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n");
                 printf("[http] PUT /index/%s (%zu bytes)\n", key, body_len);
                 return;
             }
+            printf("[http] PUT /index/%s failed: index store full\n", key);
+        } else {
+            printf("[http] PUT /index/%s failed: empty body (got %zu bytes)\n", key, body_len);
         }
 
         http_send_all(client, "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");

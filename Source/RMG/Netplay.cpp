@@ -68,12 +68,7 @@ uint32_t UserInterface::Netplay::getNetplayFrameInput(int playerSlot)
         return 0;
     }
 
-    auto inputs = g_netplayCoordinator->getLockstepEngine()->getCurrentFrameInputs();
-    auto it = inputs.find(playerSlot);
-    if (it != inputs.end()) {
-        return it->second;
-    }
-    return 0;
+    return g_netplayCoordinator->getSyncedInput(playerSlot);
 }
 
 bool UserInterface::Netplay::advanceNetplayFrame()

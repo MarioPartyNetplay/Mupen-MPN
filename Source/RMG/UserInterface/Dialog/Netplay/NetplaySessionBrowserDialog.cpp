@@ -8,6 +8,7 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "NetplaySessionBrowserDialog.hpp"
+#include "NetplayCommon.hpp"
 #include "UserInterface/Widget/Netplay/NetplaySessionBrowserWidget.hpp"
 #include "Netplay/NatTraversal/NatTraversalProtocol.hpp"
 #include "NetplaySessionPasswordDialog.hpp"
@@ -17,6 +18,7 @@
 #include <QRegularExpression>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QJsonDocument>
 #include <QInputDialog>
 #include <QPushButton>
@@ -25,12 +27,125 @@
 #include <QJsonArray>
 #include <QFile>
 #include <QFileInfo>
+#include <QSharedPointer>
 
 #include <RMG-Core/Settings.hpp>
 #include <RMG-Core/Rom.hpp>
 
+#include <initializer_list>
+
+namespace Netplay = UserInterface::Netplay;
+
 using namespace UserInterface::Dialog;
 using namespace Utilities;
+
+namespace {
+
+QString firstNonEmpty(std::initializer_list<QString> values)
+{
+    for (const QString& value : values) {
+        if (!value.isEmpty()) {
+            return value;
+        }
+    }
+    return {};
+}
+
+QString hostNameFromPlayers(const QJsonArray& players)
+{
+    for (const QJsonValue& value : players) {
+        const QString name = value.toObject().value(QStringLiteral("name")).toString().trimmed();
+        if (!name.isEmpty()) {
+            return name;
+        }
+    }
+    return {};
+}
+
+struct RoomListingFields
+{
+    QString hostName;
+    QString gameName;
+    QString lobbySize;
+};
+
+RoomListingFields resolveRoomListingFields(const QJsonObject& room, const QJsonObject& indexSession = {})
+{
+    const QString hostCode = room.value(QStringLiteral("hostCode")).toString();
+    QString hostName = room.value(QStringLiteral("hostName")).toString().trimmed();
+    QString gameName = room.value(QStringLiteral("gameName")).toString().trimmed();
+    QString lobbySize = room.value(QStringLiteral("lobbySize")).toString().trimmed();
+
+    if (!indexSession.isEmpty()) {
+        hostName = firstNonEmpty({
+            indexSession.value(QStringLiteral("host_name")).toString().trimmed(),
+            indexSession.value(QStringLiteral("player_name")).toString().trimmed(),
+            indexSession.value(QStringLiteral("room_name")).toString().trimmed(),
+            hostNameFromPlayers(indexSession.value(QStringLiteral("players")).toArray()),
+            hostName,
+            hostNameFromPlayers(room.value(QStringLiteral("players")).toArray()),
+        });
+
+        gameName = firstNonEmpty({
+            indexSession.value(QStringLiteral("game_name")).toString().trimmed(),
+            gameName,
+        });
+
+        if (lobbySize.isEmpty()) {
+            const int playerCount = indexSession.value(QStringLiteral("player_count")).toInt(
+                room.value(QStringLiteral("playerCount")).toInt(1));
+            const int maxPlayers = indexSession.value(QStringLiteral("max_players")).toInt(
+                room.value(QStringLiteral("maxPlayers")).toInt(4));
+            lobbySize = QStringLiteral("%1/%2").arg(playerCount).arg(maxPlayers > 0 ? maxPlayers : 4);
+        }
+    } else if (hostName.isEmpty() || Netplay::looksLikeTraversalCode(hostName)) {
+        hostName = hostNameFromPlayers(room.value(QStringLiteral("players")).toArray());
+    }
+
+    if ((hostName.isEmpty() || Netplay::looksLikeTraversalCode(hostName)) && !hostCode.isEmpty()) {
+        hostName = hostCode;
+    }
+
+    if (lobbySize.isEmpty()) {
+        const int playerCount = room.value(QStringLiteral("playerCount")).toInt(1);
+        const int maxPlayers = room.value(QStringLiteral("maxPlayers")).toInt(4);
+        lobbySize = QStringLiteral("%1/%2").arg(playerCount).arg(maxPlayers > 0 ? maxPlayers : 4);
+    }
+
+    return {hostName, gameName, lobbySize};
+}
+
+bool roomNeedsIndexLookup(const QJsonObject& room)
+{
+    Q_UNUSED(room);
+    return true;
+}
+
+void addResolvedRoom(UserInterface::Widget::NetplaySessionBrowserWidget* widget,
+                     const QJsonObject& room,
+                     const QJsonObject& indexSession = {})
+{
+    if (!indexSession.isEmpty() &&
+        indexSession.contains(QStringLiteral("show_in_browser")) &&
+        !indexSession.value(QStringLiteral("show_in_browser")).toBool(true)) {
+        return;
+    }
+
+    const RoomListingFields fields = resolveRoomListingFields(room, indexSession);
+    if (fields.gameName.isEmpty()) {
+        return;
+    }
+
+    widget->AddSessionData(
+        fields.hostName,
+        fields.gameName,
+        room.value(QStringLiteral("hostCode")).toString(),
+        fields.lobbySize,
+        room.value(QStringLiteral("port")).toInt(Netplay::kDefaultNetplayHostingPort),
+        room.value(QStringLiteral("address")).toString());
+}
+
+} // namespace
 
 //
 // Exported Functions
@@ -155,9 +270,7 @@ QString NetplaySessionBrowserDialog::showROMDialog(QString name, QString md5)
 bool NetplaySessionBrowserDialog::validate(void) const
 {
     if (!this->embeddedMode) {
-        if (this->nickNameLineEdit->text().isEmpty() ||
-            this->nickNameLineEdit->text().contains(' ') ||
-            this->nickNameLineEdit->text().size() > 128)
+        if (!NetplayCommon::IsValidNickname(this->nickNameLineEdit->text()))
         {
             return false;
         }
@@ -235,23 +348,62 @@ void NetplaySessionBrowserDialog::onRoomsReplyFinished(QNetworkReply* reply)
     }
 
     const QJsonArray rooms = doc.object().value(QStringLiteral("rooms")).toArray();
-    for (const QJsonValue& value : rooms)
-    {
-        if (!value.isObject()) {
+    if (rooms.isEmpty()) {
+        this->sessionBrowserWidget->RefreshDone();
+        return;
+    }
+
+    QList<QJsonObject> roomObjects;
+    roomObjects.reserve(rooms.size());
+    for (const QJsonValue& value : rooms) {
+        if (value.isObject()) {
+            roomObjects.append(value.toObject());
+        }
+    }
+
+    if (roomObjects.isEmpty()) {
+        this->sessionBrowserWidget->RefreshDone();
+        return;
+    }
+
+    const QSharedPointer<int> remaining = QSharedPointer<int>::create(roomObjects.size());
+    const auto finishRoom = [this, remaining]() {
+        if (--(*remaining) <= 0) {
+            this->sessionBrowserWidget->RefreshDone();
+        }
+    };
+
+    for (const QJsonObject& room : roomObjects) {
+        if (!roomNeedsIndexLookup(room)) {
+            addResolvedRoom(this->sessionBrowserWidget, room);
+            finishRoom();
             continue;
         }
 
-        const QJsonObject room = value.toObject();
-        this->sessionBrowserWidget->AddSessionData(
-            room.value(QStringLiteral("hostName")).toString(),
-            room.value(QStringLiteral("gameName")).toString(),
-            room.value(QStringLiteral("hostCode")).toString(),
-            room.value(QStringLiteral("lobbySize")).toString(),
-            room.value(QStringLiteral("port")).toInt(Netplay::kDefaultNetplayHostingPort),
-            room.value(QStringLiteral("address")).toString());
-    }
+        const QString hostCode = room.value(QStringLiteral("hostCode")).toString();
+        const QUrl indexUrl = Netplay::natTraversalSessionIndexUrl(hostCode);
+        if (indexUrl.isEmpty()) {
+            addResolvedRoom(this->sessionBrowserWidget, room);
+            finishRoom();
+            continue;
+        }
 
-    this->sessionBrowserWidget->RefreshDone();
+        QNetworkRequest request(indexUrl);
+        request.setTransferTimeout(5000);
+        QNetworkReply* indexReply = this->networkManager->get(request);
+        connect(indexReply, &QNetworkReply::finished, this, [this, indexReply, room, finishRoom]() {
+            QJsonObject indexSession;
+            if (indexReply->error() == QNetworkReply::NoError) {
+                const QJsonDocument indexDoc = QJsonDocument::fromJson(indexReply->readAll());
+                if (indexDoc.isObject()) {
+                    indexSession = indexDoc.object();
+                }
+            }
+            indexReply->deleteLater();
+            addResolvedRoom(this->sessionBrowserWidget, room, indexSession);
+            finishRoom();
+        });
+    }
 }
 
 void NetplaySessionBrowserDialog::onCoordinatorConnected(void)
@@ -442,6 +594,19 @@ void NetplaySessionBrowserDialog::tryCompleteHostCodeJoin()
 {
     if (!this->pendingIndexReady) {
         return;
+    }
+
+    const bool indexSaysDirect = this->pendingIndexSession.contains(QStringLiteral("use_nat_traversal")) &&
+                                 !this->pendingIndexSession.value(QStringLiteral("use_nat_traversal")).toBool();
+    if (indexSaysDirect) {
+        QString indexAddress;
+        int indexPort = 0;
+        if (Netplay::sessionConnectEndpoint(this->pendingIndexSession, &indexAddress, &indexPort)) {
+            qDebug() << "Joining direct-connection room via session index" << indexAddress << indexPort;
+            this->isResolvingHostCode = false;
+            this->connectToResolvedHost(indexAddress, indexPort);
+            return;
+        }
     }
 
     if (this->pendingLookupReady) {
