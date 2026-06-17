@@ -1075,7 +1075,7 @@ void MainWindow::configureActions(void)
     {
         // System actions
         this->action_System_StartRom, this->action_System_OpenCombo,
-        this->action_System_Shutdown, this->action_System_SoftReset,
+        this->action_System_OpenUserFolder, this->action_System_Shutdown, this->action_System_SoftReset,
         this->action_System_HardReset, this->action_System_Pause,
         this->action_System_Screenshot, this->action_System_LimitFPS,
         this->actionSpeed25, this->actionSpeed50, this->actionSpeed75,
@@ -1196,6 +1196,8 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_System_StartRom, &QAction::triggered, this, &MainWindow::on_Action_System_OpenRom);
     connect(this->action_System_StartRom2, &QAction::triggered, this, &MainWindow::on_Action_System_OpenRom);
     connect(this->action_System_OpenCombo, &QAction::triggered, this, &MainWindow::on_Action_System_OpenCombo);
+    connect(this->action_System_OpenUserFolder, &QAction::triggered, this,
+            &MainWindow::on_Action_System_OpenUserFolder);
     connect(this->action_System_Exit, &QAction::triggered, this, &MainWindow::on_Action_System_Exit);
 
     connect(this->action_System_Shutdown, &QAction::triggered, this, &MainWindow::on_Action_System_Shutdown);
@@ -1675,6 +1677,17 @@ void MainWindow::on_Action_System_OpenCombo(void)
     }
 
     this->launchEmulationThread(cartRom, diskRom);
+}
+
+void MainWindow::on_Action_System_OpenUserFolder(void)
+{
+    const QString directory = QString::fromStdString(CoreGetUserDataDirectory().string());
+    if (directory.isEmpty())
+    {
+        return;
+    }
+
+    QDesktopServices::openUrl(QUrl::fromLocalFile(directory));
 }
 
 void MainWindow::on_Action_System_Shutdown(void)
