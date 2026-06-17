@@ -27,7 +27,7 @@ static bool            l_HasDefaultRomSettings = false;
 
 static void apply_gameid_save_overrides(const CoreRomHeader& header, CoreRomSettings& settings)
 {
-    if (header.GameID == "NMVE")
+    if (header.GameID == "NMVE" or header.GameID == "NEDE")
     {
         settings.SaveType = SAVETYPE_EEPROM_16KB;
     }
