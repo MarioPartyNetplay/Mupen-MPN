@@ -90,8 +90,11 @@ set(SDL3NET_SOURCES
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL3 REQUIRED sdl3)
 add_library(SDL3_net STATIC ${SDL3NET_SOURCES})
-target_include_directories(SDL3_net PRIVATE ${SDL3NET_DIR}/include)
-set(SDL3NET_CFLAGS "-DUSE_SDL3NET -I${SDL3NET_DIR}/include")
+target_include_directories(SDL3_net PRIVATE
+    ${SDL3NET_DIR}/include
+    ${SDL3_INCLUDE_DIRS}
+)
+set(SDL3NET_CFLAGS "-DUSE_SDL3NET -I${SDL3NET_DIR}/include ${SDL3_CFLAGS}")
 # for some reason MingW needs SDL3 to be linked after SDL3_net,
 # else we get a lot of missing symbol errors, should be harmless
 # on other platforms
