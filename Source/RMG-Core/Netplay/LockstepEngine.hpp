@@ -33,7 +33,8 @@ public:
     struct Config {
         int numPlayers = 2;
         int localPlayerSlot = 0;
-        int inputDelayFrames = 0;
+        int inputDelayFrames = 1;
+        bool desyncDetectionEnabled = true;
         bool resyncEnabled = false;
         int resyncCheckIntervalFrames = 60;
         int stallTimeoutMilliseconds = 1000; // allow up to 1 second for peer input
@@ -116,6 +117,7 @@ private:
     bool waitForAllInputs(uint32_t frameNumber, int timeoutMs);
     bool hasAllInputsForFrameUnlocked(uint32_t frameNumber) const;
     void notifyInputProgressUnlocked(uint32_t frameNumber);
+    void checkPeerFrameDriftUnlocked(int fromSlot, uint32_t peerFrame);
 
     Config m_config;
     uint32_t m_currentFrameNumber = 0;

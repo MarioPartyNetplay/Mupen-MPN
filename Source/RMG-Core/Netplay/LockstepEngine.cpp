@@ -25,6 +25,9 @@ namespace {
 // Accept slightly late inputs; reject only packets that cannot affect the timeline.
 constexpr uint32_t kInputFrameSlack = 8;
 constexpr uint32_t kPeerFrameReportSlack = 120;
+constexpr uint32_t kMinInputDelayFrames = 1;
+constexpr uint32_t kFrameDriftDesyncThreshold = 30;
+constexpr uint32_t kFrameDriftWarmupFrames = 60;
 
 } // namespace
 
@@ -44,8 +47,8 @@ LockstepEngine::LockstepEngine(const Config& config)
 
     m_dataChannels.resize(m_config.numPlayers);
 
-    if (m_config.inputDelayFrames < 0) {
-        m_config.inputDelayFrames = 0;
+    if (m_config.inputDelayFrames < static_cast<int>(kMinInputDelayFrames)) {
+        m_config.inputDelayFrames = static_cast<int>(kMinInputDelayFrames);
     }
 
     m_config.stallTimeoutMilliseconds =
@@ -210,6 +213,8 @@ void LockstepEngine::submitPeerReportedFrame(
         return;
     }
 
+    checkPeerFrameDriftUnlocked(fromSlot, frameNumber);
+
     m_peerReportedEmulationFrames[fromSlot] = frameNumber;
     m_peerReportedFrameTimes[fromSlot] =
         std::chrono::steady_clock::now();
@@ -246,6 +251,14 @@ bool LockstepEngine::advanceFrame()
                 : 0);
 
         m_stats.totalFramesProcessed++;
+
+        if (m_config.desyncDetectionEnabled &&
+            m_config.resyncCheckIntervalFrames > 0 &&
+            frameNumber % static_cast<uint32_t>(m_config.resyncCheckIntervalFrames) == 0) {
+            for (const auto& [slot, peerFrame] : m_peerReportedEmulationFrames) {
+                checkPeerFrameDriftUnlocked(slot, peerFrame);
+            }
+        }
     }
 
     if (m_callbacks.frameReady) {
@@ -391,11 +404,9 @@ void LockstepEngine::setInputDelayFrames(int frames)
 {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
-    if (frames < 0) {
-        frames = 0;
-    }
-
-    if (frames > 99) {
+    if (frames < static_cast<int>(kMinInputDelayFrames)) {
+        frames = static_cast<int>(kMinInputDelayFrames);
+    } else if (frames > 99) {
         frames = 99;
     }
 
@@ -557,6 +568,44 @@ void LockstepEngine::notifyInputProgressUnlocked(uint32_t frameNumber)
 {
     if (frameNumber + kInputFrameSlack >= m_currentFrameNumber) {
         m_inputCv.notify_all();
+    }
+}
+
+void LockstepEngine::checkPeerFrameDriftUnlocked(
+    int fromSlot,
+    uint32_t peerFrame)
+{
+    if (!m_config.desyncDetectionEnabled ||
+        fromSlot < 0 ||
+        fromSlot >= m_config.numPlayers ||
+        fromSlot == m_config.localPlayerSlot ||
+        m_currentFrameNumber < kFrameDriftWarmupFrames) {
+        return;
+    }
+
+    const uint32_t localFrame = m_currentFrameNumber;
+    const uint32_t drift =
+        localFrame > peerFrame
+            ? localFrame - peerFrame
+            : peerFrame - localFrame;
+
+    if (drift <= kFrameDriftDesyncThreshold) {
+        return;
+    }
+
+    m_stats.desyncDetections++;
+    m_isDesynchronized = true;
+
+    if (m_callbacks.desyncDetected) {
+        m_callbacks.desyncDetected(
+            localFrame,
+            "Frame drift with player " +
+                std::to_string(fromSlot) +
+                " (local=" +
+                std::to_string(localFrame) +
+                ", peer=" +
+                std::to_string(peerFrame) +
+                ")");
     }
 }
 

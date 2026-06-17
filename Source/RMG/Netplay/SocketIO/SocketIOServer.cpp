@@ -362,7 +362,7 @@ void SocketIOServer::handle_InputDelayUpdate(QWebSocket* socket, const QJsonObje
         return; // Only host should configure latency properties
 
     int frames = msg.value("frames").toInt(4);
-    room->inputDelayFrames = qBound(0, frames, 99);
+    room->inputDelayFrames = qBound(1, frames, 99);
 
     QJsonObject payload;
     payload["frames"] = room->inputDelayFrames;
@@ -543,8 +543,8 @@ void SocketIOServer::broadcastInputDelayUpdate(const QString& roomId, int frames
         return;
     }
 
-    if (frames < 0) {
-        frames = 0;
+    if (frames < 1) {
+        frames = 1;
     } else if (frames > 99) {
         frames = 99;
     }

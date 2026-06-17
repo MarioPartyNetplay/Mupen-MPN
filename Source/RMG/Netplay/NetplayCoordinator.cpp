@@ -120,6 +120,7 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
     m_lockstepConfig.numPlayers = 4;
     m_lockstepConfig.localPlayerSlot = 0;
     m_lockstepConfig.inputDelayFrames = 6;
+    m_lockstepConfig.desyncDetectionEnabled = true;
     m_lockstepConfig.resyncEnabled = false;
     m_lockstepConfig.resyncCheckIntervalFrames = 30;
     m_lockstepConfig.stallTimeoutMilliseconds = RMGCore::LockstepEngine::stallTimeoutForDelayFrames(6);
@@ -1143,8 +1144,8 @@ void NetplayCoordinator::sendEmulationPauseUpdate(bool paused)
 
 void NetplayCoordinator::setInputDelayFrames(int frames)
 {
-    if (frames < 0) {
-        frames = 0;
+    if (frames < 1) {
+        frames = 1;
     } else if (frames > 99) {
         frames = 99;
     }
@@ -1493,8 +1494,8 @@ void NetplayCoordinator::sendInputDelayUpdate(int frames)
 
 void NetplayCoordinator::on_socketIO_inputDelayReceived(int frames)
 {
-    if (frames < 0) {
-        frames = 0;
+    if (frames < 1) {
+        frames = 1;
     } else if (frames > 99) {
         frames = 99;
     }

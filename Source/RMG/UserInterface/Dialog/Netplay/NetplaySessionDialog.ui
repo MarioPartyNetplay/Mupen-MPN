@@ -101,7 +101,7 @@
         <string>Input delay in frames (~17 ms each). Use 4–8 for regional play; higher values absorb network jitter at the cost of more input lag.</string>
        </property>
        <property name="minimum">
-        <number>0</number>
+        <number>1</number>
        </property>
        <property name="maximum">
         <number>99</number>
