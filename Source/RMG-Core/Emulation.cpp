@@ -364,7 +364,7 @@ CORE_EXPORT bool CorePauseEmulation(void)
         return false;
     }
 
-    if (CoreHasInitNetplay())
+    if (CoreHasInitNetplay() || CoreIsEmbeddedNetplayActive())
     {
         return false;
     }
@@ -398,7 +398,7 @@ CORE_EXPORT bool CoreResumeEmulation(void)
         return false;
     }
 
-    if (CoreHasInitNetplay())
+    if (CoreHasInitNetplay() || CoreIsEmbeddedNetplayActive())
     {
         return false;
     }
