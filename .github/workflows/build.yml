@@ -128,3 +128,33 @@ jobs:
         with:
           name: MupenMPN-win32
           path: Bin/Release/*
+
+  macos:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: macos-rosetta-x86_64
+
+      - name: Install Build Dependencies
+        run: |
+          brew install cmake pkg-config nasm qt sdl3 speexdsp libsamplerate minizip openssl libsrtp libusb
+
+      - name: Build RMG (x86_64 for Rosetta)
+        run: |
+          chmod +x ./Source/Script/Build.sh
+          MPN_SKIP_ROSETTA_REEXEC=1 ./Source/Script/Build.sh Release
+
+      - name: Upload macOS Artifact (Folder Build)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MupenMPN-macos-x86_64
+          path: Bin/Release/*

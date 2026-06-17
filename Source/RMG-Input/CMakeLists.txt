@@ -57,3 +57,9 @@ target_include_directories(RMG-Input PRIVATE
 )
 
 target_link_libraries(RMG-Input Qt6::Gui Qt6::Widgets Qt6::Svg)
+
+if (APPLE AND PORTABLE_INSTALL)
+    set_target_properties(RMG-Input PROPERTIES
+        INSTALL_RPATH "@loader_path/../.."
+    )
+endif()

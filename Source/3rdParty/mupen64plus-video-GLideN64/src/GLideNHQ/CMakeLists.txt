@@ -88,9 +88,9 @@ if( GLIDEN64_BUILD_TYPE STREQUAL "Debug")
   if(MINGW OR BCMHOST OR APPLE OR USE_SYSTEM_LIBS)
     FIND_PACKAGE( ZLIB REQUIRED )
     FIND_PACKAGE( PNG REQUIRED )
-    target_link_libraries(GLideNHQd
-      ${PNG_LIBRARIES}
-      ${ZLIB_LIBRARIES}
+    target_link_libraries(GLideNHQd PUBLIC
+      PNG::PNG
+      ZLIB::ZLIB
       osald
     )
   elseif(ANDROID)
@@ -125,9 +125,9 @@ else( GLIDEN64_BUILD_TYPE STREQUAL "Debug")
   elseif(BCMHOST OR MINGW OR APPLE OR USE_SYSTEM_LIBS)
     FIND_PACKAGE( ZLIB REQUIRED )
     FIND_PACKAGE( PNG REQUIRED )
-    target_link_libraries(GLideNHQ
-      ${PNG_LIBRARIES}
-      ${ZLIB_LIBRARIES}
+    target_link_libraries(GLideNHQ PUBLIC
+      PNG::PNG
+      ZLIB::ZLIB
       osal
     )
   elseif(ANDROID)

@@ -3,6 +3,15 @@
 #
 cmake_minimum_required(VERSION 3.15)
 
+# On Apple Silicon: use x86_64 (Rosetta) when x86_64 Homebrew exists, else native arm64.
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND NOT CMAKE_OSX_ARCHITECTURES)
+    if(EXISTS "/usr/local/bin/brew")
+        set(CMAKE_OSX_ARCHITECTURES "x86_64" CACHE STRING "macOS target architectures")
+    else()
+        set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "macOS target architectures")
+    endif()
+endif()
+
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Minimum policy version" FORCE)
 set(PORTABLE_INSTALL ON CACHE BOOL "Portable Installation" FORCE)
 option(UPDATER          "Enables updater" ${WIN32})
@@ -15,6 +24,10 @@ option(NO_ASM           "Disables the usage of assembly in the mupen64plus-core"
 option(USE_ANGRYLION    "Enables building angrylion-rdp-plus which uses a non-GPL compliant license" OFF)
 
 project(RMG)
+
+if(APPLE)
+    set(VRU OFF CACHE BOOL "Enables VRU support in RMG-Input" FORCE)
+endif()
 
 find_package(Git)
 if (GIT_FOUND)
@@ -122,7 +135,11 @@ if (WIN32)
     add_custom_target(bundle_dependencies
         COMMAND bash "${CMAKE_SOURCE_DIR}/Source/Script/BundleDependencies.sh" "${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}/Mupen-MPN.exe" "${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}"
 	)
-endif(WIN32)
+elseif(APPLE)
+    add_custom_target(bundle_dependencies
+        COMMAND bash "${CMAKE_SOURCE_DIR}/Source/Script/BundleDependenciesMacOS.sh" "${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}"
+    )
+endif()
 
 set(LIB_PERMISSIONS OWNER_READ OWNER_EXECUTE OWNER_WRITE
                     GROUP_READ GROUP_EXECUTE

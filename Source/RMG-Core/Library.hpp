@@ -19,6 +19,11 @@ typedef HMODULE CoreLibraryHandle;
 typedef FARPROC CoreLibrarySymbol;
 #define CORE_LIBRARY_EXT_STR ".dll"
 #define CORE_EXPORT __declspec(dllexport)
+#elif defined(__APPLE__)
+typedef void*   CoreLibraryHandle;
+typedef void*   CoreLibrarySymbol;
+#define CORE_LIBRARY_EXT_STR ".dylib"
+#define CORE_EXPORT __attribute__((visibility("default")))
 #else // Unix
 typedef void*   CoreLibraryHandle;
 typedef void*   CoreLibrarySymbol;

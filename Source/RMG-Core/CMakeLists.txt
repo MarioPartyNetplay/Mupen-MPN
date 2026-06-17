@@ -125,3 +125,9 @@ target_include_directories(RMG-Core PRIVATE
 )
 
 set_target_properties(RMG-Core PROPERTIES CXX_VISIBILITY_PRESET hidden)
+
+if (APPLE AND PORTABLE_INSTALL)
+    set_target_properties(RMG-Core PROPERTIES
+        INSTALL_RPATH "@loader_path"
+    )
+endif()

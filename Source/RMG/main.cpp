@@ -10,6 +10,7 @@
 #include <UserInterface/MainWindow.hpp>
 
 #include <QCommandLineParser>
+#include <QSurfaceFormat>
 #include <QApplication>
 #include <QFile>
 #include <QDir>
@@ -178,7 +179,9 @@ int main(int argc, char **argv)
     // i.e control+c
     signal(SIGINT,  signal_handler);
     signal(SIGTERM, signal_handler);
+#endif // _WIN32
 
+#ifdef __linux__
     // on Linux, wayland works only on some compositors,
     // it works on KDE plasma and sway (on 2023-07-26),
     // but i.e doesn't work on GNOME wayland or labwc, 
@@ -215,7 +218,11 @@ int main(int argc, char **argv)
     // specified, else the window icon will be
     // the generic wayland icon on wayland
     QGuiApplication::setDesktopFileName("org.marioparty.mupen");
-#endif
+#elif defined(__APPLE__)
+    QSurfaceFormat format = QSurfaceFormat::defaultFormat();
+    format.setSwapInterval(0);
+    QSurfaceFormat::setDefaultFormat(format);
+#endif // __linux__
 
     QApplication app(argc, argv);
 

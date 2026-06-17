@@ -14,15 +14,40 @@ if(WIN32)
     set(SO_EXT "dll")
     set(GCA_LIB "mupen64plus_input_gca.${SO_EXT}")
     set(CORE_FILE "mupen64plus.dll")
-else(WIN32)
+elseif(APPLE)
+    set(SO_EXT "dylib")
+    set(GCA_LIB "libmupen64plus_input_gca.${SO_EXT}")
+    set(CORE_FILE "libmupen64plus.dylib")
+else()
     set(SO_EXT "so")
     set(GCA_LIB "libmupen64plus_input_gca.${SO_EXT}")
     set(CORE_FILE "libmupen64plus.so")
-endif(WIN32)
+endif()
 
 set(BASE_CMAKE_CONFIGURE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} 
     -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
     -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS} -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS})
+if (APPLE)
+    if (CMAKE_OSX_ARCHITECTURES)
+        list(APPEND BASE_CMAKE_CONFIGURE_ARGS -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES})
+    endif()
+    if (CMAKE_OSX_DEPLOYMENT_TARGET)
+        list(APPEND BASE_CMAKE_CONFIGURE_ARGS -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET})
+    endif()
+    if (CMAKE_PREFIX_PATH)
+        list(APPEND BASE_CMAKE_CONFIGURE_ARGS -DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH})
+    endif()
+    if (CMAKE_OSX_ARCHITECTURES MATCHES "x86_64" AND NOT CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
+        set(MAKE_HOST_CPU "x86_64")
+    elseif (CMAKE_OSX_ARCHITECTURES MATCHES "arm64" AND NOT CMAKE_OSX_ARCHITECTURES MATCHES "x86_64")
+        set(MAKE_HOST_CPU "arm64")
+    endif()
+endif()
+if (MAKE_HOST_CPU)
+    set(MAKE_HOST_CPU_ARG "HOST_CPU=${MAKE_HOST_CPU}")
+else()
+    set(MAKE_HOST_CPU_ARG "")
+endif()
 if (USE_CCACHE)
     set(CMAKE_CONFIGURE_ARGS ${BASE_CMAKE_CONFIGURE_ARGS} -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache)
     set(MAKE_CC_COMPILER "ccache ${CMAKE_C_COMPILER}")
@@ -88,7 +113,7 @@ ExternalProject_Add(mupen64plus-core
         KEYBINDINGS=0 ACCURATE_FPU=0 VULKAN=0 NETPLAY=$<BOOL:${NETPLAY}> 
         TARGET=${CORE_FILE} DEBUG=${MAKE_DEBUG}
         CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
-        OPTFLAGS=${MAKE_OPTFLAGS}
+        OPTFLAGS=${MAKE_OPTFLAGS} ${MAKE_HOST_CPU_ARG}
         # TODO: when SDL3_net has made a release,
         # remove the vendored SDL3_net
         SDLNET_CFLAGS=${SDL3NET_CFLAGS} SDLNET_LDLIBS=${SDL3NET_LDLIBS}
@@ -112,7 +137,7 @@ ExternalProject_Add(mupen64plus-rsp-cxd4
         SRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-cxd4
         APIDIR=${APIDIR} DEBUG=${MAKE_DEBUG} POSTFIX= 
         CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
-        OPTFLAGS=${MAKE_OPTFLAGS}
+        OPTFLAGS=${MAKE_OPTFLAGS} ${MAKE_HOST_CPU_ARG}
     BUILD_IN_SOURCE False
     BUILD_ALWAYS True
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-cxd4
@@ -130,7 +155,7 @@ ExternalProject_Add(mupen64plus-rsp-hle
         SRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-hle/src
         APIDIR=${APIDIR} DEBUG=${MAKE_DEBUG}
         CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
-        OPTFLAGS=${MAKE_OPTFLAGS}
+        OPTFLAGS=${MAKE_OPTFLAGS} ${MAKE_HOST_CPU_ARG}
     BUILD_IN_SOURCE False
     BUILD_ALWAYS True
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-hle
@@ -161,7 +186,7 @@ ExternalProject_Add(mupen64plus-input-raphnetraw
         SRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-input-raphnetraw/src
         APIDIR=${APIDIR} DEBUG=${MAKE_DEBUG}
         CC=${MAKE_CC_COMPILER} CXX=${MAKE_CXX_COMPILER}
-        OPTFLAGS=${MAKE_OPTFLAGS}
+        OPTFLAGS=${MAKE_OPTFLAGS} ${MAKE_HOST_CPU_ARG}
     BUILD_IN_SOURCE False
     BUILD_ALWAYS True
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-input-raphnetraw

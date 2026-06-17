@@ -36,3 +36,9 @@ target_link_libraries(RMG-Input-GCA
     Qt6::Gui Qt6::Widgets Qt6::Svg 
     atomic # needed by GCC due to std::atomic usage
 )
+
+if (APPLE AND PORTABLE_INSTALL)
+    set_target_properties(RMG-Input-GCA PROPERTIES
+        INSTALL_RPATH "@loader_path/../.."
+    )
+endif()

@@ -11,7 +11,11 @@
 #define EMULATIONTHREAD_HPP
 
 #ifndef _WIN32
+#ifdef __linux__
 #include <QDBusInterface>
+#elif defined(__APPLE__)
+#include <IOKit/pwr_mgt/IOPMLib.h>
+#endif
 #endif
 #include <QSurfaceFormat>
 #include <QString>
@@ -47,8 +51,12 @@ class EmulationThread : public QThread
     int port   = -1;
     int player = -1;
 #ifndef _WIN32
+#ifdef __linux__
     uint32_t dbusCookieId = 0;
     QDBusInterface* dbusInterface = nullptr;
+#elif defined(__APPLE__)
+    IOPMAssertionID powerAssertionId = kIOPMNullAssertionID;
+#endif
 #endif
 
     void resetState(void);
