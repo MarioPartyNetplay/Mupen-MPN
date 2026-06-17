@@ -9,7 +9,7 @@
  */
 #include "WebRTCPeer.hpp"
 #include <RMG-Core/Netplay/WebRTC/WebRTCDataChannel.hpp>
-#include "../NatTraversal/NatTraversalProtocol.hpp"
+#include "../NetplayProtocol.hpp"
 
 #include <rtc/rtc.hpp>
 

@@ -5,7 +5,7 @@
  #ifndef NETPLAYCOORDINATOR_HPP
  #define NETPLAYCOORDINATOR_HPP
  
- #include "NatTraversal/NatTraversalProtocol.hpp"
+ #include "NetplayProtocol.hpp"
  #include "SocketIO/SocketIOClient.hpp"
  #include "SocketIO/SocketIOServer.hpp"
  #include "WebRTC/WebRTCPeer.hpp"

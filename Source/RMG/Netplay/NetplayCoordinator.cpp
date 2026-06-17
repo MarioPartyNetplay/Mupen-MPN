@@ -8,7 +8,7 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "NetplayCoordinator.hpp"
-#include "NatTraversal/NatTraversalProtocol.hpp"
+#include "NetplayProtocol.hpp"
 #include "Netplay.hpp"
 #include <RMG-Core/Netplay.hpp>
 #include <RMG-Core/Emulation.hpp>

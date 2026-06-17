@@ -1,7 +1,7 @@
 #ifndef SOCKET_IO_SERVER_HPP
 #define SOCKET_IO_SERVER_HPP
 
-#include "../NatTraversal/NatTraversalProtocol.hpp"
+#include "../NetplayProtocol.hpp"
 #include <QObject>
 #include <QWebSocketServer>
 #include <QWebSocket>
