@@ -15,7 +15,7 @@ then
     echo "On Apple Silicon, this script re-executes under Rosetta (arch -x86_64)"
     echo "and expects x86_64 Homebrew dependencies in /usr/local."
     echo "Install with: arch -x86_64 /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-    echo "Then: arch -x86_64 brew install cmake qt sdl3 nasm speexdsp libsamplerate minizip pkg-config openssl nlohmann-json libsrtp libusb"
+    echo "Then: arch -x86_64 brew install cmake qt sdl3 nasm speexdsp libsamplerate minizip pkg-config openssl nlohmann-json srtp libusb libpng"
     exit
 fi
 

@@ -146,7 +146,7 @@ jobs:
 
       - name: Install Build Dependencies
         run: |
-          brew install cmake pkg-config nasm qt sdl3 speexdsp libsamplerate minizip openssl libsrtp libusb
+          brew install cmake pkg-config nasm qt sdl3 speexdsp libsamplerate minizip openssl srtp libusb nlohmann-json libpng
 
       - name: Build RMG (x86_64 for Rosetta)
         run: |
