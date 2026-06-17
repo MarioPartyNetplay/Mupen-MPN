@@ -107,6 +107,8 @@
     <addaction name="action_System_Cheats"/>
     <addaction name="action_System_GSButton"/>
     <addaction name="separator"/>
+    <addaction name="action_System_OpenUserFolder"/>
+    <addaction name="separator"/>
     <addaction name="action_System_Exit"/>
    </widget>
    <widget class="QMenu" name="menuSettings">
