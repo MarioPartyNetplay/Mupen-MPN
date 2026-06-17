@@ -81,18 +81,20 @@ if(WIN32)
     target_link_libraries(RMG-Core wsock32 ws2_32 ${ICONV_LIBRARIES})
 endif(WIN32)
 
-# Regenerate git commit hash on each build (execute_process only runs at configure time).
+# Regenerate git commit hash on each RMG-Core build (not only when .in/.py change).
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
 set(RMG_CORE_VERSION_HASH_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/VersionHash.hpp")
-add_custom_command(
-    OUTPUT "${RMG_CORE_VERSION_HASH_HEADER}"
-    COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/make_version.py"
+add_custom_target(RMG-Core-version-hash
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/make_version.py"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/VersionHash.hpp.in"
-            "${CMAKE_CURRENT_SOURCE_DIR}/make_version.py"
-    VERBATIM
+    COMMENT "Updating RMG-Core git version hash"
 )
-add_custom_target(RMG-Core-version-hash DEPENDS "${RMG_CORE_VERSION_HASH_HEADER}")
 add_dependencies(RMG-Core RMG-Core-version-hash)
+
+set_source_files_properties(Version.cpp PROPERTIES
+    OBJECT_DEPENDS "${RMG_CORE_VERSION_HASH_HEADER}"
+)
 
 target_link_libraries(RMG-Core
     ${MINIZIP_LIBRARIES}

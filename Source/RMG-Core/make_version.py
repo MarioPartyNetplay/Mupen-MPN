@@ -25,5 +25,10 @@ if __name__ == "__main__":
     for mapping, value in mappings.items():
         version_str = version_str.replace("@" + mapping + "@", value)
 
+    if os.path.exists(out_path):
+        with open(out_path, "r") as f:
+            if f.read() == version_str:
+                raise SystemExit(0)
+
     with open(out_path, "w") as f:
         f.write(version_str)
