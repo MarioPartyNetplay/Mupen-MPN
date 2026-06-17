@@ -223,11 +223,11 @@ static host_entry_t* find_host(uint32_t code)
     return NULL;
 }
 
-static host_entry_t* find_host_by_endpoint(uint32_t host_ip, uint16_t signaling_port)
+static host_entry_t* find_host_by_traversal_endpoint(uint32_t host_ip, uint16_t traversal_port)
 {
     const uint64_t now = now_seconds();
     for (int i = 0; i < g_host_count; ++i) {
-        if (g_hosts[i].in_use && g_hosts[i].host_ip == host_ip && g_hosts[i].signaling_port == signaling_port &&
+        if (g_hosts[i].in_use && g_hosts[i].host_ip == host_ip && g_hosts[i].traversal_port == traversal_port &&
             now - g_hosts[i].last_seen <= HOST_TTL_SEC) {
             return &g_hosts[i];
         }
@@ -236,6 +236,30 @@ static host_entry_t* find_host_by_endpoint(uint32_t host_ip, uint16_t signaling_
 }
 
 static void index_del(const char* key);
+
+static void retire_hosts_at_signaling_endpoint(uint32_t host_ip, uint16_t signaling_port, uint32_t except_code)
+{
+    for (int i = 0; i < g_host_count; ++i) {
+        if (!g_hosts[i].in_use || g_hosts[i].host_ip != host_ip || g_hosts[i].signaling_port != signaling_port ||
+            g_hosts[i].code == except_code) {
+            continue;
+        }
+
+        char code_text[8];
+        g_hosts[i].in_use = 0;
+        if (format_host_code(g_hosts[i].code, code_text, sizeof(code_text))) {
+            char session_key[MAX_KEY_LEN];
+            snprintf(session_key, sizeof(session_key), "session/%s", code_text);
+            index_del(session_key);
+            {
+                struct in_addr addr;
+                addr.s_addr = host_ip;
+                printf("[trav] RETIRE %s (superseded at %s:%u)\n", code_text, inet_ntoa(addr),
+                       (unsigned)signaling_port);
+            }
+        }
+    }
+}
 
 static void prune_hosts(void)
 {
@@ -314,6 +338,7 @@ static void trav_register(socket_t sock, const struct sockaddr_in* client, sockl
     char reply[96];
     int parsed_port = atoi(port_text);
     uint16_t port;
+    uint16_t traversal_port;
     uint32_t code;
 
     if (parsed_port < 1024 || parsed_port > 65535) {
@@ -321,9 +346,10 @@ static void trav_register(socket_t sock, const struct sockaddr_in* client, sockl
         return;
     }
     port = (uint16_t)parsed_port;
+    traversal_port = ntohs(client->sin_port);
 
     {
-        host_entry_t* existing = find_host_by_endpoint(client->sin_addr.s_addr, port);
+        host_entry_t* existing = find_host_by_traversal_endpoint(client->sin_addr.s_addr, traversal_port);
         if (existing != NULL) {
             if (!format_host_code(existing->code, code_text, sizeof(code_text))) {
                 send_reply(sock, (const struct sockaddr*)client, client_len, TRAV_PROTOCOL "|ERR|NOCODE");
@@ -331,7 +357,8 @@ static void trav_register(socket_t sock, const struct sockaddr_in* client, sockl
             }
 
             existing->host_ip = client->sin_addr.s_addr;
-            existing->traversal_port = ntohs(client->sin_port);
+            existing->signaling_port = port;
+            existing->traversal_port = traversal_port;
             existing->last_seen = now_seconds();
             existing->list_in_browser = list_in_browser;
 
@@ -357,11 +384,12 @@ static void trav_register(socket_t sock, const struct sockaddr_in* client, sockl
         send_reply(sock, (const struct sockaddr*)client, client_len, TRAV_PROTOCOL "|ERR|NOCODE");
         return;
     }
-    if (upsert_host(code, client->sin_addr.s_addr, port, ntohs(client->sin_port), now_seconds(), list_in_browser) ==
-        NULL) {
+    if (upsert_host(code, client->sin_addr.s_addr, port, traversal_port, now_seconds(), list_in_browser) == NULL) {
         send_reply(sock, (const struct sockaddr*)client, client_len, TRAV_PROTOCOL "|ERR|FULL");
         return;
     }
+
+    retire_hosts_at_signaling_endpoint(client->sin_addr.s_addr, port, code);
 
     snprintf(reply, sizeof(reply), TRAV_PROTOCOL "|REGISTEROK|%s|%s|%u", code_text,
              inet_ntoa(client->sin_addr), (unsigned)port);
@@ -383,7 +411,7 @@ static void trav_send_punch(socket_t sock, const struct sockaddr_in* target, soc
 {
     char reply[96];
     snprintf(reply, sizeof(reply), TRAV_PROTOCOL "|PUNCH|%s|%u", ip_text, target_port);
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 10; ++i) {
         send_reply(sock, (const struct sockaddr*)target, target_len, reply);
     }
 }

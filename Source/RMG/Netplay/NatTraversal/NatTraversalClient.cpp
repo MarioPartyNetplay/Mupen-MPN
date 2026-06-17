@@ -62,6 +62,11 @@ QString NatTraversalClient::hostCode() const
 void NatTraversalClient::startHosting(uint16_t signalingPort, bool listInBrowser)
 {
     cancelLookup();
+
+    if (m_mode == Mode::Hosting && !m_hostCode.isEmpty()) {
+        sendToServer(QByteArray(kNatTraversalProtocol) + "|UNREGISTER|" + m_hostCode.toUtf8());
+    }
+
     resetHostState();
 
     m_mode = Mode::Hosting;

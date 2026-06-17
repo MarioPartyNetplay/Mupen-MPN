@@ -73,6 +73,8 @@ public:
     void broadcastChatMessage(const QString& roomId, const QString& playerName, const QString& message);
     void broadcastInputDelayUpdate(const QString& roomId, int frames);
     void broadcastEmulationPauseUpdate(const QString& roomId, bool paused);
+    /** Marks a player ready for lockstep; broadcasts emulation-begin when all peers are ready. */
+    void markEmulationReady(const QString& roomId, int slotIndex);
 
     /**
      * @brief Relay a WebRTC signal from the embedded host to a connected client
@@ -161,6 +163,9 @@ signals:
      */
     void hostedWebRTCSignalReceived(const QString& fromPlayerId, const QJsonObject& signal);
 
+    /** All players reported ready; lockstep may begin on every peer. */
+    void emulationBegin(const QString& roomId);
+
 private slots:
     /**
      * @brief Handle new WebSocket connection
@@ -212,6 +217,8 @@ private:
         QJsonObject activeCoreSettings;
         int inputDelayFrames = 4; // Default standard netplay lag buffer
         QMap<int, uint32_t> lastFrameSyncBySlot;
+        QSet<int> emulationReadySlots;
+        bool emulationBeginSent = false;
     };
 
     struct ChunkedCheatUpdate
@@ -247,7 +254,10 @@ private:
     void handle_FrameSync(QWebSocket* socket, const QJsonObject& msg);
     void handle_InputDelayUpdate(QWebSocket* socket, const QJsonObject& msg);
     void handle_EmulationPauseUpdate(QWebSocket* socket, const QJsonObject& msg);
+    void handle_EmulationReady(QWebSocket* socket, const QJsonObject& msg);
     void handle_DirectRamPatch(QWebSocket* socket, const QJsonObject& msg);
+
+    void tryBroadcastEmulationBegin(SignalingRoom* room);
 
     // Utilities
     ClientConnection* getClientFromSocket(QWebSocket* socket);

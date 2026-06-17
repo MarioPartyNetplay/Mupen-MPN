@@ -66,6 +66,7 @@ public:
         std::function<void()> resyncSucceeded;
         std::function<void(const std::string&)> resyncFailed;
         std::function<void(const std::string&)> engineStatusChanged;
+        std::function<void()> pumpNetwork;
     };
 
     explicit LockstepEngine(const Config& config);
@@ -121,6 +122,7 @@ private:
         uint32_t localHash,
         uint32_t peerHash);
     void pruneOldFrameSyncDataUnlocked(uint32_t oldestFrameToKeep);
+    void applyTimeoutFallbackUnlocked(uint32_t frameNumber);
 
     Config m_config;
     uint32_t m_currentFrameNumber = 0;
@@ -132,6 +134,7 @@ private:
     std::map<int, bool> m_frameReceived;
     std::map<int, uint32_t> m_lastKnownInputs;
     std::map<int, uint32_t> m_lastKnownInputFrames;
+    std::map<int, uint32_t> m_lastStallCallbackFrame;
     std::map<uint32_t, uint32_t> m_localFrameSyncHashes;
     std::map<int, std::map<uint32_t, uint32_t>> m_pendingPeerFrameSyncHashes;
     std::unordered_set<uint64_t> m_reportedHashMismatches;

@@ -92,4 +92,7 @@ void CoreSetPluginPathOverride(std::filesystem::path path);
 // changes the shared data path to the given path
 void CoreSetSharedDataPathOverride(std::filesystem::path path);
 
+// portable installs: redirect Config/Data/Save/Cache under a profile subfolder
+void CoreSetPortableProfileRoot(std::filesystem::path path);
+
 #endif // DIRECTORIES_HPP

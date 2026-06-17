@@ -38,6 +38,18 @@ static std::filesystem::path l_LibraryPathOverride;
 static std::filesystem::path l_CorePathOverride;
 static std::filesystem::path l_PluginPathOverride;
 static std::filesystem::path l_SharedDataPathOverride;
+static std::filesystem::path l_PortableProfileRoot;
+
+static std::filesystem::path apply_portable_profile_root(std::filesystem::path relative)
+{
+#ifdef PORTABLE_INSTALL
+    if (!l_PortableProfileRoot.empty())
+    {
+        return (l_PortableProfileRoot / relative).make_preferred();
+    }
+#endif // PORTABLE_INSTALL
+    return relative.make_preferred();
+}
 
 //
 // Local Functions
@@ -311,7 +323,7 @@ CORE_EXPORT std::filesystem::path CoreGetUserConfigDirectory(void)
 #ifdef PORTABLE_INSTALL
     if (CoreGetPortableDirectoryMode())
     {
-        directory = "Config";
+        directory = apply_portable_profile_root("Config");
     }
     else
 #endif // PORTABLE_INSTALL
@@ -334,7 +346,7 @@ CORE_EXPORT std::filesystem::path CoreGetDefaultSaveDirectory(void)
 #ifdef PORTABLE_INSTALL
     if (CoreGetPortableDirectoryMode())
     {
-        directory = "Save/Game";
+        directory = apply_portable_profile_root("Save/Game");
     }
     else
 #endif // PORTABLE_INSTALL
@@ -356,7 +368,7 @@ CORE_EXPORT std::filesystem::path CoreGetDefaultSaveStateDirectory(void)
 #ifdef PORTABLE_INSTALL
     if (CoreGetPortableDirectoryMode())
     {
-        directory = "Save/State";
+        directory = apply_portable_profile_root("Save/State");
     }
     else
 #endif // PORTABLE_INSTALL
@@ -378,7 +390,7 @@ CORE_EXPORT std::filesystem::path CoreGetDefaultScreenshotDirectory(void)
 #ifdef PORTABLE_INSTALL
     if (CoreGetPortableDirectoryMode())
     {
-        directory = "Screenshots";
+        directory = apply_portable_profile_root("Screenshots");
     }
     else
 #endif // PORTABLE_INSTALL
@@ -400,7 +412,7 @@ CORE_EXPORT std::filesystem::path CoreGetUserDataDirectory(void)
 #ifdef PORTABLE_INSTALL
     if (CoreGetPortableDirectoryMode())
     {
-        directory = "Data";
+        directory = apply_portable_profile_root("Data");
     }
     else
 #endif // PORTABLE_INSTALL
@@ -422,7 +434,7 @@ CORE_EXPORT std::filesystem::path CoreGetUserCacheDirectory(void)
 #ifdef PORTABLE_INSTALL
     if (CoreGetPortableDirectoryMode())
     {
-        directory = "Cache";
+        directory = apply_portable_profile_root("Cache");
     }
     else
 #endif // PORTABLE_INSTALL
@@ -502,3 +514,8 @@ CORE_EXPORT void CoreSetSharedDataPathOverride(std::filesystem::path path)
     l_SharedDataPathOverride = path;
 }
 #endif // PORTABLE_INSTALL
+
+CORE_EXPORT void CoreSetPortableProfileRoot(std::filesystem::path path)
+{
+    l_PortableProfileRoot = std::move(path);
+}

@@ -84,6 +84,20 @@ void NetplaySessionBrowserWidget::AddSessionData(const QString& hostName, const 
                                                  const QString& hostCode, const QString& lobbySize,
                                                  int port, const QString& address)
 {
+    if (!hostCode.isEmpty()) {
+        for (int row = 0; row < this->tableWidget->rowCount(); ++row) {
+            const QTableWidgetItem* item = this->tableWidget->item(row, 0);
+            if (item == nullptr) {
+                continue;
+            }
+
+            const NetplaySessionData existing = item->data(Qt::UserRole).value<NetplaySessionData>();
+            if (existing.HostCode.compare(hostCode, Qt::CaseInsensitive) == 0) {
+                return;
+            }
+        }
+    }
+
     const NetplaySessionData sessionData =
     {
         hostName,

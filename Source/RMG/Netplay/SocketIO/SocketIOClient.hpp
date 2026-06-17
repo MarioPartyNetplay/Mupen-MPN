@@ -139,6 +139,7 @@ public:
     
     void sendInputDelayUpdate(int frames);
     void sendEmulationPauseUpdate(bool paused);
+    void sendEmulationReady();
 
     // Getters
     QString getPlayerId() const;
@@ -202,6 +203,9 @@ signals:
 
     // Pause sync
     void emulationPauseReceived(bool paused);
+
+    /** Server confirmed all peers are ready; begin lockstep together. */
+    void emulationBeginReceived();
 
 private slots:
     void on_connected();
