@@ -170,17 +170,16 @@ font-size:11px;
 
          <property name="plainText">
           <string>
-Core Contributors:
-- Rosalie — RMG Developer
-- Logan — Simple64 Netcode Developer
-- mupen64plus Team
+RMG / Upstream Work:
+- Roaslie — RMG developer
+- Jay-Day — Motivation and encouragement that helped bring the project to completion
+- CoderTimZ — RMG foundation for execution plugins
 
 MPN Contributors:
 - Tabitha — Mupen MPN Developer
 - Lave, Jeff₍₁₎ — MPN Founders
 - Rain, gamemasterplc, zestydev — decompilation project contributors
-- Airsolan — Cheat System
-- gamemasterplc — Cheat System
+- Airsolan, gamemasterplc, Rain, Celery — Game Mods
 
 And everyone who contributed, tested, and supports the project.
 

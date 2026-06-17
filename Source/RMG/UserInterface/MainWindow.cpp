@@ -1500,10 +1500,18 @@ void MainWindow::on_EventFilter_FileDropped(QDropEvent *event)
 
 void MainWindow::on_QGuiApplication_applicationStateChanged(Qt::ApplicationState state)
 {
+#ifdef NETPLAY
+    if (UserInterface::Netplay::shouldBlockFocusLossPause() ||
+        (this->netplaySessionDialog != nullptr && CoreIsEmulationRunning()))
+    {
+        return;
+    }
+#else
     if (CoreIsEmbeddedNetplayActive() || CoreHasInitNetplay())
     {
         return;
     }
+#endif // NETPLAY
 
     bool isRunning = CoreIsEmulationRunning();
     bool isPaused = CoreIsEmulationPaused();
@@ -1520,7 +1528,10 @@ void MainWindow::on_QGuiApplication_applicationStateChanged(Qt::ApplicationState
         {
             if (pauseOnFocusLoss && isRunning && !isPaused)
             {
-                this->on_Action_System_Pause();
+                if (CorePauseEmulation())
+                {
+                    this->updateUI(true, true);
+                }
                 this->ui_ManuallyPaused = false;
             }
         } break;
@@ -1529,7 +1540,10 @@ void MainWindow::on_QGuiApplication_applicationStateChanged(Qt::ApplicationState
         {
             if (resumeOnFocus && isPaused && !this->ui_ManuallyPaused)
             {
-                this->on_Action_System_Pause();
+                if (CoreResumeEmulation())
+                {
+                    this->updateUI(true, false);
+                }
             }
         } break;
     }

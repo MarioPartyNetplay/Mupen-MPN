@@ -55,6 +55,33 @@ bool UserInterface::Netplay::isNetplayActive()
            g_netplayCoordinator->isInGame();
 }
 
+bool UserInterface::Netplay::shouldBlockFocusLossPause()
+{
+    if (CoreIsEmbeddedNetplayActive() || CoreHasInitNetplay())
+    {
+        return true;
+    }
+
+    if (g_netplayCoordinator == nullptr)
+    {
+        return false;
+    }
+
+    if (g_netplayCoordinator->isInGame())
+    {
+        return true;
+    }
+
+    switch (g_netplayCoordinator->getCurrentState())
+    {
+    case NetplayCoordinator::StartingGame:
+    case NetplayCoordinator::EndingGame:
+        return true;
+    default:
+        return false;
+    }
+}
+
 void UserInterface::Netplay::submitNetplayFrameInput(uint32_t controllerState)
 {
     if (g_netplayCoordinator && g_netplayCoordinator->isInGame()) {
@@ -103,6 +130,11 @@ NetplayCoordinator* UserInterface::Netplay::g_netplayCoordinator = nullptr;
 bool UserInterface::Netplay::isNetplayActive()
 {
     return false;
+}
+
+bool UserInterface::Netplay::shouldBlockFocusLossPause()
+{
+    return CoreIsEmbeddedNetplayActive() || CoreHasInitNetplay();
 }
 
 void UserInterface::Netplay::submitNetplayFrameInput(uint32_t)

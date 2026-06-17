@@ -31,6 +31,11 @@ extern NetplayCoordinator* g_netplayCoordinator;
 bool isNetplayActive();
 
 /**
+ * Returns true when focus-loss pause/resume should be ignored.
+ */
+bool shouldBlockFocusLossPause();
+
+/**
  * Submit frame input during emulation
  * Called from emulation loop with current controller state
  */
