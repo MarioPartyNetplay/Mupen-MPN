@@ -18,6 +18,8 @@
 #include <QFileInfo>
 #include <QDebug>
 #include <QThread>
+#include <QCoreApplication>
+#include <QEventLoop>
 #include <QUuid>
 
 using namespace UserInterface::Netplay;
@@ -127,6 +129,8 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
             this, &NetplayCoordinator::on_socketIO_inputDelayReceived);
         connect(m_socketIO.get(), &SocketIOClient::emulationPauseReceived,
             this, &NetplayCoordinator::on_socketIO_emulationPauseReceived);
+    connect(m_socketIO.get(), &SocketIOClient::emulationBeginReceived,
+            this, &NetplayCoordinator::on_socketIO_emulationBeginReceived);
 
     // Initialize lockstep config
     m_lockstepConfig.numPlayers = 4;
@@ -289,6 +293,13 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
 
     connect(m_server.get(), &SocketIOServer::hostedWebRTCSignalReceived,
             this, &NetplayCoordinator::on_hostedWebRTCSignalReceived);
+    connect(m_server.get(), &SocketIOServer::emulationBegin,
+            this, [this](const QString& roomId) {
+                if (roomId != m_gameSession.roomId) {
+                    return;
+                }
+                emit emulationBeginReceived();
+            });
 
     // Create initial room for remote players to join
     m_gameSession.roomId = QUuid::createUuid().toString(QUuid::WithoutBraces).left(8).toUpper();
@@ -400,6 +411,8 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
             this, &NetplayCoordinator::on_socketIO_coreSettingsSyncReceived);
         connect(m_socketIO.get(), &SocketIOClient::emulationPauseReceived,
             this, &NetplayCoordinator::on_socketIO_emulationPauseReceived);
+    connect(m_socketIO.get(), &SocketIOClient::emulationBeginReceived,
+            this, &NetplayCoordinator::on_socketIO_emulationBeginReceived);
     
     // Now connect to the server
     setState(Connecting);
@@ -508,19 +521,29 @@ void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
             : socketDispatchConnectionType(m_socketIO.get());
 
     for (const auto& [sendFrameNumber, state] : outbound) {
-        if (isHostingServer()) {
-            QMetaObject::invokeMethod(m_server.get(), [this, sendFrameNumber, state]() {
-                m_server->broadcastControllerInput(
-                    m_gameSession.roomId,
-                    m_lockstepConfig.localPlayerSlot,
-                    sendFrameNumber,
-                    state);
-            }, dispatchType);
-        } else if (m_socketIO) {
-            QMetaObject::invokeMethod(m_socketIO.get(), [this, sendFrameNumber, state]() {
-                m_socketIO->sendControllerInput(sendFrameNumber, state);
-            }, dispatchType);
+        QMetaObject::invokeMethod(
+            this,
+            "relayLocalControllerInput",
+            dispatchType,
+            Q_ARG(quint32, sendFrameNumber),
+            Q_ARG(quint32, state));
+    }
+}
+
+void NetplayCoordinator::relayLocalControllerInput(
+    quint32 sendFrameNumber,
+    quint32 state)
+{
+    if (isHostingServer()) {
+        if (m_server && !m_gameSession.roomId.isEmpty()) {
+            m_server->broadcastControllerInput(
+                m_gameSession.roomId,
+                m_lockstepConfig.localPlayerSlot,
+                sendFrameNumber,
+                state);
         }
+    } else if (m_socketIO) {
+        m_socketIO->sendControllerInput(sendFrameNumber, state);
     }
 }
 
@@ -890,6 +913,20 @@ void NetplayCoordinator::initializeLockstepEngine()
 
     callbacks.desyncDetected = [this](uint32_t frameNumber, const std::string& reason) {
         emit desyncDetected(QString::fromStdString(reason));
+    };
+
+    callbacks.pumpNetwork = [this]() {
+        if (QThread::currentThread() == this->thread()) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 2);
+            return;
+        }
+
+        QMetaObject::invokeMethod(
+            this,
+            []() {
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 2);
+            },
+            Qt::BlockingQueuedConnection);
     };
 
     m_lockstepEngine->setCallbacks(callbacks);
@@ -1522,6 +1559,32 @@ void NetplayCoordinator::sendInputDelayUpdate(int frames)
     }
 
     emit inputDelayChanged(frames);
+}
+
+void NetplayCoordinator::sendEmulationReady()
+{
+    if (m_gameSession.roomId.isEmpty()) {
+        return;
+    }
+
+    if (isHostingServer()) {
+        if (m_server) {
+            m_server->markEmulationReady(
+                m_gameSession.roomId,
+                m_gameSession.localSlot);
+        }
+        return;
+    }
+
+    if (m_socketIO &&
+        m_socketIO->getConnectionState() == SocketIOClient::Connected) {
+        m_socketIO->sendEmulationReady();
+    }
+}
+
+void NetplayCoordinator::on_socketIO_emulationBeginReceived()
+{
+    emit emulationBeginReceived();
 }
 
 void NetplayCoordinator::on_socketIO_inputDelayReceived(int frames)

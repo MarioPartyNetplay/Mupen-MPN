@@ -61,6 +61,7 @@ private:
     void fetchPublicIpAddress(void);
     void publishHostSessionIndex(bool started);
     void tryStartPendingGame(void);
+    void requestSynchronizedEmulationStart(void);
     bool getCheats(std::vector<CoreCheat>& cheats, QJsonArray& cheatsArray);
     bool setCheats(const QJsonArray& cheatsArray);
     bool applyCheats(void);

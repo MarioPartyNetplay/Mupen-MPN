@@ -398,6 +398,15 @@ void SocketIOClient::sendEmulationPauseUpdate(bool paused)
     emitEvent("emulation-paused", payload);
 }
 
+void SocketIOClient::sendEmulationReady()
+{
+    if (m_connectionState != Connected) {
+        return;
+    }
+
+    emitEvent("emulation-ready", QJsonObject());
+}
+
 void SocketIOClient::requestRoomList(bool waiting)
 {
     if (m_connectionState != Connected) {
@@ -736,6 +745,9 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
     } else if (eventName == "emulation-paused" && args.size() > 0) {
         QJsonObject data = args[0].toObject();
         emit emulationPauseReceived(data["paused"].toBool(false));
+
+    } else if (eventName == "emulation-begin") {
+        emit emulationBeginReceived();
 
     } else if (eventName == "rooms-list" && args.size() > 0) {
         QJsonObject data = args[0].toObject();

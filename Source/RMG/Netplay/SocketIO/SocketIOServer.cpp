@@ -414,6 +414,8 @@ bool SocketIOServer::startHostedGame(const QString& roomId, const QString& mode,
     }
 
     room->started = true;
+    room->emulationReadySlots.clear();
+    room->emulationBeginSent = false;
 
     QJsonObject payload;
     payload["mode"] = mode;
@@ -567,6 +569,60 @@ void SocketIOServer::broadcastEmulationPauseUpdate(const QString& roomId, bool p
     QJsonObject payload;
     payload["paused"] = paused;
     emitToRoom(roomId, "emulation-paused", payload);
+}
+
+void SocketIOServer::markEmulationReady(const QString& roomId, int slotIndex)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room || !room->started || slotIndex < 0) {
+        return;
+    }
+
+    room->emulationReadySlots.insert(slotIndex);
+    tryBroadcastEmulationBegin(room);
+}
+
+void SocketIOServer::tryBroadcastEmulationBegin(SignalingRoom* room)
+{
+    if (!room || room->emulationBeginSent || !room->started) {
+        return;
+    }
+
+    const int requiredPlayers = room->lobbyOrder.size();
+    if (requiredPlayers < 2) {
+        return;
+    }
+
+    for (int slot = 0; slot < requiredPlayers; ++slot) {
+        if (!room->emulationReadySlots.contains(slot)) {
+            return;
+        }
+    }
+
+    room->emulationBeginSent = true;
+
+    qInfo() << "SocketIOServer: All players ready in room" << room->id
+            << "- broadcasting emulation-begin";
+
+    emitToConnectedRoomClients(room->id, "emulation-begin", QJsonObject());
+    emit emulationBegin(room->id);
+}
+
+void SocketIOServer::handle_EmulationReady(QWebSocket* socket, const QJsonObject& msg)
+{
+    Q_UNUSED(msg);
+
+    ClientConnection* client = getClientFromSocket(socket);
+    if (!client || client->roomId.isEmpty() || client->slotIndex < 0) {
+        return;
+    }
+
+    SignalingRoom* room = getRoomById(client->roomId);
+    if (!room || !room->started) {
+        return;
+    }
+
+    markEmulationReady(client->roomId, client->slotIndex);
 }
 
 void SocketIOServer::broadcastChatMessage(const QString& roomId, const QString& playerName, const QString& message)
@@ -777,6 +833,8 @@ void SocketIOServer::handleEvent(QWebSocket* socket, const QJsonArray& args)
             handle_InputDelayUpdate(socket, data);
         else if (eventName == "emulation-paused")
             handle_EmulationPauseUpdate(socket, data);
+        else if (eventName == "emulation-ready")
+            handle_EmulationReady(socket, data);
     }
 }
 
@@ -985,6 +1043,8 @@ void SocketIOServer::handle_StartGame(QWebSocket* socket, const QJsonObject& msg
         return;  // Need at least 2 players
 
     room->started = true;
+    room->emulationReadySlots.clear();
+    room->emulationBeginSent = false;
 
     // Broadcast game start to all players in room
     emitToRoom(client->roomId, "game-started", QJsonObject());

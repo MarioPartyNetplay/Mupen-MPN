@@ -23,9 +23,18 @@ using namespace RMGCore;
 
 namespace {
 
-// Accept slightly late inputs; reject only packets that cannot affect the timeline.
-constexpr uint32_t kInputFrameSlack = 8;
+constexpr uint32_t kMinInputFrameSlack = 8;
 constexpr uint32_t kMinInputDelayFrames = 1;
+
+uint32_t inputFrameSlackForDelay(int inputDelayFrames)
+{
+    if (inputDelayFrames < 1) {
+        inputDelayFrames = 1;
+    }
+
+    return std::max(kMinInputFrameSlack,
+                    static_cast<uint32_t>(inputDelayFrames) + kMinInputFrameSlack);
+}
 
 } // namespace
 
@@ -154,7 +163,8 @@ void LockstepEngine::submitRemoteInput(
 
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
-    if (frameNumber + kInputFrameSlack < m_currentFrameNumber) {
+    if (frameNumber + inputFrameSlackForDelay(m_config.inputDelayFrames) <
+        m_currentFrameNumber) {
         return;
     }
 
@@ -241,9 +251,14 @@ bool LockstepEngine::advanceFrame()
     const uint32_t frameNumber = m_currentFrameNumber;
 
     if (m_config.numPlayers > 1) {
-        waitForAllInputs(
+        const bool ready = waitForAllInputs(
             frameNumber,
             m_config.stallTimeoutMilliseconds);
+        if (!ready) {
+            std::lock_guard<std::recursive_mutex> lock(m_mutex);
+            applyTimeoutFallbackUnlocked(frameNumber);
+            ++m_stats.timeoutOccurrences;
+        }
     }
 
     std::map<int, uint32_t> frameInputs;
@@ -398,10 +413,15 @@ void LockstepEngine::setInputDelayFrames(int frames)
         stallTimeoutForDelayFrames(frames);
 }
 
-int LockstepEngine::stallTimeoutForDelayFrames(int)
+int LockstepEngine::stallTimeoutForDelayFrames(int inputDelayFrames)
 {
-    // Dolphin-style lockstep: wait indefinitely for peer inputs.
-    return 0;
+    if (inputDelayFrames < 1) {
+        inputDelayFrames = 1;
+    }
+
+    // ~33 ms per emulated frame; keep a floor so brief jitter does not stall.
+    const int timeoutMs = inputDelayFrames * 33;
+    return std::min(std::max(timeoutMs, 500), 3300);
 }
 
 void LockstepEngine::pruneOldFrames(uint32_t oldestFrameToKeep)
@@ -433,6 +453,8 @@ void LockstepEngine::onDataChannelClosed(int peerSlot)
 
         m_dataChannels[peerSlot] = nullptr;
     }
+
+    m_inputCv.notify_all();
 }
 
 void LockstepEngine::onDataChannelError(
@@ -453,6 +475,8 @@ void LockstepEngine::onDataChannelError(
 
         m_dataChannels[peerSlot] = nullptr;
     }
+
+    m_inputCv.notify_all();
 }
 
 void LockstepEngine::broadcastInput(
@@ -510,7 +534,8 @@ void LockstepEngine::processInputPacket(
         return;
     }
 
-    if (frameNumber + kInputFrameSlack < m_currentFrameNumber) {
+    if (frameNumber + inputFrameSlackForDelay(m_config.inputDelayFrames) <
+        m_currentFrameNumber) {
         return;
     }
 
@@ -642,8 +667,44 @@ void LockstepEngine::pruneOldFrameSyncDataUnlocked(uint32_t oldestFrameToKeep)
 
 void LockstepEngine::notifyInputProgressUnlocked(uint32_t frameNumber)
 {
-    if (frameNumber + kInputFrameSlack >= m_currentFrameNumber) {
+    if (frameNumber + inputFrameSlackForDelay(m_config.inputDelayFrames) >=
+        m_currentFrameNumber) {
         m_inputCv.notify_all();
+    }
+}
+
+void LockstepEngine::applyTimeoutFallbackUnlocked(uint32_t frameNumber)
+{
+    FrameInputs& frameInputs = m_frameBuffer[frameNumber];
+    frameInputs.frameNumber = frameNumber;
+
+    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
+        if (slot == m_config.localPlayerSlot) {
+            continue;
+        }
+
+        if (frameInputs.playerInputs.find(slot) != frameInputs.playerInputs.end()) {
+            continue;
+        }
+
+        const auto lastKnown = m_lastKnownInputs.find(slot);
+        frameInputs.playerInputs[slot] =
+            lastKnown != m_lastKnownInputs.end()
+                ? lastKnown->second
+                : FALLBACK_INPUT;
+
+        m_stats.stallFrameNumbers.push_back(frameNumber);
+
+        const auto lastNotified = m_lastStallCallbackFrame.find(slot);
+        const bool firstStallInBurst =
+            lastNotified == m_lastStallCallbackFrame.end() ||
+            lastNotified->second + 1 != frameNumber;
+
+        if (firstStallInBurst && m_callbacks.peerInputStalled) {
+            m_callbacks.peerInputStalled(slot, frameNumber);
+        }
+
+        m_lastStallCallbackFrame[slot] = frameNumber;
     }
 }
 
@@ -688,6 +749,10 @@ bool LockstepEngine::waitForAllInputs(
     std::unique_lock<std::recursive_mutex> lock(m_mutex);
 
     while (!hasAllInputsForFrameUnlocked(frameNumber)) {
+        if (m_callbacks.pumpNetwork) {
+            m_callbacks.pumpNetwork();
+        }
+
         if (hasDeadline &&
             std::chrono::steady_clock::now() >= deadline) {
             return false;

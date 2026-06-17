@@ -320,6 +320,8 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     connect(this->coordinator, &Netplay::NetplayCoordinator::connected, this, &NetplaySessionDialog::on_netplay_connected);
     connect(this->coordinator, &Netplay::NetplayCoordinator::disconnected, this, &NetplaySessionDialog::on_netplay_disconnected);
     connect(this->coordinator, &Netplay::NetplayCoordinator::stateChanged, this, &NetplaySessionDialog::on_coordinator_stateChanged);
+    connect(this->coordinator, &Netplay::NetplayCoordinator::emulationBeginReceived,
+            this, &NetplaySessionDialog::tryStartPendingGame);
     const int initialBufferDelay = sessionJson.value("buffer_delay").toInt(this->coordinator->getInputDelayFrames());
     this->bufferDelaySpinBox->setValue(initialBufferDelay);
     this->coordinator->setInputDelayFrames(initialBufferDelay);
@@ -896,6 +898,23 @@ void NetplaySessionDialog::on_coordinator_playersUpdated(const QStringList& play
     }
 }
 
+void NetplaySessionDialog::requestSynchronizedEmulationStart(void)
+{
+    if (!this->m_pendingGameStart || !this->coordinator) {
+        return;
+    }
+
+    if (!this->isLocalSessionHost() && !this->m_sessionSavesApplied) {
+        return;
+    }
+
+    if (!this->isLocalSessionHost() && !this->m_sessionCoreSettingsApplied) {
+        return;
+    }
+
+    this->coordinator->sendEmulationReady();
+}
+
 void NetplaySessionDialog::tryStartPendingGame(void)
 {
     if (!this->m_pendingGameStart) {
@@ -959,8 +978,8 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
     }
 
     // Give every peer time to receive game-started and apply session state before
-    // lockstep begins. Without this, the host can advance frames while clients are
-    // still waiting for save-sync, and remote inputs get rejected.
+    // reporting ready. The server waits for all peers, then broadcasts
+    // emulation-begin so lockstep frame 0 starts together.
     constexpr int kNetplayEmulationStartDelayMs = 250;
     QTimer::singleShot(kNetplayEmulationStartDelayMs, this, [this]() {
         if (!this->m_pendingGameStart) {
@@ -973,7 +992,7 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
                     return;
                 }
                 this->m_sessionSavesApplied = true;
-                this->tryStartPendingGame();
+                this->requestSynchronizedEmulationStart();
             });
             return;
         }
@@ -984,12 +1003,12 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
                     return;
                 }
                 this->m_sessionCoreSettingsApplied = true;
-                this->tryStartPendingGame();
+                this->requestSynchronizedEmulationStart();
             });
             return;
         }
 
-        this->tryStartPendingGame();
+        this->requestSynchronizedEmulationStart();
     });
 }
 
@@ -1064,14 +1083,14 @@ void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& sav
     }
 
     this->m_sessionSavesApplied = true;
-    this->tryStartPendingGame();
+    this->requestSynchronizedEmulationStart();
 }
 
 void NetplaySessionDialog::on_coordinator_coreSettingsSyncReceived(const QJsonObject& coreSettings)
 {
     Q_UNUSED(coreSettings);
     this->m_sessionCoreSettingsApplied = true;
-    this->tryStartPendingGame();
+    this->requestSynchronizedEmulationStart();
 }
 
 void NetplaySessionDialog::syncHostSessionState(void)

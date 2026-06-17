@@ -91,6 +91,7 @@
      void sendInputDelayUpdate(int frames);
 
     void sendEmulationPauseUpdate(bool paused);
+    void sendEmulationReady();
  
      // State Queries
      State getCurrentState() const;
@@ -144,6 +145,7 @@
      void cheatsUpdated(const QJsonArray& cheats);
      void saveSyncReceived(const QJsonArray& saveFiles);
      void coreSettingsSyncReceived(const QJsonObject& coreSettings);
+     void emulationBeginReceived();
  
      void resyncAttempted();
      void resyncSucceeded();
@@ -166,6 +168,8 @@
      void on_socketIO_coreSettingsSyncReceived(const QJsonObject& coreSettings);
      void on_socketIO_controllerInputReceived(int slot, uint32_t frameNumber, uint32_t controllerState);
      void on_socketIO_inputDelayReceived(int frames);
+     void on_socketIO_emulationBeginReceived();
+     void relayLocalControllerInput(quint32 sendFrameNumber, quint32 state);
      void on_socketIO_emulationPauseReceived(bool paused);
      void on_peerFrameSyncReceived(int slot, uint32_t frameNumber, uint32_t stateHash);
 

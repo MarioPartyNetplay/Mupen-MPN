@@ -19,7 +19,7 @@
 #include "m64p/Api.hpp"
 
 //
-// Local Variables
+// Local Variablesull
 //
 
 static CoreRomSettings l_DefaultRomSettings;
