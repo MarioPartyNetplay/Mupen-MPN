@@ -20,7 +20,7 @@
 #include <QString>
 
 #include "ui_CreateNetplaySessionDialog.h"
-#include "Netplay/NatTraversal/NatTraversalProtocol.hpp"
+#include "Netplay/NetplayProtocol.hpp"
 
 #include <RMG-Core/RomSettings.hpp>
 
@@ -60,10 +60,7 @@ class CreateNetplaySessionDialog : public QWidget, private Ui::CreateNetplaySess
 
     int pingTimerId = -1;
     int hostingPort = Netplay::kDefaultNetplayHostingPort;
-    bool directConnection = false;
-    
-    QString publicIpAddress;
-    QCheckBox* directConnectionCheckBox = nullptr;
+
     QCheckBox* showInBrowserCheckBox = nullptr;
     QSpinBox* hostingPortSpinBox = nullptr;
 

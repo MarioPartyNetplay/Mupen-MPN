@@ -17,11 +17,10 @@
 
 #include <QNetworkAccessManager>
 
-#include "Netplay/NatTraversal/NatTraversalClient.hpp"
-#include "Netplay/NatTraversal/NatTraversalIndexClient.hpp"
-
 #include <RMG-Core/Cheats.hpp>
 #include "Netplay/NetplayCoordinator.hpp"
+#include "Netplay/NetplayHostRegistry.hpp"
+#include "Netplay/NetplayIndexClient.hpp"
 
 #include "ui_NetplaySessionDialog.h"
 
@@ -43,11 +42,10 @@ private:
     QString romFile;
     int sessionSlot = -1;
     Netplay::NetplayCoordinator* coordinator;
-    std::unique_ptr<Netplay::NatTraversalClient> natTraversalClient;
-    std::unique_ptr<Netplay::NatTraversalIndexClient> natIndexClient;
+    std::unique_ptr<Netplay::NetplayHostRegistry> hostRegistry;
+    std::unique_ptr<Netplay::NetplayIndexClient> indexClient;
     QNetworkAccessManager networkManager;
     QString publicIpAddress;
-    QString pendingNatHostCode;
 
     bool m_pendingGameStart = false;
     bool m_sessionSavesApplied = false;
@@ -56,7 +54,7 @@ private:
     int m_lastDisplayedBufferDelay = -1;
 
     void syncHostSessionState(void);
-    void beginNatTraversalRegistration(uint16_t hostingPort, bool browserListingOnly, bool listInBrowser);
+    void beginHostBrowserRegistration(uint16_t hostingPort, bool listInBrowser);
     void updateConnectInfoDisplay(void);
     void fetchPublicIpAddress(void);
     void publishHostSessionIndex(bool started);

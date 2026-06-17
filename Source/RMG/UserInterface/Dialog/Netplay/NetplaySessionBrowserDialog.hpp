@@ -13,12 +13,9 @@
 #include <QJsonObject>
 #include <QWidget>
 #include <QString>
-#include <memory>
 
 #include "ui_NetplaySessionBrowserDialog.h"
-#include "Netplay/NatTraversal/NatTraversalProtocol.hpp"
-#include "Netplay/NatTraversal/NatTraversalClient.hpp"
-#include "Netplay/NatTraversal/NatTraversalIndexClient.hpp"
+#include "Netplay/NetplayProtocol.hpp"
 #include "Netplay/NetplayCoordinator.hpp"
 
 #include <RMG-Core/RomSettings.hpp>
@@ -57,38 +54,26 @@ class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBr
     QJsonObject sessionJson;
     QString sessionFile;
     QMap<QString, CoreRomSettings> romData;
-    bool isWaitingForConnection;  // Track if we're waiting for server connection
-    bool isResolvingHostCode = false;
+    bool isWaitingForConnection = false;
     QString targetAddress;
     int targetPort = Netplay::kDefaultNetplayHostingPort;
-    std::unique_ptr<Netplay::NatTraversalClient> natTraversalClient;
-    std::unique_ptr<Netplay::NatTraversalIndexClient> natIndexClient;
     QNetworkAccessManager* networkManager = nullptr;
 
-    QString pendingHostCode;
     QJsonObject pendingIndexSession;
-    bool pendingIndexReady = false;
-    bool pendingLookupReady = false;
-    bool pendingLookupFailed = false;
-    QString pendingLookupAddress;
-    int pendingLookupPort = Netplay::kDefaultNetplayHostingPort;
+    QString pendingRoomId;
 
-    bool natJoinRetryActive = false;
-    qint64 natJoinDeadlineMs = 0;
-    QString natConnectAddress;
-    int natConnectPort = Netplay::kDefaultNetplayHostingPort;
-    QString natJoinRoomId;
+    bool joinRetryActive = false;
+    qint64 joinDeadlineMs = 0;
+    QString joinRoomId;
 
     QString showROMDialog(QString name, QString md5);
 
     bool validate(void) const;
     void validateJoinButton(void);
-    void connectToResolvedHost(const QString& address, int port);
-    void beginHostCodeJoin(const QString& hostCode);
-    void tryCompleteHostCodeJoin();
-    void beginNatJoinConnect(const QString& address, int port, const QString& roomId = QString());
-    void attemptNatJoinConnect();
-    void finishNatJoinFailure(const QString& error);
+    void connectToResolvedHost(const QString& address, int port, const QString& roomId = QString());
+    void beginJoinConnect(const QString& address, int port, const QString& roomId = QString());
+    void attemptJoinConnect();
+    void finishJoinFailure(const QString& error);
 
   private slots:
     void on_nickNameLineEdit_textChanged(void);

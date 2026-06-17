@@ -10,7 +10,6 @@
 #include "NetplaySessionBrowserDialog.hpp"
 #include "NetplayCommon.hpp"
 #include "UserInterface/Widget/Netplay/NetplaySessionBrowserWidget.hpp"
-#include "Netplay/NatTraversal/NatTraversalProtocol.hpp"
 #include "NetplaySessionPasswordDialog.hpp"
 #include "Utilities/QtMessageBox.hpp"
 
@@ -20,7 +19,6 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QJsonDocument>
-#include <QInputDialog>
 #include <QPushButton>
 #include <QFileDialog>
 #include <QJsonObject>
@@ -117,12 +115,6 @@ RoomListingFields resolveRoomListingFields(const QJsonObject& room, const QJsonO
     return {hostName, gameName, lobbySize};
 }
 
-bool roomNeedsIndexLookup(const QJsonObject& room)
-{
-    Q_UNUSED(room);
-    return true;
-}
-
 void addResolvedRoom(UserInterface::Widget::NetplaySessionBrowserWidget* widget,
                      const QJsonObject& room,
                      const QJsonObject& indexSession = {})
@@ -138,34 +130,40 @@ void addResolvedRoom(UserInterface::Widget::NetplaySessionBrowserWidget* widget,
         return;
     }
 
+    QString address = room.value(QStringLiteral("address")).toString();
+    int port = room.value(QStringLiteral("port")).toInt(Netplay::kDefaultNetplayHostingPort);
+    QString connectAddress;
+    int connectPort = 0;
+    if (Netplay::sessionConnectEndpoint(indexSession, &connectAddress, &connectPort)) {
+        address = connectAddress;
+        port = connectPort;
+    } else if (Netplay::sessionConnectEndpoint(room, &connectAddress, &connectPort)) {
+        address = connectAddress;
+        port = connectPort;
+    }
+
     widget->AddSessionData(
         fields.hostName,
         fields.gameName,
         room.value(QStringLiteral("hostCode")).toString(),
         fields.lobbySize,
-        room.value(QStringLiteral("port")).toInt(Netplay::kDefaultNetplayHostingPort),
-        room.value(QStringLiteral("address")).toString());
+        port,
+        address);
 }
 
 } // namespace
 
-//
-// Exported Functions
-//
-
 NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netplay::NetplayCoordinator* coordinator, const QMap<QString, CoreRomSettings>& modelData) 
-    : QWidget(parent), coordinator(coordinator), romData(modelData), isWaitingForConnection(false)
+    : QWidget(parent), coordinator(coordinator), romData(modelData)
 {
     this->setupUi(this);
 
-    this->ipAddressLineEdit->setPlaceholderText("Host code (7 hex) or IP:Port");
+    this->ipAddressLineEdit->setPlaceholderText("IP address or IP:Port");
 
-    // Set validator for nickname
     QRegularExpression re("^[a-zA-Z0-9 _-]{1,16}$");
     this->nickNameLineEdit->setValidator(new QRegularExpressionValidator(re, this));
     this->nickNameLineEdit->setText(QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_Nickname)));
 
-    // Connect text change signals
     connect(this->ipAddressLineEdit, &QLineEdit::textChanged, 
             this, &NetplaySessionBrowserDialog::validateJoinButton);
     connect(this->nickNameLineEdit, &QLineEdit::textChanged,
@@ -175,7 +173,6 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
     connect(this->sessionBrowserWidget, &Widget::NetplaySessionBrowserWidget::OnSessionChanged,
             this, &NetplaySessionBrowserDialog::on_sessionBrowserWidget_OnSessionChanged);
 
-    // Connect coordinator signals for connection status
     connect(this->coordinator, &Netplay::NetplayCoordinator::connected,
             this, &NetplaySessionBrowserDialog::onCoordinatorConnected);
     connect(this->coordinator, &Netplay::NetplayCoordinator::connectionError,
@@ -282,18 +279,7 @@ bool NetplaySessionBrowserDialog::validate(void) const
         return true;
     }
 
-    const QString addressInput = this->ipAddressLineEdit->text().trimmed();
-    if (addressInput.isEmpty()) {
-        return false;
-    }
-
-    const int colonIndex = addressInput.lastIndexOf(':');
-    const QString addressPart = colonIndex == -1 ? addressInput : addressInput.left(colonIndex);
-    if (Netplay::looksLikeTraversalCode(addressPart)) {
-        return true;
-    }
-
-    return !addressPart.isEmpty();
+    return !this->ipAddressLineEdit->text().trimmed().isEmpty();
 }
 
 void NetplaySessionBrowserDialog::validateJoinButton(void)
@@ -326,7 +312,7 @@ void NetplaySessionBrowserDialog::refreshRoomList(void)
 {
     this->sessionBrowserWidget->StartRefresh();
 
-    QNetworkRequest request(Netplay::natTraversalRoomsUrl());
+    QNetworkRequest request(Netplay::netplayRoomsUrl());
     request.setTransferTimeout(10000);
     this->networkManager->get(request);
 }
@@ -376,14 +362,8 @@ void NetplaySessionBrowserDialog::onRoomsReplyFinished(QNetworkReply* reply)
     };
 
     for (const QJsonObject& room : roomObjects) {
-        if (!roomNeedsIndexLookup(room)) {
-            addResolvedRoom(this->sessionBrowserWidget, room);
-            finishRoom();
-            continue;
-        }
-
         const QString hostCode = room.value(QStringLiteral("hostCode")).toString();
-        const QUrl indexUrl = Netplay::natTraversalSessionIndexUrl(hostCode);
+        const QUrl indexUrl = Netplay::netplaySessionIndexUrl(hostCode);
         if (indexUrl.isEmpty()) {
             addResolvedRoom(this->sessionBrowserWidget, room);
             finishRoom();
@@ -418,288 +398,146 @@ void NetplaySessionBrowserDialog::onCoordinatorConnected(void)
 
 void NetplaySessionBrowserDialog::onCoordinatorConnectionError(const QString& error)
 {
-    if (natJoinRetryActive && QDateTime::currentMSecsSinceEpoch() < natJoinDeadlineMs) {
-        qDebug() << "NAT join connect failed, retrying:" << error;
+    if (joinRetryActive && QDateTime::currentMSecsSinceEpoch() < joinDeadlineMs) {
+        qDebug() << "Join connect failed, retrying:" << error;
         isWaitingForConnection = true;
         QTimer::singleShot(1000, this, [this]() {
-            if (this->natJoinRetryActive) {
-                this->attemptNatJoinConnect();
+            if (this->joinRetryActive) {
+                this->attemptJoinConnect();
             }
         });
         return;
     }
 
-    if (isWaitingForConnection || isResolvingHostCode)
+    if (isWaitingForConnection)
     {
-        finishNatJoinFailure(error);
+        finishJoinFailure(error);
     }
 }
 
 void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId, int slot)
 {
-    qDebug() << "NetplaySessionBrowserDialog::onCoordinatorRoomJoined - roomId:" << roomId << "slot:" << slot << "waiting:" << isWaitingForConnection;
-    
-    if (isWaitingForConnection)
+    if (!isWaitingForConnection)
     {
-        natJoinRetryActive = false;
-        isWaitingForConnection = false;
-        if (this->natTraversalClient) {
-            this->natTraversalClient->cancelLookup();
-        }
-        qDebug() << "Joined room successfully:" << roomId << "slot:" << slot;
-        
-        // Build session data from the room metadata received during auto-join.
-        QJsonObject roomData = this->coordinator->getAutoJoinRoomData();
-        QString roomName = roomData.value("roomName").toString();
-        if (roomName.isEmpty()) {
-            roomName = roomId;
-        }
+        return;
+    }
 
-        QString gameName = roomData.value("gameName").toString();
-        if (gameName.isEmpty()) {
-            gameName = roomData.value("gameId").toString("Unknown");
-        }
+    joinRetryActive = false;
+    isWaitingForConnection = false;
 
-        if (!this->pendingHostCode.isEmpty() && !this->pendingIndexSession.isEmpty()) {
-            const QString indexGame = this->pendingIndexSession.value("game_name").toString();
-            if (!indexGame.isEmpty()) {
-                gameName = indexGame;
-            }
-        }
+    QJsonObject roomData = this->coordinator->getAutoJoinRoomData();
+    QString roomName = roomData.value("roomName").toString();
+    if (roomName.isEmpty()) {
+        roomName = roomId;
+    }
 
-        QString romPath;
-        for (auto it = this->romData.constBegin(); it != this->romData.constEnd(); ++it)
+    QString gameName = roomData.value("gameName").toString();
+    if (gameName.isEmpty()) {
+        gameName = roomData.value("gameId").toString("Unknown");
+    }
+
+    if (!this->pendingIndexSession.isEmpty()) {
+        const QString indexGame = this->pendingIndexSession.value("game_name").toString();
+        if (!indexGame.isEmpty()) {
+            gameName = indexGame;
+        }
+    }
+
+    QString romPath;
+    for (auto it = this->romData.constBegin(); it != this->romData.constEnd(); ++it)
+    {
+        const QString candidatePath = it.key();
+        const QString candidateGoodName = QString::fromStdString(it.value().GoodName);
+        const QString candidateFileName = QFileInfo(candidatePath).fileName();
+
+        if (candidateGoodName == gameName || candidateFileName == gameName)
         {
-            const QString candidatePath = it.key();
-            const QString candidateGoodName = QString::fromStdString(it.value().GoodName);
-            const QString candidateFileName = QFileInfo(candidatePath).fileName();
-
-            if (candidateGoodName == gameName || candidateFileName == gameName)
-            {
-                romPath = candidatePath;
-                break;
-            }
+            romPath = candidatePath;
+            break;
         }
+    }
 
-        if (romPath.isEmpty() && !this->pendingIndexSession.isEmpty()) {
-            const QString indexedRomPath = this->pendingIndexSession.value("rom_path").toString();
-            if (!indexedRomPath.isEmpty() && QFileInfo::exists(indexedRomPath)) {
-                romPath = indexedRomPath;
-            }
+    if (romPath.isEmpty() && !this->pendingIndexSession.isEmpty()) {
+        const QString indexedRomPath = this->pendingIndexSession.value("rom_path").toString();
+        if (!indexedRomPath.isEmpty() && QFileInfo::exists(indexedRomPath)) {
+            romPath = indexedRomPath;
         }
+    }
 
+    if (romPath.isEmpty())
+    {
+        const QString md5 = this->pendingIndexSession.value("md5_hash").toString();
+        romPath = this->showROMDialog(gameName, md5);
         if (romPath.isEmpty())
         {
-            const QString md5 = this->pendingIndexSession.value("md5_hash").toString();
-            romPath = this->showROMDialog(gameName, md5);
-            if (romPath.isEmpty())
-            {
-                QtMessageBox::Error(this, "ROM Required", "Please select a ROM to join this netplay game.");
-                return;
-            }
-        }
-
-        QString hostName = roomData.value("hostId").toString();
-        int maxPlayers = roomData.value("maxPlayers").toInt(4);
-        int currentPlayers = roomData.value("playerCount").toInt(1);
-        
-        QJsonObject sessionJson;
-        sessionJson.insert("roomId", roomId);
-        sessionJson.insert("slot", slot);
-        sessionJson.insert("room_name", roomName);
-        sessionJson.insert("player_name", this->nickNameLineEdit->text());
-        sessionJson.insert("game_name", gameName);
-        sessionJson.insert("gameId", gameName);
-        sessionJson.insert("host_name", hostName);
-        sessionJson.insert("maxPlayers", maxPlayers);
-        sessionJson.insert("currentPlayers", currentPlayers);
-        sessionJson.insert("server_address", this->targetAddress);
-        sessionJson.insert("server_port", this->targetPort);
-        sessionJson.insert("public_address", this->targetAddress);
-        sessionJson.insert("public_port", this->targetPort);
-        sessionJson.insert("rom_path", romPath);
-        if (!this->pendingHostCode.isEmpty()) {
-            sessionJson.insert("host_code", this->pendingHostCode);
-        }
-        
-        this->sessionJson = sessionJson;
-        this->pendingHostCode.clear();
-        this->pendingIndexSession = QJsonObject();
-        this->sessionFile = QJsonDocument(sessionJson).toJson(QJsonDocument::Compact);
-        
-        qDebug() << "Session JSON created:" << this->sessionFile;
-        
-        emit this->sessionAccepted();
-    }
-    else
-    {
-        qDebug() << "NetplaySessionBrowserDialog: roomJoined received but not waiting for connection";
-    }
-}
-
-void NetplaySessionBrowserDialog::connectToResolvedHost(const QString& address, int port)
-{
-    QString roomId;
-    if (!this->pendingIndexSession.isEmpty()) {
-        roomId = this->pendingIndexSession.value(QStringLiteral("room_id")).toString();
-    }
-
-    qDebug() << "Connecting to" << address << ":" << port << "room:" << roomId;
-    beginNatJoinConnect(address, port, roomId);
-}
-
-void NetplaySessionBrowserDialog::beginNatJoinConnect(const QString& address, int port, const QString& roomId)
-{
-    this->targetAddress = address;
-    this->targetPort = port;
-    this->natConnectAddress = address;
-    this->natConnectPort = port;
-    this->natJoinRoomId = roomId;
-    this->natJoinRetryActive = true;
-    this->natJoinDeadlineMs = QDateTime::currentMSecsSinceEpoch() + 30000;
-    this->isWaitingForConnection = true;
-    this->attemptNatJoinConnect();
-}
-
-void NetplaySessionBrowserDialog::attemptNatJoinConnect()
-{
-    if (!this->natJoinRetryActive) {
-        return;
-    }
-
-    if (QDateTime::currentMSecsSinceEpoch() >= this->natJoinDeadlineMs) {
-        finishNatJoinFailure(QStringLiteral("NAT traversal timed out while connecting to host"));
-        return;
-    }
-
-    qDebug() << "NAT join connect attempt to" << this->natConnectAddress << ":" << this->natConnectPort;
-    this->isWaitingForConnection = true;
-    this->coordinator->connectToDirectIPServer(
-        this->natConnectAddress,
-        this->natConnectPort,
-        this->nickNameLineEdit->text(),
-        this->natJoinRoomId);
-}
-
-void NetplaySessionBrowserDialog::finishNatJoinFailure(const QString& error)
-{
-    this->natJoinRetryActive = false;
-    this->isWaitingForConnection = false;
-    this->isResolvingHostCode = false;
-    this->natTraversalClient.reset();
-    this->validateJoinButton();
-    QtMessageBox::Error(this, "Connection Failed", "Failed to connect to server: " + error);
-}
-
-void NetplaySessionBrowserDialog::beginHostCodeJoin(const QString& hostCode)
-{
-    this->pendingHostCode = Netplay::normalizeTraversalCode(hostCode).toUpper();
-    this->pendingIndexSession = QJsonObject();
-    this->pendingIndexReady = false;
-    this->pendingLookupReady = false;
-    this->pendingLookupFailed = false;
-    this->pendingLookupAddress.clear();
-    this->pendingLookupPort = Netplay::kDefaultNetplayHostingPort;
-    this->isResolvingHostCode = true;
-
-    emit this->canSubmitChanged(false);
-
-    this->natTraversalClient = std::make_unique<Netplay::NatTraversalClient>(this);
-    connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostLookupSucceeded,
-            this, [this](const QString& address, int resolvedPort) {
-        this->pendingLookupAddress = address;
-        this->pendingLookupPort = resolvedPort;
-        this->pendingLookupReady = true;
-        this->tryCompleteHostCodeJoin();
-    });
-    connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostLookupFailed,
-            this, [this](const QString& reason) {
-        qDebug() << "TRAV lookup failed:" << reason << "- will try session index endpoint";
-        this->pendingLookupFailed = true;
-        this->pendingLookupReady = false;
-        this->tryCompleteHostCodeJoin();
-    });
-
-    this->natIndexClient = std::make_unique<Netplay::NatTraversalIndexClient>(this);
-    connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::fetched,
-            this, [this](const QString& key, const QByteArray& data) {
-        Q_UNUSED(key);
-        const QJsonDocument doc = QJsonDocument::fromJson(data);
-        if (doc.isObject()) {
-            this->pendingIndexSession = doc.object();
-            qDebug() << "Loaded session index for" << this->pendingHostCode;
-        }
-        this->pendingIndexReady = true;
-        this->tryCompleteHostCodeJoin();
-    });
-    connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::fetchFailed,
-            this, [this](const QString& reason) {
-        qDebug() << "Session index unavailable:" << reason;
-        this->pendingIndexReady = true;
-        this->tryCompleteHostCodeJoin();
-    });
-
-    this->natIndexClient->fetchSession(this->pendingHostCode);
-    this->natTraversalClient->lookupHost(this->pendingHostCode);
-}
-
-void NetplaySessionBrowserDialog::tryCompleteHostCodeJoin()
-{
-    if (!this->pendingIndexReady) {
-        return;
-    }
-
-    const bool indexSaysDirect = this->pendingIndexSession.contains(QStringLiteral("use_nat_traversal")) &&
-                                 !this->pendingIndexSession.value(QStringLiteral("use_nat_traversal")).toBool();
-    if (indexSaysDirect) {
-        QString indexAddress;
-        int indexPort = 0;
-        if (Netplay::sessionConnectEndpoint(this->pendingIndexSession, &indexAddress, &indexPort)) {
-            qDebug() << "Joining direct-connection room via session index" << indexAddress << indexPort;
-            this->isResolvingHostCode = false;
-            this->connectToResolvedHost(indexAddress, indexPort);
+            QtMessageBox::Error(this, "ROM Required", "Please select a ROM to join this netplay game.");
             return;
         }
     }
 
-    if (this->pendingLookupReady) {
-        QString connectAddress = this->pendingLookupAddress;
-        int connectPort = this->pendingLookupPort;
+    QJsonObject sessionJson;
+    sessionJson.insert("roomId", roomId);
+    sessionJson.insert("slot", slot);
+    sessionJson.insert("room_name", roomName);
+    sessionJson.insert("player_name", this->nickNameLineEdit->text());
+    sessionJson.insert("game_name", gameName);
+    sessionJson.insert("gameId", gameName);
+    sessionJson.insert("host_name", roomData.value("hostId").toString());
+    sessionJson.insert("maxPlayers", roomData.value("maxPlayers").toInt(4));
+    sessionJson.insert("currentPlayers", roomData.value("playerCount").toInt(1));
+    sessionJson.insert("server_address", this->targetAddress);
+    sessionJson.insert("server_port", this->targetPort);
+    sessionJson.insert("public_address", this->targetAddress);
+    sessionJson.insert("public_port", this->targetPort);
+    sessionJson.insert("rom_path", romPath);
 
-        QString indexAddress;
-        int indexPort = 0;
-        if (Netplay::sessionConnectEndpoint(this->pendingIndexSession, &indexAddress, &indexPort)) {
-            if (Netplay::isUsableConnectAddress(indexAddress)) {
-                connectAddress = indexAddress;
-            }
-            if (indexPort > 0) {
-                connectPort = indexPort;
-            }
-        }
+    this->sessionJson = sessionJson;
+    this->pendingIndexSession = QJsonObject();
+    this->sessionFile = QJsonDocument(sessionJson).toJson(QJsonDocument::Compact);
 
-        this->isResolvingHostCode = false;
-        this->connectToResolvedHost(connectAddress, connectPort);
+    emit this->sessionAccepted();
+}
+
+void NetplaySessionBrowserDialog::connectToResolvedHost(const QString& address, int port, const QString& roomId)
+{
+    beginJoinConnect(address, port, roomId);
+}
+
+void NetplaySessionBrowserDialog::beginJoinConnect(const QString& address, int port, const QString& roomId)
+{
+    this->targetAddress = address;
+    this->targetPort = port;
+    this->joinRoomId = roomId;
+    this->joinRetryActive = true;
+    this->joinDeadlineMs = QDateTime::currentMSecsSinceEpoch() + 30000;
+    this->isWaitingForConnection = true;
+    this->attemptJoinConnect();
+}
+
+void NetplaySessionBrowserDialog::attemptJoinConnect()
+{
+    if (!this->joinRetryActive) {
         return;
     }
 
-    if (!this->pendingLookupFailed) {
+    if (QDateTime::currentMSecsSinceEpoch() >= this->joinDeadlineMs) {
+        finishJoinFailure(QStringLiteral("Timed out while connecting to host"));
         return;
     }
 
-    QString indexAddress;
-    int indexPort = 0;
-    if (Netplay::sessionConnectEndpoint(this->pendingIndexSession, &indexAddress, &indexPort)) {
-        qDebug() << "Joining via session index endpoint" << indexAddress << indexPort;
-        this->isResolvingHostCode = false;
-        this->connectToResolvedHost(indexAddress, indexPort);
-        return;
-    }
+    this->coordinator->connectToDirectIPServer(
+        this->targetAddress,
+        this->targetPort,
+        this->nickNameLineEdit->text(),
+        this->joinRoomId);
+}
 
-    this->isResolvingHostCode = false;
-    this->pendingHostCode.clear();
+void NetplaySessionBrowserDialog::finishJoinFailure(const QString& error)
+{
+    this->joinRetryActive = false;
+    this->isWaitingForConnection = false;
     this->validateJoinButton();
-    QtMessageBox::Error(this, "Host Lookup Failed",
-                        "Host code is not registered and the session index has no connect address.");
+    QtMessageBox::Error(this, "Connection Failed", "Failed to connect to server: " + error);
 }
 
 void NetplaySessionBrowserDialog::submit(void)
@@ -707,7 +545,45 @@ void NetplaySessionBrowserDialog::submit(void)
     NetplaySessionData selectedSession;
     if (this->sessionBrowserWidget->GetCurrentSession(selectedSession))
     {
-        this->beginHostCodeJoin(selectedSession.HostCode);
+        if (selectedSession.Address.isEmpty()) {
+            QtMessageBox::Error(this, "Invalid Session", "Selected session has no connect address.");
+            return;
+        }
+
+        const int port = selectedSession.Port > 0
+            ? selectedSession.Port
+            : Netplay::kDefaultNetplayHostingPort;
+
+        this->pendingIndexSession = QJsonObject();
+        const QUrl indexUrl = Netplay::netplaySessionIndexUrl(selectedSession.HostCode);
+        if (!selectedSession.HostCode.isEmpty() && !indexUrl.isEmpty()) {
+            QNetworkRequest request(indexUrl);
+            request.setTransferTimeout(5000);
+            emit this->canSubmitChanged(false);
+            QNetworkReply* indexReply = this->networkManager->get(request);
+            connect(indexReply, &QNetworkReply::finished, this,
+                    [this, indexReply, selectedSession, port]() {
+                if (indexReply->error() == QNetworkReply::NoError) {
+                    const QJsonDocument indexDoc = QJsonDocument::fromJson(indexReply->readAll());
+                    if (indexDoc.isObject()) {
+                        this->pendingIndexSession = indexDoc.object();
+                    }
+                }
+                indexReply->deleteLater();
+
+                QString roomId = this->pendingIndexSession.value(QStringLiteral("room_id")).toString();
+                QString address = selectedSession.Address;
+                int connectPort = port;
+                if (Netplay::sessionConnectEndpoint(this->pendingIndexSession, &address, &connectPort)) {
+                    // prefer indexed direct endpoint when available
+                }
+                this->connectToResolvedHost(address, connectPort, roomId);
+                this->validateJoinButton();
+            });
+            return;
+        }
+
+        this->connectToResolvedHost(selectedSession.Address, port);
         return;
     }
 
@@ -732,13 +608,8 @@ void NetplaySessionBrowserDialog::submit(void)
         port = parsedPort;
     }
 
-    if (Netplay::looksLikeTraversalCode(addressPart)) {
-        this->beginHostCodeJoin(addressPart);
-        return;
-    }
-
     if (addressPart.isEmpty()) {
-        QtMessageBox::Error(this, "Invalid Address", "Please enter a valid host code or IP address");
+        QtMessageBox::Error(this, "Invalid Address", "Please enter a valid IP address");
         return;
     }
 

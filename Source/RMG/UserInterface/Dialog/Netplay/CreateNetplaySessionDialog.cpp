@@ -11,7 +11,7 @@
 #include "Utilities/QtMessageBox.hpp"
 #include "NetplayCommon.hpp"
 #include "Netplay/NetplayCoordinator.hpp"
-#include "Netplay/NatTraversal/NatTraversalProtocol.hpp"
+#include "Netplay/NetplayProtocol.hpp"
 
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
@@ -124,14 +124,10 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     QWidget* portWidget = new QWidget(this);
     QVBoxLayout* portLayout = new QVBoxLayout(portWidget);
 
-    this->directConnectionCheckBox = new QCheckBox("Direct connection", this);
-    this->directConnectionCheckBox->setToolTip("Skip NAT traversal and allow the hosting port to be changed.");
-    this->directConnectionCheckBox->setChecked(false);
-
     this->showInBrowserCheckBox = new QCheckBox("Show in Browser", this);
     this->showInBrowserCheckBox->setToolTip("List this room in the public session browser.");
     this->showInBrowserCheckBox->setChecked(true);
-    
+
     QLabel* portLabel = new QLabel("Hosting Port:", this);
     portLabel->setToolTip(QString("Port to listen on for incoming player connections (default: %1)")
                               .arg(Netplay::kDefaultNetplayHostingPort));
@@ -139,27 +135,11 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     this->hostingPortSpinBox->setMinimum(1024);
     this->hostingPortSpinBox->setMaximum(65535);
     this->hostingPortSpinBox->setValue(Netplay::kDefaultNetplayHostingPort);
-    this->hostingPortSpinBox->setEnabled(false);
-    this->hostingPortSpinBox->setToolTip("Valid ports: 1024-65535. Locked unless Direct connection is enabled.");
+    this->hostingPortSpinBox->setToolTip("Valid ports: 1024-65535. Forward this port on your router for WAN play.");
     
     connect(this->hostingPortSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [this](int port) { this->hostingPort = port; });
-
-    connect(this->directConnectionCheckBox, &QCheckBox::toggled, this,
-            [this](bool directConnection) {
-        this->directConnection = directConnection;
-        if (this->hostingPortSpinBox) {
-            this->hostingPortSpinBox->setEnabled(directConnection);
-            if (!directConnection) {
-                this->hostingPortSpinBox->setValue(Netplay::kDefaultNetplayHostingPort);
-            }
-        }
-        this->hostingPort = directConnection && this->hostingPortSpinBox
-            ? this->hostingPortSpinBox->value()
-            : Netplay::kDefaultNetplayHostingPort;
-    });
     
-    portLayout->addWidget(this->directConnectionCheckBox);
     portLayout->addWidget(this->showInBrowserCheckBox);
     portLayout->addWidget(portLabel);
     portLayout->addWidget(this->hostingPortSpinBox);
@@ -276,8 +256,9 @@ void CreateNetplaySessionDialog::createSession(void)
     // Start hosting a local signaling server
     QString playerName = this->nickNameLineEdit->text();
     QString gameName = this->getGameName(this->sessionGoodName, this->sessionFile);
-    const bool directConnection = this->directConnectionCheckBox != nullptr && this->directConnectionCheckBox->isChecked();
-    this->directConnection = directConnection;
+    this->hostingPort = this->hostingPortSpinBox != nullptr
+        ? this->hostingPortSpinBox->value()
+        : Netplay::kDefaultNetplayHostingPort;
     const bool showInBrowser =
         this->showInBrowserCheckBox != nullptr && this->showInBrowserCheckBox->isChecked();
     
@@ -299,19 +280,14 @@ void CreateNetplaySessionDialog::createSession(void)
     json.insert("server_port", this->hostingPort);
     json.insert("public_port", this->hostingPort);
     json.insert("connect_port", this->hostingPort);
-    json.insert("use_nat_traversal", !directConnection);
+    json.insert("use_nat_traversal", false);
     json.insert("show_in_browser", showInBrowser);
     json.insert("is_hosting", true);
     json.insert("slot", 0);
-    if (directConnection && showInBrowser) {
-        json.insert("public_address", QString());
-        json.insert("connect_address", QString());
-    } else {
-        const QString localAddress = Netplay::localNetworkAddress();
-        const QString address = localAddress.isEmpty() ? QStringLiteral("127.0.0.1") : localAddress;
-        json.insert("public_address", address);
-        json.insert("connect_address", address);
-    }
+    const QString localAddress = Netplay::localNetworkAddress();
+    const QString address = localAddress.isEmpty() ? QStringLiteral("127.0.0.1") : localAddress;
+    json.insert("public_address", address);
+    json.insert("connect_address", address);
     json.insert("started", false);
     json.insert("player_count", 1);
     json.insert("max_players", 4);
@@ -342,7 +318,9 @@ void CreateNetplaySessionDialog::finalizeSession(void)
 {
     this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
 
-    const QString connectInfo = this->sessionJson.value("host_code").toString(this->publicIpAddress);
+    const QString connectInfo = QStringLiteral("%1:%2")
+        .arg(this->sessionJson.value("public_address").toString(),
+             QString::number(this->sessionJson.value("server_port").toInt()));
     qDebug() << "Finalized session with connect info:" << connectInfo;
 
     emit this->sessionAccepted();
@@ -355,14 +333,11 @@ void CreateNetplaySessionDialog::toggleUI(bool enable, bool enableCreateButton)
     if (!this->embeddedMode) {
         this->nickNameLineEdit->setReadOnly(!enable);
     }
-    if (this->directConnectionCheckBox) {
-        this->directConnectionCheckBox->setEnabled(enable);
-    }
     if (this->showInBrowserCheckBox) {
         this->showInBrowserCheckBox->setEnabled(enable);
     }
     if (this->hostingPortSpinBox) {
-        this->hostingPortSpinBox->setEnabled(enable && this->directConnection);
+        this->hostingPortSpinBox->setEnabled(enable);
     }
 }
 

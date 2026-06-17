@@ -12,7 +12,7 @@
 #include "Utilities/QtMessageBox.hpp"
 #include "OnScreenDisplay.hpp"
 #include "NetplaySessionDialog.hpp"
-#include "Netplay/NatTraversal/NatTraversalProtocol.hpp"
+#include "Netplay/NetplayProtocol.hpp"
 
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -192,36 +192,38 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
         this->sessionSlot = this->coordinator->getGameSession().localSlot;
     }
 
-    const QString hostCode = sessionJson.value("host_code").toString();
-    const bool useNatTraversal = sessionJson.value("use_nat_traversal").toBool();
-    const bool showInBrowser = sessionJson.value("show_in_browser").toBool(true);
-    const bool needsNatClient = useNatTraversal || showInBrowser;
-    if (this->sessionSlot == 0 && needsNatClient)
+    if (this->sessionSlot == 0)
     {
         const int hostingPort = sessionJson.value("server_port").toInt(Netplay::kDefaultNetplayHostingPort);
-        const bool browserListingOnly = !useNatTraversal && showInBrowser;
-        this->natTraversalClient = std::make_unique<Netplay::NatTraversalClient>(this);
-        this->natTraversalClient->setListInBrowser(showInBrowser);
+        const bool showInBrowser = sessionJson.value("show_in_browser").toBool(false);
+        QString connectAddress = sessionJson.value("connect_address").toString(
+            sessionJson.value("public_address").toString());
+        if (connectAddress.isEmpty()) {
+            connectAddress = Netplay::localNetworkAddress();
+            if (connectAddress.isEmpty()) {
+                connectAddress = QStringLiteral("127.0.0.1");
+            }
+            this->sessionJson.insert("public_address", connectAddress);
+            this->sessionJson.insert("connect_address", connectAddress);
+            this->sessionJson.insert("public_port", hostingPort);
+            this->sessionJson.insert("connect_port", hostingPort);
+            this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
+        }
 
         if (showInBrowser) {
-            this->natIndexClient = std::make_unique<Netplay::NatTraversalIndexClient>(this);
-            connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::published,
+            this->indexClient = std::make_unique<Netplay::NetplayIndexClient>(this);
+            connect(this->indexClient.get(), &Netplay::NetplayIndexClient::published,
                     this, [](const QString& key) {
                 qDebug() << "Updated session index:" << key;
             });
-            connect(this->natIndexClient.get(), &Netplay::NatTraversalIndexClient::publishFailed,
+            connect(this->indexClient.get(), &Netplay::NetplayIndexClient::publishFailed,
                     this, [](const QString& reason) {
                 qWarning() << "Failed to update session index:" << reason;
             });
-        }
-
-        if (!hostCode.isEmpty()) {
-            this->natTraversalClient->resumeHosting(hostCode, static_cast<uint16_t>(hostingPort), showInBrowser);
+            this->beginHostBrowserRegistration(static_cast<uint16_t>(hostingPort), showInBrowser);
         } else {
-            this->beginNatTraversalRegistration(static_cast<uint16_t>(hostingPort), browserListingOnly, showInBrowser);
+            this->fetchPublicIpAddress();
         }
-    } else if (this->sessionSlot == 0 && !useNatTraversal) {
-        this->fetchPublicIpAddress();
     }
 
     // Connect coordinator signals
@@ -484,6 +486,46 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
 
 NetplaySessionDialog::~NetplaySessionDialog(void)
 {
+    if (this->hostRegistry) {
+        this->hostRegistry->stopHosting(true);
+    }
+}
+
+void NetplaySessionDialog::beginHostBrowserRegistration(uint16_t hostingPort, bool listInBrowser)
+{
+    this->hostRegistry = std::make_unique<Netplay::NetplayHostRegistry>(this);
+
+    connect(this->hostRegistry.get(), &Netplay::NetplayHostRegistry::hostRegistered,
+            this, [this, hostingPort](const QString& hostCode, const QString& publicAddress, int signalingPort) {
+        Q_UNUSED(signalingPort);
+        qDebug() << "Browse host code:" << hostCode << "server endpoint:" << publicAddress;
+
+        this->sessionJson.insert("host_code", hostCode);
+        this->sessionJson.insert("use_nat_traversal", false);
+        this->sessionJson.insert("public_port", hostingPort);
+        this->sessionJson.insert("connect_port", hostingPort);
+        this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
+        this->updateConnectInfoDisplay();
+        this->publishHostSessionIndex(this->coordinator && this->coordinator->isInGame());
+    });
+
+    connect(this->hostRegistry.get(), &Netplay::NetplayHostRegistry::hostRegistrationFailed,
+            this, [this](const QString& reason) {
+        qWarning() << "Browse registration failed:" << reason;
+        QLineEdit* publicIpEdit = this->findChild<QLineEdit*>("publicIpLineEdit");
+        if (publicIpEdit) {
+            publicIpEdit->setText(QStringLiteral("Browser registration failed"));
+        }
+    });
+
+    const QString hostCode = this->sessionJson.value("host_code").toString();
+    if (!hostCode.isEmpty()) {
+        this->hostRegistry->resumeHosting(hostCode, hostingPort, listInBrowser);
+    } else {
+        this->hostRegistry->startHosting(hostingPort, listInBrowser);
+    }
+
+    this->fetchPublicIpAddress();
 }
 
 void NetplaySessionDialog::updateConnectInfoDisplay(void)
@@ -494,174 +536,18 @@ void NetplaySessionDialog::updateConnectInfoDisplay(void)
         return;
     }
 
-    const QString hostCode = this->sessionJson.value("host_code").toString();
-    const bool useNatTraversal = this->sessionJson.value("use_nat_traversal").toBool();
-    if (useNatTraversal && !hostCode.isEmpty()) {
-        if (publicIpLabel) {
-            publicIpLabel->setText(QStringLiteral("Host Code"));
-        }
-        publicIpEdit->setText(hostCode);
-        return;
-    }
-
-    if (useNatTraversal) {
-        if (publicIpLabel) {
-            publicIpLabel->setText(QStringLiteral("Host Code"));
-        }
-        publicIpEdit->setText(QStringLiteral("Registering..."));
-        return;
-    }
-
     const QString publicAddress = this->sessionJson.value("public_address").toString();
-    const int publicPort = this->sessionJson.value("public_port").toInt(Netplay::kDefaultNetplayHostingPort);
-    const bool showInBrowser = this->sessionJson.value("show_in_browser").toBool(true);
+    const int publicPort = this->sessionJson.value("public_port")
+                               .toInt(this->sessionJson.value("server_port")
+                                          .toInt(Netplay::kDefaultNetplayHostingPort));
     if (publicIpLabel) {
         publicIpLabel->setText(QStringLiteral("Connect"));
     }
-    if (publicAddress.isEmpty() && showInBrowser && this->natTraversalClient) {
+    if (publicAddress.isEmpty()) {
         publicIpEdit->setText(QStringLiteral("Resolving..."));
     } else {
         publicIpEdit->setText(QString("%1:%2").arg(publicAddress, QString::number(publicPort)));
     }
-}
-
-void NetplaySessionDialog::beginNatTraversalRegistration(uint16_t hostingPort, bool browserListingOnly, bool listInBrowser)
-{
-    if (!this->natTraversalClient) {
-        return;
-    }
-
-    connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostRegistered,
-            this, [this, hostingPort, browserListingOnly](const QString& hostCode, const QString& publicAddress, int signalingPort) {
-        qDebug() << "NAT traversal host code:" << hostCode << "endpoint:" << publicAddress << signalingPort
-                 << "browserListingOnly:" << browserListingOnly;
-
-        this->sessionJson.insert("host_code", hostCode);
-        const int connectPort = browserListingOnly
-            ? hostingPort
-            : (signalingPort > 0 ? signalingPort : hostingPort);
-        if (!browserListingOnly) {
-            this->sessionJson.insert("use_nat_traversal", true);
-            this->sessionJson.insert("server_port", connectPort);
-        }
-        this->sessionJson.insert("public_port", connectPort);
-        this->sessionJson.insert("connect_port", connectPort);
-        if (browserListingOnly && Netplay::isUsableConnectAddress(publicAddress)) {
-            this->sessionJson.insert("public_address", publicAddress);
-            this->sessionJson.insert("connect_address", publicAddress);
-        }
-        this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
-        this->updateConnectInfoDisplay();
-        this->publishHostSessionIndex(this->coordinator && this->coordinator->isInGame());
-
-        const QSharedPointer<bool> stunHandled = QSharedPointer<bool>::create(false);
-
-        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::publicAddressResolved,
-                this, [this, hostCode, stunHandled, hostingPort, browserListingOnly](const QString& ip, int port) {
-            if (stunHandled && *stunHandled) {
-                return;
-            }
-            if (stunHandled) {
-                *stunHandled = true;
-            }
-            if (Netplay::isUsableConnectAddress(ip)) {
-                this->sessionJson.insert("public_address", ip);
-                this->sessionJson.insert("connect_address", ip);
-                if (browserListingOnly) {
-                    this->sessionJson.insert("public_port", hostingPort);
-                    this->sessionJson.insert("connect_port", hostingPort);
-                } else if (port > 0) {
-                    this->sessionJson.insert("public_port", port);
-                    this->sessionJson.insert("connect_port", port);
-                }
-                this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
-            }
-            this->publishHostSessionIndex(this->coordinator && this->coordinator->isInGame());
-        }, Qt::SingleShotConnection);
-
-        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::publicAddressFailed,
-                this, [this, hostCode, stunHandled, publicAddress, hostingPort, browserListingOnly](const QString& reason) {
-            if (stunHandled && *stunHandled) {
-                return;
-            }
-            if (stunHandled) {
-                *stunHandled = true;
-            }
-            qWarning() << "STUN after register failed:" << reason << "- using NAT server/public fallback";
-            if (Netplay::isUsableConnectAddress(publicAddress)) {
-                this->sessionJson.insert("public_address", publicAddress);
-                this->sessionJson.insert("connect_address", publicAddress);
-                if (browserListingOnly) {
-                    this->sessionJson.insert("public_port", hostingPort);
-                    this->sessionJson.insert("connect_port", hostingPort);
-                }
-                this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
-                this->publishHostSessionIndex(this->coordinator && this->coordinator->isInGame());
-                return;
-            }
-            this->pendingNatHostCode = hostCode;
-            this->fetchPublicIpAddress();
-        }, Qt::SingleShotConnection);
-
-        qDebug() << "Querying STUN server for public endpoint:"
-                 << Netplay::stunServerHost() << Netplay::stunServerPort()
-                 << "local port" << hostingPort;
-        this->natTraversalClient->queryStunServer(QString(), 0, hostingPort);
-
-        QTimer::singleShot(2000, this, [this, hostCode, publicAddress, stunHandled, hostingPort, browserListingOnly]() {
-            if (stunHandled && *stunHandled) {
-                return;
-            }
-            if (stunHandled) {
-                *stunHandled = true;
-            }
-            if (Netplay::isUsableConnectAddress(publicAddress)) {
-                this->sessionJson.insert("public_address", publicAddress);
-                this->sessionJson.insert("connect_address", publicAddress);
-                if (browserListingOnly) {
-                    this->sessionJson.insert("public_port", hostingPort);
-                    this->sessionJson.insert("connect_port", hostingPort);
-                }
-                this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
-                this->publishHostSessionIndex(this->coordinator && this->coordinator->isInGame());
-                return;
-            }
-            this->pendingNatHostCode = hostCode;
-            this->fetchPublicIpAddress();
-        });
-    });
-
-    connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::hostRegistrationFailed,
-            this, [this, hostingPort](const QString& reason) {
-        qWarning() << "NAT traversal registration failed:" << reason;
-
-        QLineEdit* publicIpEdit = this->findChild<QLineEdit*>("publicIpLineEdit");
-        if (publicIpEdit) {
-            publicIpEdit->setText(QStringLiteral("Registration failed"));
-        }
-
-        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::publicAddressResolved,
-                this, [this](const QString& ip, int port) {
-            if (Netplay::isUsableConnectAddress(ip)) {
-                this->sessionJson.insert("public_address", ip);
-                this->sessionJson.insert("connect_address", ip);
-                this->sessionJson.insert("public_port", port);
-                this->sessionJson.insert("connect_port", port);
-                this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
-                this->updateConnectInfoDisplay();
-            }
-        }, Qt::SingleShotConnection);
-
-        connect(this->natTraversalClient.get(), &Netplay::NatTraversalClient::publicAddressFailed,
-                this, [this](const QString& failReason) {
-            qWarning() << "STUN public address discovery failed:" << failReason;
-            this->fetchPublicIpAddress();
-        }, Qt::SingleShotConnection);
-
-        this->natTraversalClient->queryStunServer(QString(), 0, hostingPort);
-    });
-
-    this->natTraversalClient->startHosting(hostingPort, listInBrowser);
 }
 
 void NetplaySessionDialog::fetchPublicIpAddress(void)
@@ -680,10 +566,8 @@ void NetplaySessionDialog::fetchPublicIpAddress(void)
                 this->sessionJson.insert("connect_address", responseData);
                 const int connectPort = this->sessionJson.value("server_port")
                                             .toInt(Netplay::kDefaultNetplayHostingPort);
-                if (!this->sessionJson.value("use_nat_traversal").toBool(true)) {
-                    this->sessionJson.insert("public_port", connectPort);
-                    this->sessionJson.insert("connect_port", connectPort);
-                }
+                this->sessionJson.insert("public_port", connectPort);
+                this->sessionJson.insert("connect_port", connectPort);
                 this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
             }
         } else {
@@ -691,10 +575,6 @@ void NetplaySessionDialog::fetchPublicIpAddress(void)
         }
 
         reply->deleteLater();
-
-        if (!this->pendingNatHostCode.isEmpty()) {
-            this->pendingNatHostCode.clear();
-        }
         this->publishHostSessionIndex(this->coordinator && this->coordinator->isInGame());
         this->updateConnectInfoDisplay();
     });
@@ -1117,22 +997,20 @@ void NetplaySessionDialog::syncHostSessionState(void)
 
 void NetplaySessionDialog::publishHostSessionIndex(bool started)
 {
-    if (!this->natIndexClient || this->sessionSlot != 0)
-    {
+    if (!this->indexClient || this->sessionSlot != 0) {
         return;
     }
 
     QJsonDocument sessionDoc = QJsonDocument::fromJson(this->sessionFile.toUtf8());
     QJsonObject sessionJson = sessionDoc.object();
-    if (sessionJson.isEmpty())
-    {
+    if (sessionJson.isEmpty()) {
         return;
     }
 
-    const auto players = this->coordinator ? this->coordinator->getPlayerList() : QList<Netplay::SocketIOClient::PlayerInfo>();
+    const auto players = this->coordinator ? this->coordinator->getPlayerList()
+                                           : QList<Netplay::SocketIOClient::PlayerInfo>();
     QJsonArray playersArray;
-    for (const auto& player : players)
-    {
+    for (const auto& player : players) {
         QJsonObject playerObj;
         playerObj["playerId"] = player.id;
         playerObj["name"] = player.name;
@@ -1142,8 +1020,7 @@ void NetplaySessionDialog::publishHostSessionIndex(bool started)
         playersArray.append(playerObj);
     }
 
-    if (playersArray.isEmpty())
-    {
+    if (playersArray.isEmpty()) {
         QJsonObject hostPlayer;
         hostPlayer["name"] = sessionJson.value("player_name").toString("Host");
         hostPlayer["slotIndex"] = 0;
@@ -1158,6 +1035,7 @@ void NetplaySessionDialog::publishHostSessionIndex(bool started)
     sessionJson["max_players"] = maxPlayers;
     sessionJson["lobby_size"] = QString("%1/%2").arg(playerCount).arg(maxPlayers);
     sessionJson["players"] = playersArray;
+    sessionJson["use_nat_traversal"] = false;
 
     const QString playerName = sessionJson.value("player_name").toString(
         sessionJson.value("room_name").toString("Host"));
@@ -1172,8 +1050,7 @@ void NetplaySessionDialog::publishHostSessionIndex(bool started)
     this->sessionFile = QJsonDocument(sessionJson).toJson(QJsonDocument::Compact);
 
     const QString hostCode = sessionJson.value("host_code").toString();
-    if (hostCode.isEmpty())
-    {
+    if (hostCode.isEmpty()) {
         return;
     }
 
@@ -1181,26 +1058,21 @@ void NetplaySessionDialog::publishHostSessionIndex(bool started)
         return;
     }
 
-    if (!sessionJson.value(QStringLiteral("use_nat_traversal")).toBool(true)) {
-        QString connectAddress;
-        int connectPort = 0;
-        if (!Netplay::sessionConnectEndpoint(sessionJson, &connectAddress, &connectPort)) {
-            const QString natAddress = sessionJson.value(QStringLiteral("public_address")).toString();
-            if (Netplay::isUsableConnectAddress(natAddress)) {
-                sessionJson.insert(QStringLiteral("connect_address"), natAddress);
-                this->sessionJson = sessionJson;
-                this->sessionFile = QJsonDocument(sessionJson).toJson(QJsonDocument::Compact);
-            } else {
-                return;
-            }
+    QString connectAddress;
+    int connectPort = 0;
+    if (!Netplay::sessionConnectEndpoint(sessionJson, &connectAddress, &connectPort)) {
+        const QString publicAddress = sessionJson.value(QStringLiteral("public_address")).toString();
+        if (!Netplay::isUsableConnectAddress(publicAddress)) {
+            return;
         }
+        sessionJson.insert(QStringLiteral("connect_address"), publicAddress);
+        this->sessionJson = sessionJson;
+        this->sessionFile = QJsonDocument(sessionJson).toJson(QJsonDocument::Compact);
     }
 
     const QByteArray payload =
         QJsonDocument(Netplay::sessionIndexPublishObject(sessionJson)).toJson(QJsonDocument::Compact);
-    if (this->natIndexClient) {
-        this->natIndexClient->publishSession(hostCode, payload);
-    }
+    this->indexClient->publishSession(hostCode, payload);
 }
 
 void NetplaySessionDialog::on_coordinator_chatMessageReceived(const QString& playerName, const QString& message)
