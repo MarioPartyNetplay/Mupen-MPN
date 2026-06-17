@@ -18,6 +18,7 @@
 #include "Settings.hpp"
 #include "Library.hpp"
 #include "Error.hpp"
+#include "Emulation.hpp"
 
 #include "m64p/Api.hpp"
 
@@ -368,4 +369,69 @@ CORE_EXPORT void CoreApplyNetplaySyncedCoreSettings(void)
     }
 
     apply_synced_core_config(l_NetplaySyncSettings);
+}
+
+namespace {
+
+constexpr int kGprRegisterCount = 32;
+constexpr int kCp0RegisterCount = 32;
+
+uint32_t fnv1a32(uint32_t hash, uint32_t value)
+{
+    hash ^= value;
+    hash *= 16777619u;
+    return hash;
+}
+
+uint32_t hashRegisterBlock(uint32_t hash, const uint32_t* registers, int count)
+{
+    for (int i = 0; i < count; ++i)
+    {
+        hash = fnv1a32(hash, registers[i]);
+    }
+
+    return hash;
+}
+
+} // namespace
+
+CORE_EXPORT uint32_t CoreGetNetplayFrameSyncHash(void)
+{
+    if (!m64p::Core.IsHooked() || m64p::Core.DebugGetCPUDataPtr == nullptr)
+    {
+        return 0;
+    }
+
+    if (!CoreIsEmulationRunning())
+    {
+        return 0;
+    }
+
+    const auto* const gpr =
+        static_cast<const uint32_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_REG));
+    const auto* const hi =
+        static_cast<const uint32_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_HI));
+    const auto* const lo =
+        static_cast<const uint32_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_LO));
+    const auto* const cp0 =
+        static_cast<const uint32_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_COP0));
+    const auto* const pc =
+        static_cast<const uint32_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_PC));
+
+    if (gpr == nullptr ||
+        hi == nullptr ||
+        lo == nullptr ||
+        cp0 == nullptr ||
+        pc == nullptr)
+    {
+        return 0;
+    }
+
+    uint32_t hash = 2166136261u;
+    hash = hashRegisterBlock(hash, gpr, kGprRegisterCount);
+    hash = fnv1a32(hash, *hi);
+    hash = fnv1a32(hash, *lo);
+    hash = hashRegisterBlock(hash, cp0, kCp0RegisterCount);
+
+    return fnv1a32(hash, *pc);
 }

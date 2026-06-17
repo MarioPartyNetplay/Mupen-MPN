@@ -241,10 +241,10 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
         });
 
     connect(m_server.get(), &SocketIOServer::frameSyncReceived,
-        this, [this](const QString& roomId, int slot, uint32_t frameNumber) {
+        this, [this](const QString& roomId, int slot, uint32_t frameNumber, uint32_t stateHash) {
             if (roomId != m_gameSession.roomId)
                 return;
-            on_peerFrameSyncReceived(slot, frameNumber);
+            on_peerFrameSyncReceived(slot, frameNumber, stateHash);
         });
 
     connect(m_server.get(), &SocketIOServer::chatMessageReceived,
@@ -1227,7 +1227,7 @@ void NetplayCoordinator::on_socketIO_controllerInputReceived(int slot, uint32_t 
     }
 }
 
-void NetplayCoordinator::on_peerFrameSyncReceived(int slot, uint32_t frameNumber)
+void NetplayCoordinator::on_peerFrameSyncReceived(int slot, uint32_t frameNumber, uint32_t stateHash)
 {
     if (m_state != InGame || !m_lockstepEngine) {
         return;
@@ -1238,35 +1238,45 @@ void NetplayCoordinator::on_peerFrameSyncReceived(int slot, uint32_t frameNumber
     }
 
     if (slot >= 0 && slot < m_lockstepConfig.numPlayers) {
-        m_lockstepEngine->submitPeerReportedFrame(slot, frameNumber);
+        m_lockstepEngine->submitPeerFrameSync(slot, frameNumber, stateHash);
     } else if (slot == -1 && m_lockstepConfig.numPlayers == 2) {
         const int inferredSlot = (m_gameSession.localSlot == 0) ? 1 : 0;
-        m_lockstepEngine->submitPeerReportedFrame(inferredSlot, frameNumber);
+        m_lockstepEngine->submitPeerFrameSync(inferredSlot, frameNumber, stateHash);
     }
 }
 
 void NetplayCoordinator::broadcastFrameSyncIfNeeded(uint32_t frameNumber)
 {
-    if (m_state != InGame || frameNumber == 0) {
+    if (m_state != InGame || frameNumber == 0 || !m_lockstepEngine) {
         return;
     }
 
-    // ~1 Hz at 60 FPS; enough for frame-drift desync checks without flooding signaling.
+    // ~1 Hz at 60 FPS; compare state hashes at the same lockstep frame.
     constexpr uint32_t kFrameSyncIntervalFrames = 60;
     if (frameNumber % kFrameSyncIntervalFrames != 0 ||
         frameNumber == m_lastBroadcastFrameSync) {
         return;
     }
 
+    const uint32_t stateHash = CoreGetNetplayFrameSyncHash();
+    if (stateHash == 0) {
+        return;
+    }
+
     m_lastBroadcastFrameSync = frameNumber;
+    m_lockstepEngine->recordLocalFrameSync(frameNumber, stateHash);
 
     if (isHostingServer()) {
-        QMetaObject::invokeMethod(m_server.get(), [this, frameNumber]() {
-            m_server->broadcastFrameSync(m_gameSession.roomId, m_lockstepConfig.localPlayerSlot, frameNumber);
+        QMetaObject::invokeMethod(m_server.get(), [this, frameNumber, stateHash]() {
+            m_server->broadcastFrameSync(
+                m_gameSession.roomId,
+                m_lockstepConfig.localPlayerSlot,
+                frameNumber,
+                stateHash);
         }, Qt::QueuedConnection);
     } else if (m_socketIO) {
-        QMetaObject::invokeMethod(m_socketIO.get(), [this, frameNumber]() {
-            m_socketIO->sendFrameSync(frameNumber);
+        QMetaObject::invokeMethod(m_socketIO.get(), [this, frameNumber, stateHash]() {
+            m_socketIO->sendFrameSync(frameNumber, stateHash);
         }, Qt::QueuedConnection);
     }
 }

@@ -45,6 +45,7 @@ class CoreApi
     ptr_CoreGetAPIVersions GetAPIVersions;
     ptr_CoreErrorMessage ErrorMessage;
     ptr_DebugMemGetPointer DebugMemGetPointer;
+    ptr_DebugGetCPUDataPtr DebugGetCPUDataPtr;
 
   private:
     bool hooked = false;

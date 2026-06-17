@@ -108,7 +108,7 @@ public:
     void endGame();
     void setGameMode(const QString& mode);
     void sendControllerInput(uint32_t frameNumber, uint32_t controllerState);
-    void sendFrameSync(uint32_t frameNumber);
+    void sendFrameSync(uint32_t frameNumber, uint32_t stateHash);
 
     // WebRTC Signaling
     void sendOffer(const QString& targetPlayerId, const QString& sdpOffer);
@@ -169,7 +169,7 @@ signals:
     void gameEnded();
     void gameModeChanged(const QString& mode);
     void controllerInputReceived(int slot, uint32_t frameNumber, uint32_t controllerState);
-    void frameSyncReceived(int slot, uint32_t frameNumber);
+    void frameSyncReceived(int slot, uint32_t frameNumber, uint32_t stateHash);
 
     // WebRTC Signaling signals
     void offerReceived(const QString& fromPlayerId, const QString& sdpOffer);
