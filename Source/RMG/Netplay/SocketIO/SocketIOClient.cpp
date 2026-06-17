@@ -223,9 +223,9 @@ void SocketIOClient::sendControllerInput(uint32_t frameNumber, uint32_t controll
     emitEvent("controller-input", payload);
 }
 
-void SocketIOClient::sendFrameSync(uint32_t frameNumber)
+void SocketIOClient::sendFrameSync(uint32_t frameNumber, uint32_t stateHash)
 {
-    if (m_connectionState != Connected || frameNumber == m_lastSentFrameSync) {
+    if (m_connectionState != Connected || frameNumber == m_lastSentFrameSync || stateHash == 0) {
         return;
     }
 
@@ -233,6 +233,7 @@ void SocketIOClient::sendFrameSync(uint32_t frameNumber)
 
     QJsonObject payload;
     payload["frame"] = static_cast<qint64>(frameNumber);
+    payload["hash"] = static_cast<qint64>(stateHash);
     emitEvent("frame-sync", payload);
 }
 
@@ -647,7 +648,8 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
         QJsonObject data = args[0].toObject();
         int slot = data["slot"].toInt(-1);
         uint32_t frameNumber = static_cast<uint32_t>(data["frame"].toInteger());
-        emit frameSyncReceived(slot, frameNumber);
+        uint32_t stateHash = static_cast<uint32_t>(data["hash"].toInteger());
+        emit frameSyncReceived(slot, frameNumber, stateHash);
 
     } else if (eventName == "webrtc-signal" && args.size() > 0) {
         QJsonObject signal = args[0].toObject();

@@ -62,7 +62,7 @@ public:
                          const QJsonArray& cheats = QJsonArray(), const QJsonArray& saveFiles = QJsonArray());
 
     void broadcastControllerInput(const QString& roomId, int slot, uint32_t frameNumber, uint32_t controllerState);
-    void broadcastFrameSync(const QString& roomId, int slot, uint32_t frameNumber);
+    void broadcastFrameSync(const QString& roomId, int slot, uint32_t frameNumber, uint32_t stateHash);
 
     /**
      * @brief Broadcast updated cheats to all clients in a room
@@ -134,7 +134,7 @@ signals:
      * @brief Emitted when controller input is received for a room
      */
     void controllerInputReceived(const QString& roomId, int slot, uint32_t frameNumber, uint32_t controllerState);
-    void frameSyncReceived(const QString& roomId, int slot, uint32_t frameNumber);
+    void frameSyncReceived(const QString& roomId, int slot, uint32_t frameNumber, uint32_t stateHash);
 
     /**
      * @brief Emitted when a chat message is received from a client in a room

@@ -37,6 +37,7 @@ bool CoreApi::Hook(m64p_dynlib_handle handle)
     HOOK_FUNC(handle, Core, GetAPIVersions);
     HOOK_FUNC(handle, Core, ErrorMessage);
     this->DebugMemGetPointer = reinterpret_cast<ptr_DebugMemGetPointer>(CoreGetLibrarySymbol(reinterpret_cast<CoreLibraryHandle>(handle), "DebugMemGetPointer"));
+    this->DebugGetCPUDataPtr = reinterpret_cast<ptr_DebugGetCPUDataPtr>(CoreGetLibrarySymbol(reinterpret_cast<CoreLibraryHandle>(handle), "DebugGetCPUDataPtr"));
 
     this->handle = handle;
     this->hooked = true;
@@ -57,6 +58,7 @@ bool CoreApi::Unhook(void)
     UNHOOK_FUNC(Core, GetAPIVersions);
     UNHOOK_FUNC(Core, ErrorMessage);
     this->DebugMemGetPointer = nullptr;
+    this->DebugGetCPUDataPtr = nullptr;
 
     this->handle = nullptr;
     this->hooked = false;

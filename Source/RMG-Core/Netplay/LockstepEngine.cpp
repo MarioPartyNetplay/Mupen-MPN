@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <iostream>
 #include <thread>
@@ -24,10 +25,7 @@ namespace {
 
 // Accept slightly late inputs; reject only packets that cannot affect the timeline.
 constexpr uint32_t kInputFrameSlack = 8;
-constexpr uint32_t kPeerFrameReportSlack = 120;
 constexpr uint32_t kMinInputDelayFrames = 1;
-constexpr uint32_t kFrameDriftDesyncThreshold = 30;
-constexpr uint32_t kFrameDriftWarmupFrames = 60;
 
 } // namespace
 
@@ -35,7 +33,6 @@ LockstepEngine::LockstepEngine(const Config& config)
     : m_config(config)
     , m_currentFrameNumber(0)
     , m_isDesynchronized(false)
-    , m_lastVerifiedFrame(0)
 {
     if (m_config.numPlayers < 2) {
         m_config.numPlayers = 2;
@@ -197,27 +194,46 @@ void LockstepEngine::submitRemoteInput(
     }
 }
 
-void LockstepEngine::submitPeerReportedFrame(
-    int fromSlot,
-    uint32_t frameNumber)
+void LockstepEngine::recordLocalFrameSync(uint32_t frameNumber, uint32_t stateHash)
 {
-    if (fromSlot < 0 ||
-        fromSlot >= m_config.numPlayers ||
-        fromSlot == m_config.localPlayerSlot) {
+    if (!m_config.desyncDetectionEnabled || frameNumber == 0 || stateHash == 0) {
         return;
     }
 
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
-    if (frameNumber + kPeerFrameReportSlack < m_currentFrameNumber) {
+    m_localFrameSyncHashes[frameNumber] = stateHash;
+
+    for (auto pendingIt = m_pendingPeerFrameSyncHashes.begin();
+         pendingIt != m_pendingPeerFrameSyncHashes.end();
+         ++pendingIt) {
+        const auto peerIt = pendingIt->second.find(frameNumber);
+        if (peerIt != pendingIt->second.end()) {
+            comparePeerFrameSyncUnlocked(pendingIt->first, frameNumber, peerIt->second);
+            pendingIt->second.erase(peerIt);
+        }
+    }
+
+    pruneOldFrameSyncDataUnlocked(
+        frameNumber > 120 ? frameNumber - 120 : 0);
+}
+
+void LockstepEngine::submitPeerFrameSync(
+    int fromSlot,
+    uint32_t frameNumber,
+    uint32_t stateHash)
+{
+    if (fromSlot < 0 ||
+        fromSlot >= m_config.numPlayers ||
+        fromSlot == m_config.localPlayerSlot ||
+        !m_config.desyncDetectionEnabled ||
+        frameNumber == 0 ||
+        stateHash == 0) {
         return;
     }
 
-    checkPeerFrameDriftUnlocked(fromSlot, frameNumber);
-
-    m_peerReportedEmulationFrames[fromSlot] = frameNumber;
-    m_peerReportedFrameTimes[fromSlot] =
-        std::chrono::steady_clock::now();
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    comparePeerFrameSyncUnlocked(fromSlot, frameNumber, stateHash);
 }
 
 bool LockstepEngine::advanceFrame()
@@ -251,14 +267,6 @@ bool LockstepEngine::advanceFrame()
                 : 0);
 
         m_stats.totalFramesProcessed++;
-
-        if (m_config.desyncDetectionEnabled &&
-            m_config.resyncCheckIntervalFrames > 0 &&
-            frameNumber % static_cast<uint32_t>(m_config.resyncCheckIntervalFrames) == 0) {
-            for (const auto& [slot, peerFrame] : m_peerReportedEmulationFrames) {
-                checkPeerFrameDriftUnlocked(slot, peerFrame);
-            }
-        }
     }
 
     if (m_callbacks.frameReady) {
@@ -270,39 +278,13 @@ bool LockstepEngine::advanceFrame()
     return true;
 }
 
-void LockstepEngine::checkDesync(uint32_t romChecksum)
+void LockstepEngine::checkDesync(uint32_t stateHash)
 {
-    SyncCheckpoint checkpoint;
-    checkpoint.frameNumber = m_currentFrameNumber;
-    checkpoint.romChecksum = romChecksum;
-    checkpoint.timestamp = std::chrono::steady_clock::now();
-
-    m_syncCheckpoints.push_back(checkpoint);
-
-    if (m_syncCheckpoints.size() >= 2) {
-
-        const SyncCheckpoint& prev =
-            m_syncCheckpoints[m_syncCheckpoints.size() - 2];
-
-        if (prev.romChecksum != romChecksum &&
-            m_lastVerifiedFrame != prev.frameNumber) {
-
-            m_stats.desyncDetections++;
-            m_isDesynchronized = true;
-
-            if (m_callbacks.desyncDetected) {
-                m_callbacks.desyncDetected(
-                    m_currentFrameNumber,
-                    "ROM state mismatch");
-            }
-
-            if (m_config.resyncEnabled) {
-                requestResync();
-            }
-        }
+    if (!m_config.desyncDetectionEnabled || stateHash == 0) {
+        return;
     }
 
-    m_lastVerifiedFrame = m_currentFrameNumber;
+    recordLocalFrameSync(m_currentFrameNumber, stateHash);
 }
 
 void LockstepEngine::requestResync()
@@ -564,48 +546,104 @@ void LockstepEngine::processInputPacket(
     notifyInputProgressUnlocked(frameNumber);
 }
 
-void LockstepEngine::notifyInputProgressUnlocked(uint32_t frameNumber)
+void LockstepEngine::comparePeerFrameSyncUnlocked(
+    int fromSlot,
+    uint32_t frameNumber,
+    uint32_t peerHash)
 {
-    if (frameNumber + kInputFrameSlack >= m_currentFrameNumber) {
-        m_inputCv.notify_all();
+    const auto localIt = m_localFrameSyncHashes.find(frameNumber);
+    if (localIt == m_localFrameSyncHashes.end()) {
+        m_pendingPeerFrameSyncHashes[fromSlot][frameNumber] = peerHash;
+        return;
     }
+
+    if (localIt->second == peerHash) {
+        m_pendingPeerFrameSyncHashes[fromSlot].erase(frameNumber);
+        return;
+    }
+
+    reportStateHashMismatchUnlocked(
+        fromSlot,
+        frameNumber,
+        localIt->second,
+        peerHash);
 }
 
-void LockstepEngine::checkPeerFrameDriftUnlocked(
+void LockstepEngine::reportStateHashMismatchUnlocked(
     int fromSlot,
-    uint32_t peerFrame)
+    uint32_t frameNumber,
+    uint32_t localHash,
+    uint32_t peerHash)
 {
-    if (!m_config.desyncDetectionEnabled ||
-        fromSlot < 0 ||
-        fromSlot >= m_config.numPlayers ||
-        fromSlot == m_config.localPlayerSlot ||
-        m_currentFrameNumber < kFrameDriftWarmupFrames) {
+    const uint64_t mismatchKey =
+        (static_cast<uint64_t>(frameNumber) << 32) |
+        static_cast<uint32_t>(fromSlot);
+
+    if (m_reportedHashMismatches.count(mismatchKey) != 0) {
         return;
     }
 
-    const uint32_t localFrame = m_currentFrameNumber;
-    const uint32_t drift =
-        localFrame > peerFrame
-            ? localFrame - peerFrame
-            : peerFrame - localFrame;
-
-    if (drift <= kFrameDriftDesyncThreshold) {
-        return;
-    }
-
+    m_reportedHashMismatches.insert(mismatchKey);
     m_stats.desyncDetections++;
     m_isDesynchronized = true;
 
     if (m_callbacks.desyncDetected) {
+        char localHex[11];
+        char peerHex[11];
+        std::snprintf(localHex, sizeof(localHex), "%08x", localHash);
+        std::snprintf(peerHex, sizeof(peerHex), "%08x", peerHash);
+
         m_callbacks.desyncDetected(
-            localFrame,
-            "Frame drift with player " +
+            frameNumber,
+            "State hash mismatch with player " +
                 std::to_string(fromSlot) +
-                " (local=" +
-                std::to_string(localFrame) +
-                ", peer=" +
-                std::to_string(peerFrame) +
-                ")");
+                " at frame " +
+                std::to_string(frameNumber) +
+                " (local=0x" + localHex +
+                ", peer=0x" + peerHex + ")");
+    }
+
+    if (m_config.resyncEnabled) {
+        requestResync();
+    }
+}
+
+void LockstepEngine::pruneOldFrameSyncDataUnlocked(uint32_t oldestFrameToKeep)
+{
+    for (auto it = m_localFrameSyncHashes.begin();
+         it != m_localFrameSyncHashes.end();) {
+        if (it->first < oldestFrameToKeep) {
+            it = m_localFrameSyncHashes.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto& [slot, pendingHashes] : m_pendingPeerFrameSyncHashes) {
+        for (auto it = pendingHashes.begin(); it != pendingHashes.end();) {
+            if (it->first < oldestFrameToKeep) {
+                it = pendingHashes.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        (void)slot;
+    }
+
+    for (auto it = m_reportedHashMismatches.begin();
+         it != m_reportedHashMismatches.end();) {
+        if ((*it >> 32) < oldestFrameToKeep) {
+            it = m_reportedHashMismatches.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void LockstepEngine::notifyInputProgressUnlocked(uint32_t frameNumber)
+{
+    if (frameNumber + kInputFrameSlack >= m_currentFrameNumber) {
+        m_inputCv.notify_all();
     }
 }
 

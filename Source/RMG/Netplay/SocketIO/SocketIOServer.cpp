@@ -456,7 +456,7 @@ void SocketIOServer::broadcastControllerInput(const QString& roomId, int slot, u
     }
 }
 
-void SocketIOServer::broadcastFrameSync(const QString& roomId, int slot, uint32_t frameNumber)
+void SocketIOServer::broadcastFrameSync(const QString& roomId, int slot, uint32_t frameNumber, uint32_t stateHash)
 {
     SignalingRoom* room = getRoomById(roomId);
     if (!room)
@@ -467,6 +467,7 @@ void SocketIOServer::broadcastFrameSync(const QString& roomId, int slot, uint32_
     QJsonObject payload;
     payload["slot"] = slot;
     payload["frame"] = static_cast<qint64>(frameNumber);
+    payload["hash"] = static_cast<qint64>(stateHash);
 
     for (auto* player : room->players)
     {
@@ -1118,13 +1119,18 @@ void SocketIOServer::handle_FrameSync(QWebSocket* socket, const QJsonObject& msg
         return;
 
     const uint32_t frameNumber = static_cast<uint32_t>(msg.value("frame").toInteger());
+    const uint32_t stateHash = static_cast<uint32_t>(msg.value("hash").toInteger());
+    if (stateHash == 0) {
+        return;
+    }
+
     if (room->lastFrameSyncBySlot.value(client->slotIndex) == frameNumber) {
         return;
     }
 
     room->lastFrameSyncBySlot[client->slotIndex] = frameNumber;
-    emit frameSyncReceived(client->roomId, client->slotIndex, frameNumber);
-    broadcastFrameSync(client->roomId, client->slotIndex, frameNumber);
+    emit frameSyncReceived(client->roomId, client->slotIndex, frameNumber, stateHash);
+    broadcastFrameSync(client->roomId, client->slotIndex, frameNumber, stateHash);
 }
 
 SocketIOServer::ClientConnection* SocketIOServer::getClientFromSocket(QWebSocket* socket)
