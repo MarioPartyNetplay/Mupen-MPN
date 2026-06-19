@@ -132,6 +132,17 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
             this, &NetplayCoordinator::on_socketIO_emulationPauseReceived);
     connect(m_socketIO.get(), &SocketIOClient::emulationBeginReceived,
             this, &NetplayCoordinator::on_socketIO_emulationBeginReceived);
+    connect(m_socketIO.get(), &SocketIOClient::pingUpdated,
+            this, [this](int pingMs) {
+        if (m_gameSession.localSlot >= 0) {
+            m_playerPingMs[m_gameSession.localSlot] = pingMs;
+        }
+        emit playerPingsUpdated();
+    });
+    connect(m_socketIO.get(), &SocketIOClient::playerPingsReceived,
+            this, [this](const QJsonArray& pings) {
+        applyPlayerPings(pings);
+    });
 
     // Initialize lockstep config
     m_lockstepConfig.numPlayers = 2;
@@ -301,6 +312,13 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
                 }
                 emit emulationBeginReceived();
             });
+    connect(m_server.get(), &SocketIOServer::playerPingsUpdated,
+            this, [this](const QString& roomId, const QJsonArray& pings) {
+                if (roomId != m_gameSession.roomId) {
+                    return;
+                }
+                applyPlayerPings(pings);
+            });
 
     // Create initial room for remote players to join
     m_gameSession.roomId = QUuid::createUuid().toString(QUuid::WithoutBraces).left(8).toUpper();
@@ -314,6 +332,8 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
 
     // Pre-create the room on the server so remote players can join it
     m_server->createInitialRoom(m_gameSession.roomId, playerName, gameName);
+
+    m_playerPingMs[0] = 0;
 
     qInfo() << "Hosting signaling server on port" << port;
 
@@ -428,6 +448,17 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
             this, &NetplayCoordinator::on_socketIO_emulationPauseReceived);
     connect(m_socketIO.get(), &SocketIOClient::emulationBeginReceived,
             this, &NetplayCoordinator::on_socketIO_emulationBeginReceived);
+    connect(m_socketIO.get(), &SocketIOClient::pingUpdated,
+            this, [this](int pingMs) {
+        if (m_gameSession.localSlot >= 0) {
+            m_playerPingMs[m_gameSession.localSlot] = pingMs;
+        }
+        emit playerPingsUpdated();
+    });
+    connect(m_socketIO.get(), &SocketIOClient::playerPingsReceived,
+            this, [this](const QJsonArray& pings) {
+        applyPlayerPings(pings);
+    });
     
     // Now connect to the server
     setState(Connecting);
@@ -629,6 +660,34 @@ QList<SocketIOClient::PlayerInfo> NetplayCoordinator::getPlayerList() const
         return m_socketIO->getPlayerList();
     }
     return QList<SocketIOClient::PlayerInfo>();
+}
+
+int NetplayCoordinator::getPlayerPing(int slot) const
+{
+    return m_playerPingMs.value(slot, -1);
+}
+
+void NetplayCoordinator::applyPlayerPings(const QJsonArray& pings)
+{
+    for (const QJsonValue& value : pings) {
+        const QJsonObject entry = value.toObject();
+        const int slot = entry.value(QStringLiteral("slot")).toInt(-1);
+        const int pingMs = entry.value(QStringLiteral("ms")).toInt(-1);
+        if (slot >= 0) {
+            m_playerPingMs[slot] = pingMs;
+        }
+    }
+
+    if (isHostingServer()) {
+        m_playerPingMs[0] = 0;
+    } else if (m_socketIO && m_gameSession.localSlot >= 0) {
+        const int localPing = m_socketIO->getLastPingMs();
+        if (localPing >= 0) {
+            m_playerPingMs[m_gameSession.localSlot] = localPing;
+        }
+    }
+
+    emit playerPingsUpdated();
 }
 
 bool NetplayCoordinator::isHost() const

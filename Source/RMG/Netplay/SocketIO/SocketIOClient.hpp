@@ -147,6 +147,7 @@ public:
     RoomInfo getCurrentRoom() const;
     QList<PlayerInfo> getPlayerList() const;
     GameConfig getGameConfig() const;
+    int getLastPingMs() const;
 
     // Event Callbacks (use signals instead for Qt integration)
 
@@ -162,6 +163,8 @@ signals:
     void roomLeft();
     void roomClosed(const QString& reason);
     void playersUpdated(const QList<PlayerInfo>& players);
+    void pingUpdated(int pingMs);
+    void playerPingsReceived(const QJsonArray& pings);
     void spectatorCountUpdated(int count);
     void roomsListed(const QJsonArray& rooms);  // Response from list-rooms request
 
@@ -247,6 +250,7 @@ private:
     QString m_persistentId;
     QHash<QString, ChunkedCheatUpdate> m_pendingCheatUpdates;
     uint32_t m_lastSentFrameSync = 0;
+    int m_lastPingMs = -1;
 
     // Keep-alive
     QTimer* m_pingTimer;

@@ -445,6 +445,11 @@ SocketIOClient::GameConfig SocketIOClient::getGameConfig() const
     return m_gameConfig;
 }
 
+int SocketIOClient::getLastPingMs() const
+{
+    return m_lastPingMs;
+}
+
 //
 // Private Slots
 //
@@ -468,7 +473,7 @@ void SocketIOClient::on_connected()
             }
         });
     }
-    m_pingTimer->start(5000); // Ping every 5 seconds
+    m_pingTimer->start(10000);
 
 }
 
@@ -500,8 +505,9 @@ void SocketIOClient::on_error(QAbstractSocket::SocketError error)
 
 void SocketIOClient::on_pong(quint64 elapsedTime, const QByteArray& payload)
 {
-    Q_UNUSED(elapsedTime);
     Q_UNUSED(payload);
+    m_lastPingMs = static_cast<int>(elapsedTime);
+    emit pingUpdated(m_lastPingMs);
 }
 
 void SocketIOClient::on_sslErrors(const QList<QSslError>& errors)
@@ -748,6 +754,10 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
 
     } else if (eventName == "emulation-begin") {
         emit emulationBeginReceived();
+
+    } else if (eventName == "player-pings" && args.size() > 0) {
+        const QJsonArray pings = args[0].toObject().value(QStringLiteral("pings")).toArray();
+        emit playerPingsReceived(pings);
 
     } else if (eventName == "rooms-list" && args.size() > 0) {
         QJsonObject data = args[0].toObject();

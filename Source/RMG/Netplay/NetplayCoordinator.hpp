@@ -98,6 +98,7 @@
      QString getCurrentStateString() const;
      GameSession getGameSession() const;
      QList<SocketIOClient::PlayerInfo> getPlayerList() const;
+     int getPlayerPing(int slot) const;
      bool isHost() const;
      bool isInGame() const;
  
@@ -129,6 +130,7 @@
      void roomCreated(const QString& roomId, int slot);
      void roomJoined(const QString& roomId, int slot);
      void playersUpdated(const QList<SocketIOClient::PlayerInfo>& players);
+     void playerPingsUpdated();
      void roomClosed(const QString& reason);
  
      void gameStarted(const GameSession& session);
@@ -190,6 +192,7 @@
      void setupPeerConnections(const QList<SocketIOClient::PlayerInfo>& players);
      void synchronizeLockstepPlayerCount();
      void initializeLockstepEngine();
+     void applyPlayerPings(const QJsonArray& pings);
      void broadcastFrameSyncIfNeeded(uint32_t frameNumber);
      void bindWebRTCPeerSignals(const std::shared_ptr<WebRTCPeer>& peer, const QString& peerId);
      void attachExistingPeerDataChannels();
@@ -210,6 +213,7 @@
      GameSession m_gameSession;
      QString m_playerName;
      QList<SocketIOClient::PlayerInfo> m_cachedPlayers;
+     QMap<int, int> m_playerPingMs;
      bool m_shouldAutoJoinRoom = false;
      QString m_autoJoinRoomId;
      QJsonObject m_autoJoinRoomData;

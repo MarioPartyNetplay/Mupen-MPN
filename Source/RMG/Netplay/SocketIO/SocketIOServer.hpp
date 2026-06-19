@@ -13,6 +13,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <memory>
+#include <QTimer>
 
 /**
  * @brief C++ Socket.IO server for peer-to-peer game signaling
@@ -131,6 +132,7 @@ signals:
      * @brief Emitted when room player list changes
      */
     void roomPlayersUpdated(const QString& roomId, const QJsonArray& players);
+    void playerPingsUpdated(const QString& roomId, const QJsonArray& pings);
 
     /**
      * @brief Emitted when controller input is received for a room
@@ -194,6 +196,7 @@ private:
         int slotIndex = -1;   // Player slot (0-3) or -1 if not claimed
         QString playerId;     // Game player ID
         QWebSocket* socket = nullptr;
+        int lastPingMs = -1;
     };
 
     /**
@@ -257,7 +260,12 @@ private:
     void handle_EmulationReady(QWebSocket* socket, const QJsonObject& msg);
     void handle_DirectRamPatch(QWebSocket* socket, const QJsonObject& msg);
 
+    void onPingTimer();
+    void broadcastRoomPlayerPings(const QString& roomId);
+
     void tryBroadcastEmulationBegin(SignalingRoom* room);
+
+    QTimer* m_pingTimer = nullptr;
 
     // Utilities
     ClientConnection* getClientFromSocket(QWebSocket* socket);
