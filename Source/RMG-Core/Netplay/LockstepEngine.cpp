@@ -588,7 +588,14 @@ void LockstepEngine::comparePeerFrameSyncUnlocked(
     }
 
     if (localIt->second == peerHash) {
+        m_peerHashMismatchStreak[fromSlot] = 0;
         m_pendingPeerFrameSyncHashes[fromSlot].erase(frameNumber);
+        return;
+    }
+
+    ++m_peerHashMismatchStreak[fromSlot];
+    constexpr int kRequiredMismatchStreak = 3;
+    if (m_peerHashMismatchStreak[fromSlot] < kRequiredMismatchStreak) {
         return;
     }
 

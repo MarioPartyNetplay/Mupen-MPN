@@ -139,7 +139,7 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
     m_lockstepConfig.inputDelayFrames = 6;
     m_lockstepConfig.desyncDetectionEnabled = true;
     m_lockstepConfig.resyncEnabled = false;
-    m_lockstepConfig.resyncCheckIntervalFrames = 30;
+    m_lockstepConfig.resyncCheckIntervalFrames = 180;
     m_lockstepConfig.stallTimeoutMilliseconds = RMGCore::LockstepEngine::stallTimeoutForDelayFrames(6);
 
     qDebug() << "NetplayCoordinator created";
@@ -568,9 +568,10 @@ bool NetplayCoordinator::advanceFrame()
         return false;
     }
 
+    const uint32_t completedFrame = m_lockstepEngine->getCurrentFrameNumber();
     const bool advanced = m_lockstepEngine->advanceFrame();
     if (advanced) {
-        broadcastFrameSyncIfNeeded(m_lockstepEngine->getCurrentFrameNumber());
+        broadcastFrameSyncIfNeeded(completedFrame);
     }
     return advanced;
 }
@@ -1340,8 +1341,10 @@ void NetplayCoordinator::broadcastFrameSyncIfNeeded(uint32_t frameNumber)
     }
 
     // ~1 Hz at 60 FPS; compare state hashes at the same lockstep frame.
-    constexpr uint32_t kFrameSyncIntervalFrames = 60;
-    if (frameNumber % kFrameSyncIntervalFrames != 0 ||
+    const uint32_t syncInterval = static_cast<uint32_t>(
+        std::max(60, m_lockstepConfig.resyncCheckIntervalFrames));
+    if (frameNumber == 0 ||
+        frameNumber % syncInterval != 0 ||
         frameNumber == m_lastBroadcastFrameSync) {
         return;
     }
