@@ -8,6 +8,7 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "WebRTCPeer.hpp"
+#include "TurnCredentialClient.hpp"
 #include <RMG-Core/Netplay/WebRTC/WebRTCDataChannel.hpp>
 #include "../NetplayProtocol.hpp"
 
@@ -21,22 +22,6 @@
 using namespace UserInterface::Netplay;
 
 namespace {
-
-std::vector<rtc::IceServer> buildIceServers()
-{
-    std::vector<rtc::IceServer> servers;
-
-    const QString stunHost = stunServerHost().trimmed();
-    const quint16 stunPort = stunServerPort();
-    if (!stunHost.isEmpty()) {
-        const std::string endpoint = stunPort > 0
-            ? QStringLiteral("%1:%2").arg(stunHost).arg(stunPort).toStdString()
-            : stunHost.toStdString();
-        servers.emplace_back(endpoint);
-    }
-
-    return servers;
-}
 
 int candidateMidToLineIndex(const rtc::Candidate& candidate)
 {

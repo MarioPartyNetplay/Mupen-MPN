@@ -751,7 +751,12 @@ bool LockstepEngine::waitForAllInputs(
 
     while (!hasAllInputsForFrameUnlocked(frameNumber)) {
         if (m_callbacks.pumpNetwork) {
+            // Release the lock before pumping Qt/socket events. pumpNetwork runs
+            // on the UI thread and may deliver controllerInput -> submitRemoteInput,
+            // which also needs m_mutex. Holding it here deadlocks at frame 0.
+            lock.unlock();
             m_callbacks.pumpNetwork();
+            lock.lock();
         }
 
         if (hasDeadline &&

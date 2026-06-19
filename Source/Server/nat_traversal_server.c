@@ -10,9 +10,14 @@
  *   GET  /rooms         JSON list of active traversal rooms
  *   GET  /index/{key}   read value
  *   PUT  /index/{key}   store body (also POST)
+ *   GET  /turn/ice-servers  short-lived Cloudflare TURN credentials (broker)
+ *
+ * Cloudflare TURN broker (server-side only):
+ *   turn_secrets.h (compiled in) or RMG_TURN_KEY_ID / RMG_TURN_API_TOKEN env overrides
  *
  * Build:
  *   gcc -O2 -Wall -o nat_traversal_server nat_traversal_server.c -lws2_32
+ *   make            # links libcurl when available for /turn/ice-servers
  */
 
 #ifdef _WIN32
@@ -44,6 +49,14 @@ typedef int socket_t;
 #include <string.h>
 #include <time.h>
 
+#ifdef HAS_TURN_SECRETS_H
+#include "turn_secrets.h"
+#else
+#define RMG_TURN_KEY_ID_EMBED ""
+#define RMG_TURN_API_TOKEN_EMBED ""
+#define RMG_TURN_CREDENTIAL_TTL_EMBED 0
+#endif
+
 #define TRAV_PROTOCOL "N02TRAV1"
 #define INDEX_PROTOCOL "N02IDX1"
 #define DEFAULT_UDP_PORT 9150
@@ -57,6 +70,13 @@ typedef int socket_t;
 #define MAX_VALUE_LEN 8192
 #define MAX_UDP_PACKET 8192
 #define MAX_HTTP_REQUEST 16384
+#define MAX_TURN_RESPONSE 32768
+#define DEFAULT_TURN_CREDENTIAL_TTL_SEC 86400
+#define TURN_CACHE_REFRESH_SKEW_SEC 300
+
+#ifdef WITH_LIBCURL
+#include <curl/curl.h>
+#endif
 
 typedef struct {
     uint32_t code;
@@ -80,6 +100,11 @@ static host_entry_t g_hosts[MAX_HOSTS];
 static int g_host_count = 0;
 static index_entry_t g_index[MAX_INDEX_ENTRIES];
 static int g_index_count = 0;
+
+static char g_turn_cache[MAX_TURN_RESPONSE];
+static size_t g_turn_cache_len = 0;
+static uint64_t g_turn_cache_expires = 0;
+static int g_turn_credential_ttl_sec = DEFAULT_TURN_CREDENTIAL_TTL_SEC;
 
 static uint64_t now_seconds(void)
 {
@@ -770,6 +795,21 @@ static void http_send_all(socket_t client, const char* data)
     }
 }
 
+static void http_reply_json(socket_t client, int status_code, const char* status_text, const char* json_body)
+{
+    char header[256];
+    const size_t body_len = json_body != NULL ? strlen(json_body) : 0;
+
+    snprintf(header, sizeof(header),
+             "HTTP/1.1 %d %s\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: %zu\r\n"
+             "Connection: close\r\n\r\n",
+             status_code, status_text, body_len);
+    http_send_all(client, header);
+    if (body_len > 0) {
+        http_send_all(client, json_body);
+    }
+}
+
 static int http_parse_content_length(const char* headers)
 {
     const char* cl = strstr(headers, "Content-Length:");
@@ -1397,6 +1437,220 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
     }
 }
 
+#ifdef WITH_LIBCURL
+
+typedef struct {
+    char* data;
+    size_t size;
+    size_t capacity;
+} http_buffer_t;
+
+static size_t turn_curl_write_cb(void* contents, size_t size, size_t nmemb, void* userp)
+{
+    size_t total = size * nmemb;
+    http_buffer_t* buffer = (http_buffer_t*)userp;
+    size_t needed = buffer->size + total + 1;
+
+    if (needed > buffer->capacity) {
+        size_t new_capacity = buffer->capacity == 0 ? 4096 : buffer->capacity;
+        while (new_capacity < needed) {
+            new_capacity *= 2;
+        }
+        if (new_capacity > MAX_TURN_RESPONSE) {
+            return 0;
+        }
+        {
+            char* resized = (char*)realloc(buffer->data, new_capacity);
+            if (resized == NULL) {
+                return 0;
+            }
+            buffer->data = resized;
+            buffer->capacity = new_capacity;
+        }
+    }
+
+    memcpy(buffer->data + buffer->size, contents, total);
+    buffer->size += total;
+    buffer->data[buffer->size] = '\0';
+    return total;
+}
+
+static void turn_load_config_from_env(void)
+{
+    const char* ttl = getenv("RMG_TURN_CREDENTIAL_TTL");
+    if (ttl != NULL && ttl[0] != '\0') {
+        int parsed = atoi(ttl);
+        if (parsed > 0) {
+            g_turn_credential_ttl_sec = parsed;
+            return;
+        }
+    }
+
+#if RMG_TURN_CREDENTIAL_TTL_EMBED > 0
+    g_turn_credential_ttl_sec = RMG_TURN_CREDENTIAL_TTL_EMBED;
+#endif
+}
+
+static const char* turn_key_id_config(void)
+{
+    const char* env = getenv("RMG_TURN_KEY_ID");
+    if (env != NULL && env[0] != '\0') {
+        return env;
+    }
+    if (RMG_TURN_KEY_ID_EMBED[0] != '\0') {
+        return RMG_TURN_KEY_ID_EMBED;
+    }
+    return NULL;
+}
+
+static const char* turn_api_token_config(void)
+{
+    const char* env = getenv("RMG_TURN_API_TOKEN");
+    if (env != NULL && env[0] != '\0') {
+        return env;
+    }
+    if (RMG_TURN_API_TOKEN_EMBED[0] != '\0') {
+        return RMG_TURN_API_TOKEN_EMBED;
+    }
+    return NULL;
+}
+
+static int turn_is_configured(void)
+{
+    const char* turn_key_id = turn_key_id_config();
+    const char* api_token = turn_api_token_config();
+    return turn_key_id != NULL && turn_key_id[0] != '\0' && api_token != NULL && api_token[0] != '\0';
+}
+
+static int turn_fetch_cloudflare_credentials(char* out, size_t out_size, size_t* out_len)
+{
+    const char* turn_key_id = turn_key_id_config();
+    const char* api_token = turn_api_token_config();
+    CURL* curl = NULL;
+    struct curl_slist* headers = NULL;
+    http_buffer_t response = {0};
+    char url[512];
+    char auth_header[1024];
+    char body[64];
+    long http_code = 0;
+    int success = 0;
+
+    if (!turn_is_configured()) {
+        return 0;
+    }
+
+    turn_load_config_from_env();
+
+    snprintf(url, sizeof(url),
+             "https://rtc.live.cloudflare.com/v1/turn/keys/%s/credentials/generate-ice-servers", turn_key_id);
+    snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", api_token);
+    snprintf(body, sizeof(body), "{\"ttl\":%d}", g_turn_credential_ttl_sec);
+
+    curl = curl_easy_init();
+    if (curl == NULL) {
+        return 0;
+    }
+
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    headers = curl_slist_append(headers, auth_header);
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, turn_curl_write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "RMG-NAT-Traversal-Server/1.0");
+
+    CURLcode result = curl_easy_perform(curl);
+    if (result == CURLE_OK) {
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+        if (http_code == 201 && response.data != NULL && response.size > 0 && strstr(response.data, "\"iceServers\"") != NULL &&
+            response.size < out_size) {
+            memcpy(out, response.data, response.size);
+            out[response.size] = '\0';
+            *out_len = response.size;
+            success = 1;
+        } else {
+            fprintf(stderr, "[turn] Cloudflare credential request failed (HTTP %ld)\n", http_code);
+        }
+    } else {
+        fprintf(stderr, "[turn] Cloudflare credential request failed: %s\n", curl_easy_strerror(result));
+    }
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    free(response.data);
+    return success;
+}
+
+static int turn_credentials_are_fresh(uint64_t now)
+{
+    return g_turn_cache_len > 0 && g_turn_cache_expires > now + TURN_CACHE_REFRESH_SKEW_SEC;
+}
+
+static int turn_refresh_credentials(uint64_t now)
+{
+    size_t fetched_len = 0;
+
+    if (!turn_fetch_cloudflare_credentials(g_turn_cache, sizeof(g_turn_cache), &fetched_len)) {
+        return 0;
+    }
+
+    g_turn_cache_len = fetched_len;
+    g_turn_cache_expires = now + (uint64_t)g_turn_credential_ttl_sec;
+    printf("[turn] refreshed Cloudflare ICE credentials (%zu bytes, ttl %d sec)\n", g_turn_cache_len,
+           g_turn_credential_ttl_sec);
+    return 1;
+}
+
+#endif /* WITH_LIBCURL */
+
+static void http_reply_turn_ice_servers(socket_t client)
+{
+#ifdef WITH_LIBCURL
+    const uint64_t now = now_seconds();
+
+    if (!turn_is_configured()) {
+        http_reply_json(client, 503, "Service Unavailable",
+                        "{\"error\":\"Cloudflare TURN is not configured on this server\"}");
+        return;
+    }
+
+    if (!turn_credentials_are_fresh(now) && !turn_refresh_credentials(now)) {
+        if (g_turn_cache_len > 0) {
+            /* Serve stale credentials if refresh failed but we still have a cache. */
+        } else {
+            http_reply_json(client, 502, "Bad Gateway",
+                            "{\"error\":\"Failed to fetch Cloudflare TURN credentials\"}");
+            return;
+        }
+    }
+
+    {
+        char header[256];
+        snprintf(header, sizeof(header),
+                 "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: %zu\r\n"
+                 "Connection: close\r\n\r\n",
+                 g_turn_cache_len);
+        http_send_all(client, header);
+        {
+            size_t sent = 0;
+            while (sent < g_turn_cache_len) {
+                int n = send(client, g_turn_cache + sent, (int)(g_turn_cache_len - sent), 0);
+                if (n <= 0) {
+                    break;
+                }
+                sent += (size_t)n;
+            }
+        }
+    }
+#else
+    http_reply_json(client, 503, "Service Unavailable",
+                    "{\"error\":\"TURN broker requires server built with libcurl\"}");
+#endif
+}
+
 static void handle_http_client(socket_t client)
 {
     char request[MAX_HTTP_REQUEST];
@@ -1441,6 +1695,15 @@ static void handle_http_client(socket_t client)
     if (strncmp(path, "/rooms", 6) == 0) {
         /* Show waiting (lobby) rooms by default to match client expectations. */
         http_reply_rooms_json(client, http_query_bool(path, "waiting", 1));
+        return;
+    }
+
+    if (strcmp(path, "/turn/ice-servers") == 0) {
+        if (strncmp(request, "GET ", 4) != 0) {
+            http_send_all(client, "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            return;
+        }
+        http_reply_turn_ice_servers(client);
         return;
     }
 
@@ -1643,6 +1906,12 @@ int main(int argc, char** argv)
             }
         }
     }
+
+#ifdef WITH_LIBCURL
+    if (curl_global_init(CURL_GLOBAL_DEFAULT) != 0) {
+        fprintf(stderr, "warning: libcurl init failed; /turn/ice-servers will be unavailable\n");
+    }
+#endif
 
     printf("UDP NAT on %s:%d (%s + %s)\n", bind_host, udp_port, TRAV_PROTOCOL, INDEX_PROTOCOL);
 

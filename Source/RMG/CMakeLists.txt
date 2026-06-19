@@ -57,7 +57,7 @@ if (KCA_DRAG_DROP)
 endif(KCA_DRAG_DROP)
 
 if (NETPLAY)
-    find_package(Qt6 COMPONENTS WebSockets REQUIRED)
+    find_package(Qt6 COMPONENTS WebSockets Network REQUIRED)
     add_definitions(-DNETPLAY -DWEBRTC_P2P)
 
     find_package(libdatachannel CONFIG QUIET)
@@ -146,7 +146,10 @@ if (NETPLAY)
         Netplay/SocketIO/SocketIOClient.cpp
         Netplay/SocketIO/SocketIOServer.cpp
         Netplay/WebRTC/WebRTCPeer.cpp
+        Netplay/WebRTC/TurnCredentialClient.cpp
+        Netplay/NetplayUpnp.cpp
         Netplay/NetplayHostRegistry.cpp
+        Netplay/NetplayTraversalLookup.cpp
         Netplay/NetplayIndexClient.cpp
         Netplay/NetplayCoordinator.cpp
         Netplay.cpp
@@ -225,7 +228,7 @@ if (KCA_DRAG_DROP)
 endif(KCA_DRAG_DROP)
 
 if (NETPLAY)
-    target_link_libraries(RMG Qt6::WebSockets)
+    target_link_libraries(RMG Qt6::WebSockets Qt6::Network)
     if (LIBDATACHANNEL_EXTERNAL_TARGET)
         target_link_libraries(RMG ${LIBDATACHANNEL_EXTERNAL_TARGET})
         target_include_directories(RMG PRIVATE ${LIBDATACHANNEL_INCLUDE_DIR})

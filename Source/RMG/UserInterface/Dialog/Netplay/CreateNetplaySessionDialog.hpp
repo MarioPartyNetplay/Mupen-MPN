@@ -11,6 +11,7 @@
 #define CREATENETPLAYSESSIONDIALOG_HPP
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QJsonObject>
 #include <QTimerEvent>
 #include <QWebSocket>
@@ -62,6 +63,8 @@ class CreateNetplaySessionDialog : public QWidget, private Ui::CreateNetplaySess
     int hostingPort = Netplay::kDefaultNetplayHostingPort;
 
     QCheckBox* showInBrowserCheckBox = nullptr;
+    QComboBox* connectionModeComboBox = nullptr;
+    QCheckBox* useUpnpCheckBox = nullptr;
     QSpinBox* hostingPortSpinBox = nullptr;
 
   	QJsonObject sessionJson;
@@ -78,6 +81,7 @@ class CreateNetplaySessionDialog : public QWidget, private Ui::CreateNetplaySess
 
     void createSession(void);
     void finalizeSession(void);
+    void updateConnectionModeUi(void);
 
     void toggleUI(bool enable, bool enableCreateButton);
 
@@ -93,6 +97,7 @@ class CreateNetplaySessionDialog : public QWidget, private Ui::CreateNetplaySess
     void on_nickNameLineEdit_textChanged(void);
 
     void on_romListWidget_OnRomChanged(bool valid);
+    void on_connectionModeComboBox_currentIndexChanged(int index);
 };
 } // namespace Dialog
 } // namespace UserInterface
