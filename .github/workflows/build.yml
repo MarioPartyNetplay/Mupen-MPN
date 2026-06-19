@@ -126,7 +126,7 @@ jobs:
       - name: Upload Windows Artifact (Folder Build)
         uses: actions/upload-artifact@v4
         with:
-          name: MupenMPN-win32
+          name: MupenMPN-windows-x86_64
           path: Bin/Release/*
 
   macos:
@@ -156,5 +156,5 @@ jobs:
       - name: Upload macOS Artifact (Folder Build)
         uses: actions/upload-artifact@v4
         with:
-          name: MupenMPN-macos-x86_64
+          name: MupenMPN-macOS-x86_64
           path: Bin/Release/*

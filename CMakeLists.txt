@@ -31,6 +31,7 @@ option(USE_ANGRYLION    "Enables building angrylion-rdp-plus which uses a non-GP
 project(RMG)
 
 if(APPLE)
+    enable_language(OBJC OBJCXX)
     set(VRU OFF CACHE BOOL "Enables VRU support in RMG-Input" FORCE)
 endif()
 

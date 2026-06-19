@@ -19,7 +19,6 @@
 #include <OpenGL/OpenGL.h>
 #include <stddef.h>
 #include <OpenGL/gl3.h>
-
 #elif defined(OS_IOS)
 #include <OpenGLES/ES3/gl.h>
 #include <OpenGLES/ES3/glext.h>

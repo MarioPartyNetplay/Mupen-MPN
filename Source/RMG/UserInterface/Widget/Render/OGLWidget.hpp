@@ -15,7 +15,12 @@
 #include <QWindow>
 #include <QTimerEvent>
 #include <QOpenGLContext>
+#include <QSurfaceFormat>
 #include <QWidget>
+
+#ifdef __APPLE__
+#include "AngleContext.hpp"
+#endif
 
 namespace UserInterface
 {
@@ -29,6 +34,14 @@ class OGLWidget : public QWindow
 
     void MoveContextToThread(QThread* thread);
     QOpenGLContext* GetContext();
+
+    void PrepareRenderContext(const QSurfaceFormat& format, QThread* thread);
+    bool EnsureRenderContext();
+    bool IsContextValid() const;
+    bool MakeContextCurrent();
+    void SwapContextBuffers();
+    void* GetProcAddress(const char* name) const;
+    std::uint32_t DefaultFramebufferObject() const;
 
     void SetHideCursor(bool hide);
 
@@ -44,9 +57,13 @@ class OGLWidget : public QWindow
 
     QWidget* widgetContainer      = nullptr;
     QOpenGLContext* openGLcontext = nullptr;
-    int width                     = 0;
-    int height                    = 0;
-    int timerId                   = 0;
+#ifdef __APPLE__
+    AngleContext angleContext;
+    int swapInterval = 0;
+#endif
+    int width   = 0;
+    int height  = 0;
+    int timerId = 0;
 };
 } // namespace Widget
 } // namespace UserInterface

@@ -200,6 +200,19 @@ ExternalProject_Add(mupen64plus-input-raphnetraw
 set(GLIDEN64_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-video-GLideN64")
 set(GLIDEN64_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-video-GLideN64")
 set(GLIDEN64_CUSTOM_INI "${GLIDEN64_DIR}/ini/GLideN64.custom.ini")
+set(GLIDEN64_CMAKE_ARGS -DMUPENPLUSAPI=ON -DMUPENPLUSAPI_GLIDENUI=ON -DGLIDENUI_QT6=ON -DUSE_IPO=OFF -DUSE_SYSTEM_LIBS=ON -DNO_OSD=ON ${CMAKE_CONFIGURE_ARGS})
+
+if (APPLE)
+    add_subdirectory(angle-project)
+
+    list(APPEND GLIDEN64_CMAKE_ARGS
+        -DEGL=ON
+        -DANGLE_INCLUDE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/angle/include
+        -DANGLE_STATIC_LIBRARY=${CMAKE_CURRENT_BINARY_DIR}/angle-project/angle-cmake/libangle_static.a
+    )
+
+    set(ANGLE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/angle/include" PARENT_SCOPE)
+endif()
 # taken from GLideN64's CMakeLists.txt
 if("${CMAKE_BUILD_TYPE}" STREQUAL "Release" OR
     "${CMAKE_BUILD_TYPE}" STREQUAL "MinSizeRel" OR
@@ -224,6 +237,12 @@ if (USE_ANGRYLION)
     )
 endif(USE_ANGRYLION)
 
+if (APPLE)
+    set(GLIDEN64_EXTERNAL_DEPENDS angle_static)
+else()
+    set(GLIDEN64_EXTERNAL_DEPENDS "")
+endif()
+
 ExternalProject_Add(mupen64plus-video-GLideN64
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-video-GLideN64
 
@@ -231,7 +250,8 @@ ExternalProject_Add(mupen64plus-video-GLideN64
 
     BUILD_IN_SOURCE False
     BUILD_ALWAYS True
-    CMAKE_ARGS -DMUPENPLUSAPI=ON -DMUPENPLUSAPI_GLIDENUI=ON -DGLIDENUI_QT6=ON -DUSE_IPO=OFF -DUSE_SYSTEM_LIBS=ON -DNO_OSD=ON ${CMAKE_CONFIGURE_ARGS}
+    CMAKE_ARGS ${GLIDEN64_CMAKE_ARGS}
+    DEPENDS ${GLIDEN64_EXTERNAL_DEPENDS}
 
     SOURCE_SUBDIR ./src/
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-video-GLideN64

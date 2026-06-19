@@ -2385,6 +2385,17 @@ void MainWindow::on_VidExt_Init(VidExtRenderMode renderMode)
     this->ui_VidExtRenderMode   = renderMode;
     this->ui_VidExtForceSetMode = true;
 
+#ifdef __APPLE__
+    {
+        QSurfaceFormat format = QSurfaceFormat::defaultFormat();
+        format.setSwapInterval(0);
+        format.setMajorVersion(3);
+        format.setMinorVersion(2);
+        format.setRenderableType(QSurfaceFormat::OpenGLES);
+        format.setDepthBufferSize(24);
+        QSurfaceFormat::setDefaultFormat(format);
+    }
+#else
     if (CoreSettingsGetBoolValue(SettingsID::GUI_OpenGLES))
     {
         QSurfaceFormat format = QSurfaceFormat::defaultFormat();
@@ -2401,12 +2412,9 @@ void MainWindow::on_VidExt_Init(VidExtRenderMode renderMode)
         format.setMajorVersion(3);
         format.setMinorVersion(3);
         format.setRenderableType(QSurfaceFormat::OpenGL);
-#ifdef __APPLE__
-        format.setProfile(QSurfaceFormat::CoreProfile);
-        format.setDepthBufferSize(24);
-#endif
         QSurfaceFormat::setDefaultFormat(format);
     }
+#endif
 
     if (renderMode == VidExtRenderMode::OpenGL)
     {
@@ -2430,14 +2438,7 @@ void MainWindow::on_VidExt_Init(VidExtRenderMode renderMode)
 
 void MainWindow::on_VidExt_SetupOGL(QSurfaceFormat format, QThread* thread)
 {
-    // format must be applied before the context is (re)created on macOS
-    if (QGuiApplication::platformName() != "wayland")
-    {
-        this->ui_Widget_OpenGL->setFormat(format);
-        this->ui_Widget_OpenGL->GetContext()->setFormat(format);
-    }
-
-    this->ui_Widget_OpenGL->MoveContextToThread(thread);
+    this->ui_Widget_OpenGL->PrepareRenderContext(format, thread);
 }
 
 void MainWindow::on_VidExt_SetWindowedMode(int width, int height, int bps, int flags)

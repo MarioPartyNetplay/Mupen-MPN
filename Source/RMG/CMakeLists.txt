@@ -112,6 +112,12 @@ set(RMG_SOURCES
     main.cpp
 )
 
+if (APPLE)
+    list(APPEND RMG_SOURCES
+        AngleContext.mm
+    )
+endif()
+
 if (UPDATER)
     list(APPEND RMG_SOURCES
         UserInterface/Dialog/Update/UpdateDialog.cpp
@@ -181,7 +187,12 @@ if (APPLE AND PORTABLE_INSTALL)
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${GIT_VERSION}"
         MACOSX_BUNDLE_BUNDLE_VERSION "${GIT_VERSION}"
         MACOSX_BUNDLE_COPYRIGHT "Copyright (c) Mupen MPN contributors"
+        MACOSX_BUNDLE_ICON_FILE RMG.icns
     )
+
+    set(RMG_MAC_ICON ${CMAKE_CURRENT_SOURCE_DIR}/UserInterface/Resource/RMG.icns)
+    target_sources(RMG PRIVATE ${RMG_MAC_ICON})
+    set_source_files_properties(${RMG_MAC_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 endif()
 
 target_link_libraries(RMG 
@@ -217,6 +228,9 @@ endif()
 
 if (APPLE)
     target_link_libraries(RMG "-framework IOKit" "-framework CoreFoundation")
+    add_dependencies(RMG angle_static)
+    target_include_directories(RMG PRIVATE ${ANGLE_INCLUDE_DIR})
+    target_link_libraries(RMG angle_static)
 endif()
 
 if (UPDATER)

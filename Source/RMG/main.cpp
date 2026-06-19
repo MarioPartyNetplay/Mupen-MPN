@@ -168,6 +168,7 @@ static void signal_handler(int sig)
 }
 #endif // _WIN32
 
+
 #ifdef PORTABLE_INSTALL
 static std::unique_ptr<QLockFile> l_PortableInstanceLock;
 
@@ -317,18 +318,14 @@ int main(int argc, char **argv)
     // the generic wayland icon on wayland
     QGuiApplication::setDesktopFileName("org.marioparty.mupen");
 #elif defined(__APPLE__)
-    // MoltenVK is used by the parallel plugin; GLideN64 still needs desktop OpenGL.
     configureMoltenVK();
-
-    QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
 
     QSurfaceFormat format = QSurfaceFormat::defaultFormat();
     format.setSwapInterval(0);
     format.setMajorVersion(3);
-    format.setMinorVersion(3);
-    format.setProfile(QSurfaceFormat::CoreProfile);
+    format.setMinorVersion(2);
+    format.setRenderableType(QSurfaceFormat::OpenGLES);
     format.setDepthBufferSize(24);
-    format.setRenderableType(QSurfaceFormat::OpenGL);
     QSurfaceFormat::setDefaultFormat(format);
 #endif // __linux__
 

@@ -38,3 +38,5 @@ lib/libdiscord-rpc.a
 
 # Local environment overrides
 .env
+
+*.DS_Store
