@@ -1298,6 +1298,7 @@ void MainWindow::showNetplaySessionDialog(QString sessionFile)
 {
     if (this->netplaySessionDialog != nullptr)
     {
+        this->netplaySessionDialog->shutdownSession();
         this->netplaySessionDialog->deleteLater();
         this->netplaySessionDialog = nullptr;
     }

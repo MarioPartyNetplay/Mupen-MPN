@@ -173,10 +173,11 @@ NetplayCoordinator::~NetplayCoordinator()
 
 bool NetplayCoordinator::startHosting(int port, const QString& playerName, const QString& gameName)
 {
+    m_lastHostingError.clear();
+
     if (m_server != nullptr)
     {
-        qWarning() << "Already hosting a server";
-        return false;
+        stopHosting();
     }
 
     m_playerName = playerName;
@@ -184,9 +185,11 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
     // Create and start signaling server
     m_server = std::make_unique<SocketIOServer>(this);
 
-    if (!m_server->startServer(port))
+    QString listenError;
+    if (!m_server->startServer(port, &listenError))
     {
-        qWarning() << "Failed to start hosting server on port" << port;
+        m_lastHostingError = listenError;
+        qWarning() << "Failed to start hosting server on port" << port << ":" << listenError;
         m_server.reset();
         return false;
     }
