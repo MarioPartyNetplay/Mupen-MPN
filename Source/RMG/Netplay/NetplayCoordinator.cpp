@@ -958,6 +958,13 @@ void NetplayCoordinator::resetEmulationSync()
 {
     CoreSetEmbeddedNetplayState(false, 0);
     CoreClearNetplaySyncSettings();
+
+    if (m_lockstepEngine) {
+        for (int slot = 0; slot < 4; ++slot) {
+            m_lockstepEngine->setDataChannel(slot, nullptr);
+        }
+    }
+
     m_lockstepEngine.reset();
     m_currentFrameInputs.clear();
     m_sessionSyncCoreSettings = QJsonObject();

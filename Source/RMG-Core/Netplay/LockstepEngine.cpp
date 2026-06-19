@@ -36,6 +36,21 @@ uint32_t inputFrameSlackForDelay(int inputDelayFrames)
                     static_cast<uint32_t>(inputDelayFrames) + kMinInputFrameSlack);
 }
 
+void detachDataChannelCallbacks(
+    const std::shared_ptr<WebRTCDataChannel>& channel)
+{
+    if (!channel) {
+        return;
+    }
+
+    channel->onBinaryMessageReceived = nullptr;
+    channel->onClosed = nullptr;
+    channel->onError = nullptr;
+    channel->onStateChanged = nullptr;
+    channel->onTextMessageReceived = nullptr;
+    channel->onBufferedAmountLow = nullptr;
+}
+
 } // namespace
 
 LockstepEngine::LockstepEngine(const Config& config)
@@ -63,10 +78,11 @@ LockstepEngine::LockstepEngine(const Config& config)
 
 LockstepEngine::~LockstepEngine()
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
     for (auto& channel : m_dataChannels) {
-        if (channel) {
-            channel->close();
-        }
+        detachDataChannelCallbacks(channel);
+        channel.reset();
     }
 }
 
@@ -81,26 +97,30 @@ void LockstepEngine::setDataChannel(
 {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
-    if (peerSlot < 0 || peerSlot >= m_config.numPlayers) {
+    if (peerSlot < 0 || peerSlot >= static_cast<int>(m_dataChannels.size())) {
         return;
     }
 
-    m_dataChannels[peerSlot] = channel;
+    detachDataChannelCallbacks(m_dataChannels[peerSlot]);
+    m_dataChannels[peerSlot] = std::move(channel);
 
-    if (channel) {
-        channel->onBinaryMessageReceived =
-            [this, peerSlot](const std::vector<uint8_t>& data) {
-                onDataChannelBinaryMessageReceived(peerSlot, data);
+    if (m_dataChannels[peerSlot]) {
+        const int boundSlot = peerSlot;
+        auto& boundChannel = m_dataChannels[peerSlot];
+
+        boundChannel->onBinaryMessageReceived =
+            [this, boundSlot](const std::vector<uint8_t>& data) {
+                onDataChannelBinaryMessageReceived(boundSlot, data);
             };
 
-        channel->onClosed =
-            [this, peerSlot]() {
-                onDataChannelClosed(peerSlot);
+        boundChannel->onClosed =
+            [this, boundSlot]() {
+                onDataChannelClosed(boundSlot);
             };
 
-        channel->onError =
-            [this, peerSlot](const std::string& error) {
-                onDataChannelError(peerSlot, error);
+        boundChannel->onError =
+            [this, boundSlot](const std::string& error) {
+                onDataChannelError(boundSlot, error);
             };
     }
 }
