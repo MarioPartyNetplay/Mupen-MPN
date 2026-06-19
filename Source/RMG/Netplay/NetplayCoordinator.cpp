@@ -9,6 +9,7 @@
  */
 #include "NetplayCoordinator.hpp"
 #include "NetplayProtocol.hpp"
+#include "NetplayTraversalLookup.hpp"
 #include "Netplay.hpp"
 #include <RMG-Core/Netplay.hpp>
 #include <RMG-Core/Emulation.hpp>
@@ -351,9 +352,23 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
     m_playerName = playerName;
     m_shouldAutoJoinRoom = true;
     m_autoJoinRoomId = roomId.trimmed();
-    
+
+    QString connectAddress = ipAddress.trimmed();
+    int connectPort = port;
+
+    if (looksLikeTraversalCode(connectAddress)) {
+        const TraversalLookupResult lookup = lookupTraversalHost(connectAddress);
+        if (!lookup.success) {
+            setState(Error);
+            emit connectionError(lookup.error);
+            return;
+        }
+        connectAddress = lookup.address;
+        connectPort = lookup.port;
+    }
+
     // Recreate the Socket.IO client with the new server URL
-    QString serverUrl = QString("http://%1:%2").arg(ipAddress).arg(port);
+    QString serverUrl = QString("http://%1:%2").arg(connectAddress).arg(connectPort);
     
     // Disconnect existing client if connected
     if (m_socketIO && m_socketIO->getConnectionState() != SocketIOClient::Disconnected)

@@ -163,6 +163,7 @@ inline QJsonObject sessionIndexPublishObject(const QJsonObject& session)
         QStringLiteral("public_port"),
         QStringLiteral("server_port"),
         QStringLiteral("use_nat_traversal"),
+        QStringLiteral("connection_mode"),
         QStringLiteral("show_in_browser"),
         QStringLiteral("started"),
         QStringLiteral("player_count"),
@@ -225,33 +226,6 @@ inline QUrl netplaySessionIndexPutUrl(const QString& key)
                     .arg(netplayIndexServerHostname())
                     .arg(kNetplayIndexHttpPort)
                     .arg(key));
-}
-
-inline bool sessionConnectEndpoint(const QJsonObject& session, QString* addressOut, int* portOut)
-{
-    QString address = session.value(QStringLiteral("connect_address")).toString().trimmed();
-    if (address.isEmpty() || !isUsableConnectAddress(address)) {
-        address = session.value(QStringLiteral("public_address")).toString().trimmed();
-    }
-    if (address.isEmpty() || !isUsableConnectAddress(address)) {
-        return false;
-    }
-
-    const int port = session.value(QStringLiteral("connect_port"))
-                         .toInt(session.value(QStringLiteral("server_port"))
-                                    .toInt(session.value(QStringLiteral("public_port"))
-                                               .toInt(kDefaultNetplayHostingPort)));
-    if (port < 1024 || port > 65535) {
-        return false;
-    }
-
-    if (addressOut) {
-        *addressOut = address;
-    }
-    if (portOut) {
-        *portOut = port;
-    }
-    return true;
 }
 
 static constexpr quint16 kDefaultStunPort = 6262;
@@ -337,6 +311,107 @@ inline QString stunServerHost()
     }
 
     return host;
+}
+
+inline bool turnBrokerDisabled()
+{
+    const QByteArray disabled = qgetenv("RMG_TURN_BROKER_DISABLED");
+    return !disabled.isEmpty() && disabled != QByteArrayLiteral("0");
+}
+
+inline QUrl netplayTurnIceServersUrl()
+{
+    const QByteArray overrideUrl = qgetenv("RMG_TURN_BROKER_URL");
+    if (!overrideUrl.isEmpty()) {
+        return QUrl(QString::fromUtf8(overrideUrl));
+    }
+
+    if (turnBrokerDisabled()) {
+        return {};
+    }
+
+    return QUrl(QStringLiteral("http://%1:%2/turn/ice-servers")
+                    .arg(netplayIndexServerHostname())
+                    .arg(kNetplayIndexHttpPort));
+}
+
+inline bool turnCredentialsAvailable()
+{
+    return !netplayTurnIceServersUrl().isEmpty();
+}
+
+enum class NetplayConnectionMode {
+    TraversalServer,
+    Direct,
+};
+
+inline QString netplayConnectionModeToString(NetplayConnectionMode mode)
+{
+    switch (mode) {
+    case NetplayConnectionMode::Direct:
+        return QStringLiteral("direct");
+    case NetplayConnectionMode::TraversalServer:
+    default:
+        return QStringLiteral("traversal");
+    }
+}
+
+inline NetplayConnectionMode netplayConnectionModeFromString(const QString& value)
+{
+    if (value.compare(QStringLiteral("direct"), Qt::CaseInsensitive) == 0) {
+        return NetplayConnectionMode::Direct;
+    }
+    return NetplayConnectionMode::TraversalServer;
+}
+
+inline bool sessionUsesNatTraversal(const QJsonObject& session)
+{
+    if (session.contains(QStringLiteral("use_nat_traversal"))) {
+        return session.value(QStringLiteral("use_nat_traversal")).toBool();
+    }
+
+    const QString mode = session.value(QStringLiteral("connection_mode")).toString();
+    if (!mode.isEmpty()) {
+        return netplayConnectionModeFromString(mode) == NetplayConnectionMode::TraversalServer;
+    }
+
+    return true;
+}
+
+inline QString sessionTraversalHostCode(const QJsonObject& session)
+{
+    return normalizeTraversalCode(session.value(QStringLiteral("host_code")).toString());
+}
+
+inline bool sessionConnectEndpoint(const QJsonObject& session, QString* addressOut, int* portOut)
+{
+    if (sessionUsesNatTraversal(session)) {
+        return false;
+    }
+
+    QString address = session.value(QStringLiteral("connect_address")).toString().trimmed();
+    if (address.isEmpty() || !isUsableConnectAddress(address)) {
+        address = session.value(QStringLiteral("public_address")).toString().trimmed();
+    }
+    if (address.isEmpty() || !isUsableConnectAddress(address)) {
+        return false;
+    }
+
+    const int port = session.value(QStringLiteral("connect_port"))
+                         .toInt(session.value(QStringLiteral("server_port"))
+                                    .toInt(session.value(QStringLiteral("public_port"))
+                                               .toInt(kDefaultNetplayHostingPort)));
+    if (port < 1024 || port > 65535) {
+        return false;
+    }
+
+    if (addressOut) {
+        *addressOut = address;
+    }
+    if (portOut) {
+        *portOut = port;
+    }
+    return true;
 }
 
 } // namespace UserInterface::Netplay
