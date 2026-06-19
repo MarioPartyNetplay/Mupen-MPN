@@ -2384,6 +2384,10 @@ void MainWindow::on_VidExt_Init(VidExtRenderMode renderMode)
         format.setMajorVersion(3);
         format.setMinorVersion(3);
         format.setRenderableType(QSurfaceFormat::OpenGL);
+#ifdef __APPLE__
+        format.setProfile(QSurfaceFormat::CoreProfile);
+        format.setDepthBufferSize(24);
+#endif
         QSurfaceFormat::setDefaultFormat(format);
     }
 
@@ -2409,17 +2413,14 @@ void MainWindow::on_VidExt_Init(VidExtRenderMode renderMode)
 
 void MainWindow::on_VidExt_SetupOGL(QSurfaceFormat format, QThread* thread)
 {
-    this->ui_Widget_OpenGL->MoveContextToThread(thread);
-    // on wayland setting the surface format
-    // fails for some reason, and if we set it anyways
-    // ->makeCurrent() will fail in VidExt.cpp,
-    // so to resolve that I've set OpenGL 3.3 as
-    // default surface format in main.cpp and we
-    // skip it here only on when on wayland
+    // format must be applied before the context is (re)created on macOS
     if (QGuiApplication::platformName() != "wayland")
     {
         this->ui_Widget_OpenGL->setFormat(format);
+        this->ui_Widget_OpenGL->GetContext()->setFormat(format);
     }
+
+    this->ui_Widget_OpenGL->MoveContextToThread(thread);
 }
 
 void MainWindow::on_VidExt_SetWindowedMode(int width, int height, int bps, int flags)

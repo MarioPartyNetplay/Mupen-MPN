@@ -26,6 +26,8 @@ endif()
 
 if(WIN32)
     add_definitions(-DVK_USE_PLATFORM_WIN32_KHR)
+elseif(APPLE)
+    add_definitions(-DVK_USE_PLATFORM_MACOS_MVK -DVK_USE_PLATFORM_METAL_EXT)
 endif()
 
 if (CONFIG_GUI)

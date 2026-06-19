@@ -12,6 +12,10 @@
 
 #include <QGuiApplication>
 
+#include <QEvent>
+#include <QPalette>
+#include <QResizeEvent>
+
 #include <RMG-Core/Video.hpp>
 
 using namespace UserInterface::Widget;
@@ -24,16 +28,21 @@ OGLWidget::OGLWidget(QWidget *parent)
     // on wayland we have to make sure that the widget
     // has a black background palette set, else
     // the window will have the theme as background color
-    if (QGuiApplication::platformName() == "wayland")
+    if (QGuiApplication::platformName() == "wayland" ||
+        QGuiApplication::platformName() == "cocoa")
     {
         QPalette blackPalette;
         blackPalette.setColor(QPalette::Window, Qt::black);
-        this->widgetContainer->setAutoFillBackground(true); 
+        this->widgetContainer->setAutoFillBackground(true);
         this->widgetContainer->setPalette(blackPalette);
     }
 
     this->setSurfaceType(QWindow::OpenGLSurface);
+
+    QSurfaceFormat format = QSurfaceFormat::defaultFormat();
+    this->setFormat(format);
     this->openGLcontext = new QOpenGLContext();
+    this->openGLcontext->setFormat(format);
 }
 
 OGLWidget::~OGLWidget(void)
@@ -43,6 +52,13 @@ OGLWidget::~OGLWidget(void)
 
 void OGLWidget::MoveContextToThread(QThread* thread)
 {
+    QSurfaceFormat format = this->format();
+    if (format.majorVersion() == 0)
+    {
+        format = QSurfaceFormat::defaultFormat();
+    }
+
+    this->GetContext()->setFormat(format);
     this->GetContext()->doneCurrent();
     this->GetContext()->create();
     this->GetContext()->moveToThread(thread);

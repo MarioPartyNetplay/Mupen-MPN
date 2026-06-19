@@ -15,7 +15,7 @@ then
     echo "On Apple Silicon, this script re-executes under Rosetta (arch -x86_64)"
     echo "and expects x86_64 Homebrew dependencies in /usr/local."
     echo "Install with: arch -x86_64 /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-    echo "Then: arch -x86_64 brew install cmake qt sdl3 nasm speexdsp libsamplerate minizip pkg-config openssl nlohmann-json srtp libusb libpng"
+    echo "Then: arch -x86_64 brew install cmake qt sdl3 nasm speexdsp libsamplerate minizip pkg-config openssl nlohmann-json srtp libusb libpng molten-vk vulkan-loader vulkan-headers"
     exit
 fi
 
@@ -31,9 +31,9 @@ if [[ $(uname -s) = Darwin ]]; then
   fi
 
   if [[ -x /usr/local/bin/brew ]]; then
-    cmake_extra_args+=(-DCMAKE_PREFIX_PATH="/usr/local" -DCMAKE_OSX_ARCHITECTURES=x86_64)
+    cmake_extra_args+=(-DCMAKE_PREFIX_PATH="/usr/local" -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3)
   else
-    cmake_extra_args+=(-DCMAKE_PREFIX_PATH="$(brew --prefix)" -DCMAKE_OSX_ARCHITECTURES=arm64)
+    cmake_extra_args+=(-DCMAKE_PREFIX_PATH="$(brew --prefix)" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3)
   fi
 elif [[ $(uname -s) = *MINGW64* ]]; then
     generator="MSYS Makefiles"
@@ -79,5 +79,10 @@ then
         done
     fi
 
+    cmake --build "$build_dir" --target=bundle_dependencies
+fi
+
+if [[ $(uname -s) = Darwin ]]
+then
     cmake --build "$build_dir" --target=bundle_dependencies
 fi

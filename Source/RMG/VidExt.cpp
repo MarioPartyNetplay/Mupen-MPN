@@ -86,7 +86,11 @@ static m64p_error VidExt_InitWithRenderMode(m64p_render_mode RenderMode)
         l_SurfaceFormat = QSurfaceFormat::defaultFormat();
         l_SurfaceFormat.setOption(QSurfaceFormat::DeprecatedFunctions, 1);
         l_SurfaceFormat.setDepthBufferSize(24);
+#ifdef __APPLE__
+        l_SurfaceFormat.setProfile(QSurfaceFormat::CoreProfile);
+#else
         l_SurfaceFormat.setProfile(QSurfaceFormat::CompatibilityProfile);
+#endif
         l_SurfaceFormat.setSwapInterval(0);
         if (l_SurfaceFormat.renderableType() != QSurfaceFormat::OpenGLES)
         {
@@ -452,13 +456,21 @@ static m64p_error VidExt_VK_GetInstanceExtensions(const char** Extensions[], uin
     l_VulkanExtensions = l_VulkanInstance.supportedExtensions();
     l_VulkanExtensionList.clear();
 
-    // only add surface extensions
+    // add WSI and portability extensions required by the active platform
     for (int i = 0; i < l_VulkanExtensions.size(); i++)
     {
-        if (l_VulkanExtensions[i].name.startsWith("VK_KHR_") &&
-            l_VulkanExtensions[i].name.endsWith("surface"))
+        const QByteArray name = l_VulkanExtensions[i].name;
+        const bool isSurfaceExtension =
+            (name.startsWith("VK_KHR_") && name.endsWith("surface")) ||
+            name == "VK_EXT_metal_surface" ||
+            name == "VK_MVK_macos_surface";
+        const bool isPortabilityExtension =
+            name == "VK_KHR_portability_enumeration" ||
+            name == "VK_KHR_get_physical_device_properties2";
+
+        if (isSurfaceExtension || isPortabilityExtension)
         {
-            l_VulkanExtensionList.append(l_VulkanExtensions[i].name.data());
+            l_VulkanExtensionList.append(name.data());
         }
     }
 

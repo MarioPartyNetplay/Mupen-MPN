@@ -187,7 +187,7 @@ static l_Setting get_setting(SettingsID settingId)
         break;
 
     case SettingsID::Core_GFX_Plugin:
-        setting = {SETTING_SECTION_CORE, "GFX_Plugin", 
+        setting = {SETTING_SECTION_CORE, "GFX_Plugin",
                     std::string("mupen64plus-video-GLideN64") + CORE_LIBRARY_EXT_STR,
                   };
         break;

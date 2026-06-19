@@ -33,9 +33,12 @@ target_include_directories(RMG-Input-GCA PRIVATE
 target_link_libraries(RMG-Input-GCA 
     RMG-Core 
     ${LIBUSB1_LIBRARIES} 
-    Qt6::Gui Qt6::Widgets Qt6::Svg 
-    atomic # needed by GCC due to std::atomic usage
+    Qt6::Gui Qt6::Widgets Qt6::Svg
 )
+
+if (NOT APPLE)
+    target_link_libraries(RMG-Input-GCA atomic)
+endif()
 
 if (APPLE AND PORTABLE_INSTALL)
     set_target_properties(RMG-Input-GCA PROPERTIES

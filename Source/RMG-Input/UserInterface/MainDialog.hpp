@@ -53,6 +53,7 @@ private:
 
     void openInputDevice(InputDevice device);
     void closeInputDevice();
+    void enumerateInputDevices(void);
 
 public:
     MainDialog(QWidget *parent, Thread::SDLThread*, bool, CoreRomHeader, CoreRomSettings);

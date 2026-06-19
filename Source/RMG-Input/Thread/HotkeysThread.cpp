@@ -8,6 +8,7 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "HotkeysThread.hpp"
+#include "main.hpp"
 
 #include <RMG-Core/Emulation.hpp>
 
@@ -53,6 +54,8 @@ void HotkeysThread::run(void)
 
         if (CoreIsEmulationPaused())
         {
+            RefreshSdlInputState();
+
             for (int i = 0; i < 4; i++)
             {
                 this->checkHotkeysFunc(i);

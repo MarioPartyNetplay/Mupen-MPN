@@ -12,6 +12,9 @@
 
 #include <string>
 
+#include <RMG-Core/m64p/api/m64p_types.h>
+
 void PluginDebugMessage(int level, std::string message);
+void RefreshSdlInputState(void);
 
 #endif // MAIN_HPP
