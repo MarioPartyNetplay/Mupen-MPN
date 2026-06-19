@@ -48,10 +48,12 @@ private:
     QString publicIpAddress;
 
     bool m_pendingGameStart = false;
+    bool m_emulationBeginReceived = false;
     bool m_sessionSavesApplied = false;
     bool m_sessionCoreSettingsApplied = false;
     int m_pendingPlayerSlot = 0;
     int m_lastDisplayedBufferDelay = -1;
+    int m_clientSessionPrepWatchdogTimerId = -1;
 
     void syncHostSessionState(void);
     void beginHostBrowserRegistration(uint16_t hostingPort, bool listInBrowser);
@@ -59,7 +61,9 @@ private:
     void fetchPublicIpAddress(void);
     void publishHostSessionIndex(bool started);
     void tryStartPendingGame(void);
+    void tryCompletePendingGameStart(void);
     void requestSynchronizedEmulationStart(void);
+    void ensureClientSessionPrepComplete(void);
     bool getCheats(std::vector<CoreCheat>& cheats, QJsonArray& cheatsArray);
     bool setCheats(const QJsonArray& cheatsArray);
     bool applyCheats(void);
@@ -88,6 +92,7 @@ private slots:
 
 protected:
     void showEvent(QShowEvent* event) override;
+    void timerEvent(QTimerEvent* event) override;
 
   signals:
     void OnPlayGame(QString file, QString address, int port, int player);

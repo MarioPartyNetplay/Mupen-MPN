@@ -134,7 +134,7 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
             this, &NetplayCoordinator::on_socketIO_emulationBeginReceived);
 
     // Initialize lockstep config
-    m_lockstepConfig.numPlayers = 4;
+    m_lockstepConfig.numPlayers = 2;
     m_lockstepConfig.localPlayerSlot = 0;
     m_lockstepConfig.inputDelayFrames = 6;
     m_lockstepConfig.desyncDetectionEnabled = true;
@@ -750,6 +750,10 @@ void NetplayCoordinator::on_socketIO_playersUpdated(const QList<SocketIOClient::
         }
     }
 
+    if (m_state == InLobby || m_state == StartingGame) {
+        setupPeerConnections(players);
+    }
+
     emit playersUpdated(players);
 }
 
@@ -793,6 +797,7 @@ void NetplayCoordinator::on_socketIO_gameStarted(const QString& mode, bool resyn
 
     m_lockstepConfig.localPlayerSlot = m_gameSession.localSlot;
     synchronizeLockstepPlayerCount();
+    setupPeerConnections(getPlayerList());
 
     if (!m_sessionSyncCheats.isEmpty()) {
         emit cheatsUpdated(m_sessionSyncCheats);
@@ -1258,12 +1263,12 @@ void NetplayCoordinator::on_socketIO_coreSettingsSyncReceived(const QJsonObject&
     m_sessionSyncCoreSettings = coreSettings;
 
     CoreNetplaySyncSettings settings;
-    if (!coreSettingsFromJson(coreSettings, settings)) {
-        qWarning() << "NetplayCoordinator: Ignoring invalid core settings sync payload";
-        return;
+    if (coreSettingsFromJson(coreSettings, settings)) {
+        CoreSetNetplaySyncSettings(settings);
+    } else {
+        qWarning() << "NetplayCoordinator: Received core settings sync with invalid payload";
     }
 
-    CoreSetNetplaySyncSettings(settings);
     emit coreSettingsSyncReceived(coreSettings);
 }
 
@@ -1520,6 +1525,10 @@ void NetplayCoordinator::setupPeerConnections(const QList<SocketIOClient::Player
     for (const auto& player : players) {
         if (player.slot == m_gameSession.localSlot) {
             continue; // Skip self
+        }
+
+        if (m_peers.contains(player.slot) && m_peers[player.slot]) {
+            continue;
         }
 
         // Create WebRTC peer for this player
