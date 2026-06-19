@@ -47,7 +47,7 @@ namespace {
 QString formatPlayerListLabel(const QString& name, int pingMs)
 {
     if (pingMs < 0) {
-        return QStringLiteral("%1 (—)").arg(name);
+        return QStringLiteral("%1 (0 ms)").arg(name);
     }
     return QStringLiteral("%1 (%2 ms)").arg(name).arg(pingMs);
 }
