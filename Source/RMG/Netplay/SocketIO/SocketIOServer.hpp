@@ -43,7 +43,7 @@ public:
      * @param port Port to listen on (default 2626)
      * @return true if server started successfully
      */
-    bool startServer(int port = UserInterface::Netplay::kDefaultNetplayHostingPort);
+    bool startServer(int port = UserInterface::Netplay::kDefaultNetplayHostingPort, QString* errorOut = nullptr);
 
     /**
      * @brief Stop the server

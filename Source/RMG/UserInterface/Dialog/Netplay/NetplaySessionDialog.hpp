@@ -15,6 +15,8 @@
 #include <QString>
 #include <memory>
 
+#include <QCloseEvent>
+
 #include <QNetworkAccessManager>
 
 #include <RMG-Core/Cheats.hpp>
@@ -36,6 +38,8 @@ public:
     NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoordinator* coordinator, QString sessionFile);
     ~NetplaySessionDialog(void);
 
+    void shutdownSession();
+
 private:
     QString sessionFile;
     QJsonObject sessionJson;
@@ -47,6 +51,7 @@ private:
     QNetworkAccessManager networkManager;
     QString publicIpAddress;
 
+    bool m_sessionShutdown = false;
     bool m_pendingGameStart = false;
     bool m_emulationBeginReceived = false;
     bool m_sessionSavesApplied = false;
@@ -94,6 +99,7 @@ private slots:
     void reject(void) Q_DECL_OVERRIDE;
 
 protected:
+    void closeEvent(QCloseEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void timerEvent(QTimerEvent* event) override;
 

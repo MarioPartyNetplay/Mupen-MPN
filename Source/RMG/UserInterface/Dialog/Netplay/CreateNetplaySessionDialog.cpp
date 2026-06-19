@@ -328,7 +328,12 @@ void CreateNetplaySessionDialog::createSession(void)
     
     if (!this->coordinator->startHosting(this->hostingPort, playerName, gameName))
     {
-        QtMessageBox::Error(this, "Hosting Error", QString("Failed to start hosting server on port %1").arg(this->hostingPort));
+        QString message = this->coordinator->lastHostingError();
+        if (message.isEmpty())
+        {
+            message = QString("Failed to start hosting server on port %1.").arg(this->hostingPort);
+        }
+        QtMessageBox::Error(this, "Hosting Error", message);
         this->toggleUI(true, this->validate());
         return;
     }

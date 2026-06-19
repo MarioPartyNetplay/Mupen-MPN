@@ -58,6 +58,7 @@
      bool startHosting(int port = kDefaultNetplayHostingPort, const QString& playerName = "Player", const QString& gameName = "Unknown");
      void stopHosting();
      bool isHostingServer() const;
+     QString lastHostingError() const { return m_lastHostingError; }
      SocketIOServer* getHostingServer() { return m_server.get(); }
  
      // Session Lifecycle
@@ -204,6 +205,7 @@
      // Internal components
      std::unique_ptr<SocketIOClient> m_socketIO;
      std::unique_ptr<SocketIOServer> m_server;
+     QString m_lastHostingError;
      std::unique_ptr<RMGCore::LockstepEngine> m_lockstepEngine;
      QMap<int, std::shared_ptr<WebRTCPeer>> m_peers;
      QString m_playerId;

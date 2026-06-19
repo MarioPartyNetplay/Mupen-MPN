@@ -494,8 +494,39 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
 
 NetplaySessionDialog::~NetplaySessionDialog(void)
 {
-    if (this->hostRegistry) {
+    this->shutdownSession();
+}
+
+void NetplaySessionDialog::shutdownSession(void)
+{
+    if (this->m_sessionShutdown)
+    {
+        return;
+    }
+    this->m_sessionShutdown = true;
+
+    if (this->hostRegistry)
+    {
         this->hostRegistry->stopHosting(true);
+        this->hostRegistry.reset();
+    }
+
+    CoreSetEmbeddedNetplayState(false, 0);
+    CoreClearNetplaySyncSettings();
+
+    if (this->coordinator)
+    {
+        if (this->coordinator->isInGame())
+        {
+            this->coordinator->endGame();
+        }
+
+        this->coordinator->leaveRoom();
+
+        if (this->coordinator->isHostingServer())
+        {
+            this->coordinator->stopHosting();
+        }
     }
 }
 
@@ -1283,29 +1314,14 @@ void NetplaySessionDialog::accept()
 
 void NetplaySessionDialog::reject(void)
 {
-    CoreSetEmbeddedNetplayState(false, 0);
-    CoreClearNetplaySyncSettings();
-
-    // Clean up netplay session when cancelling
-    if (this->coordinator)
-    {
-        // If in game, end it first
-        if (this->coordinator->isInGame())
-        {
-            this->coordinator->endGame();
-        }
-        
-        // Leave the room to disconnect other players
-        this->coordinator->leaveRoom();
-        
-        // If this instance was hosting, stop the server
-        if (this->coordinator->isHostingServer())
-        {
-            this->coordinator->stopHosting();
-        }
-    }
-    
+    this->shutdownSession();
     QDialog::reject();
+}
+
+void NetplaySessionDialog::closeEvent(QCloseEvent* event)
+{
+    this->shutdownSession();
+    QDialog::closeEvent(event);
 }
 
 void NetplaySessionDialog::showEvent(QShowEvent* event)

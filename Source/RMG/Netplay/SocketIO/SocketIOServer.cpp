@@ -68,21 +68,40 @@ SocketIOServer::~SocketIOServer()
     stopServer();
 }
 
-bool SocketIOServer::startServer(int port)
+bool SocketIOServer::startServer(int port, QString* errorOut)
 {
     if (m_server && m_server->isListening())
+    {
+        if (errorOut != nullptr)
+        {
+            *errorOut = tr("Signaling server is already listening.");
+        }
         return false;
+    }
 
     m_server = std::make_unique<QWebSocketServer>(
         "RMG-Signaling-Server",
         QWebSocketServer::SslMode::NonSecureMode,
         this);
 
-    const qint64 maxPayloadLimit = 128 * 1024 * 1024; 
-
     if (!m_server->listen(QHostAddress::Any, port))
     {
-        qWarning() << "Signaling server failed to listen on port" << port;
+        const QString listenError = m_server->errorString();
+        qWarning() << "Signaling server failed to listen on port" << port << ":" << listenError;
+
+        if (errorOut != nullptr)
+        {
+            if (listenError.contains(QStringLiteral("in use"), Qt::CaseInsensitive))
+            {
+                *errorOut = tr("Port %1 is already in use. Close other netplay sessions or choose a different port.")
+                                .arg(port);
+            }
+            else
+            {
+                *errorOut = tr("Could not listen on port %1: %2").arg(port).arg(listenError);
+            }
+        }
+
         m_server.reset();
         return false;
     }
