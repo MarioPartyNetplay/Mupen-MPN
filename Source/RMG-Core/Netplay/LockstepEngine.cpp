@@ -256,9 +256,13 @@ bool LockstepEngine::advanceFrame()
     const uint32_t frameNumber = m_currentFrameNumber;
 
     if (m_config.numPlayers > 1) {
-        const bool ready = waitForAllInputs(
-            frameNumber,
-            m_config.stallTimeoutMilliseconds);
+        int timeoutMs = m_config.stallTimeoutMilliseconds;
+        // During ROM boot peers may still be connecting; avoid hanging forever on frame 0.
+        if (timeoutMs == 0 && frameNumber < 300) {
+            timeoutMs = 8000;
+        }
+
+        const bool ready = waitForAllInputs(frameNumber, timeoutMs);
         if (!ready) {
             std::lock_guard<std::recursive_mutex> lock(m_mutex);
             applyTimeoutFallbackUnlocked(frameNumber);

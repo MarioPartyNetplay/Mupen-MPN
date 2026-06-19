@@ -33,6 +33,7 @@
 #include <RMG-Core/Settings.hpp>
 #include <RMG-Core/CachedRomHeaderAndSettings.hpp>
 #include <QTimer>
+#include <QTimerEvent>
 #include <RMG-Core/Netplay.hpp>
 #include <RMG-Core/Rom.hpp>
 
@@ -325,7 +326,10 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     connect(this->coordinator, &Netplay::NetplayCoordinator::disconnected, this, &NetplaySessionDialog::on_netplay_disconnected);
     connect(this->coordinator, &Netplay::NetplayCoordinator::stateChanged, this, &NetplaySessionDialog::on_coordinator_stateChanged);
     connect(this->coordinator, &Netplay::NetplayCoordinator::emulationBeginReceived,
-            this, &NetplaySessionDialog::tryStartPendingGame);
+            this, [this]() {
+        this->m_emulationBeginReceived = true;
+        this->tryCompletePendingGameStart();
+    });
     const int initialBufferDelay = sessionJson.value("buffer_delay").toInt(this->coordinator->getInputDelayFrames());
     this->bufferDelaySpinBox->setValue(initialBufferDelay);
     this->coordinator->setInputDelayFrames(initialBufferDelay);
@@ -809,6 +813,31 @@ void NetplaySessionDialog::on_coordinator_playersUpdated(const QStringList& play
     }
 }
 
+void NetplaySessionDialog::ensureClientSessionPrepComplete(void)
+{
+    if (this->isLocalSessionHost()) {
+        return;
+    }
+
+    this->m_sessionSavesApplied = true;
+    this->m_sessionCoreSettingsApplied = true;
+}
+
+void NetplaySessionDialog::tryCompletePendingGameStart(void)
+{
+    if (!this->m_pendingGameStart || !this->m_emulationBeginReceived) {
+        return;
+    }
+
+    if (!this->isLocalSessionHost()) {
+        if (!this->m_sessionSavesApplied || !this->m_sessionCoreSettingsApplied) {
+            return;
+        }
+    }
+
+    this->tryStartPendingGame();
+}
+
 void NetplaySessionDialog::requestSynchronizedEmulationStart(void)
 {
     if (!this->m_pendingGameStart || !this->coordinator) {
@@ -828,7 +857,7 @@ void NetplaySessionDialog::requestSynchronizedEmulationStart(void)
 
 void NetplaySessionDialog::tryStartPendingGame(void)
 {
-    if (!this->m_pendingGameStart) {
+    if (!this->m_pendingGameStart || !this->m_emulationBeginReceived) {
         return;
     }
 
@@ -882,10 +911,20 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
 
     this->m_pendingGameStart = true;
     this->m_pendingPlayerSlot = selectedSlot;
+    this->m_emulationBeginReceived = false;
+
+    if (this->clientSessionPrepWatchdogTimerId != -1) {
+        this->killTimer(this->clientSessionPrepWatchdogTimerId);
+        this->clientSessionPrepWatchdogTimerId = -1;
+    }
 
     if (this->isLocalSessionHost()) {
         this->m_sessionSavesApplied = true;
         this->m_sessionCoreSettingsApplied = true;
+    } else {
+        this->m_sessionSavesApplied = false;
+        this->m_sessionCoreSettingsApplied = false;
+        this->clientSessionPrepWatchdogTimerId = this->startTimer(3000);
     }
 
     // Give every peer time to receive game-started and apply session state before
@@ -894,28 +933,6 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
     constexpr int kNetplayEmulationStartDelayMs = 250;
     QTimer::singleShot(kNetplayEmulationStartDelayMs, this, [this]() {
         if (!this->m_pendingGameStart) {
-            return;
-        }
-
-        if (!this->isLocalSessionHost() && !this->m_sessionSavesApplied) {
-            QTimer::singleShot(500, this, [this]() {
-                if (!this->m_pendingGameStart) {
-                    return;
-                }
-                this->m_sessionSavesApplied = true;
-                this->requestSynchronizedEmulationStart();
-            });
-            return;
-        }
-
-        if (!this->isLocalSessionHost() && !this->m_sessionCoreSettingsApplied) {
-            QTimer::singleShot(500, this, [this]() {
-                if (!this->m_pendingGameStart) {
-                    return;
-                }
-                this->m_sessionCoreSettingsApplied = true;
-                this->requestSynchronizedEmulationStart();
-            });
             return;
         }
 
@@ -939,6 +956,9 @@ void NetplaySessionDialog::on_coordinator_cheatsUpdated(const QJsonArray& cheats
 void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& saveFiles)
 {
     if (saveFiles.isEmpty()) {
+        this->m_sessionSavesApplied = true;
+        this->requestSynchronizedEmulationStart();
+        this->tryCompletePendingGameStart();
         return;
     }
 
@@ -995,6 +1015,7 @@ void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& sav
 
     this->m_sessionSavesApplied = true;
     this->requestSynchronizedEmulationStart();
+    this->tryCompletePendingGameStart();
 }
 
 void NetplaySessionDialog::on_coordinator_coreSettingsSyncReceived(const QJsonObject& coreSettings)
@@ -1002,6 +1023,7 @@ void NetplaySessionDialog::on_coordinator_coreSettingsSyncReceived(const QJsonOb
     Q_UNUSED(coreSettings);
     this->m_sessionCoreSettingsApplied = true;
     this->requestSynchronizedEmulationStart();
+    this->tryCompletePendingGameStart();
 }
 
 void NetplaySessionDialog::syncHostSessionState(void)
@@ -1020,10 +1042,7 @@ void NetplaySessionDialog::syncHostSessionState(void)
     this->coordinator->sendSaveSync(buildSaveSyncFiles(this->romFile));
 
     const QJsonObject coreSettings = buildCoreSettingsSyncPayload(this->romFile);
-    if (!coreSettings.isEmpty())
-    {
-        this->coordinator->sendCoreSettingsSync(coreSettings);
-    }
+    this->coordinator->sendCoreSettingsSync(coreSettings);
 }
 
 void NetplaySessionDialog::publishHostSessionIndex(bool started)
@@ -1260,6 +1279,25 @@ void NetplaySessionDialog::showEvent(QShowEvent* event)
     if (this->isLocalSessionHost()) {
         this->updateCheatsTreeWidget();
     }
+}
+
+void NetplaySessionDialog::timerEvent(QTimerEvent* event)
+{
+    if (event->timerId() == this->clientSessionPrepWatchdogTimerId) {
+        this->killTimer(this->clientSessionPrepWatchdogTimerId);
+        this->clientSessionPrepWatchdogTimerId = -1;
+
+        if (!this->m_pendingGameStart || this->isLocalSessionHost()) {
+            return;
+        }
+
+        this->ensureClientSessionPrepComplete();
+        this->requestSynchronizedEmulationStart();
+        this->tryCompletePendingGameStart();
+        return;
+    }
+
+    QDialog::timerEvent(event);
 }
 
 
