@@ -913,9 +913,9 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
     this->m_pendingPlayerSlot = selectedSlot;
     this->m_emulationBeginReceived = false;
 
-    if (this->clientSessionPrepWatchdogTimerId != -1) {
-        this->killTimer(this->clientSessionPrepWatchdogTimerId);
-        this->clientSessionPrepWatchdogTimerId = -1;
+    if (this->m_clientSessionPrepWatchdogTimerId != -1) {
+        this->killTimer(this->m_clientSessionPrepWatchdogTimerId);
+        this->m_clientSessionPrepWatchdogTimerId = -1;
     }
 
     if (this->isLocalSessionHost()) {
@@ -924,7 +924,7 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
     } else {
         this->m_sessionSavesApplied = false;
         this->m_sessionCoreSettingsApplied = false;
-        this->clientSessionPrepWatchdogTimerId = this->startTimer(3000);
+        this->m_clientSessionPrepWatchdogTimerId = this->startTimer(3000);
     }
 
     // Give every peer time to receive game-started and apply session state before
@@ -1283,9 +1283,9 @@ void NetplaySessionDialog::showEvent(QShowEvent* event)
 
 void NetplaySessionDialog::timerEvent(QTimerEvent* event)
 {
-    if (event->timerId() == this->clientSessionPrepWatchdogTimerId) {
-        this->killTimer(this->clientSessionPrepWatchdogTimerId);
-        this->clientSessionPrepWatchdogTimerId = -1;
+    if (event->timerId() == this->m_clientSessionPrepWatchdogTimerId) {
+        this->killTimer(this->m_clientSessionPrepWatchdogTimerId);
+        this->m_clientSessionPrepWatchdogTimerId = -1;
 
         if (!this->m_pendingGameStart || this->isLocalSessionHost()) {
             return;
