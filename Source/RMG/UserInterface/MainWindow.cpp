@@ -2161,13 +2161,9 @@ void MainWindow::on_Emulation_Finished(bool ret, QString error)
     }
 
 #ifdef NETPLAY
-    if (this->netplaySessionDialog != nullptr)
-    {
-        this->netplaySessionDialog->deleteLater();
-        this->netplaySessionDialog = nullptr;
-    }
-
-    if (this->netplayCoordinator != nullptr && this->netplayCoordinator->isInGame())
+    if (this->netplayCoordinator != nullptr &&
+        (this->netplayCoordinator->isInGame() ||
+         this->netplayCoordinator->getCurrentState() == Netplay::NetplayCoordinator::StartingGame))
     {
         this->netplayCoordinator->resetEmulationSync();
     }
