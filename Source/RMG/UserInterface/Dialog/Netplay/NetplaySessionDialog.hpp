@@ -55,11 +55,14 @@ private:
     int m_lastDisplayedBufferDelay = -1;
     int m_clientSessionPrepWatchdogTimerId = -1;
 
+    QList<Netplay::SocketIOClient::PlayerInfo> m_cachedPlayers;
+
     void syncHostSessionState(void);
     void beginHostBrowserRegistration(uint16_t hostingPort, bool listInBrowser);
     void updateConnectInfoDisplay(void);
     void fetchPublicIpAddress(void);
     void publishHostSessionIndex(bool started);
+    void refreshPlayersListWidget(void);
     void tryStartPendingGame(void);
     void tryCompletePendingGameStart(void);
     void requestSynchronizedEmulationStart(void);
@@ -76,7 +79,7 @@ private slots:
     void on_netplay_connected();
     void on_netplay_disconnected();
     void on_coordinator_stateChanged(Netplay::NetplayCoordinator::State state);
-    void on_coordinator_playersUpdated(const QStringList& playerNames);
+    void on_coordinator_playersUpdated(const QList<Netplay::SocketIOClient::PlayerInfo>& players);
     void on_coordinator_gameStarted(int playerSlot);
     void on_coordinator_cheatsUpdated(const QJsonArray& cheats);
     void on_coordinator_saveSyncReceived(const QJsonArray& saveFiles);

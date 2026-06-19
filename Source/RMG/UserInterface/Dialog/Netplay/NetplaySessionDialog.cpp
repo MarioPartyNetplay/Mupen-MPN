@@ -37,10 +37,20 @@
 #include <RMG-Core/Netplay.hpp>
 #include <RMG-Core/Rom.hpp>
 
+#include <algorithm>
+
 using namespace UserInterface::Dialog;
 using namespace Utilities;
 
 namespace {
+
+QString formatPlayerListLabel(const QString& name, int pingMs)
+{
+    if (pingMs < 0) {
+        return QStringLiteral("%1 (—)").arg(name);
+    }
+    return QStringLiteral("%1 (%2 ms)").arg(name).arg(pingMs);
+}
 
 const QStringList& netplaySaveExtensions()
 {
@@ -232,13 +242,11 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     // Connect coordinator signals
     connect(this->coordinator, &Netplay::NetplayCoordinator::playersUpdated, this,
             [this](const QList<Netplay::SocketIOClient::PlayerInfo>& players) {
-        QStringList names;
-        for (const auto& player : players) {
-            names << player.name;
-        }
-        this->on_coordinator_playersUpdated(names);
+        this->on_coordinator_playersUpdated(players);
         this->publishHostSessionIndex(this->coordinator->isInGame());
     });
+    connect(this->coordinator, &Netplay::NetplayCoordinator::playerPingsUpdated,
+            this, &NetplaySessionDialog::refreshPlayersListWidget);
     connect(this->coordinator, &Netplay::NetplayCoordinator::gameStarted, this,
             [this](const Netplay::NetplayCoordinator::GameSession& session) {
         this->on_coordinator_gameStarted(session.localSlot);
@@ -466,21 +474,15 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     QList<Netplay::SocketIOClient::PlayerInfo> currentPlayers = this->coordinator->getPlayerList();
     if (!currentPlayers.isEmpty())
     {
-        QStringList names;
-        for (const auto& player : currentPlayers)
-        {
-            if (!player.name.isEmpty())
-                names << player.name;
-        }
-        if (!names.isEmpty())
-            this->on_coordinator_playersUpdated(names);
+        this->on_coordinator_playersUpdated(currentPlayers);
     }
     else
     {
-        QString hostName = sessionJson.value("player_name").toString("Host");
-        QStringList initialPlayers;
-        initialPlayers << hostName;
-        this->on_coordinator_playersUpdated(initialPlayers);
+        Netplay::SocketIOClient::PlayerInfo hostPlayer;
+        hostPlayer.name = sessionJson.value("player_name").toString("Host");
+        hostPlayer.slot = 0;
+        hostPlayer.isReady = true;
+        this->on_coordinator_playersUpdated({hostPlayer});
     }
 
     qDebug() << "Netplay Session created:" << sessionJson.value("player_name").toString("Host")
@@ -771,8 +773,43 @@ void NetplaySessionDialog::updateCheatsTreeWidget(void)
     CheatsCommon::AddCheatsToTreeWidget(true, cheatsArray, this->romFile, cheats, this->cheatsTreeWidget, true);
 }
 
-void NetplaySessionDialog::on_coordinator_playersUpdated(const QStringList& playerNames)
+void NetplaySessionDialog::on_coordinator_playersUpdated(
+    const QList<Netplay::SocketIOClient::PlayerInfo>& players)
 {
+    this->m_cachedPlayers = players;
+    this->refreshPlayersListWidget();
+}
+
+void NetplaySessionDialog::refreshPlayersListWidget(void)
+{
+    QList<Netplay::SocketIOClient::PlayerInfo> players = this->m_cachedPlayers;
+    if (players.isEmpty() && this->coordinator) {
+        players = this->coordinator->getPlayerList();
+    }
+
+    if (this->isLocalSessionHost()) {
+        bool hasHost = false;
+        for (const auto& player : players) {
+            if (player.slot == 0) {
+                hasHost = true;
+                break;
+            }
+        }
+        if (!hasHost) {
+            Netplay::SocketIOClient::PlayerInfo hostPlayer;
+            hostPlayer.name = this->sessionJson.value("player_name").toString("Host");
+            hostPlayer.slot = 0;
+            hostPlayer.isReady = true;
+            players.prepend(hostPlayer);
+        }
+    }
+
+    std::sort(players.begin(), players.end(),
+              [](const Netplay::SocketIOClient::PlayerInfo& left,
+                 const Netplay::SocketIOClient::PlayerInfo& right) {
+                  return left.slot < right.slot;
+              });
+
     this->listWidget->clear();
 
     const bool isHost = this->isLocalSessionHost();
@@ -784,20 +821,20 @@ void NetplaySessionDialog::on_coordinator_playersUpdated(const QStringList& play
     if (cheatsButton && isHost) {
         cheatsButton->setEnabled(false);
     }
-    
-    for (int i = 0; i < playerNames.size() && i < 4; i++)
-    {
-        const QString& name = playerNames.at(i);
 
-        // add read-only item to UI
+    for (const auto& player : players) {
+        if (player.slot < 0 || player.slot >= 4 || player.name.isEmpty()) {
+            continue;
+        }
+
+        const int pingMs =
+            this->coordinator ? this->coordinator->getPlayerPing(player.slot) : -1;
         QListWidgetItem* item = new QListWidgetItem();
-        item->setText(name);
+        item->setText(formatPlayerListLabel(player.name, pingMs));
         item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
         this->listWidget->addItem(item);
 
-        // Enable start button only when we're the host (first player) and everyone is ready
-        if (i == 0 && !name.isEmpty() && isHost)
-        {
+        if (player.slot == 0 && isHost) {
             if (startButton) {
                 startButton->setEnabled(true);
             }
@@ -807,8 +844,7 @@ void NetplaySessionDialog::on_coordinator_playersUpdated(const QStringList& play
         }
     }
 
-    if (isHost && playerNames.size() > 1)
-    {
+    if (isHost && players.size() > 1) {
         this->syncHostSessionState();
     }
 }

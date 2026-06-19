@@ -58,6 +58,9 @@ void SocketIOServer::rebuildLobbySlots(SignalingRoom& room)
 SocketIOServer::SocketIOServer(QObject* parent)
     : QObject(parent)
 {
+    m_pingTimer = new QTimer(this);
+    m_pingTimer->setInterval(10000);
+    connect(m_pingTimer, &QTimer::timeout, this, &SocketIOServer::onPingTimer);
 }
 
 SocketIOServer::~SocketIOServer()
@@ -87,6 +90,8 @@ bool SocketIOServer::startServer(int port)
     connect(m_server.get(), &QWebSocketServer::newConnection,
             this, &SocketIOServer::onNewConnection);
 
+    m_pingTimer->start();
+
     qInfo() << "Signaling server started on port" << port;
     return true;
 }
@@ -105,6 +110,10 @@ void SocketIOServer::stopServer()
     m_clients.clear();
     m_clientsById.clear();
     m_rooms.clear();
+
+    if (m_pingTimer) {
+        m_pingTimer->stop();
+    }
 
     m_server->close();
     m_server.reset();
@@ -673,6 +682,12 @@ void SocketIOServer::onNewConnection()
                 this, &SocketIOServer::onTextMessageReceived);
         connect(socket, &QWebSocket::disconnected,
                 this, &SocketIOServer::onClientDisconnected);
+        connect(socket, &QWebSocket::pong, this,
+                [client](quint64 elapsedTime, const QByteArray&) {
+            if (client) {
+                client->lastPingMs = static_cast<int>(elapsedTime);
+            }
+        });
 
         // Socket.IO connect message (engine.io type 0)
         QJsonArray connectMsg;
@@ -1313,6 +1328,54 @@ void SocketIOServer::broadcastRoomUpdate(const QString& roomId)
 
     emit roomPlayersUpdated(roomId, playersArray);
     emitToRoom(roomId, "users-updated", update);
+}
+
+void SocketIOServer::onPingTimer()
+{
+    for (auto it = m_clients.constBegin(); it != m_clients.constEnd(); ++it) {
+        QWebSocket* socket = it.key();
+        if (socket && socket->state() == QAbstractSocket::ConnectedState) {
+            socket->ping();
+        }
+    }
+
+    QTimer::singleShot(750, this, [this]() {
+        for (const QString& roomId : m_rooms.keys()) {
+            broadcastRoomPlayerPings(roomId);
+        }
+    });
+}
+
+void SocketIOServer::broadcastRoomPlayerPings(const QString& roomId)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room) {
+        return;
+    }
+
+    QJsonArray pings;
+    {
+        QJsonObject hostPing;
+        hostPing.insert(QStringLiteral("slot"), 0);
+        hostPing.insert(QStringLiteral("ms"), 0);
+        pings.append(hostPing);
+    }
+
+    for (auto* player : room->lobbyOrder) {
+        if (!player || player->slotIndex <= 0) {
+            continue;
+        }
+
+        QJsonObject entry;
+        entry.insert(QStringLiteral("slot"), player->slotIndex);
+        entry.insert(QStringLiteral("ms"), player->lastPingMs);
+        pings.append(entry);
+    }
+
+    QJsonObject payload;
+    payload.insert(QStringLiteral("pings"), pings);
+    emitToRoom(roomId, QStringLiteral("player-pings"), payload);
+    emit playerPingsUpdated(roomId, pings);
 }
 
 void SocketIOServer::emitToClient(const QString& clientId, const QString& eventName, const QJsonObject& data)
