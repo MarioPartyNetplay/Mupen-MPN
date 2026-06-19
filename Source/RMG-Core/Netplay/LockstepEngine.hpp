@@ -37,7 +37,7 @@ public:
         int inputDelayFrames = 1;
         bool desyncDetectionEnabled = true;
         bool resyncEnabled = false;
-        int resyncCheckIntervalFrames = 60;
+        int resyncCheckIntervalFrames = 180;
         int stallTimeoutMilliseconds = 0;
     };
 
@@ -138,6 +138,7 @@ private:
     std::map<uint32_t, uint32_t> m_localFrameSyncHashes;
     std::map<int, std::map<uint32_t, uint32_t>> m_pendingPeerFrameSyncHashes;
     std::unordered_set<uint64_t> m_reportedHashMismatches;
+    std::map<int, int> m_peerHashMismatchStreak;
     std::vector<std::shared_ptr<UserInterface::Netplay::WebRTCDataChannel>> m_dataChannels;
     Callbacks m_callbacks;
 };
