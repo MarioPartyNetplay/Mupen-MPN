@@ -17,7 +17,7 @@
 
 namespace UserInterface::Netplay {
 
-/** Fetches and caches short-lived TURN credentials from the netplay index server. */
+/** Fetches and caches Cloudflare ICE servers (STUN + TURN) from the netplay index server. */
 class TurnCredentialClient {
 public:
     static TurnCredentialClient& instance();
@@ -27,6 +27,7 @@ public:
     bool connectionReversalEnabled() const;
     void prefetch();
     bool ensureCredentials(int timeoutMs = 10000);
+    std::vector<rtc::IceServer> stunServers() const;
     std::vector<rtc::IceServer> turnServers() const;
 
 private:
@@ -34,10 +35,13 @@ private:
 
     bool credentialsAreFreshLocked() const;
     bool fetchCredentialsBlocking(int timeoutMs);
-    bool fetchFromBroker(const QUrl& brokerUrl, int timeoutMs, std::vector<rtc::IceServer>* serversOut, QString* errorOut);
-    bool parseIceServersResponse(const QByteArray& payload, std::vector<rtc::IceServer>* serversOut, QString* errorOut);
+    bool fetchFromBroker(const QUrl& brokerUrl, int timeoutMs, std::vector<rtc::IceServer>* stunOut,
+                         std::vector<rtc::IceServer>* turnOut, QString* errorOut);
+    bool parseIceServersResponse(const QByteArray& payload, std::vector<rtc::IceServer>* stunOut,
+                                 std::vector<rtc::IceServer>* turnOut, QString* errorOut);
 
     mutable QMutex m_mutex;
+    std::vector<rtc::IceServer> m_stunServers;
     std::vector<rtc::IceServer> m_turnServers;
     QDateTime m_expiresAt;
     bool m_fetchInProgress = false;
@@ -50,9 +54,8 @@ inline void applyNetplayConnectionSettings(NetplayConnectionMode mode, bool useU
 {
     Q_UNUSED(useUpnp);
     TurnCredentialClient& client = TurnCredentialClient::instance();
-    const bool useTraversalServer = mode == NetplayConnectionMode::TraversalServer;
-    client.setConnectionReversalEnabled(useTraversalServer);
-    if (useTraversalServer) {
+    client.setConnectionReversalEnabled(mode == NetplayConnectionMode::TraversalServer);
+    if (turnCredentialsAvailable()) {
         client.prefetch();
     }
 }

@@ -146,9 +146,22 @@ bool shouldSkipIceUrl(const ParsedIceUrl& iceUrl)
     return false;
 }
 
-std::vector<rtc::IceServer> parseTurnEntries(const QJsonArray& iceServers)
+struct ParsedIceServers {
+    std::vector<rtc::IceServer> stun;
+    std::vector<rtc::IceServer> turn;
+};
+
+rtc::IceServer makeStunServer(const ParsedIceUrl& iceUrl)
 {
-    std::vector<rtc::IceServer> servers;
+    const std::string endpoint = iceUrl.port > 0
+        ? QStringLiteral("%1:%2").arg(iceUrl.host).arg(iceUrl.port).toStdString()
+        : iceUrl.host.toStdString();
+    return rtc::IceServer(endpoint);
+}
+
+ParsedIceServers parseIceEntries(const QJsonArray& iceServers)
+{
+    ParsedIceServers servers;
 
     for (const QJsonValue& value : iceServers) {
         const QJsonObject entry = value.toObject();
@@ -163,6 +176,7 @@ std::vector<rtc::IceServer> parseTurnEntries(const QJsonArray& iceServers)
             }
 
             if (iceUrl.scheme == QLatin1String("stun") || iceUrl.scheme == QLatin1String("stuns")) {
+                servers.stun.push_back(makeStunServer(iceUrl));
                 continue;
             }
 
@@ -171,7 +185,7 @@ std::vector<rtc::IceServer> parseTurnEntries(const QJsonArray& iceServers)
                     continue;
                 }
 
-                servers.emplace_back(
+                servers.turn.emplace_back(
                     iceUrl.host.toStdString(),
                     iceUrl.port,
                     username.toStdString(),
@@ -206,10 +220,6 @@ void TurnCredentialClient::setConnectionReversalEnabled(bool enabled)
 {
     QMutexLocker locker(&m_mutex);
     m_connectionReversalEnabled = enabled;
-    if (!enabled) {
-        m_turnServers.clear();
-        m_expiresAt = QDateTime();
-    }
 }
 
 bool TurnCredentialClient::connectionReversalEnabled() const
@@ -220,7 +230,7 @@ bool TurnCredentialClient::connectionReversalEnabled() const
 
 void TurnCredentialClient::prefetch()
 {
-    if (!isConfigured()) {
+    if (!turnCredentialsAvailable()) {
         return;
     }
 
@@ -236,7 +246,7 @@ void TurnCredentialClient::prefetch()
 
 bool TurnCredentialClient::ensureCredentials(int timeoutMs)
 {
-    if (!isConfigured()) {
+    if (!turnCredentialsAvailable()) {
         return true;
     }
 
@@ -250,6 +260,12 @@ bool TurnCredentialClient::ensureCredentials(int timeoutMs)
     return fetchCredentialsBlocking(timeoutMs);
 }
 
+std::vector<rtc::IceServer> TurnCredentialClient::stunServers() const
+{
+    QMutexLocker locker(&m_mutex);
+    return m_stunServers;
+}
+
 std::vector<rtc::IceServer> TurnCredentialClient::turnServers() const
 {
     QMutexLocker locker(&m_mutex);
@@ -258,7 +274,7 @@ std::vector<rtc::IceServer> TurnCredentialClient::turnServers() const
 
 bool TurnCredentialClient::credentialsAreFreshLocked() const
 {
-    return !m_turnServers.empty() && m_expiresAt.isValid() &&
+    return !m_stunServers.empty() && m_expiresAt.isValid() &&
            m_expiresAt > QDateTime::currentDateTimeUtc().addSecs(kCredentialRefreshSkewSeconds);
 }
 
@@ -272,15 +288,17 @@ bool TurnCredentialClient::fetchCredentialsBlocking(int timeoutMs)
     }
 
     QString errorMessage;
-    std::vector<rtc::IceServer> fetchedServers;
+    std::vector<rtc::IceServer> fetchedStunServers;
+    std::vector<rtc::IceServer> fetchedTurnServers;
 
-    if (fetchFromBroker(brokerUrl, timeoutMs, &fetchedServers, &errorMessage)) {
+    if (fetchFromBroker(brokerUrl, timeoutMs, &fetchedStunServers, &fetchedTurnServers, &errorMessage)) {
         QMutexLocker locker(&m_mutex);
         m_fetchInProgress = false;
-        m_turnServers = std::move(fetchedServers);
+        m_stunServers = std::move(fetchedStunServers);
+        m_turnServers = std::move(fetchedTurnServers);
         m_expiresAt = QDateTime::currentDateTimeUtc().addSecs(kDefaultTurnCredentialCacheTtlSeconds);
-        qInfo() << "TurnCredentialClient: Loaded" << m_turnServers.size()
-                << "TURN ICE servers from broker";
+        qInfo() << "TurnCredentialClient: Loaded" << m_stunServers.size() << "STUN and"
+                << m_turnServers.size() << "TURN ICE servers from broker";
         return true;
     }
 
@@ -290,16 +308,17 @@ bool TurnCredentialClient::fetchCredentialsBlocking(int timeoutMs)
 
     QMutexLocker locker(&m_mutex);
     m_fetchInProgress = false;
-    return !m_turnServers.empty();
+    return !m_stunServers.empty();
 }
 
 bool TurnCredentialClient::fetchFromBroker(
     const QUrl& brokerUrl,
     int timeoutMs,
-    std::vector<rtc::IceServer>* serversOut,
+    std::vector<rtc::IceServer>* stunOut,
+    std::vector<rtc::IceServer>* turnOut,
     QString* errorOut)
 {
-    if (!serversOut) {
+    if (!stunOut || !turnOut) {
         return false;
     }
 
@@ -330,7 +349,7 @@ bool TurnCredentialClient::fetchFromBroker(
     } else {
         const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (statusCode >= 200 && statusCode < 300) {
-            success = parseIceServersResponse(reply->readAll(), serversOut, &localError);
+            success = parseIceServersResponse(reply->readAll(), stunOut, turnOut, &localError);
         } else {
             localError = QStringLiteral("TURN broker returned HTTP %1").arg(statusCode);
         }
@@ -346,10 +365,11 @@ bool TurnCredentialClient::fetchFromBroker(
 
 bool TurnCredentialClient::parseIceServersResponse(
     const QByteArray& payload,
-    std::vector<rtc::IceServer>* serversOut,
+    std::vector<rtc::IceServer>* stunOut,
+    std::vector<rtc::IceServer>* turnOut,
     QString* errorOut)
 {
-    if (!serversOut) {
+    if (!stunOut || !turnOut) {
         return false;
     }
 
@@ -370,15 +390,16 @@ bool TurnCredentialClient::parseIceServersResponse(
         return false;
     }
 
-    const std::vector<rtc::IceServer> parsedServers = parseTurnEntries(iceServers);
-    if (parsedServers.empty()) {
+    const ParsedIceServers parsedServers = parseIceEntries(iceServers);
+    if (parsedServers.stun.empty()) {
         if (errorOut) {
-            *errorOut = QStringLiteral("TURN broker response did not include usable TURN URLs");
+            *errorOut = QStringLiteral("TURN broker response did not include usable STUN URLs");
         }
         return false;
     }
 
-    *serversOut = parsedServers;
+    *stunOut = parsedServers.stun;
+    *turnOut = parsedServers.turn;
     return true;
 }
 
@@ -388,19 +409,26 @@ std::vector<rtc::IceServer> buildIceServers()
 {
     std::vector<rtc::IceServer> servers;
 
-    const QString stunHost = stunServerHost().trimmed();
-    const quint16 stunPort = stunServerPort();
-    if (!stunHost.isEmpty()) {
-        const std::string endpoint = stunPort > 0
-            ? QStringLiteral("%1:%2").arg(stunHost).arg(stunPort).toStdString()
-            : stunHost.toStdString();
-        servers.emplace_back(endpoint);
+    TurnCredentialClient& iceClient = TurnCredentialClient::instance();
+    if (turnCredentialsAvailable()) {
+        iceClient.ensureCredentials();
+        const std::vector<rtc::IceServer> brokerStunServers = iceClient.stunServers();
+        servers.insert(servers.end(), brokerStunServers.begin(), brokerStunServers.end());
     }
 
-    TurnCredentialClient& turnClient = TurnCredentialClient::instance();
-    if (turnClient.isConfigured()) {
-        turnClient.ensureCredentials();
-        const std::vector<rtc::IceServer> turnServers = turnClient.turnServers();
+    if (servers.empty()) {
+        const QString stunHost = stunServerHost().trimmed();
+        const quint16 stunPort = stunServerPort();
+        if (!stunHost.isEmpty()) {
+            const std::string endpoint = stunPort > 0
+                ? QStringLiteral("%1:%2").arg(stunHost).arg(stunPort).toStdString()
+                : stunHost.toStdString();
+            servers.emplace_back(endpoint);
+        }
+    }
+
+    if (iceClient.isConfigured()) {
+        const std::vector<rtc::IceServer> turnServers = iceClient.turnServers();
         servers.insert(servers.end(), turnServers.begin(), turnServers.end());
     }
 
