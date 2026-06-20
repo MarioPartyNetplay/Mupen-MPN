@@ -16,8 +16,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 1
+
+      - name: Initialize submodules
+        run: |
+          git submodule update --init --depth 1 Source/3rdParty/libdatachannel
+          git -C Source/3rdParty/libdatachannel submodule update --init --depth 1 --recursive
 
       - name: Setup Flatpak
         run: |
@@ -79,7 +83,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          submodules: recursive
+
+      - name: Initialize submodules
+        run: |
+          git submodule update --init --depth 1 Source/3rdParty/libdatachannel
+          git -C Source/3rdParty/libdatachannel submodule update --init --depth 1 --recursive
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -137,7 +145,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          submodules: recursive
+
+      - name: Initialize submodules
+        run: |
+          git submodule update --init --depth 1 \
+            Source/3rdParty/libdatachannel \
+            Source/3rdParty/angle \
+            Source/3rdParty/angle-cmake
+          git -C Source/3rdParty/libdatachannel submodule update --init --depth 1 --recursive
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
