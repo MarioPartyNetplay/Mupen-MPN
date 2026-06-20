@@ -48,6 +48,7 @@ public:
     bool relayHostedWebRTCSignal(const QString& roomId, const QString& fromPlayerId, const QJsonObject& signal);
 
     bool isRunning() const { return m_enetHost != nullptr; }
+    ENetHost* enetHost() const { return m_enetHost; }
     int getPort() const;
     int getConnectedClientCount() const { return m_clients.size(); }
 

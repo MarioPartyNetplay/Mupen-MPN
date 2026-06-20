@@ -143,6 +143,7 @@ void SocketIOServer::stopServer()
         }
     }
 
+    clearEnetSideChannel(m_enetHost);
     enet_host_destroy(m_enetHost);
     m_enetHost = nullptr;
     m_listenPort = 0;

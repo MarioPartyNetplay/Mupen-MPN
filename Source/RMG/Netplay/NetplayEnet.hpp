@@ -44,6 +44,13 @@ bool parseSignalingPacket(const QByteArray& data, QString* eventNameOut, QJsonAr
 
 /** Send repeated UDP datagrams to punch through cone NAT (Dolphin-style). */
 void sendUdpPunchBursts(QUdpSocket* socket, const QHostAddress& target, quint16 port, int bursts = 10);
+void sendEnetPunchBursts(ENetHost* host, const QHostAddress& target, quint16 port, int bursts = 10);
+
+bool sendEnetDatagram(ENetHost* host, const QHostAddress& target, quint16 port, const QByteArray& payload);
+
+using EnetRegistryDatagramHandler = void (*)(const QByteArray& datagram, void* userData);
+void setEnetRegistryDatagramHandler(ENetHost* host, EnetRegistryDatagramHandler handler, void* userData);
+void clearEnetSideChannel(ENetHost* host);
 
 } // namespace UserInterface::Netplay
 

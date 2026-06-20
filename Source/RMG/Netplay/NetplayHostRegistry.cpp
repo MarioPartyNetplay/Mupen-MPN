@@ -57,6 +57,38 @@ QString NetplayHostRegistry::hostCode() const
     return m_hostCode;
 }
 
+void NetplayHostRegistry::attachEnetSignalingHost(ENetHost* host)
+{
+    detachEnetSignalingHost();
+    m_enetHost = host;
+    if (!m_enetHost) {
+        return;
+    }
+
+    setEnetRegistryDatagramHandler(m_enetHost, &NetplayHostRegistry::enetRegistryDatagramHandler, this);
+    qInfo() << "NetplayHostRegistry: using ENet signaling socket on port" << m_enetHost->address.port;
+}
+
+void NetplayHostRegistry::detachEnetSignalingHost()
+{
+    if (!m_enetHost) {
+        return;
+    }
+
+    setEnetRegistryDatagramHandler(m_enetHost, nullptr, nullptr);
+    m_enetHost = nullptr;
+}
+
+void NetplayHostRegistry::enetRegistryDatagramHandler(const QByteArray& datagram, void* userData)
+{
+    auto* registry = static_cast<NetplayHostRegistry*>(userData);
+    if (!registry) {
+        return;
+    }
+
+    registry->handleServerMessage(datagram);
+}
+
 void NetplayHostRegistry::startHosting(uint16_t signalingPort, bool listInBrowser)
 {
     if (m_isHosting && !m_hostCode.isEmpty()) {
@@ -115,6 +147,7 @@ void NetplayHostRegistry::stopHosting(bool unregister)
         sendToServer(QByteArray(kNetplayRegistryProtocol) + "|UNREGISTER|" + m_hostCode.toUtf8());
     }
 
+    detachEnetSignalingHost();
     resetHostState();
     m_isHosting = false;
     m_housekeepingTimer.stop();
@@ -122,11 +155,14 @@ void NetplayHostRegistry::stopHosting(bool unregister)
 
 bool NetplayHostRegistry::ensureSocketBound(QString* errorOut)
 {
+    if (m_enetHost != nullptr) {
+        return true;
+    }
+
     if (m_socket.state() == QAbstractSocket::BoundState) {
         return true;
     }
 
-    // Ephemeral port only — must not share the ENet signaling port (Dolphin uses one socket).
     if (!m_socket.bind(QHostAddress::AnyIPv4, 0, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
         if (errorOut) {
             *errorOut = QString("Failed to bind browse registry socket: %1").arg(m_socket.errorString());
@@ -179,6 +215,13 @@ void NetplayHostRegistry::sendToServer(const QByteArray& message)
         return;
     }
 
+    if (m_enetHost != nullptr) {
+        if (!sendEnetDatagram(m_enetHost, m_serverAddress, kNetplayRegistryPort, message)) {
+            failHosting(QStringLiteral("Failed to send browse registry packet via ENet socket"));
+        }
+        return;
+    }
+
     if (m_socket.writeDatagram(message, m_serverAddress, kNetplayRegistryPort) < 0) {
         failHosting(QString("Failed to send browse registry packet: %1").arg(m_socket.errorString()));
     }
@@ -193,7 +236,7 @@ void NetplayHostRegistry::onReadyRead()
 
 void NetplayHostRegistry::handleServerMessage(const QByteArray& datagram)
 {
-    if (handleTraversalPunchDatagram(datagram, &m_socket)) {
+    if (!m_enetHost && handleTraversalPunchDatagram(datagram, &m_socket)) {
         return;
     }
 
@@ -203,6 +246,9 @@ void NetplayHostRegistry::handleServerMessage(const QByteArray& datagram)
     }
 
     const QByteArray type = parts[1];
+    if (type == "PUNCH") {
+        return;
+    }
 
     if (type == "REGISTEROK" && parts.size() >= 3) {
         const QString code = normalizeTraversalCode(QString::fromUtf8(parts[2]));

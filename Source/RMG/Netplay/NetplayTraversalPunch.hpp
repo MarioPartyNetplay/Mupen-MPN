@@ -9,10 +9,13 @@
 #include <QHostAddress>
 #include <QUdpSocket>
 
+struct _ENetHost;
+
 namespace UserInterface::Netplay {
 
 /** Handle N02TRAV1|PUNCH|ip|port from the traversal server; returns true if handled. */
 bool handleTraversalPunchDatagram(const QByteArray& datagram, QUdpSocket* replySocket);
+bool handleTraversalPunchDatagram(const QByteArray& datagram, _ENetHost* replyHost);
 
 /** After LOOKUPOK, punch the host signaling endpoint and listen briefly for reciprocal punches. */
 void performTraversalPunchWindow(QUdpSocket* socket, const QHostAddress& hostAddress, quint16 hostSignalingPort,

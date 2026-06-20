@@ -206,7 +206,6 @@ private:
     QTimer* m_connectTimer = nullptr;
     QTimer* m_pingTimer = nullptr;
     QTimer* m_punchTimer = nullptr;
-    std::unique_ptr<QUdpSocket> m_punchSocket;
 
     QString m_serverUrl;
     QString m_serverHostname;

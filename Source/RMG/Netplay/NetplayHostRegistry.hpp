@@ -5,12 +5,15 @@
 #ifndef NETPLAYHOSTREGISTRY_HPP
 #define NETPLAYHOSTREGISTRY_HPP
 
+#include "NetplayEnet.hpp"
 #include "NetplayProtocol.hpp"
 
 #include <QObject>
 #include <QHostAddress>
 #include <QUdpSocket>
 #include <QTimer>
+
+struct _ENetHost;
 
 namespace UserInterface::Netplay {
 
@@ -28,11 +31,17 @@ public:
     void setListInBrowser(bool listInBrowser);
     void stopHosting(bool unregister = true);
 
+    /** Dolphin-style: send REGISTER/KEEP and punch from the ENet signaling socket. */
+    void attachEnetSignalingHost(ENetHost* host);
+    void detachEnetSignalingHost();
+
 signals:
     void hostRegistered(const QString& hostCode, const QString& publicAddress, int signalingPort);
     void hostRegistrationFailed(const QString& reason);
 
 private:
+    static void enetRegistryDatagramHandler(const QByteArray& datagram, void* userData);
+
     void sendToServer(const QByteArray& message);
     bool ensureSocketBound(QString* errorOut = nullptr);
     bool ensureServerResolved(QString* errorOut = nullptr);
@@ -46,6 +55,7 @@ private:
     QUdpSocket m_socket;
     QTimer m_housekeepingTimer;
     QHostAddress m_serverAddress;
+    ENetHost* m_enetHost = nullptr;
 
     bool m_listInBrowser = false;
     uint16_t m_signalingPort = kDefaultNetplayHostingPort;

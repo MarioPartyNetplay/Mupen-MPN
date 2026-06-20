@@ -13,6 +13,9 @@
 #include "OnScreenDisplay.hpp"
 #include "NetplaySessionDialog.hpp"
 #include "Netplay/NetplayProtocol.hpp"
+#include "Netplay/SocketIO/SocketIOServer.hpp"
+
+#include <enet/enet.h>
 
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -567,6 +570,16 @@ void NetplaySessionDialog::beginHostBrowserRegistration(uint16_t hostingPort, bo
         this->hostRegistry->resumeHosting(hostCode, hostingPort, listInBrowser);
     } else {
         this->hostRegistry->startHosting(hostingPort, listInBrowser);
+    }
+
+    if (Netplay::sessionUsesNatTraversal(this->sessionJson) && this->coordinator != nullptr) {
+        if (SocketIOServer* server = this->coordinator->getHostingServer()) {
+            if (ENetHost* enetHost = server->enetHost()) {
+                this->hostRegistry->attachEnetSignalingHost(enetHost);
+            } else {
+                qWarning() << "Traversal hosting started without an ENet signaling socket";
+            }
+        }
     }
 
     if (Netplay::sessionUsesNatTraversal(this->sessionJson)) {

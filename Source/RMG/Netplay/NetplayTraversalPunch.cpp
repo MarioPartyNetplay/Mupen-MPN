@@ -65,6 +65,31 @@ bool handleTraversalPunchDatagram(const QByteArray& datagram, QUdpSocket* replyS
     return true;
 }
 
+bool handleTraversalPunchDatagram(const QByteArray& datagram, ENetHost* replyHost)
+{
+    if (!replyHost || datagram.size() < 8) {
+        return false;
+    }
+
+    if (datagram.left(8) != QByteArray(kNetplayRegistryProtocol)) {
+        return false;
+    }
+
+    const QList<QByteArray> parts = datagram.split('|');
+    if (parts.size() < 2 || parts.at(1) != "PUNCH") {
+        return false;
+    }
+
+    QHostAddress targetAddress;
+    quint16 targetPort = 0;
+    if (!parsePunchTarget(parts, &targetAddress, &targetPort)) {
+        return false;
+    }
+
+    sendEnetPunchBursts(replyHost, targetAddress, targetPort);
+    return true;
+}
+
 void performTraversalPunchWindow(QUdpSocket* socket, const QHostAddress& hostAddress, quint16 hostSignalingPort,
                                  int durationMs)
 {

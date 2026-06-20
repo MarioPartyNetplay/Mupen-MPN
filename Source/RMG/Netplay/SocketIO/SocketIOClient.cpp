@@ -18,7 +18,6 @@
 #include <QDebug>
 #include <QUrl>
 #include <QUuid>
-#include <QUdpSocket>
 #include <QThread>
 #include <algorithm>
 #include <enet/enet.h>
@@ -84,7 +83,7 @@ SocketIOClient::SocketIOClient(const QString& serverUrl, QObject* parent)
     m_punchTimer = new QTimer(this);
     m_punchTimer->setInterval(200);
     connect(m_punchTimer, &QTimer::timeout, this, [this]() {
-        if (m_connectionState == Connecting && m_useTraversalPunch && m_punchSocket) {
+        if (m_connectionState == Connecting && m_useTraversalPunch && m_enetHost) {
             sendConnectPunchBursts();
         }
     });
@@ -141,7 +140,6 @@ void SocketIOClient::destroyEnetClient()
     if (m_punchTimer) {
         m_punchTimer->stop();
     }
-    m_punchSocket.reset();
 
     if (m_enetHost) {
         if (m_serverPeer) {
@@ -154,8 +152,9 @@ void SocketIOClient::destroyEnetClient()
             }
             m_serverPeer = nullptr;
         }
-        enet_host_destroy(m_enetHost);
-        m_enetHost = nullptr;
+    clearEnetSideChannel(m_enetHost);
+    enet_host_destroy(m_enetHost);
+    m_enetHost = nullptr;
     }
 
     shutdownEnetIfIdle();
@@ -174,11 +173,11 @@ bool SocketIOClient::setEnetPeerAddress(ENetAddress* addressOut) const
 
 void SocketIOClient::sendConnectPunchBursts()
 {
-    if (!m_punchSocket || m_serverAddress.isNull() || m_serverPort == 0) {
+    if (!m_enetHost || m_serverAddress.isNull() || m_serverPort == 0) {
         return;
     }
 
-    sendUdpPunchBursts(m_punchSocket.get(), m_serverAddress, m_serverPort, 3);
+    sendEnetPunchBursts(m_enetHost, m_serverAddress, m_serverPort, 3);
 }
 
 void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpPort, bool useTraversalPunch)
@@ -254,12 +253,8 @@ void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpP
     m_serverPeer->timeoutMinimum = 2000;
     m_serverPeer->timeoutMaximum = 5000;
 
-    m_punchSocket = std::make_unique<QUdpSocket>();
-    if (m_useTraversalPunch &&
-        m_punchSocket->bind(QHostAddress::AnyIPv4, 0, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
+    if (m_useTraversalPunch) {
         sendConnectPunchBursts();
-    } else {
-        m_punchSocket.reset();
     }
 
     qInfo() << "Connecting to UDP signaling server" << m_serverHostname << m_serverPort
@@ -267,7 +262,7 @@ void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpP
             << "traversal punch" << m_useTraversalPunch;
     m_serviceTimer->start();
     m_connectTimer->start(kConnectTimeoutMs);
-    if (m_useTraversalPunch && m_punchSocket) {
+    if (m_useTraversalPunch) {
         m_punchTimer->start();
     }
 }
@@ -646,7 +641,6 @@ void SocketIOClient::on_serviceTimer()
             if (m_punchTimer) {
                 m_punchTimer->stop();
             }
-            m_punchSocket.reset();
             m_connectionState = Connected;
             qInfo() << "UDP signaling connected";
             emit connected();

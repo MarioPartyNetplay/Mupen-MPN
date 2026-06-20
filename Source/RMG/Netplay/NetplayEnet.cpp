@@ -3,17 +3,57 @@
  * Copyright (C) 2020-2026 Rosalie Wanders <rosalie@mailbox.org>
  */
 #include "NetplayEnet.hpp"
+#include "NetplayTraversalPunch.hpp"
 #include "NetplayProtocol.hpp"
 
 #include <QJsonDocument>
+#include <QAbstractSocket>
 #include <atomic>
 #include <cstring>
+#include <unordered_map>
 
 namespace UserInterface::Netplay {
 
 namespace {
 
 std::atomic<int> g_enetRefCount{0};
+
+struct EnetSideChannelState {
+    EnetRegistryDatagramHandler registryHandler = nullptr;
+    void* registryUserData = nullptr;
+};
+
+std::unordered_map<ENetHost*, EnetSideChannelState>& enetSideChannels()
+{
+    static std::unordered_map<ENetHost*, EnetSideChannelState> channels;
+    return channels;
+}
+
+EnetSideChannelState& sideChannelForHost(ENetHost* host)
+{
+    return enetSideChannels()[host];
+}
+
+void eraseEnetSideChannel(ENetHost* host)
+{
+    enetSideChannels().erase(host);
+}
+
+bool hostAddressToEnet(const QHostAddress& host, quint16 port, ENetAddress* addressOut)
+{
+    if (!addressOut || host.isNull() || port == 0) {
+        return false;
+    }
+
+    addressOut->port = port;
+    if (host.protocol() == QAbstractSocket::IPv4Protocol) {
+        addressOut->host = host.toIPv4Address();
+        return true;
+    }
+
+    const QByteArray hostBytes = host.toString().toUtf8();
+    return enet_address_set_host(addressOut, hostBytes.constData()) == 0;
+}
 
 } // namespace
 
@@ -119,16 +159,7 @@ ENetHost* createSignalingEnetHost(const ENetAddress* address, size_t peerCount, 
     host->intercept = nullptr;
 
     enet_list_clear(&host->dispatchQueue);
-
-    for (ENetPeer* currentPeer = host->peers; currentPeer < &host->peers[host->peerCount]; ++currentPeer) {
-        currentPeer->host = host;
-        currentPeer->incomingPeerID = currentPeer - host->peers;
-        currentPeer->outgoingSessionID = currentPeer->incomingSessionID = 0xFF;
-        currentPeer->data = nullptr;
-        enet_list_clear(&currentPeer->acknowledgements);
-        enet_list_clear(&currentPeer->sentReliableCommands);
-        enet_list_clear(&currentPeer->outgoingCommands);
-        enet_list_clear(&currentPeer->outgoingSendReliableCommands);
+hhhhh555        enet_list_clear(&currentPeer->outgoingCommands);
         enet_list_clear(&currentPeer->dispatchedCommands);
         enet_peer_reset(currentPeer);
     }
@@ -152,16 +183,11 @@ int ENET_CALLBACK netplayEnetIntercept(ENetHost* host, ENetEvent* event)
         std::memcmp(host->receivedData, kNetplayRegistryProtocol, 8) == 0) {
         const QByteArray datagram(reinterpret_cast<const char*>(host->receivedData),
                                   static_cast<int>(host->receivedDataLength));
-        const QList<QByteArray> parts = datagram.split('|');
-        if (parts.size() >= 2 && parts.at(1) == "PUNCH" && parts.size() >= 4) {
-            static const QByteArray kPunchPayload =
-                QByteArray(kNetplayRegistryProtocol) + "|PUNCHACK";
-            ENetBuffer buffer;
-            buffer.data = const_cast<char*>(kPunchPayload.constData());
-            buffer.dataLength = static_cast<size_t>(kPunchPayload.size());
-            for (int i = 0; i < 3; ++i) {
-                enet_socket_send(host->socket, &host->receivedAddress, &buffer, 1);
-            }
+        handleTraversalPunchDatagram(datagram, host);
+
+        const EnetSideChannelState& sideChannel = sideChannelForHost(host);
+        if (sideChannel.registryHandler != nullptr) {
+            sideChannel.registryHandler(datagram, sideChannel.registryUserData);
         }
 
         event->type = static_cast<ENetEventType>(kEnetSkippableEvent);
@@ -175,6 +201,63 @@ void installNetplayEnetIntercept(ENetHost* host)
 {
     if (host) {
         host->intercept = netplayEnetIntercept;
+    }
+}
+
+void setEnetRegistryDatagramHandler(ENetHost* host, EnetRegistryDatagramHandler handler, void* userData)
+{
+    if (!host) {
+        return;
+    }
+
+    EnetSideChannelState& sideChannel = sideChannelForHost(host);
+    sideChannel.registryHandler = handler;
+    sideChannel.registryUserData = userData;
+}
+
+void clearEnetSideChannel(ENetHost* host)
+{
+    if (!host) {
+        return;
+    }
+
+    eraseEnetSideChannel(host);
+}
+
+bool sendEnetDatagram(ENetHost* host, const QHostAddress& target, quint16 port, const QByteArray& payload)
+{
+    if (!host || payload.isEmpty()) {
+        return false;
+    }
+
+    ENetAddress address;
+    if (!hostAddressToEnet(target, port, &address)) {
+        return false;
+    }
+
+    ENetBuffer buffer;
+    buffer.data = const_cast<char*>(payload.constData());
+    buffer.dataLength = static_cast<size_t>(payload.size());
+    return enet_socket_send(host->socket, &address, &buffer, 1) >= 0;
+}
+
+void sendEnetPunchBursts(ENetHost* host, const QHostAddress& target, quint16 port, int bursts)
+{
+    if (!host || target.isNull() || port == 0) {
+        return;
+    }
+
+    static const QByteArray kPunchPayload = QByteArray(kNetplayRegistryProtocol) + "|PUNCHACK";
+    ENetAddress address;
+    if (!hostAddressToEnet(target, port, &address)) {
+        return;
+    }
+
+    ENetBuffer buffer;
+    buffer.data = const_cast<char*>(kPunchPayload.constData());
+    buffer.dataLength = static_cast<size_t>(kPunchPayload.size());
+    for (int i = 0; i < bursts; ++i) {
+        enet_socket_send(host->socket, &address, &buffer, 1);
     }
 }
 
