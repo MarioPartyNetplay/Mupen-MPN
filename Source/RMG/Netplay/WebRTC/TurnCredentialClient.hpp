@@ -56,7 +56,7 @@ inline void applyNetplayConnectionSettings(NetplayConnectionMode mode, bool useU
     TurnCredentialClient& client = TurnCredentialClient::instance();
     client.setConnectionReversalEnabled(mode == NetplayConnectionMode::TraversalServer);
     if (turnCredentialsAvailable()) {
-        client.prefetch();
+        client.ensureCredentials();
     }
 }
 

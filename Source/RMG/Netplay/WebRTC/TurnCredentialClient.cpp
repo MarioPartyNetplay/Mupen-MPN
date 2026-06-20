@@ -153,10 +153,7 @@ struct ParsedIceServers {
 
 rtc::IceServer makeStunServer(const ParsedIceUrl& iceUrl)
 {
-    const std::string endpoint = iceUrl.port > 0
-        ? QStringLiteral("%1:%2").arg(iceUrl.host).arg(iceUrl.port).toStdString()
-        : iceUrl.host.toStdString();
-    return rtc::IceServer(endpoint);
+    return rtc::IceServer(iceUrl.host.toStdString(), iceUrl.port);
 }
 
 ParsedIceServers parseIceEntries(const QJsonArray& iceServers)
@@ -419,17 +416,22 @@ std::vector<rtc::IceServer> buildIceServers()
     if (servers.empty()) {
         const QString stunHost = stunServerHost().trimmed();
         const quint16 stunPort = stunServerPort();
-        if (!stunHost.isEmpty()) {
-            const std::string endpoint = stunPort > 0
-                ? QStringLiteral("%1:%2").arg(stunHost).arg(stunPort).toStdString()
-                : stunHost.toStdString();
-            servers.emplace_back(endpoint);
+        if (!stunHost.isEmpty() && stunPort > 0) {
+            servers.emplace_back(stunHost.toStdString(), static_cast<uint16_t>(stunPort));
         }
     }
 
     if (iceClient.isConfigured()) {
         const std::vector<rtc::IceServer> turnServers = iceClient.turnServers();
         servers.insert(servers.end(), turnServers.begin(), turnServers.end());
+    }
+
+    for (const rtc::IceServer& server : servers) {
+        if (server.type == rtc::IceServer::Type::Stun) {
+            qInfo() << "ICE STUN server:" << QString::fromStdString(server.hostname) << server.port;
+        } else {
+            qInfo() << "ICE TURN server:" << QString::fromStdString(server.hostname) << server.port;
+        }
     }
 
     return servers;
