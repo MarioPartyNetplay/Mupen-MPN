@@ -175,6 +175,12 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
 {
     m_lastHostingError.clear();
 
+    if (m_server != nullptr && m_server->isRunning() && m_server->getPort() == port)
+    {
+        qInfo() << "Already hosting signaling server on port" << port;
+        return true;
+    }
+
     if (m_server != nullptr)
     {
         stopHosting();

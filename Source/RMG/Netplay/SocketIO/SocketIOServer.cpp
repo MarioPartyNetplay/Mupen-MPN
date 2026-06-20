@@ -96,7 +96,10 @@ bool SocketIOServer::startServer(int port, QString* errorOut)
     m_enetHost = createSignalingEnetHost(&address, kMaxSignalingClients, 1, 0, 0);
     if (!m_enetHost) {
         shutdownEnetIfIdle();
-        const QString listenError = tr("Could not bind UDP signaling port %1").arg(port);
+        const QString listenError =
+            tr("Could not bind UDP signaling port %1. Close any open netplay session, quit other "
+               "Mupen-MPN instances, or choose a different port.")
+                .arg(port);
         qWarning() << listenError;
 
         if (errorOut != nullptr) {

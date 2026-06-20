@@ -2327,6 +2327,7 @@ void MainWindow::on_NetplaySessionDialog_rejected()
 
     if (this->netplaySessionDialog != nullptr)
     {
+        this->netplaySessionDialog->shutdownSession();
         this->netplaySessionDialog->deleteLater();
         this->netplaySessionDialog = nullptr;
     }
