@@ -26,37 +26,120 @@ namespace {
 constexpr int kCredentialRefreshSkewSeconds = 300;
 constexpr int kDefaultTurnCredentialCacheTtlSeconds = 86400;
 
-rtc::IceServer::RelayType relayTypeForUrl(const QUrl& url)
+struct ParsedIceUrl {
+    QString scheme;
+    QString host;
+    uint16_t port = 0;
+    QString transport;
+    bool valid = false;
+};
+
+uint16_t defaultPortForScheme(const QString& scheme)
 {
-    const QString scheme = url.scheme().toLower();
-    if (scheme == QLatin1String("turns")) {
+    if (scheme == QLatin1String("turns") || scheme == QLatin1String("stuns")) {
+        return 5349;
+    }
+    return 3478;
+}
+
+ParsedIceUrl parseIceServerUrl(const QString& urlString)
+{
+    ParsedIceUrl result;
+    const QString trimmed = urlString.trimmed();
+    if (trimmed.isEmpty()) {
+        return result;
+    }
+
+    // QUrl extracts the scheme for stun:/turn:/turns: URLs, but host:port lives in path().
+    const QUrl url(trimmed);
+    if (!url.isValid()) {
+        return result;
+    }
+
+    result.scheme = url.scheme().toLower();
+    if (result.scheme.isEmpty()) {
+        return result;
+    }
+
+    QString hostPort = url.host();
+    if (hostPort.isEmpty()) {
+        hostPort = url.path();
+    }
+    if (hostPort.isEmpty()) {
+        return result;
+    }
+
+    const QString query = url.query();
+    if (!query.isEmpty()) {
+        result.transport = QUrlQuery(query).queryItemValue(QStringLiteral("transport")).toLower();
+    }
+
+    const uint16_t defaultPort = defaultPortForScheme(result.scheme);
+
+    if (hostPort.startsWith(QLatin1Char('['))) {
+        const int closeIndex = hostPort.indexOf(QLatin1Char(']'));
+        if (closeIndex <= 1) {
+            return result;
+        }
+        result.host = hostPort.mid(1, closeIndex - 1);
+        QString portPart = hostPort.mid(closeIndex + 1).trimmed();
+        if (portPart.startsWith(QLatin1Char(':'))) {
+            bool ok = false;
+            const int parsed = portPart.mid(1).toInt(&ok);
+            if (!ok || parsed < 1 || parsed > 65535) {
+                return result;
+            }
+            result.port = static_cast<uint16_t>(parsed);
+        } else {
+            result.port = defaultPort;
+        }
+    } else {
+        const int colonIndex = hostPort.lastIndexOf(QLatin1Char(':'));
+        if (colonIndex > 0) {
+            bool ok = false;
+            const int parsed = hostPort.mid(colonIndex + 1).toInt(&ok);
+            if (ok && parsed >= 1 && parsed <= 65535) {
+                result.host = hostPort.left(colonIndex);
+                result.port = static_cast<uint16_t>(parsed);
+            } else {
+                result.host = hostPort;
+                result.port = defaultPort;
+            }
+        } else {
+            result.host = hostPort;
+            result.port = defaultPort;
+        }
+    }
+
+    if (result.host.isEmpty()) {
+        return result;
+    }
+
+    result.valid = true;
+    return result;
+}
+
+rtc::IceServer::RelayType relayTypeForParsedUrl(const ParsedIceUrl& iceUrl)
+{
+    if (iceUrl.scheme == QLatin1String("turns") || iceUrl.scheme == QLatin1String("stuns")) {
         return rtc::IceServer::RelayType::TurnTls;
     }
 
-    const QString transport = QUrlQuery(url).queryItemValue(QStringLiteral("transport")).toLower();
-    if (transport == QLatin1String("tcp")) {
+    if (iceUrl.transport == QLatin1String("tcp")) {
         return rtc::IceServer::RelayType::TurnTcp;
     }
 
     return rtc::IceServer::RelayType::TurnUdp;
 }
 
-uint16_t defaultPortForScheme(const QString& scheme)
+bool shouldSkipIceUrl(const ParsedIceUrl& iceUrl)
 {
-    if (scheme == QLatin1String("turns")) {
-        return 5349;
-    }
-    return 3478;
-}
-
-bool shouldSkipIceUrl(const QUrl& url)
-{
-    if (!url.isValid() || url.host().isEmpty()) {
+    if (!iceUrl.valid || iceUrl.host.isEmpty()) {
         return true;
     }
 
     // Cloudflare documents port 53 as prone to timeouts in some clients.
-    if (url.port(defaultPortForScheme(url.scheme())) == 53) {
+    if (iceUrl.port == 53) {
         return true;
     }
 
@@ -74,30 +157,26 @@ std::vector<rtc::IceServer> parseTurnEntries(const QJsonArray& iceServers)
         const QJsonArray urls = entry.value(QStringLiteral("urls")).toArray();
 
         for (const QJsonValue& urlValue : urls) {
-            const QUrl url(urlValue.toString());
-            if (shouldSkipIceUrl(url)) {
+            const ParsedIceUrl iceUrl = parseIceServerUrl(urlValue.toString());
+            if (shouldSkipIceUrl(iceUrl)) {
                 continue;
             }
 
-            const QString scheme = url.scheme().toLower();
-            const std::string host = url.host().toStdString();
-            const uint16_t port = static_cast<uint16_t>(url.port(defaultPortForScheme(scheme)));
-
-            if (scheme == QLatin1String("stun") || scheme == QLatin1String("stuns")) {
+            if (iceUrl.scheme == QLatin1String("stun") || iceUrl.scheme == QLatin1String("stuns")) {
                 continue;
             }
 
-            if (scheme == QLatin1String("turn") || scheme == QLatin1String("turns")) {
+            if (iceUrl.scheme == QLatin1String("turn") || iceUrl.scheme == QLatin1String("turns")) {
                 if (username.isEmpty() || credential.isEmpty()) {
                     continue;
                 }
 
                 servers.emplace_back(
-                    host,
-                    port,
+                    iceUrl.host.toStdString(),
+                    iceUrl.port,
                     username.toStdString(),
                     credential.toStdString(),
-                    relayTypeForUrl(url));
+                    relayTypeForParsedUrl(iceUrl));
             }
         }
     }
