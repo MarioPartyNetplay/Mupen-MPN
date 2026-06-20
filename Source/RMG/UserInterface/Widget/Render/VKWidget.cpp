@@ -60,6 +60,22 @@ void VKWidget::queueVideoSizeUpdate(QSize size)
         return;
     }
 
+    const int newWidth  = (size.width()  * this->devicePixelRatio()) & ~0x1;
+    const int newHeight = (size.height() * this->devicePixelRatio()) & ~0x1;
+
+    if (newWidth == this->appliedWidth && newHeight == this->appliedHeight)
+    {
+        return;
+    }
+
+    if (newWidth == this->width && newHeight == this->height)
+    {
+        return;
+    }
+
+    this->width  = newWidth;
+    this->height = newHeight;
+
     if (this->timerId != 0)
     {
         this->killTimer(this->timerId);
@@ -79,6 +95,8 @@ void VKWidget::queueVideoSizeUpdate(QSize size)
 
 void VKWidget::timerEvent(QTimerEvent *event)
 {
+    Q_UNUSED(event);
+
     if (!this->isVisible())
     {
         this->killTimer(this->timerId);
@@ -86,10 +104,17 @@ void VKWidget::timerEvent(QTimerEvent *event)
         return;
     }
 
-    // only remove current timer
-    // when setting the video size succeeds
+    if (this->width == this->appliedWidth && this->height == this->appliedHeight)
+    {
+        this->killTimer(this->timerId);
+        this->timerId = 0;
+        return;
+    }
+
     if (CoreSetVideoSize(this->width, this->height))
     {
+        this->appliedWidth  = this->width;
+        this->appliedHeight = this->height;
         this->killTimer(this->timerId);
         this->timerId = 0;
     }

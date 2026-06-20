@@ -44,3 +44,9 @@ target_include_directories(RMG-Audio PRIVATE
     ${SPEEX_INCLUDE_DIRS}
     ${SAMPLERATE_INCLUDE_DIRS}
 )
+
+if (APPLE AND PORTABLE_INSTALL)
+    set_target_properties(RMG-Audio PROPERTIES
+        INSTALL_RPATH "@loader_path/../.."
+    )
+endif()

@@ -522,7 +522,33 @@ if(EGL)
   add_definitions(
     -DEGL
   )
-  set(OPENGL_LIBRARIES ${EGL_LIB})
+  if(APPLE AND ANGLE_STATIC_LIBRARY)
+    include_directories(${ANGLE_INCLUDE_DIR})
+    set(OPENGL_LIBRARIES
+      "-Wl,-force_load,${ANGLE_STATIC_LIBRARY}"
+    )
+    if(ANGLE_SPIRV_TOOLS_LIBRARY)
+      list(APPEND OPENGL_LIBRARIES "-Wl,-force_load,${ANGLE_SPIRV_TOOLS_LIBRARY}")
+    endif()
+    list(APPEND OPENGL_LIBRARIES
+      "-framework Metal"
+      "-framework MetalKit"
+      "-framework QuartzCore"
+      "-framework IOSurface"
+      "-framework Foundation"
+      "-framework CoreFoundation"
+      "-framework IOKit"
+      "-framework AppKit"
+    )
+  elseif(APPLE AND ANGLE_INCLUDE_DIR)
+    include_directories(${ANGLE_INCLUDE_DIR})
+    if(ANGLE_LIBRARY_DIR)
+      link_directories(${ANGLE_LIBRARY_DIR})
+    endif()
+    set(OPENGL_LIBRARIES EGL GLESv2)
+  else()
+    set(OPENGL_LIBRARIES ${EGL_LIB})
+  endif()
 else(EGL)
   find_package(OpenGL REQUIRED)
 

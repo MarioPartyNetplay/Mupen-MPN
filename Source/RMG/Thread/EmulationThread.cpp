@@ -14,9 +14,12 @@
 
 #ifdef _WIN32
 #include <Windows.h>
-#else // Linux
+#elif defined(__linux__)
 #include <QDBusConnection>
 #include <QDBusReply>
+#elif defined(__APPLE__)
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/pwr_mgt/IOPMLib.h>
 #endif
 
 using namespace Thread;
@@ -83,7 +86,7 @@ void EmulationThread::inhibitScreensaver(void)
 {
 #ifdef _WIN32
     SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED);
-#else
+#elif defined(__linux__)
     this->dbusCookieId = 0;
     this->dbusInterface = new QDBusInterface("org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver", "org.freedesktop.ScreenSaver", QDBusConnection::sessionBus());
     if (!this->dbusInterface->isValid())
@@ -96,6 +99,12 @@ void EmulationThread::inhibitScreensaver(void)
     {
         this->dbusCookieId = dbusReply.value();
     }
+#elif defined(__APPLE__)
+    this->powerAssertionId = kIOPMNullAssertionID;
+    IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleDisplaySleep,
+                                kIOPMAssertionLevelOn,
+                                CFSTR("Mupen MPN"),
+                                &this->powerAssertionId);
 #endif
 }
 
@@ -103,7 +112,7 @@ void EmulationThread::uninhibitScreensaver(void)
 {
 #ifdef _WIN32
     SetThreadExecutionState(ES_CONTINUOUS);
-#else
+#elif defined(__linux__)
     if (this->dbusInterface == nullptr)
     {
         return;
@@ -116,5 +125,11 @@ void EmulationThread::uninhibitScreensaver(void)
 
     this->dbusInterface->deleteLater();
     this->dbusInterface = nullptr;
+#elif defined(__APPLE__)
+    if (this->powerAssertionId != kIOPMNullAssertionID)
+    {
+        IOPMAssertionRelease(this->powerAssertionId);
+        this->powerAssertionId = kIOPMNullAssertionID;
+    }
 #endif
 }

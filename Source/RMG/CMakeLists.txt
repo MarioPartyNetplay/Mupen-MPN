@@ -5,11 +5,38 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+if (APPLE)
+    find_program(BREW_EXECUTABLE brew)
+    if(BREW_EXECUTABLE)
+        execute_process(
+            COMMAND ${BREW_EXECUTABLE} --prefix molten-vk
+            OUTPUT_VARIABLE MOLTEN_VK_PREFIX
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+        if(MOLTEN_VK_PREFIX AND EXISTS "${MOLTEN_VK_PREFIX}/include/vulkan/vulkan.h")
+            set(Vulkan_INCLUDE_DIR "${MOLTEN_VK_PREFIX}/include" CACHE PATH "MoltenVK headers" FORCE)
+        endif()
+    endif()
+    if(NOT Vulkan_INCLUDE_DIR)
+        foreach(_prefix "/usr/local/opt/molten-vk" "/opt/homebrew/opt/molten-vk" "/usr/local/opt/vulkan-headers" "/opt/homebrew/opt/vulkan-headers")
+            if(EXISTS "${_prefix}/include/vulkan/vulkan.h")
+                set(Vulkan_INCLUDE_DIR "${_prefix}/include" CACHE PATH "Vulkan headers" FORCE)
+                break()
+            endif()
+        endforeach()
+    endif()
+endif()
+
 find_package(Qt6 COMPONENTS Gui Widgets Core REQUIRED)
 
-if (NOT WIN32)
+if (NOT WIN32 AND UNIX AND NOT APPLE)
     find_package(Qt6 REQUIRED COMPONENTS DBus)
-endif(NOT WIN32)
+endif()
+
+if (APPLE)
+    set(CMAKE_MACOSX_RPATH ON)
+endif()
 
 if (PORTABLE_INSTALL)
     add_definitions(-DPORTABLE_INSTALL)
@@ -85,6 +112,12 @@ set(RMG_SOURCES
     main.cpp
 )
 
+if (APPLE)
+    list(APPEND RMG_SOURCES
+        AngleContext.mm
+    )
+endif()
+
 if (UPDATER)
     list(APPEND RMG_SOURCES
         UserInterface/Dialog/Update/UpdateDialog.cpp
@@ -132,7 +165,9 @@ endif(NETPLAY)
 set_source_files_properties(${IMGUI_SOURCES} PROPERTIES GENERATED TRUE)
 list(APPEND RMG_SOURCES ${IMGUI_SOURCES})
 
-if (CMAKE_BUILD_TYPE MATCHES Release)
+if (APPLE AND PORTABLE_INSTALL)
+    add_executable(RMG MACOSX_BUNDLE ${RMG_SOURCES})
+elseif (CMAKE_BUILD_TYPE MATCHES Release)
     add_executable(RMG WIN32 ${RMG_SOURCES})
 else()
     add_executable(RMG ${RMG_SOURCES})
@@ -142,6 +177,24 @@ set_target_properties(RMG PROPERTIES
     OUTPUT_NAME "Mupen-MPN"
 )
 
+if (APPLE AND PORTABLE_INSTALL)
+    set_target_properties(RMG PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_GUI_IDENTIFIER "org.marioparty.mupen"
+        MACOSX_BUNDLE_BUNDLE_NAME "Mupen MPN"
+        MACOSX_BUNDLE_EXECUTABLE_NAME "Mupen-MPN"
+        MACOSX_BUNDLE_INFO_STRING "Mupen MPN N64 Emulator"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${GIT_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${GIT_VERSION}"
+        MACOSX_BUNDLE_COPYRIGHT "Copyright (c) Mupen MPN contributors"
+        MACOSX_BUNDLE_ICON_FILE RMG.icns
+    )
+
+    set(RMG_MAC_ICON ${CMAKE_CURRENT_SOURCE_DIR}/UserInterface/Resource/RMG.icns)
+    target_sources(RMG PRIVATE ${RMG_MAC_ICON})
+    set_source_files_properties(${RMG_MAC_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+endif()
+
 target_link_libraries(RMG 
     RMG-Core
     imgui
@@ -149,9 +202,15 @@ target_link_libraries(RMG
 
 # needed for dynamically linked RMG-Core
 if (PORTABLE_INSTALL)
-    set_target_properties(RMG PROPERTIES
-        INSTALL_RPATH "$ORIGIN"
-    )
+    if (APPLE)
+        set_target_properties(RMG PROPERTIES
+            INSTALL_RPATH "@executable_path/../Frameworks;@loader_path"
+        )
+    else()
+        set_target_properties(RMG PROPERTIES
+            INSTALL_RPATH "$ORIGIN"
+        )
+    endif()
 endif(PORTABLE_INSTALL)
 
 target_include_directories(RMG PRIVATE 
@@ -163,9 +222,16 @@ target_include_directories(RMG PRIVATE
 
 target_link_libraries(RMG Qt6::Gui Qt6::Widgets)
 
-if (NOT WIN32)
+if (UNIX AND NOT APPLE)
     target_link_libraries(RMG Qt6::DBus)
-endif(NOT WIN32)
+endif()
+
+if (APPLE)
+    target_link_libraries(RMG "-framework IOKit" "-framework CoreFoundation")
+    add_dependencies(RMG angle_static)
+    target_include_directories(RMG PRIVATE ${ANGLE_INCLUDE_DIR})
+    target_link_libraries(RMG angle_static)
+endif()
 
 if (UPDATER)
     target_link_libraries(RMG Qt6::Network)

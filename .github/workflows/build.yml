@@ -16,8 +16,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 1
+
+      - name: Initialize submodules
+        run: |
+          git submodule update --init --depth 1 Source/3rdParty/libdatachannel
+          git -C Source/3rdParty/libdatachannel submodule update --init --depth 1 --recursive
 
       - name: Setup Flatpak
         run: |
@@ -79,7 +83,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          submodules: recursive
+
+      - name: Initialize submodules
+        run: |
+          git submodule update --init --depth 1 Source/3rdParty/libdatachannel
+          git -C Source/3rdParty/libdatachannel submodule update --init --depth 1 --recursive
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -126,5 +134,57 @@ jobs:
       - name: Upload Windows Artifact (Folder Build)
         uses: actions/upload-artifact@v4
         with:
-          name: MupenMPN-win32
+          name: MupenMPN-windows-x86_64
+          path: Bin/Release/*
+
+  macos:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Initialize submodules
+        run: |
+          git submodule update --init --depth 1 \
+            Source/3rdParty/libdatachannel \
+            Source/3rdParty/angle \
+            Source/3rdParty/angle-cmake
+          git -C Source/3rdParty/libdatachannel submodule update --init --depth 1 --recursive
+
+      - name: Install Rosetta 2
+        run: softwareupdate --install-rosetta --agree-to-license
+
+      - name: Install x86_64 Homebrew
+        run: |
+          if [[ ! -x /usr/local/bin/brew ]]; then
+            NONINTERACTIVE=1 arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          fi
+          {
+            echo 'HOMEBREW_PREFIX=/usr/local'
+            echo 'HOMEBREW_CELLAR=/usr/local/Cellar'
+            echo 'HOMEBREW_REPOSITORY=/usr/local/Homebrew'
+            echo 'PATH=/usr/local/bin:/usr/local/sbin:${PATH}'
+          } >> "$GITHUB_ENV"
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: macos-rosetta-x86_64
+
+      - name: Install Build Dependencies
+        run: |
+          arch -x86_64 /usr/local/bin/brew install cmake qt sdl3 nasm speexdsp libsamplerate minizip pkg-config openssl nlohmann-json srtp libusb libpng molten-vk vulkan-loader vulkan-headers
+
+      - name: Build RMG (x86_64 for Rosetta)
+        run: |
+          chmod +x ./Source/Script/Build.sh
+          arch -x86_64 env MPN_SKIP_ROSETTA_REEXEC=1 PATH="/usr/local/bin:/usr/local/sbin:${PATH}" ./Source/Script/Build.sh Release
+
+      - name: Upload macOS Artifact (Folder Build)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MupenMPN-macOS-x86_64
           path: Bin/Release/*

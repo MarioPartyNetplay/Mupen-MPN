@@ -10,10 +10,13 @@
 #include "MainDialog.hpp"
 #include "Widget/ControllerWidget.hpp"
 #include "Utilities/QtKeyToSdl3Key.hpp"
+#include "main.hpp"
 
 #include <RMG-Core/Core.hpp>
+#include <RMG-Core/m64p/api/m64p_types.h>
 
 #include <SDL3/SDL.h>
+#include <QCoreApplication>
 #include <QTimer>
 
 Q_DECLARE_METATYPE(InputDevice);
@@ -26,12 +29,7 @@ MainDialog::MainDialog(QWidget* parent, Thread::SDLThread* sdlThread, bool romCo
     
     this->setupUi(this);
 
-    // setup SDL thread
     this->sdlThread = sdlThread;
-    connect(this->sdlThread, &Thread::SDLThread::OnInputDeviceFound, this,
-        &MainDialog::on_SDLThread_DeviceFound);
-    connect(this->sdlThread, &Thread::SDLThread::OnDeviceSearchFinished, this,
-        &MainDialog::on_SDLThread_DeviceSearchFinished);
 
     // setup EventFilter
     this->eventFilter = new EventFilter(this);
@@ -82,8 +80,8 @@ MainDialog::MainDialog(QWidget* parent, Thread::SDLThread* sdlThread, bool romCo
         controllerWidget->SetInitialized(true);
     }
 
-    // fill device list at least once
-    this->on_ControllerWidget_RefreshInputDevicesButtonClicked();
+    // enumerate devices once the dialog event loop is running (main thread)
+    QTimer::singleShot(0, this, &MainDialog::enumerateInputDevices);
 
     this->inputPollTimer = new QTimer(this);
     connect(this->inputPollTimer, &QTimer::timeout, this, &MainDialog::on_InputPollTimer_triggered);
@@ -198,23 +196,12 @@ void MainDialog::on_InputPollTimer_triggered()
     // we don't need to do anything
     if (!controllerWidget->IsPluggedIn())
     {
-        this->sdlThread->SetAction(SDLThreadAction::None);
         return;
     }
 
-    // verify/update the SDL thread action state
-    switch (this->sdlThread->GetCurrentAction())
-    {
-        case SDLThreadAction::GetInputDevices:
-            // don't do anything when we're querying the input devices
-            return;
-        case SDLThreadAction::None:
-            // when the SDL thread is doing nothing, pump the sdl events instead
-            sdlThread->SetAction(SDLThreadAction::SDLPumpEvents);
-            break;
-        default:
-            break;
-    }
+    // SDL must be pumped on the main thread on macOS (Qt/Cocoa event loop).
+    SDL_PumpEvents();
+    RefreshSdlInputState();
 
     // process SDL events
     SDL_Event event;
@@ -224,6 +211,83 @@ void MainDialog::on_InputPollTimer_triggered()
     }
 
     controllerWidget->on_MainDialog_SdlEventPollFinished();
+}
+
+void MainDialog::enumerateInputDevices(void)
+{
+    if (this->updatingDeviceList)
+    {
+        return;
+    }
+
+    this->updatingDeviceList = true;
+    this->inputDeviceList.clear();
+
+#ifdef __APPLE__
+    for (int i = 0; i < 50; i++)
+    {
+        SDL_PumpEvents();
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        SDL_Delay(1);
+    }
+#endif
+
+    SDL_UpdateJoysticks();
+
+    int joysticksCount = 0;
+    SDL_JoystickID* joysticks = SDL_GetJoysticks(&joysticksCount);
+    if (joysticks == nullptr)
+    {
+        std::string errorMessage = "MainDialog::enumerateInputDevices() SDL_GetJoysticks Failed: ";
+        errorMessage += SDL_GetError();
+        PluginDebugMessage(M64MSG_ERROR, errorMessage);
+        joysticksCount = 0;
+    }
+
+    for (int i = 0; i < joysticksCount; i++)
+    {
+        SDL_JoystickID joystickId = joysticks[i];
+        QString name;
+        QString path;
+        QString serial;
+
+        if (SDL_IsGamepad(joystickId))
+        {
+            SDL_Gamepad* controller = SDL_OpenGamepad(joystickId);
+            if (controller == nullptr)
+            {
+                continue;
+            }
+            name = SDL_GetGamepadName(controller);
+            path = SDL_GetGamepadPath(controller);
+            serial = SDL_GetGamepadSerial(controller);
+            SDL_CloseGamepad(controller);
+        }
+        else
+        {
+            SDL_Joystick* joystick = SDL_OpenJoystick(joystickId);
+            if (joystick == nullptr)
+            {
+                continue;
+            }
+            name = SDL_GetJoystickName(joystick);
+            path = SDL_GetJoystickPath(joystick);
+            serial = SDL_GetJoystickSerial(joystick);
+            SDL_CloseJoystick(joystick);
+        }
+
+        if (!name.isNull())
+        {
+            this->on_SDLThread_DeviceFound(name, path, serial, joystickId);
+        }
+    }
+
+    if (joysticks != nullptr)
+    {
+        SDL_free(joysticks);
+    }
+
+    this->on_SDLThread_DeviceSearchFinished();
 }
 
 void MainDialog::on_ControllerWidget_CurrentInputDeviceChanged(ControllerWidget* widget, InputDevice device)
@@ -250,14 +314,7 @@ void MainDialog::on_ControllerWidget_CurrentInputDeviceChanged(ControllerWidget*
 
 void MainDialog::on_ControllerWidget_RefreshInputDevicesButtonClicked()
 {
-    if (this->updatingDeviceList)
-    {
-        return;
-    }
-
-    this->updatingDeviceList = true;
-    this->inputDeviceList.clear();
-    this->sdlThread->SetAction(SDLThreadAction::GetInputDevices);
+    this->enumerateInputDevices();
 }
 
 void MainDialog::on_ControllerWidget_UserProfileAdded(QString name, QString section)
@@ -392,6 +449,11 @@ void MainDialog::on_EventFilter_KeyReleased(QKeyEvent *event)
 
 void MainDialog::accept(void)
 {
+    if (this->inputPollTimer != nullptr)
+    {
+        this->inputPollTimer->stop();
+    }
+
     Widget::ControllerWidget* controllerWidget;
     int currentIndex = this->tabWidget->currentIndex();
 
@@ -415,6 +477,11 @@ void MainDialog::accept(void)
 
 void MainDialog::reject(void)
 {
+    if (this->inputPollTimer != nullptr)
+    {
+        this->inputPollTimer->stop();
+    }
+
     for (auto& controllerWidget : this->controllerWidgets)
     {
         controllerWidget->RevertSettings();

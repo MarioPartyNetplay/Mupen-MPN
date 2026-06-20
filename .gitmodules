@@ -1,3 +1,9 @@
 [submodule "Source/3rdParty/libdatachannel"]
 	path = Source/3rdParty/libdatachannel
 	url = https://github.com/paullouisageneau/libdatachannel
+[submodule "Source/3rdParty/angle"]
+	path = Source/3rdParty/angle
+	url = https://github.com/google/angle.git
+[submodule "Source/3rdParty/angle-cmake"]
+	path = Source/3rdParty/angle-cmake
+	url = https://github.com/okuoku/angle-static-cmake.git

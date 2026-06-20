@@ -86,6 +86,7 @@
     </widget>
     <addaction name="action_System_StartRom"/>
     <addaction name="action_System_OpenCombo"/>
+    <addaction name="action_System_OpenUserFolder"/>
     <addaction name="separator"/>
     <addaction name="action_System_Shutdown"/>
     <addaction name="menuReset"/>

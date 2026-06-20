@@ -24,6 +24,10 @@
 #ifdef _WIN32
 #include <Windows.h>
 #include <shlobj.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <vector>
+#include <climits>
 #endif // _WIN32
 
 //
@@ -73,7 +77,19 @@ static std::filesystem::path get_exe_directory(void)
         throw std::runtime_error("get_exe_directory: GetModuleFileNameW() failed");
     }
     directory = std::filesystem::path(buffer).parent_path();
-#else // _WIN32
+#elif defined(__APPLE__)
+    std::vector<char> buffer(PATH_MAX);
+    uint32_t size = static_cast<uint32_t>(buffer.size());
+    if (_NSGetExecutablePath(buffer.data(), &size) != 0)
+    {
+        buffer.resize(size);
+        if (_NSGetExecutablePath(buffer.data(), &size) != 0)
+        {
+            throw std::runtime_error("get_exe_directory: _NSGetExecutablePath() failed");
+        }
+    }
+    directory = std::filesystem::canonical(buffer.data()).parent_path();
+#else // Linux
     directory =  std::filesystem::canonical("/proc/self/exe", errorCode).parent_path();
     if (errorCode)
     {
@@ -112,7 +128,21 @@ static std::filesystem::path get_appdata_directory(std::filesystem::path directo
 
     return fullDirectory;
 }
-#else // _WIN32
+#elif defined(__APPLE__)
+static std::filesystem::path get_apple_support_directory(std::string subdirectory)
+{
+    const char* home = std::getenv("HOME");
+    if (home == nullptr)
+    {
+        throw std::runtime_error("get_apple_support_directory: HOME cannot be non-existent");
+    }
+
+    std::filesystem::path directory = home;
+    directory += "/Library/Application Support/RMG/";
+    directory += subdirectory;
+    return directory.make_preferred();
+}
+#else // Linux
 static std::filesystem::path get_var_directory(std::string var, std::string append, std::string fallbackVar, std::string fallbackAppend)
 {
     std::filesystem::path directory;
@@ -301,6 +331,8 @@ CORE_EXPORT std::filesystem::path CoreGetUserConfigDirectory(void)
 #ifdef _WIN32
         directory = get_appdata_directory("Config");
 
+#elif defined(__APPLE__)
+        directory = get_apple_support_directory("Config");
 #else
         directory = get_var_directory("XDG_CONFIG_HOME", "/RMG", "HOME", "/.config/RMG");
 #endif // _WIN32
@@ -387,6 +419,8 @@ CORE_EXPORT std::filesystem::path CoreGetUserDataDirectory(void)
     {
 #ifdef _WIN32
         directory = get_appdata_directory("Data");
+#elif defined(__APPLE__)
+        directory = get_apple_support_directory("Data");
 #else
         directory = get_var_directory("XDG_DATA_HOME", "/RMG", "HOME", "/.local/share/RMG");
 #endif // _WIN32
@@ -408,6 +442,8 @@ CORE_EXPORT std::filesystem::path CoreGetUserCacheDirectory(void)
 #ifdef _WIN32
         directory = get_appdata_directory("Cache");
 
+#elif defined(__APPLE__)
+        directory = get_apple_support_directory("Cache");
 #else
         directory = get_var_directory("XDG_CACHE_HOME", "/RMG", "HOME", "/.cache/RMG");
 #endif // _WIN32

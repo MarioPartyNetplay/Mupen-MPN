@@ -42,7 +42,9 @@ endif
 ifeq ("$(UNAME)","Darwin")
   OS = OSX
   SO_EXTENSION = dylib
-  SHARED = -bundle
+  SHARED = -dynamiclib
+  # LTO produces binaries install_name_tool cannot rewrite during app bundling.
+  OPTFLAGS ?= -O3
 endif
 ifeq ("$(UNAME)","FreeBSD")
   OS = FREEBSD

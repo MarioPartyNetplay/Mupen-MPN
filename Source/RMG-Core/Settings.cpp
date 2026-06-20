@@ -187,39 +187,23 @@ static l_Setting get_setting(SettingsID settingId)
         break;
 
     case SettingsID::Core_GFX_Plugin:
-        setting = {SETTING_SECTION_CORE, "GFX_Plugin", 
-#ifdef _WIN32
-                    std::string("mupen64plus-video-GLideN64.dll"),
-#else
-                    std::string("mupen64plus-video-GLideN64.so"),
-#endif // _WIN32
+        setting = {SETTING_SECTION_CORE, "GFX_Plugin",
+                    std::string("mupen64plus-video-GLideN64") + CORE_LIBRARY_EXT_STR,
                   };
         break;
     case SettingsID::Core_AUDIO_Plugin:
         setting = {SETTING_SECTION_CORE, "AUDIO_Plugin", 
-#ifdef _WIN32
-                    std::string("RMG-Audio.dll"),
-#else
-                    std::string("RMG-Audio.so"),
-#endif // _WIN32
+                    std::string("RMG-Audio") + CORE_LIBRARY_EXT_STR,
                   };
         break;
     case SettingsID::Core_INPUT_Plugin:
         setting = {SETTING_SECTION_CORE, "INPUT_Plugin", 
-#ifdef _WIN32
-                    std::string("RMG-Input.dll"),
-#else
-                    std::string("RMG-Input.so"),
-#endif // _WIN32
+                    std::string("RMG-Input") + CORE_LIBRARY_EXT_STR,
                   };
         break;
     case SettingsID::Core_RSP_Plugin:
         setting = {SETTING_SECTION_CORE, "RSP_Plugin", 
-#ifdef _WIN32
-                    std::string("mupen64plus-rsp-hle.dll"),
-#else
-                    std::string("mupen64plus-rsp-hle.so"),
-#endif // _WIN32
+                    std::string("mupen64plus-rsp-hle") + CORE_LIBRARY_EXT_STR,
                   };
         break;
     case SettingsID::Core_EXECUTION_Plugin:
@@ -627,9 +611,9 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::RSP_Fallback:
         setting = {SETTING_SECTION_RSP, "RspFallback", CoreGetPluginDirectory().string() +
 #ifdef _WIN32
-                    "\\RSP\\mupen64plus-rsp-parallel.dll",
+                    "\\RSP\\mupen64plus-rsp-parallel" CORE_LIBRARY_EXT_STR,
 #else
-                    "/RSP/mupen64plus-rsp-parallel.so",
+                    "/RSP/mupen64plus-rsp-parallel" CORE_LIBRARY_EXT_STR,
 #endif // _WIN32
                     "", false, true
                   };

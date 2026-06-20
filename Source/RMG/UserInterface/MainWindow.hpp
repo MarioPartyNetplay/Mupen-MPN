@@ -113,8 +113,6 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     int ui_FullscreenTimerId = 0;
     int ui_GamesharkButtonTimerId = 0;
     int ui_UpdateSaveStateSlotTimerId = 0;
-    int ui_CheckVideoSizeTimerId = 0;
-
     int ui_LoadSaveStateSlotCounter = 0;
     int ui_LoadSaveStateSlotTimerId = -1;
 

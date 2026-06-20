@@ -42,6 +42,7 @@
 
 #include <QGuiApplication>
 #include <QApplication>
+#include <QThread>
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -1261,11 +1262,15 @@ EXPORT m64p_error CALL PluginConfigWithRomConfig(void* parent, int romConfig, Co
     }
 
     l_IsConfigGuiOpen = true;
+
+    // Let the emulation thread finish any in-flight GetKeys() before closing devices.
+    if (CoreIsEmulationPaused())
+    {
+        QThread::msleep(16);
+    }
     
     // close controllers
     close_controllers();
-
-    l_SDLThread->SetAction(SDLThreadAction::SDLPumpEvents);
 
     UserInterface::MainDialog dialog(static_cast<QWidget*>(parent), l_SDLThread, romConfig, *romHeader, *romSettings);
     dialog.exec();
@@ -1276,14 +1281,6 @@ EXPORT m64p_error CALL PluginConfigWithRomConfig(void* parent, int romConfig, Co
     if (l_SDLThread == nullptr)
     {
         return M64ERR_SUCCESS;
-    }
-
-    l_SDLThread->SetAction(SDLThreadAction::None);
-
-    // wait until it's done pumping events
-    while (l_SDLThread->GetCurrentAction() == SDLThreadAction::SDLPumpEvents)
-    {
-        QThread::msleep(5);
     }
 
     // reload settings
@@ -1368,6 +1365,12 @@ EXPORT void CALL ControllerCommand(int Control, unsigned char* Command)
     }
 }
 
+void RefreshSdlInputState(void)
+{
+    SDL_UpdateGamepads();
+    SDL_UpdateJoysticks();
+}
+
 EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
 {
     if (Keys == nullptr || Control < 0 || Control >= NUM_CONTROLLERS)
@@ -1376,6 +1379,12 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
     }
 
     Keys->Value = 0;
+
+    // Refresh once per frame before reading any controller (Control 0 is first).
+    if (Control == 0)
+    {
+        RefreshSdlInputState();
+    }
 
     const auto fillLocalKeys = [&](int localControl, BUTTONS* outKeys) {
         outKeys->Value = 0;

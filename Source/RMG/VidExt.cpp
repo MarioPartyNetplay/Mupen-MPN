@@ -53,7 +53,13 @@ static bool VidExt_OglSetup(void)
         continue;
     }
 
-    if (!(*l_OGLWidget)->GetContext()->isValid())
+    if (!(*l_OGLWidget)->EnsureRenderContext())
+    {
+        CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to create ANGLE/EGL render context");
+        return false;
+    }
+
+    if (!(*l_OGLWidget)->IsContextValid())
     {
         if (QSurfaceFormat::defaultFormat().renderableType() == QSurfaceFormat::OpenGLES)
         {
@@ -66,7 +72,7 @@ static bool VidExt_OglSetup(void)
         return false;
     }
 
-    if (!(*l_OGLWidget)->GetContext()->makeCurrent((*l_OGLWidget)))
+    if (!(*l_OGLWidget)->MakeContextCurrent())
     {
         CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to make OpenGL context current");
         return false;
@@ -86,8 +92,12 @@ static m64p_error VidExt_InitWithRenderMode(m64p_render_mode RenderMode)
         l_SurfaceFormat = QSurfaceFormat::defaultFormat();
         l_SurfaceFormat.setOption(QSurfaceFormat::DeprecatedFunctions, 1);
         l_SurfaceFormat.setDepthBufferSize(24);
+#ifdef __APPLE__
+        l_SurfaceFormat.setRenderableType(QSurfaceFormat::OpenGLES);
+        l_SurfaceFormat.setMajorVersion(3);
+        l_SurfaceFormat.setMinorVersion(2);
+#else
         l_SurfaceFormat.setProfile(QSurfaceFormat::CompatibilityProfile);
-        l_SurfaceFormat.setSwapInterval(0);
         if (l_SurfaceFormat.renderableType() != QSurfaceFormat::OpenGLES)
         {
             l_SurfaceFormat.setMajorVersion(3);
@@ -98,6 +108,8 @@ static m64p_error VidExt_InitWithRenderMode(m64p_render_mode RenderMode)
             l_SurfaceFormat.setMajorVersion(2);
             l_SurfaceFormat.setMinorVersion(0);
         }
+#endif
+        l_SurfaceFormat.setSwapInterval(0);
     }
 
     l_EmuThread->on_VidExt_Init(RenderMode == M64P_RENDER_OPENGL ? VidExtRenderMode::OpenGL : VidExtRenderMode::Vulkan);
@@ -116,8 +128,10 @@ static m64p_error VidExt_Quit(void)
 
     if (l_RenderMode == M64P_RENDER_OPENGL)
     {
+#ifndef __APPLE__
         // move OpenGL context back to the GUI thread
         (*l_OGLWidget)->MoveContextToThread(QApplication::instance()->thread());
+#endif
     }
     else
     {
@@ -203,7 +217,7 @@ static m64p_function VidExt_GLGetProc(const char *Proc)
         return nullptr;
     }
 
-    return (*l_OGLWidget)->GetContext()->getProcAddress(Proc);
+    return reinterpret_cast<m64p_function>((*l_OGLWidget)->GetProcAddress(Proc));
 }
 
 static m64p_error VidExt_GLSetAttr(m64p_GLattr Attr, int Value)
@@ -252,11 +266,15 @@ static m64p_error VidExt_GLSetAttr(m64p_GLattr Attr, int Value)
     case M64P_GL_CONTEXT_MINOR_VERSION:
         l_SurfaceFormat.setMinorVersion(Value);
         break;
-    case M64P_GL_CONTEXT_PROFILE_MASK:
+        case M64P_GL_CONTEXT_PROFILE_MASK:
         switch (Value)
         {
         case M64P_GL_CONTEXT_PROFILE_CORE:
+#ifdef __APPLE__
+            l_SurfaceFormat.setRenderableType(QSurfaceFormat::OpenGLES);
+#else
             l_SurfaceFormat.setProfile(QSurfaceFormat::CoreProfile);
+#endif
             break;
         case M64P_GL_CONTEXT_PROFILE_COMPATIBILITY:
             l_SurfaceFormat.setProfile(QSurfaceFormat::CompatibilityProfile);
@@ -353,8 +371,7 @@ static m64p_error VidExt_GLSwapBuf(void)
 
     OnScreenDisplayRender();
 
-    (*l_OGLWidget)->GetContext()->swapBuffers((*l_OGLWidget));
-    (*l_OGLWidget)->GetContext()->makeCurrent((*l_OGLWidget));
+    (*l_OGLWidget)->SwapContextBuffers();
 
     return M64ERR_SUCCESS;
 }
@@ -400,7 +417,7 @@ static uint32_t VidExt_GLGetDefaultFramebuffer(void)
         return 0;
     }
 
-    return (*l_OGLWidget)->GetContext()->defaultFramebufferObject();
+    return (*l_OGLWidget)->DefaultFramebufferObject();
 }
 
 static m64p_error VidExt_VK_GetSurface(void** Surface, void* Instance)
@@ -452,13 +469,21 @@ static m64p_error VidExt_VK_GetInstanceExtensions(const char** Extensions[], uin
     l_VulkanExtensions = l_VulkanInstance.supportedExtensions();
     l_VulkanExtensionList.clear();
 
-    // only add surface extensions
+    // add WSI and portability extensions required by the active platform
     for (int i = 0; i < l_VulkanExtensions.size(); i++)
     {
-        if (l_VulkanExtensions[i].name.startsWith("VK_KHR_") &&
-            l_VulkanExtensions[i].name.endsWith("surface"))
+        const QByteArray name = l_VulkanExtensions[i].name;
+        const bool isSurfaceExtension =
+            (name.startsWith("VK_KHR_") && name.endsWith("surface")) ||
+            name == "VK_EXT_metal_surface" ||
+            name == "VK_MVK_macos_surface";
+        const bool isPortabilityExtension =
+            name == "VK_KHR_portability_enumeration" ||
+            name == "VK_KHR_get_physical_device_properties2";
+
+        if (isSurfaceExtension || isPortabilityExtension)
         {
-            l_VulkanExtensionList.append(l_VulkanExtensions[i].name.data());
+            l_VulkanExtensionList.append(name.data());
         }
     }
 

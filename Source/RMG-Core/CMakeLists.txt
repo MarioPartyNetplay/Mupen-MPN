@@ -79,13 +79,14 @@ endif(UNIX)
 
 if(WIN32)
     target_link_libraries(RMG-Core wsock32 ws2_32 ${ICONV_LIBRARIES})
-endif(WIN32)
+elseif(APPLE)
+    target_link_libraries(RMG-Core iconv)
+endif()
 
-# Regenerate git commit hash on each RMG-Core build (not only when .in/.py change).
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-
 set(RMG_CORE_VERSION_HASH_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/VersionHash.hpp")
-add_custom_target(RMG-Core-version-hash
+add_custom_command(
+    OUTPUT "${RMG_CORE_VERSION_HASH_HEADER}"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/make_version.py"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     COMMENT "Updating RMG-Core git version hash"
@@ -127,3 +128,9 @@ target_include_directories(RMG-Core PRIVATE
 )
 
 set_target_properties(RMG-Core PROPERTIES CXX_VISIBILITY_PRESET hidden)
+
+if (APPLE AND PORTABLE_INSTALL)
+    set_target_properties(RMG-Core PROPERTIES
+        INSTALL_RPATH "@loader_path"
+    )
+endif()

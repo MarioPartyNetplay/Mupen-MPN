@@ -10,8 +10,12 @@
 #include <UserInterface/MainWindow.hpp>
 
 #include <QCommandLineParser>
+#include <QSurfaceFormat>
+#include <QCoreApplication>
 #include <QApplication>
+#include <QGuiApplication>
 #include <QFile>
+#include <QFileInfo>
 #include <QDir>
 #include <QLockFile>
 
@@ -25,6 +29,12 @@
 #include <wchar.h>
 #else
 #include <signal.h>
+#endif
+
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <vector>
+#include <climits>
 #endif
 
 #include <RMG-Core/Directories.hpp>
@@ -196,6 +206,55 @@ static void configurePortableMultiInstanceProfile(QCoreApplication& app)
 }
 #endif // PORTABLE_INSTALL
 
+#ifdef __APPLE__
+static QString macOSExecutableDirectory(void)
+{
+    std::vector<char> buffer(PATH_MAX);
+    uint32_t size = static_cast<uint32_t>(buffer.size());
+    if (_NSGetExecutablePath(buffer.data(), &size) != 0)
+    {
+        buffer.resize(size);
+        if (_NSGetExecutablePath(buffer.data(), &size) != 0)
+        {
+            return QString();
+        }
+    }
+
+    return QFileInfo(QString::fromUtf8(buffer.data())).absolutePath();
+}
+
+static void configureMoltenVK(void)
+{
+    if (qEnvironmentVariableIsSet("QT_VULKAN_LIB"))
+    {
+        return;
+    }
+
+    const QString exeDir = macOSExecutableDirectory();
+    const QString bundledMoltenVk = exeDir + QStringLiteral("/libMoltenVK.dylib");
+    if (QFile::exists(bundledMoltenVk))
+    {
+        qputenv("QT_VULKAN_LIB", bundledMoltenVk.toUtf8());
+        qputenv("GRANITE_VULKAN_LIBRARY", bundledMoltenVk.toUtf8());
+        return;
+    }
+
+    static const char* brewPrefixes[] = {"/usr/local/opt/molten-vk", "/opt/homebrew/opt/molten-vk"};
+    for (const char* prefix : brewPrefixes)
+    {
+        const QString brewMoltenVk = QString::fromUtf8(prefix) + QStringLiteral("/lib/libMoltenVK.dylib");
+        if (QFile::exists(brewMoltenVk))
+        {
+            qputenv("QT_VULKAN_LIB", brewMoltenVk.toUtf8());
+            qputenv("GRANITE_VULKAN_LIBRARY", brewMoltenVk.toUtf8());
+            return;
+        }
+    }
+
+    qputenv("QT_VULKAN_LIB", "libMoltenVK.dylib");
+}
+#endif // __APPLE__
+
 //
 // Exported Functions
 //
@@ -218,7 +277,9 @@ int main(int argc, char **argv)
     // i.e control+c
     signal(SIGINT,  signal_handler);
     signal(SIGTERM, signal_handler);
+#endif // _WIN32
 
+#ifdef __linux__
     // on Linux, wayland works only on some compositors,
     // it works on KDE plasma and sway (on 2023-07-26),
     // but i.e doesn't work on GNOME wayland or labwc, 
@@ -255,7 +316,17 @@ int main(int argc, char **argv)
     // specified, else the window icon will be
     // the generic wayland icon on wayland
     QGuiApplication::setDesktopFileName("org.marioparty.mupen");
-#endif
+#elif defined(__APPLE__)
+    configureMoltenVK();
+
+    QSurfaceFormat format = QSurfaceFormat::defaultFormat();
+    format.setSwapInterval(0);
+    format.setMajorVersion(3);
+    format.setMinorVersion(2);
+    format.setRenderableType(QSurfaceFormat::OpenGLES);
+    format.setDepthBufferSize(24);
+    QSurfaceFormat::setDefaultFormat(format);
+#endif // __linux__
 
     QApplication app(argc, argv);
 

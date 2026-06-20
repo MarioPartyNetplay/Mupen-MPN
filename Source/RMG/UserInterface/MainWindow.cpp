@@ -755,8 +755,6 @@ void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool re
         this->ui_LoadSaveStateSlotTimerId = this->startTimer(100);
     }
 
-    this->ui_CheckVideoSizeTimerId = this->startTimer(2000);
-
     this->ui_HideCursorInEmulation = CoreSettingsGetBoolValue(SettingsID::GUI_HideCursorInEmulation);
     this->ui_HideCursorInFullscreenEmulation = CoreSettingsGetBoolValue(SettingsID::GUI_HideCursorInFullscreenEmulation);
 
@@ -1356,42 +1354,6 @@ void MainWindow::timerEvent(QTimerEvent *event)
         this->updateSaveStateSlotActions(CoreIsEmulationRunning(), false);
         this->killTimer(timerId);
         this->ui_UpdateSaveStateSlotTimerId = 0;
-    }
-    else if (timerId == this->ui_CheckVideoSizeTimerId)
-    {
-        if (!CoreIsEmulationRunning())
-        {
-            return;
-        }
-
-        int width  = 0;
-        int height = 0;
-        if (!CoreGetVideoSize(width, height))
-        {
-            return;
-        }
-
-        int expectedWidth  = 0;
-        int expectedHeight = 0;
-        if (this->ui_VidExtRenderMode == VidExtRenderMode::OpenGL)
-        {
-            expectedWidth  = this->ui_Widget_OpenGL->GetWidget()->width()  * this->devicePixelRatio();
-            expectedHeight = this->ui_Widget_OpenGL->GetWidget()->height() * this->devicePixelRatio();
-        }
-        else if (this->ui_VidExtRenderMode == VidExtRenderMode::Vulkan)
-        {
-            expectedWidth  = this->ui_Widget_Vulkan->GetWidget()->width()  * this->devicePixelRatio();
-            expectedHeight = this->ui_Widget_Vulkan->GetWidget()->height() * this->devicePixelRatio();
-        }
-
-        expectedWidth  &= ~0x1;
-        expectedHeight &= ~0x1;
-
-        if (width  != expectedWidth ||
-            height != expectedHeight)
-        {
-            CoreSetVideoSize(expectedWidth, expectedHeight);
-        }
     }
     else if (timerId == this->ui_LoadSaveStateSlotTimerId)
     {
@@ -2183,12 +2145,6 @@ void MainWindow::on_Emulation_Finished(bool ret, QString error)
         this->ui_FullscreenTimerId = 0;
     }
 
-    if (this->ui_CheckVideoSizeTimerId != 0)
-    {
-        this->killTimer(this->ui_CheckVideoSizeTimerId);
-        this->ui_CheckVideoSizeTimerId = 0;
-    }
-
     if (this->ui_QuitAfterEmulation)
     {
         // show error message when
@@ -2385,6 +2341,17 @@ void MainWindow::on_VidExt_Init(VidExtRenderMode renderMode)
     this->ui_VidExtRenderMode   = renderMode;
     this->ui_VidExtForceSetMode = true;
 
+#ifdef __APPLE__
+    {
+        QSurfaceFormat format = QSurfaceFormat::defaultFormat();
+        format.setSwapInterval(0);
+        format.setMajorVersion(3);
+        format.setMinorVersion(2);
+        format.setRenderableType(QSurfaceFormat::OpenGLES);
+        format.setDepthBufferSize(24);
+        QSurfaceFormat::setDefaultFormat(format);
+    }
+#else
     if (CoreSettingsGetBoolValue(SettingsID::GUI_OpenGLES))
     {
         QSurfaceFormat format = QSurfaceFormat::defaultFormat();
@@ -2403,6 +2370,7 @@ void MainWindow::on_VidExt_Init(VidExtRenderMode renderMode)
         format.setRenderableType(QSurfaceFormat::OpenGL);
         QSurfaceFormat::setDefaultFormat(format);
     }
+#endif
 
     if (renderMode == VidExtRenderMode::OpenGL)
     {
@@ -2426,17 +2394,7 @@ void MainWindow::on_VidExt_Init(VidExtRenderMode renderMode)
 
 void MainWindow::on_VidExt_SetupOGL(QSurfaceFormat format, QThread* thread)
 {
-    this->ui_Widget_OpenGL->MoveContextToThread(thread);
-    // on wayland setting the surface format
-    // fails for some reason, and if we set it anyways
-    // ->makeCurrent() will fail in VidExt.cpp,
-    // so to resolve that I've set OpenGL 3.3 as
-    // default surface format in main.cpp and we
-    // skip it here only on when on wayland
-    if (QGuiApplication::platformName() != "wayland")
-    {
-        this->ui_Widget_OpenGL->setFormat(format);
-    }
+    this->ui_Widget_OpenGL->PrepareRenderContext(format, thread);
 }
 
 void MainWindow::on_VidExt_SetWindowedMode(int width, int height, int bps, int flags)
