@@ -239,7 +239,7 @@ if (USE_ANGRYLION)
 endif(USE_ANGRYLION)
 
 if (APPLE)
-    set(GLIDEN64_EXTERNAL_DEPENDS angle_static)
+    set(GLIDEN64_EXTERNAL_DEPENDS angle_static SPIRV-Tools-static)
 else()
     set(GLIDEN64_EXTERNAL_DEPENDS "")
 endif()
