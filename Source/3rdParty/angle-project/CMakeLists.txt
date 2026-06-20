@@ -47,6 +47,11 @@ endif()
 
 add_subdirectory("${ANGLE_CMAKE_DIR}" "${ANGLE_BUILD_SUBDIR}")
 
+set(SPIRV-Headers_SOURCE_DIR "${ANGLE_SPIRV_HEADERS_ROOT}")
+set(SPIRV_SKIP_TESTS ON CACHE BOOL "" FORCE)
+set(SKIP_SPIRV_TOOLS_INSTALL ON CACHE BOOL "" FORCE)
+add_subdirectory("${ANGLE_SPIRV_TOOLS_ROOT}" "${ANGLE_BUILD_SUBDIR}/spirv-tools")
+
 target_compile_options(angle_static PRIVATE
     -Wno-nullability-completeness
     -Wno-unguarded-availability
@@ -56,6 +61,7 @@ target_link_libraries(angle_static PUBLIC
     "-framework Metal"
     "-framework MetalKit"
     "-framework QuartzCore"
+    "-framework IOSurface"
     "-framework Foundation"
     "-framework CoreFoundation"
     "-framework IOKit"

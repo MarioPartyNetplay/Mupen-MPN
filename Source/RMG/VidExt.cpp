@@ -217,7 +217,7 @@ static m64p_function VidExt_GLGetProc(const char *Proc)
         return nullptr;
     }
 
-    return (*l_OGLWidget)->GetProcAddress(Proc);
+    return reinterpret_cast<m64p_function>((*l_OGLWidget)->GetProcAddress(Proc));
 }
 
 static m64p_error VidExt_GLSetAttr(m64p_GLattr Attr, int Value)

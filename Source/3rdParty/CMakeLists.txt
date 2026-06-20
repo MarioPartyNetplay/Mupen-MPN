@@ -209,6 +209,7 @@ if (APPLE)
         -DEGL=ON
         -DANGLE_INCLUDE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/angle/include
         -DANGLE_STATIC_LIBRARY=${CMAKE_CURRENT_BINARY_DIR}/angle-project/angle-cmake/libangle_static.a
+        -DANGLE_SPIRV_TOOLS_LIBRARY=${CMAKE_CURRENT_BINARY_DIR}/angle-project/angle-cmake/spirv-tools/source/libSPIRV-Tools.a
     )
 
     set(ANGLE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/angle/include" PARENT_SCOPE)

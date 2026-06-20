@@ -55,7 +55,10 @@ bool AngleContext::create(QWindow* window, int swapInterval_)
         EGL_NONE,
     };
 
-    EGLDisplay eglDisplay = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, displayAttributes);
+    EGLDisplay eglDisplay = eglGetPlatformDisplay(
+        EGL_PLATFORM_ANGLE_ANGLE,
+        reinterpret_cast<void*>(static_cast<intptr_t>(EGL_DEFAULT_DISPLAY)),
+        displayAttributes);
     if (eglDisplay == EGL_NO_DISPLAY)
     {
         eglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
