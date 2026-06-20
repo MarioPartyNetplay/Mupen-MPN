@@ -197,6 +197,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     void on_Action_System_Load(void);
     void on_Action_System_CurrentSaveState(int slot);
     void on_Action_System_Cheats(void);
+    void on_Action_System_Modifications(void);
     void on_Action_System_GSButton(void);
     void on_Action_System_Exit(void);
 

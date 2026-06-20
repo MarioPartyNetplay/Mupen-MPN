@@ -28,13 +28,17 @@ class ChooseCheatOptionDialog : public QDialog, private Ui::ChooseCheatOptionDia
 
   private:
     QString file;
+    QString modificationInternalName;
     CoreCheat cheat;
     bool netplay;
     QJsonArray cheatsJson;
 
   public:
-    ChooseCheatOptionDialog(QWidget *parent, QString file, CoreCheat cheat, bool netplay, QJsonArray cheatsJson);
+    ChooseCheatOptionDialog(QWidget *parent, QString file, CoreCheat cheat, bool netplay, QJsonArray cheatsJson,
+                            const QString& modificationInternalName = QString());
     ~ChooseCheatOptionDialog(void);
+
+    void setModificationInternalName(const QString& internalName);
 
     QJsonArray GetJson(void);
 

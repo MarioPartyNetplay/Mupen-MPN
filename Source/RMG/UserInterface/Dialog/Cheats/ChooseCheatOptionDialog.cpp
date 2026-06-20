@@ -16,21 +16,33 @@ Q_DECLARE_METATYPE(CoreCheatOption);
 
 using namespace UserInterface::Dialog;
 
-ChooseCheatOptionDialog::ChooseCheatOptionDialog(QWidget *parent, QString file, CoreCheat cheat, bool netplay, QJsonArray cheatsJson) : QDialog(parent)
+ChooseCheatOptionDialog::ChooseCheatOptionDialog(QWidget *parent, QString file, CoreCheat cheat, bool netplay,
+                                                 QJsonArray cheatsJson, const QString& modificationInternalName)
+    : QDialog(parent)
 {
     qRegisterMetaType<CoreCheatOption>();
 
     this->setupUi(this);
 
     this->file = file;
+    this->modificationInternalName = modificationInternalName;
     this->cheat = cheat;
     this->netplay = netplay;
     this->cheatsJson = cheatsJson;
     
+    bool checkCheatOption = false;
     CoreCheatOption setCheatOption;
 
-    bool checkCheatOption = CheatsCommon::HasCheatOptionSet(this->netplay, this->cheatsJson, this->file, cheat) &&
-                            CheatsCommon::GetCheatOption(this->netplay, this->cheatsJson, this->file, cheat, setCheatOption);
+    if (!this->modificationInternalName.isEmpty())
+    {
+        checkCheatOption = CoreHasModificationCheatOptionSet(this->modificationInternalName.toStdString(), cheat) &&
+                           CoreGetModificationCheatOption(this->modificationInternalName.toStdString(), cheat, setCheatOption);
+    }
+    else
+    {
+        checkCheatOption = CheatsCommon::HasCheatOptionSet(this->netplay, this->cheatsJson, this->file, cheat) &&
+                           CheatsCommon::GetCheatOption(this->netplay, this->cheatsJson, this->file, cheat, setCheatOption);
+    }
 
     for (CoreCheatOption& option : cheat.CheatOptions)
     {
@@ -52,6 +64,11 @@ ChooseCheatOptionDialog::ChooseCheatOptionDialog(QWidget *parent, QString file, 
 
 ChooseCheatOptionDialog::~ChooseCheatOptionDialog()
 {
+}
+
+void ChooseCheatOptionDialog::setModificationInternalName(const QString& internalName)
+{
+    this->modificationInternalName = internalName;
 }
 
 QJsonArray ChooseCheatOptionDialog::GetJson(void)
@@ -86,7 +103,14 @@ void ChooseCheatOptionDialog::accept(void)
         if (item->checkState(0) == Qt::CheckState::Checked)
         {
             CoreCheatOption cheatOption = item->data(0, Qt::UserRole).value<CoreCheatOption>();
-            CheatsCommon::SetCheatOption(this->netplay, this->cheatsJson, this->file, this->cheat, cheatOption);
+            if (!this->modificationInternalName.isEmpty())
+            {
+                CoreSetModificationCheatOption(this->modificationInternalName.toStdString(), this->cheat, cheatOption);
+            }
+            else
+            {
+                CheatsCommon::SetCheatOption(this->netplay, this->cheatsJson, this->file, this->cheat, cheatOption);
+            }
         }
     }
 

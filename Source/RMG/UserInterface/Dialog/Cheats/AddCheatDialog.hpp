@@ -29,6 +29,8 @@ class AddCheatDialog : public QDialog, private Ui::AddCheatDialog
     AddCheatDialog(QWidget *parent, QString file);
     ~AddCheatDialog(void);
 
+    void setModificationInternalName(const QString& internalName);
+
     // enables edit mode & sets cheat
     void SetCheat(CoreCheat cheat);
 
@@ -36,6 +38,7 @@ class AddCheatDialog : public QDialog, private Ui::AddCheatDialog
     bool updateMode = false;
     CoreCheat oldCheat;
     QString file;
+    QString modificationInternalName;
 
     void setPlainTextEditLines(QPlainTextEdit* plainTextEdit, const std::vector<std::string>& lines);
     bool validate(void);
@@ -45,6 +48,9 @@ class AddCheatDialog : public QDialog, private Ui::AddCheatDialog
     bool getCheat(CoreCheat& cheat);
     bool addCheat(void);
     bool updateCheat(void);
+    bool addModificationCheat(void);
+    bool updateModificationCheat(void);
+    void configureModificationUi(void);
 
   private slots:
     void accept(void) Q_DECL_OVERRIDE;

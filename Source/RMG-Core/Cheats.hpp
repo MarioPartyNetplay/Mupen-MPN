@@ -155,4 +155,24 @@ bool CoreApplyNetplayCheats(void);
 // attemps to press the gameshark button
 bool CorePressGamesharkButton(bool enabled);
 
+struct CoreModificationGame
+{
+    std::string internalName;
+    std::string displayName;
+    std::string md5;
+};
+
+bool CoreGetModificationGames(std::vector<CoreModificationGame>& games);
+bool CoreGetModificationCheats(const std::string& internalName, std::vector<CoreCheat>& cheats);
+bool CoreEnableModificationCheat(const std::string& internalName, CoreCheat cheat, bool enabled);
+bool CoreIsModificationCheatEnabled(const std::string& internalName, CoreCheat cheat);
+bool CoreHasModificationCheatOptionSet(const std::string& internalName, CoreCheat cheat);
+bool CoreSetModificationCheatOption(const std::string& internalName, CoreCheat cheat, CoreCheatOption option);
+bool CoreGetModificationCheatOption(const std::string& internalName, CoreCheat cheat, CoreCheatOption& option);
+bool CoreResetModificationCheatOption(const std::string& internalName, CoreCheat cheat);
+bool CoreAddModificationCheat(const std::string& internalName, CoreCheat cheat);
+bool CoreUpdateModificationCheat(const std::string& internalName, CoreCheat oldCheat, CoreCheat newCheat);
+bool CoreCanRemoveModificationCheat(const std::string& internalName, CoreCheat cheat);
+bool CoreRemoveModificationCheat(const std::string& internalName, CoreCheat cheat);
+
 #endif // CORE_CHEATS_HPP

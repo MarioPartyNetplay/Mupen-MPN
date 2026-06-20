@@ -104,6 +104,7 @@
     <addaction name="separator"/>
     <addaction name="menuCurrent_Save_State"/>
     <addaction name="separator"/>
+    <addaction name="action_System_Modifications"/>
     <addaction name="action_System_Cheats"/>
     <addaction name="action_System_GSButton"/>
     <addaction name="separator"/>
@@ -200,6 +201,7 @@
     <addaction name="action_Settings_Settings2"/>
     <addaction name="action_Settings_Graphics2"/>
     <addaction name="action_Settings_Input2"/>
+    <addaction name="action_System_Modifications"/>
    </widget>
    <action name="action_View_Fullscreen2">
     <property name="icon">
@@ -469,6 +471,14 @@
     </property>
     <property name="text">
      <string>Slot &amp;9</string>
+    </property>
+   </action>
+   <action name="action_System_Modifications">
+    <property name="icon">
+     <iconset theme="modifications"/>
+    </property>
+    <property name="text">
+     <string>Modifications...</string>
     </property>
    </action>
    <action name="action_System_Cheats">

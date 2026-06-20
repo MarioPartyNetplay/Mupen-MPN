@@ -1195,3 +1195,412 @@ CORE_EXPORT bool CorePressGamesharkButton(bool enabled)
 
     return true;
 }
+
+namespace {
+
+struct ModificationProfile
+{
+    const char* internalName;
+    const char* displayName;
+    const char* gameMd5;
+    const char* cheatFileName;
+};
+
+constexpr ModificationProfile kModificationProfiles[] = {
+    {"MarioParty", "Mario Party 1", "8BC2712139FBF0C56C8EA835802C52DC", "MarioParty.cht"},
+    {"MarioParty2", "Mario Party 2", "04840612A35ECE222AFDB2DFBF926409", "MarioParty2.cht"},
+    {"MarioParty3", "Mario Party 3", "76A8BBC81BC2060EC99C9645867237CC", "MarioParty3.cht"},
+};
+
+const ModificationProfile* find_modification_profile(const std::string& internalName)
+{
+    for (const ModificationProfile& profile : kModificationProfiles)
+    {
+        if (internalName == profile.internalName)
+        {
+            return &profile;
+        }
+    }
+
+    return nullptr;
+}
+
+std::filesystem::path get_modification_shared_cheat_path(const ModificationProfile& profile)
+{
+    std::filesystem::path customPath = CoreGetSharedDataDirectory();
+    customPath += CORE_DIR_SEPERATOR_STR;
+    customPath += "Cheats";
+    customPath += CORE_DIR_SEPERATOR_STR;
+    customPath += "Custom";
+    customPath += CORE_DIR_SEPERATOR_STR;
+    customPath += profile.cheatFileName;
+
+    if (std::filesystem::is_regular_file(customPath))
+    {
+        return customPath;
+    }
+
+    std::filesystem::path sharedPath = CoreGetSharedDataDirectory();
+    sharedPath += CORE_DIR_SEPERATOR_STR;
+    sharedPath += "Cheats";
+    sharedPath += CORE_DIR_SEPERATOR_STR;
+    sharedPath += profile.cheatFileName;
+    return sharedPath;
+}
+
+std::filesystem::path get_modification_user_cheat_path(const ModificationProfile& profile)
+{
+    std::filesystem::path cheatFilePath = CoreGetUserConfigDirectory();
+    cheatFilePath += CORE_DIR_SEPERATOR_STR;
+    cheatFilePath += "Cheats-User";
+    cheatFilePath += CORE_DIR_SEPERATOR_STR;
+    cheatFilePath += profile.cheatFileName;
+
+    std::error_code errorCode;
+    if (!std::filesystem::is_directory(cheatFilePath.parent_path(), errorCode))
+    {
+        std::filesystem::create_directory(cheatFilePath.parent_path(), errorCode);
+    }
+
+    return cheatFilePath;
+}
+
+std::string modification_cheat_setting_section(const ModificationProfile& profile)
+{
+    return std::string(profile.gameMd5) + " Cheats";
+}
+
+bool load_modification_cheat_files(const std::string& internalName)
+{
+    const ModificationProfile* profile = find_modification_profile(internalName);
+    if (profile == nullptr)
+    {
+        CoreSetError("Unknown modification game: " + internalName);
+        return false;
+    }
+
+    CoreCheatFile sharedCheatFile;
+    CoreCheatFile userCheatFile;
+    const std::filesystem::path sharedCheatFilePath = get_modification_shared_cheat_path(*profile);
+    const std::filesystem::path userCheatFilePath = get_modification_user_cheat_path(*profile);
+    const bool hasSharedCheatFile = std::filesystem::is_regular_file(sharedCheatFilePath);
+    const bool hasUserCheatFile = std::filesystem::is_regular_file(userCheatFilePath);
+    std::vector<std::string> sharedCheatFileLines;
+    std::vector<std::string> userCheatFileLines;
+
+    if (!hasSharedCheatFile && !hasUserCheatFile)
+    {
+        l_SharedCheatFile = {};
+        l_UserCheatFile = {};
+        return true;
+    }
+
+    if ((hasSharedCheatFile && !read_file_lines(sharedCheatFilePath, sharedCheatFileLines)) ||
+        (hasUserCheatFile && !read_file_lines(userCheatFilePath, userCheatFileLines)))
+    {
+        return false;
+    }
+
+    if ((hasSharedCheatFile && !parse_cheat_file(sharedCheatFileLines, sharedCheatFile)) ||
+        (hasUserCheatFile && !parse_cheat_file(userCheatFileLines, userCheatFile)))
+    {
+        return false;
+    }
+
+    l_SharedCheatFile = sharedCheatFile;
+    l_UserCheatFile = userCheatFile;
+    return true;
+}
+
+bool ensure_modification_user_cheat_file(const ModificationProfile& profile)
+{
+    if (!l_SharedCheatFile.Name.empty() || !l_UserCheatFile.Name.empty())
+    {
+        return true;
+    }
+
+    l_UserCheatFile.MD5 = profile.gameMd5;
+    l_UserCheatFile.Name = profile.displayName;
+    return true;
+}
+
+} // namespace
+
+CORE_EXPORT bool CoreGetModificationGames(std::vector<CoreModificationGame>& games)
+{
+    games.clear();
+    games.reserve(std::size(kModificationProfiles));
+
+    for (const ModificationProfile& profile : kModificationProfiles)
+    {
+        games.push_back({profile.internalName, profile.displayName, profile.gameMd5});
+    }
+
+    return true;
+}
+
+CORE_EXPORT bool CoreGetModificationCheats(const std::string& internalName, std::vector<CoreCheat>& cheats)
+{
+    cheats.clear();
+
+    if (!load_modification_cheat_files(internalName))
+    {
+        return false;
+    }
+
+    for (const CoreCheat& cheat : l_UserCheatFile.Cheats)
+    {
+        cheats.push_back(cheat);
+    }
+
+    for (const CoreCheat& cheat : l_SharedCheatFile.Cheats)
+    {
+        if (find_user_cheat_using_name(cheat.Name) != l_UserCheatFile.Cheats.end())
+        {
+            continue;
+        }
+
+        cheats.push_back(cheat);
+    }
+
+    return true;
+}
+
+CORE_EXPORT bool CoreEnableModificationCheat(const std::string& internalName, CoreCheat cheat, bool enabled)
+{
+    const ModificationProfile* profile = find_modification_profile(internalName);
+    if (profile == nullptr)
+    {
+        CoreSetError("Unknown modification game: " + internalName);
+        return false;
+    }
+
+    const std::string settingSection = modification_cheat_setting_section(*profile);
+    const std::string settingKey = "Cheat \"" + cheat.Name + "\" Enabled";
+
+    if (!enabled && !CoreSettingsKeyExists(settingSection, settingKey))
+    {
+        return true;
+    }
+
+    return CoreSettingsSetValue(settingSection, settingKey, enabled);
+}
+
+CORE_EXPORT bool CoreIsModificationCheatEnabled(const std::string& internalName, CoreCheat cheat)
+{
+    const ModificationProfile* profile = find_modification_profile(internalName);
+    if (profile == nullptr)
+    {
+        return false;
+    }
+
+    const std::string settingSection = modification_cheat_setting_section(*profile);
+    const std::string settingKey = "Cheat \"" + cheat.Name + "\" Enabled";
+
+    return CoreSettingsGetBoolValue(settingSection, settingKey, false);
+}
+
+CORE_EXPORT bool CoreHasModificationCheatOptionSet(const std::string& internalName, CoreCheat cheat)
+{
+    const ModificationProfile* profile = find_modification_profile(internalName);
+    if (profile == nullptr)
+    {
+        return false;
+    }
+
+    const std::string settingSection = modification_cheat_setting_section(*profile);
+    const std::string settingKey = "Cheat \"" + cheat.Name + "\" Option";
+
+    return CoreSettingsGetIntValue(settingSection, settingKey, -1) != -1;
+}
+
+CORE_EXPORT bool CoreSetModificationCheatOption(const std::string& internalName, CoreCheat cheat, CoreCheatOption option)
+{
+    const ModificationProfile* profile = find_modification_profile(internalName);
+    if (profile == nullptr)
+    {
+        return false;
+    }
+
+    const std::string settingSection = modification_cheat_setting_section(*profile);
+    const std::string settingKey = "Cheat \"" + cheat.Name + "\" Option";
+
+    return CoreSettingsSetValue(settingSection, settingKey, static_cast<int>(option.Value));
+}
+
+CORE_EXPORT bool CoreGetModificationCheatOption(const std::string& internalName, CoreCheat cheat, CoreCheatOption& option)
+{
+    const ModificationProfile* profile = find_modification_profile(internalName);
+    if (profile == nullptr)
+    {
+        return false;
+    }
+
+    if (!cheat.HasOptions)
+    {
+        return false;
+    }
+
+    const std::string settingSection = modification_cheat_setting_section(*profile);
+    const std::string settingKey = "Cheat \"" + cheat.Name + "\" Option";
+    const int value = CoreSettingsGetIntValue(settingSection, settingKey, -1);
+    if (value == -1)
+    {
+        return false;
+    }
+
+    for (const CoreCheatOption& cheatOption : cheat.CheatOptions)
+    {
+        if (cheatOption.Value == static_cast<uint32_t>(value))
+        {
+            option = cheatOption;
+            return true;
+        }
+    }
+
+    CoreSettingsSetValue(settingSection, settingKey, -1);
+    return false;
+}
+
+CORE_EXPORT bool CoreResetModificationCheatOption(const std::string& internalName, CoreCheat cheat)
+{
+    const ModificationProfile* profile = find_modification_profile(internalName);
+    if (profile == nullptr)
+    {
+        return false;
+    }
+
+    const std::string settingSection = modification_cheat_setting_section(*profile);
+    const std::string settingKey = "Cheat \"" + cheat.Name + "\" Option";
+
+    CoreSettingsSetValue(settingSection, settingKey, -1);
+    return true;
+}
+
+CORE_EXPORT bool CoreAddModificationCheat(const std::string& internalName, CoreCheat cheat)
+{
+    const ModificationProfile* profile = find_modification_profile(internalName);
+    if (profile == nullptr)
+    {
+        CoreSetError("Unknown modification game: " + internalName);
+        return false;
+    }
+
+    if (!load_modification_cheat_files(internalName))
+    {
+        return false;
+    }
+
+    if (find_user_cheat_using_name(cheat.Name) != l_UserCheatFile.Cheats.end())
+    {
+        CoreSetError("CoreAddModificationCheat Failed: cheat with name already exists!");
+        return false;
+    }
+
+    if (l_UserCheatFile.Name.empty())
+    {
+        if (!l_SharedCheatFile.Name.empty())
+        {
+            l_UserCheatFile.CRC1 = l_SharedCheatFile.CRC1;
+            l_UserCheatFile.CRC2 = l_SharedCheatFile.CRC2;
+            l_UserCheatFile.CountryCode = l_SharedCheatFile.CountryCode;
+            l_UserCheatFile.MD5 = l_SharedCheatFile.MD5;
+            l_UserCheatFile.Name = l_SharedCheatFile.Name;
+        }
+        else
+        {
+            ensure_modification_user_cheat_file(*profile);
+        }
+    }
+
+    l_UserCheatFile.Cheats.push_back(cheat);
+    return write_cheat_file(l_UserCheatFile, get_modification_user_cheat_path(*profile));
+}
+
+CORE_EXPORT bool CoreUpdateModificationCheat(const std::string& internalName, CoreCheat oldCheat, CoreCheat newCheat)
+{
+    const ModificationProfile* profile = find_modification_profile(internalName);
+    CoreCheatOption cheatOption;
+
+    if (profile == nullptr)
+    {
+        CoreSetError("Unknown modification game: " + internalName);
+        return false;
+    }
+
+    if (!load_modification_cheat_files(internalName))
+    {
+        return false;
+    }
+
+    if (oldCheat.Name != newCheat.Name)
+    {
+        CoreEnableModificationCheat(internalName, newCheat, CoreIsModificationCheatEnabled(internalName, oldCheat));
+
+        if (CoreGetModificationCheatOption(internalName, oldCheat, cheatOption))
+        {
+            CoreSetModificationCheatOption(internalName, newCheat, cheatOption);
+        }
+
+        CoreEnableModificationCheat(internalName, oldCheat, false);
+        CoreResetModificationCheatOption(internalName, oldCheat);
+    }
+
+    auto iter = find_user_cheat_using_name(oldCheat.Name);
+    if (iter != l_UserCheatFile.Cheats.end())
+    {
+        l_UserCheatFile.Cheats.erase(iter);
+    }
+
+    if (l_UserCheatFile.Name.empty())
+    {
+        if (!l_SharedCheatFile.Name.empty())
+        {
+            l_UserCheatFile.CRC1 = l_SharedCheatFile.CRC1;
+            l_UserCheatFile.CRC2 = l_SharedCheatFile.CRC2;
+            l_UserCheatFile.CountryCode = l_SharedCheatFile.CountryCode;
+            l_UserCheatFile.MD5 = l_SharedCheatFile.MD5;
+            l_UserCheatFile.Name = l_SharedCheatFile.Name;
+        }
+        else
+        {
+            ensure_modification_user_cheat_file(*profile);
+        }
+    }
+
+    l_UserCheatFile.Cheats.push_back(newCheat);
+    return write_cheat_file(l_UserCheatFile, get_modification_user_cheat_path(*profile));
+}
+
+CORE_EXPORT bool CoreCanRemoveModificationCheat(const std::string& internalName, CoreCheat cheat)
+{
+    if (!load_modification_cheat_files(internalName))
+    {
+        return false;
+    }
+
+    return std::find(l_UserCheatFile.Cheats.begin(), l_UserCheatFile.Cheats.end(), cheat) != l_UserCheatFile.Cheats.end();
+}
+
+CORE_EXPORT bool CoreRemoveModificationCheat(const std::string& internalName, CoreCheat cheat)
+{
+    const ModificationProfile* profile = find_modification_profile(internalName);
+    if (profile == nullptr)
+    {
+        CoreSetError("Unknown modification game: " + internalName);
+        return false;
+    }
+
+    if (!CoreCanRemoveModificationCheat(internalName, cheat))
+    {
+        return false;
+    }
+
+    auto iter = std::find(l_UserCheatFile.Cheats.begin(), l_UserCheatFile.Cheats.end(), cheat);
+    if (iter != l_UserCheatFile.Cheats.end())
+    {
+        l_UserCheatFile.Cheats.erase(iter);
+    }
+
+    return write_cheat_file(l_UserCheatFile, get_modification_user_cheat_path(*profile));
+}

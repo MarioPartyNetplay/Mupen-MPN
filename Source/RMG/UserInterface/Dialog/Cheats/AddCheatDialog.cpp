@@ -34,10 +34,43 @@ AddCheatDialog::~AddCheatDialog(void)
 {
 }
 
+void AddCheatDialog::setModificationInternalName(const QString& internalName)
+{
+    this->modificationInternalName = internalName;
+    if (!this->modificationInternalName.isEmpty())
+    {
+        this->configureModificationUi();
+    }
+}
+
+void AddCheatDialog::configureModificationUi(void)
+{
+    this->setWindowTitle(this->updateMode ? "Edit Code" : "Add New Code");
+
+    this->label->setVisible(false);
+    this->label_2->setVisible(false);
+    this->authorLineEdit->setVisible(false);
+    this->label_3->setVisible(false);
+    this->label_4->setVisible(false);
+    this->label_5->setVisible(false);
+    this->label_6->setVisible(false);
+    this->label_7->setVisible(false);
+    this->optionsTextEdit->setVisible(false);
+    this->codeTextEdit->setVisible(false);
+
+    this->nameLineEdit->setPlaceholderText("Name");
+    this->notesTextEdit->setPlaceholderText("Description");
+}
+
 void AddCheatDialog::SetCheat(CoreCheat cheat)
 {
     // change window title
-    this->setWindowTitle("Edit Cheat");
+    this->setWindowTitle(this->modificationInternalName.isEmpty() ? "Edit Cheat" : "Edit Code");
+
+    if (!this->modificationInternalName.isEmpty())
+    {
+        this->configureModificationUi();
+    }
 
     // fill in UI elements
     this->nameLineEdit->setText(QString::fromStdString(cheat.Name));
@@ -109,7 +142,7 @@ bool AddCheatDialog::validate(void)
     // ensure code lines aren't empty
     if (documentLines.isEmpty())
     {
-        return false;
+        return this->updateMode && !this->modificationInternalName.isEmpty();
     }
 
     // parse code lines
@@ -228,34 +261,56 @@ bool AddCheatDialog::getCheat(CoreCheat& cheat)
 {
     QStringList qLines;
     std::vector<std::string> lines;
+    std::vector<std::string> codeLines;
+    std::vector<std::string> optionLines;
 
-    QString name;
-    QString author;
-    QString note;
-
-    name = this->nameLineEdit->text();
-    author = this->authorLineEdit->text();
-    note = this->notesTextEdit->toPlainText();
+    const QString name = this->nameLineEdit->text();
+    const QString author = this->authorLineEdit->text();
+    const QString note = this->notesTextEdit->toPlainText();
 
     lines.push_back("$" + name.toStdString());
-    if (!author.isEmpty())
+
+    if (this->modificationInternalName.isEmpty())
     {
-        lines.push_back("Author=" + author.toStdString());
+        if (!author.isEmpty())
+        {
+            lines.push_back("Author=" + author.toStdString());
+        }
     }
+
     if (!note.isEmpty())
     {
         lines.push_back("Note=" + note.toStdString());
     }
 
-    qLines = this->getLines(this->codeTextEdit->document());
-    for (const QString& line : qLines)
+    if (!this->modificationInternalName.isEmpty() && this->updateMode)
     {
-        lines.push_back(line.toStdString());
+        if (!CoreGetCheatLines(this->oldCheat, codeLines, optionLines))
+        {
+            return false;
+        }
     }
-    qLines = this->getLines(this->optionsTextEdit->document());
-    for (const QString& line : qLines)
+    else
     {
-        lines.push_back(line.toStdString());
+        qLines = this->getLines(this->codeTextEdit->document());
+        for (const QString& line : qLines)
+        {
+            codeLines.push_back(line.toStdString());
+        }
+        qLines = this->getLines(this->optionsTextEdit->document());
+        for (const QString& line : qLines)
+        {
+            optionLines.push_back(line.toStdString());
+        }
+    }
+
+    for (const std::string& line : codeLines)
+    {
+        lines.push_back(line);
+    }
+    for (const std::string& line : optionLines)
+    {
+        lines.push_back(line);
     }
 
     if (!CoreParseCheat(lines, cheat))
@@ -279,6 +334,24 @@ bool AddCheatDialog::addCheat(void)
     if (!CoreAddCheat(this->file.toStdU32String(), cheat))
     {
         QtMessageBox::Error(this, "CoreAddCheat() Failed", QString::fromStdString(CoreGetError()));
+        return false;
+    }
+
+    return true;
+}
+
+bool AddCheatDialog::addModificationCheat(void)
+{
+    CoreCheat cheat;
+
+    if (!this->getCheat(cheat))
+    {
+        return false;
+    }
+
+    if (!CoreAddModificationCheat(this->modificationInternalName.toStdString(), cheat))
+    {
+        QtMessageBox::Error(this, "CoreAddModificationCheat() Failed", QString::fromStdString(CoreGetError()));
         return false;
     }
 
@@ -310,6 +383,29 @@ bool AddCheatDialog::updateCheat(void)
     return true;
 }
 
+bool AddCheatDialog::updateModificationCheat(void)
+{
+    CoreCheat cheat;
+
+    if (!this->getCheat(cheat))
+    {
+        return false;
+    }
+
+    if (this->oldCheat == cheat)
+    {
+        return true;
+    }
+
+    if (!CoreUpdateModificationCheat(this->modificationInternalName.toStdString(), this->oldCheat, cheat))
+    {
+        QtMessageBox::Error(this, "CoreUpdateModificationCheat() Failed", QString::fromStdString(CoreGetError()));
+        return false;
+    }
+
+    return true;
+}
+
 void AddCheatDialog::accept(void)
 {
     bool ret;
@@ -322,11 +418,11 @@ void AddCheatDialog::accept(void)
 
     if (this->updateMode)
     {
-        ret = this->updateCheat();
+        ret = this->modificationInternalName.isEmpty() ? this->updateCheat() : this->updateModificationCheat();
     }
     else
     {
-        ret = this->addCheat();
+        ret = this->modificationInternalName.isEmpty() ? this->addCheat() : this->addModificationCheat();
     }
 
     // don't close dialog on failure

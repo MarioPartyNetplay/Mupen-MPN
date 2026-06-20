@@ -11,6 +11,7 @@
 
 #include "UserInterface/Dialog/AboutDialog.hpp"
 #include "Dialog/Cheats/CheatsDialog.hpp"
+#include "Dialog/Modifications/ModificationsDialog.hpp"
 #include "Dialog/SettingsDialog.hpp"
 #include "Dialog/RomInfoDialog.hpp"
 #ifdef UPDATER
@@ -1087,7 +1088,7 @@ void MainWindow::configureActions(void)
         this->actionSlot_0, this->actionSlot_1, this->actionSlot_2,
         this->actionSlot_3, this->actionSlot_4, this->actionSlot_5,
         this->actionSlot_6, this->actionSlot_7, this->actionSlot_8,
-        this->actionSlot_9, this->action_System_Cheats,
+        this->actionSlot_9, this->action_System_Modifications, this->action_System_Cheats,
         this->action_System_GSButton, this->action_System_Exit,
         // Settings actions
         this->action_Settings_Graphics, this->action_Settings_Audio,
@@ -1214,6 +1215,7 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_System_LoadState, &QAction::triggered, this, &MainWindow::on_Action_System_LoadState);
     connect(this->action_System_Load, &QAction::triggered, this, &MainWindow::on_Action_System_Load);
     connect(this->action_System_Cheats, &QAction::triggered, this, &MainWindow::on_Action_System_Cheats);
+    connect(this->action_System_Modifications, &QAction::triggered, this, &MainWindow::on_Action_System_Modifications);
     connect(this->action_System_GSButton, &QAction::triggered, this, &MainWindow::on_Action_System_GSButton);
 
     connect(this->action_Settings_Graphics, &QAction::triggered, this, &MainWindow::on_Action_Settings_Graphics);
@@ -1903,6 +1905,15 @@ void MainWindow::on_Action_System_Cheats(void)
     if (isRunning && !isPaused)
     {
         this->on_Action_System_Pause();
+    }
+}
+
+void MainWindow::on_Action_System_Modifications(void)
+{
+    Dialog::ModificationsDialog dialog(this);
+    if (!dialog.HasFailed())
+    {
+        dialog.exec();
     }
 }
 
