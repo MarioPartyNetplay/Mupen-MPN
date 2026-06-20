@@ -284,6 +284,10 @@ set(IMGUI_SOURCES
     ${IMGUI_DIR}/backends/imgui_impl_opengl3_loader.h 
 )
 add_library(imgui STATIC ${IMGUI_SOURCES})
+set_target_properties(imgui PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED ON
+)
 target_include_directories(imgui PRIVATE ${IMGUI_DIR})
 if(APPLE)
     target_compile_definitions(imgui PRIVATE IMGUI_IMPL_OPENGL_ES3)
