@@ -159,7 +159,15 @@ ENetHost* createSignalingEnetHost(const ENetAddress* address, size_t peerCount, 
     host->intercept = nullptr;
 
     enet_list_clear(&host->dispatchQueue);
-hhhhh555        enet_list_clear(&currentPeer->outgoingCommands);
+
+    for (ENetPeer* currentPeer = host->peers; currentPeer < &host->peers[host->peerCount]; ++currentPeer) {
+        currentPeer->host = host;
+        currentPeer->incomingPeerID = currentPeer - host->peers;
+        currentPeer->outgoingSessionID = currentPeer->incomingSessionID = 0xFF;
+        currentPeer->data = nullptr;
+        enet_list_clear(&currentPeer->acknowledgements);
+        enet_list_clear(&currentPeer->sentReliableCommands);
+        enet_list_clear(&currentPeer->outgoingCommands);
         enet_list_clear(&currentPeer->dispatchedCommands);
         enet_peer_reset(currentPeer);
     }
