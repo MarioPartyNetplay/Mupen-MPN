@@ -9,7 +9,7 @@ if(NOT APPLE)
 endif()
 
 set(ANGLE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../angle")
-set(ANGLE_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}/../angle-cmake")
+set(ANGLE_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake")
 set(ANGLE_BUILD_SUBDIR "${CMAKE_CURRENT_BINARY_DIR}/angle-cmake")
 
 if(NOT EXISTS "${ANGLE_ROOT}/include/EGL/egl.h")
@@ -55,17 +55,6 @@ add_subdirectory("${ANGLE_SPIRV_TOOLS_ROOT}" "${ANGLE_BUILD_SUBDIR}/spirv-tools"
 target_compile_options(angle_static PRIVATE
     -Wno-nullability-completeness
     -Wno-unguarded-availability
-)
-
-target_link_libraries(angle_static PUBLIC
-    "-framework Metal"
-    "-framework MetalKit"
-    "-framework QuartzCore"
-    "-framework IOSurface"
-    "-framework Foundation"
-    "-framework CoreFoundation"
-    "-framework IOKit"
-    "-framework AppKit"
 )
 
 add_library(ANGLE::Static ALIAS angle_static)

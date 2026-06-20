@@ -150,8 +150,7 @@ jobs:
         run: |
           git submodule update --init --depth 1 \
             Source/3rdParty/libdatachannel \
-            Source/3rdParty/angle \
-            Source/3rdParty/angle-cmake
+            Source/3rdParty/angle
           git -C Source/3rdParty/libdatachannel submodule update --init --depth 1 --recursive
 
       - name: Install Rosetta 2
