@@ -23,6 +23,7 @@
 #include <QJsonArray>
 #include <QTimer>
 #include <QHostAddress>
+#include <QUdpSocket>
 #include <functional>
 #include <memory>
 
@@ -89,7 +90,7 @@ public:
     explicit SocketIOClient(const QString& serverUrl = "udp://localhost:2626", QObject* parent = nullptr);
     ~SocketIOClient();
 
-    void connectToServer(const QString& playerName);
+    void connectToServer(const QString& playerName, quint16 bindUdpPort = 0);
     void disconnect();
     ConnectionState getConnectionState() const;
 
@@ -193,13 +194,18 @@ private:
     void updatePlayerList(const QJsonArray& players);
     void destroyEnetClient();
 
+    void sendConnectPunchBursts();
+
     bool parseServerEndpoint(const QString& serverUrl, QHostAddress* addressOut, quint16* portOut) const;
+    bool setEnetPeerAddress(ENetAddress* addressOut) const;
 
     ENetHost* m_enetHost = nullptr;
     ENetPeer* m_serverPeer = nullptr;
     QTimer* m_serviceTimer = nullptr;
     QTimer* m_connectTimer = nullptr;
     QTimer* m_pingTimer = nullptr;
+    QTimer* m_punchTimer = nullptr;
+    std::unique_ptr<QUdpSocket> m_punchSocket;
 
     QString m_serverUrl;
     QHostAddress m_serverAddress;

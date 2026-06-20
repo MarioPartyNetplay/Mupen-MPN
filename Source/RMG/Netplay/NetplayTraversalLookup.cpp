@@ -116,12 +116,14 @@ TraversalLookupResult lookupTraversalHost(const QString& hostCode)
                 result.success = true;
                 result.address = address;
                 result.port = port;
+                result.localUdpPort = static_cast<quint16>(socket.localPort());
 
                 QHostAddress hostAddress;
                 if (hostAddress.setAddress(address)) {
                     performTraversalPunchWindow(&socket, hostAddress, static_cast<quint16>(port));
                 }
 
+                socket.close();
                 loop.quit();
                 return;
             }

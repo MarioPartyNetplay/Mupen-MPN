@@ -8,8 +8,9 @@
 #include "NetplayProtocol.hpp"
 
 #include <QDateTime>
+#include <QEventLoop>
 #include <QNetworkDatagram>
-#include <QThread>
+#include <QTimer>
 
 namespace UserInterface::Netplay {
 
@@ -73,16 +74,25 @@ void performTraversalPunchWindow(QUdpSocket* socket, const QHostAddress& hostAdd
 
     sendUdpPunchBursts(socket, hostAddress, hostSignalingPort);
 
+    QEventLoop loop;
+    QTimer timer;
+    timer.setInterval(50);
     const qint64 deadline = QDateTime::currentMSecsSinceEpoch() + durationMs;
-    while (QDateTime::currentMSecsSinceEpoch() < deadline) {
+    QObject::connect(&timer, &QTimer::timeout, &loop, [&]() {
         while (socket->hasPendingDatagrams()) {
             const QByteArray datagram = socket->receiveDatagram().data();
             handleTraversalPunchDatagram(datagram, socket);
         }
 
+        if (QDateTime::currentMSecsSinceEpoch() >= deadline) {
+            loop.quit();
+            return;
+        }
+
         sendUdpPunchBursts(socket, hostAddress, hostSignalingPort, 2);
-        QThread::msleep(50);
-    }
+    });
+    timer.start();
+    loop.exec();
 }
 
 } // namespace UserInterface::Netplay

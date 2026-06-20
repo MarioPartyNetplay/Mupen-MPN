@@ -378,6 +378,7 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
 
     QString connectAddress = ipAddress.trimmed();
     int connectPort = port;
+    quint16 bindUdpPort = 0;
 
     if (looksLikeTraversalCode(connectAddress)) {
         const TraversalLookupResult lookup = lookupTraversalHost(connectAddress);
@@ -388,6 +389,9 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
         }
         connectAddress = lookup.address;
         connectPort = lookup.port;
+        bindUdpPort = lookup.localUdpPort;
+        qInfo() << "Traversal lookup resolved" << connectAddress << connectPort
+                << "local UDP port" << bindUdpPort;
     }
 
     // Recreate the signaling client with the new server endpoint
@@ -465,7 +469,7 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
     
     // Now connect to the server
     setState(Connecting);
-    m_socketIO->connectToServer(playerName);
+    m_socketIO->connectToServer(playerName, bindUdpPort);
 }
 
 void NetplayCoordinator::createRoom(const QString& roomName, const QString& gameId, int maxPlayers)

@@ -13,6 +13,8 @@ struct TraversalLookupResult {
     bool success = false;
     QString address;
     int port = 0;
+    /** UDP port used for traversal lookup/punch; ENet client should bind this port. */
+    quint16 localUdpPort = 0;
     QString error;
 };
 
