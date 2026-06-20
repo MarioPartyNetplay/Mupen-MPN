@@ -3,8 +3,17 @@
 #if defined(MUPENPLUSAPI)
 #include "../../mupenplus/GLideN64_mupenplus.h"
 #endif
+
+#if defined(EGL)
+#include <EGL/egl.h>
+#endif
+
 #if defined(OS_MAC_OS_X) || defined(OS_IOS)
 #include <dlfcn.h>
+#endif
+
+#if (defined(OS_LINUX) || defined(OS_FREEBSD)) && !defined(EGL)
+#include <GL/glx.h>
 #endif
 
 void* getGLProcAddress(const char* name)
@@ -12,8 +21,8 @@ void* getGLProcAddress(const char* name)
 #if defined(MUPENPLUSAPI)
 	if (CoreVideo_GL_GetProcAddress != nullptr)
 		return reinterpret_cast<void*>(CoreVideo_GL_GetProcAddress(name));
-	return nullptr;
 #endif
+
 #if defined(EGL)
 	return reinterpret_cast<void*>(eglGetProcAddress(name));
 #elif defined(OS_WINDOWS)
