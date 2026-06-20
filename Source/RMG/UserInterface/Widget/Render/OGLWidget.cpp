@@ -11,20 +11,37 @@
 #include "OnScreenDisplay.hpp"
 
 #include <QGuiApplication>
+#include <QMetaObject>
+#include <QCoreApplication>
+#include <QThread>
 
 #include <QEvent>
 #include <QPalette>
 #include <QResizeEvent>
 #include <QSurfaceFormat>
-#include <QResizeEvent>
 
 #include <RMG-Core/Video.hpp>
+#include <RMG-Core/Callback.hpp>
+
+#include <string>
 
 using namespace UserInterface::Widget;
 
 OGLWidget::OGLWidget(QWidget *parent)
 {
-    // create window container
+#ifdef __APPLE__
+    this->setSurfaceType(QWindow::MetalSurface);
+    this->create();
+#else
+    this->setSurfaceType(QWindow::OpenGLSurface);
+
+    QSurfaceFormat format = QSurfaceFormat::defaultFormat();
+    this->setFormat(format);
+    this->openGLcontext = new QOpenGLContext();
+    this->openGLcontext->setFormat(format);
+#endif
+
+    // QWindow must be created before embedding it in a container widget.
     this->widgetContainer = QWidget::createWindowContainer(this, parent);
     this->widgetContainer->installEventFilter(this);
 
@@ -39,17 +56,6 @@ OGLWidget::OGLWidget(QWidget *parent)
         this->widgetContainer->setAutoFillBackground(true);
         this->widgetContainer->setPalette(blackPalette);
     }
-
-#ifdef __APPLE__
-    this->setSurfaceType(QWindow::MetalSurface);
-#else
-    this->setSurfaceType(QWindow::OpenGLSurface);
-
-    QSurfaceFormat format = QSurfaceFormat::defaultFormat();
-    this->setFormat(format);
-    this->openGLcontext = new QOpenGLContext();
-    this->openGLcontext->setFormat(format);
-#endif
 }
 
 OGLWidget::~OGLWidget(void)
@@ -63,6 +69,8 @@ void OGLWidget::PrepareRenderContext(const QSurfaceFormat& format, QThread* thre
 {
 #ifdef __APPLE__
     this->swapInterval = format.swapInterval();
+    this->contextMajorVersion = format.majorVersion();
+    this->contextMinorVersion = format.minorVersion();
     this->angleContext.moveToThread(thread);
 #else
     if (QGuiApplication::platformName() != "wayland")
@@ -77,15 +85,84 @@ void OGLWidget::PrepareRenderContext(const QSurfaceFormat& format, QThread* thre
 bool OGLWidget::EnsureRenderContext()
 {
 #ifdef __APPLE__
-    if (!this->angleContext.isValid())
+    if (this->angleContext.isValid())
     {
-        return this->angleContext.create(this, this->swapInterval);
+        return true;
     }
-    return this->angleContext.isValid();
+
+    bool ready = false;
+    if (!QMetaObject::invokeMethod(this, "prepareNativeSurface", Qt::BlockingQueuedConnection,
+                                   Q_RETURN_ARG(bool, ready)) ||
+        !ready)
+    {
+        CoreAddCallbackMessage(CoreDebugMessageType::Error,
+                               "Failed to prepare native render surface (winId unavailable)");
+        return false;
+    }
+
+    bool created = false;
+    if (!QMetaObject::invokeMethod(this, "createAngleContext", Qt::BlockingQueuedConnection,
+                                   Q_RETURN_ARG(bool, created)) ||
+        !created)
+    {
+        std::string message = "Failed to create ANGLE/EGL render context";
+        const std::string& detail = this->angleContext.lastErrorMessage();
+        if (!detail.empty())
+        {
+            message += ": ";
+            message += detail;
+        }
+        CoreAddCallbackMessage(CoreDebugMessageType::Error, message.c_str());
+        return false;
+    }
+
+    return true;
 #else
     return this->openGLcontext != nullptr && this->openGLcontext->isValid();
 #endif
 }
+
+#ifdef __APPLE__
+bool OGLWidget::prepareNativeSurface()
+{
+    if (this->widgetContainer != nullptr)
+    {
+        this->widgetContainer->show();
+        this->widgetContainer->update();
+        if (this->widgetContainer->width() > 0 && this->widgetContainer->height() > 0)
+        {
+            this->resize(this->widgetContainer->size());
+        }
+    }
+
+    if (!this->handle())
+    {
+        this->create();
+    }
+
+    this->setVisible(true);
+    this->requestUpdate();
+    (void)this->winId();
+
+    for (int attempt = 0; attempt < 1000 && this->winId() == 0; ++attempt)
+    {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        QThread::msleep(1);
+    }
+
+    return this->winId() != 0;
+}
+
+bool OGLWidget::createAngleContext()
+{
+    if (this->angleContext.isValid())
+    {
+        return true;
+    }
+
+    return this->angleContext.create(this, this->swapInterval, this->contextMajorVersion, this->contextMinorVersion);
+}
+#endif
 
 void OGLWidget::MoveContextToThread(QThread* thread)
 {
@@ -191,7 +268,9 @@ bool OGLWidget::eventFilter(QObject *object, QEvent *event)
 
 void OGLWidget::resizeEvent(QResizeEvent *event)
 {
-    this->queueVideoSizeUpdate(event->size());
+    Q_UNUSED(event);
+    // Resize is handled via the container event filter; QWindow resize events
+    // can report a different size and cause redundant CoreSetVideoSize calls.
 }
 
 void OGLWidget::queueVideoSizeUpdate(QSize size)
@@ -226,14 +305,6 @@ void OGLWidget::queueVideoSizeUpdate(QSize size)
     }
 
     this->timerId = this->startTimer(100);
-
-    // account for HiDPI scaling
-    // see https://github.com/Rosalie241/RMG/issues/2
-    this->width  = size.width() * this->devicePixelRatio();
-    this->height = size.height() * this->devicePixelRatio();
-
-    this->width  &= ~0x1;
-    this->height &= ~0x1;
 
     // Keep OSD anchored while user is actively resizing.
     OnScreenDisplaySetDisplaySize(this->width, this->height);

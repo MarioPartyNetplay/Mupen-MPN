@@ -156,6 +156,10 @@
 #elif defined(IMGUI_IMPL_OPENGL_ES3)
 #if (defined(__APPLE__) && (TARGET_OS_IOS || TARGET_OS_TV))
 #include <OpenGLES/ES3/gl.h>    // Use GL ES 3
+#elif defined(__APPLE__)
+// macOS ANGLE/EGL: load GLES entry points via eglGetProcAddress, not system OpenGL.
+#define IMGL3W_IMPL
+#include "imgui_impl_opengl3_loader.h"
 #else
 #include <GLES3/gl3.h>          // Use GL ES 3
 #endif
@@ -276,6 +280,16 @@ struct ImGui_ImplOpenGL3_VtxAttribState
 };
 #endif
 
+#if defined(IMGUI_IMPL_OPENGL_ES3) && defined(__APPLE__) && !TARGET_OS_IOS && !TARGET_OS_TV
+typedef void* (*ImGui_ImplOpenGL3_GetProcAddressProc)(const char*);
+static ImGui_ImplOpenGL3_GetProcAddressProc G_ImGuiGLProcLoader = nullptr;
+
+void ImGui_ImplOpenGL3_SetProcLoader(ImGui_ImplOpenGL3_GetProcAddressProc loader)
+{
+    G_ImGuiGLProcLoader = loader;
+}
+#endif
+
 // Functions
 bool    ImGui_ImplOpenGL3_Init(const char* glsl_version)
 {
@@ -284,7 +298,18 @@ bool    ImGui_ImplOpenGL3_Init(const char* glsl_version)
     IM_ASSERT(io.BackendRendererUserData == nullptr && "Already initialized a renderer backend!");
 
     // Initialize our loader
-#if !defined(IMGUI_IMPL_OPENGL_ES2) && !defined(IMGUI_IMPL_OPENGL_ES3) && !defined(IMGUI_IMPL_OPENGL_LOADER_CUSTOM)
+#if defined(IMGUI_IMPL_OPENGL_ES3) && defined(__APPLE__) && !TARGET_OS_IOS && !TARGET_OS_TV
+    if (G_ImGuiGLProcLoader == nullptr)
+    {
+        fprintf(stderr, "Failed to initialize OpenGL loader: proc loader not set!\n");
+        return false;
+    }
+    if (imgl3wInit2((GL3WGetProcAddressProc)G_ImGuiGLProcLoader) != 0)
+    {
+        fprintf(stderr, "Failed to initialize OpenGL loader (is a GLES context current?)!\n");
+        return false;
+    }
+#elif !defined(IMGUI_IMPL_OPENGL_ES2) && !defined(IMGUI_IMPL_OPENGL_ES3) && !defined(IMGUI_IMPL_OPENGL_LOADER_CUSTOM)
     if (imgl3wInit() != 0)
     {
         fprintf(stderr, "Failed to initialize OpenGL loader!\n");

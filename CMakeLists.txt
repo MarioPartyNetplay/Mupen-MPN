@@ -193,6 +193,11 @@ install(FILES ${MUPEN64PLUS_PLUGIN_RSP_HLE}
     PERMISSIONS ${LIB_PERMISSIONS}
 )
 
+install(FILES ${MUPEN64PLUS_PLUGIN_RSP_PARALLEL}
+    DESTINATION ${PLUGIN_INSTALL_PATH}/RSP
+    PERMISSIONS ${LIB_PERMISSIONS}
+)
+
 install(FILES ${MUPEN64PLUS_PLUGIN_INPUT_RAPHNET}
     DESTINATION ${PLUGIN_INSTALL_PATH}/Input
     PERMISSIONS ${LIB_PERMISSIONS}
@@ -218,3 +223,18 @@ if (INSTALL_DESKTOP_FILE)
         DESTINATION ${METAINFO_INSTALL_PATH}
     )
 endif(INSTALL_DESKTOP_FILE)
+
+if (APPLE AND PORTABLE_INSTALL)
+    install(CODE "
+        message(STATUS \"Rewriting Qt framework paths in ${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}/Mupen-MPN.app\")
+        execute_process(
+            COMMAND bash \"${CMAKE_SOURCE_DIR}/Source/Script/BundleDependenciesMacOS.sh\"
+                    \"${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}\"
+                    --rewrite-only
+            RESULT_VARIABLE _mupen_qt_rewrite_result
+        )
+        if(_mupen_qt_rewrite_result)
+            message(WARNING \"Qt path rewrite failed with code \${_mupen_qt_rewrite_result}\")
+        endif()
+    ")
+endif()

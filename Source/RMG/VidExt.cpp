@@ -48,15 +48,8 @@ static bool VidExt_OglSetup(void)
 {
     l_EmuThread->on_VidExt_SetupOGL(l_SurfaceFormat, QThread::currentThread());
 
-    while (!(*l_OGLWidget)->isVisible() || (*l_OGLWidget)->winId() == 0)
-    {
-        QCoreApplication::processEvents();
-        QThread::yieldCurrentThread();
-    }
-
     if (!(*l_OGLWidget)->EnsureRenderContext())
     {
-        CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to create ANGLE/EGL render context");
         return false;
     }
 
@@ -164,6 +157,24 @@ static m64p_error VidExt_ListRates(m64p_2d_size Size, int *NumRates, int *Rates)
 
 static m64p_error VidExt_SetMode(int Width, int Height, int BitsPerPixel, int ScreenMode, int Flags)
 {
+    const bool firstOglInit = l_RenderMode == M64P_RENDER_OPENGL && !l_OpenGLInitialized;
+
+    if (firstOglInit)
+    {
+        switch (ScreenMode)
+        {
+            default:
+            case M64VIDEO_NONE:
+                return M64ERR_INPUT_INVALID;
+            case M64VIDEO_WINDOWED:
+                l_EmuThread->on_VidExt_SetWindowedMode(Width, Height, BitsPerPixel, Flags);
+                break;
+            case M64VIDEO_FULLSCREEN:
+                l_EmuThread->on_VidExt_SetFullscreenMode(Width, Height, BitsPerPixel, Flags);
+                break;
+        }
+    }
+
     // initialize OpenGL when render mode
     // is OpenGL and not Vulkan
     if (l_RenderMode == M64P_RENDER_OPENGL)
@@ -180,26 +191,31 @@ static m64p_error VidExt_SetMode(int Width, int Height, int BitsPerPixel, int Sc
         {
             if (!OnScreenDisplayInit())
             {
-                CoreAddCallbackMessage(CoreDebugMessageType::Error, "Failed to initialize OSD");
-                return M64ERR_SYSTEM_FAIL;
+                CoreAddCallbackMessage(CoreDebugMessageType::Warning,
+                    "Failed to initialize OSD; on-screen messages will be disabled");
             }
-
-            OnScreenDisplayLoadSettings();
-            l_OsdInitialized = true;
+            else
+            {
+                OnScreenDisplayLoadSettings();
+                l_OsdInitialized = true;
+            }
         }
     }
 
-    switch (ScreenMode)
+    if (!firstOglInit)
     {
-        default:
-        case M64VIDEO_NONE:
-            return M64ERR_INPUT_INVALID;
-        case M64VIDEO_WINDOWED:
-            l_EmuThread->on_VidExt_SetWindowedMode(Width, Height, BitsPerPixel, Flags);
-            break;
-        case M64VIDEO_FULLSCREEN:
-            l_EmuThread->on_VidExt_SetFullscreenMode(Width, Height, BitsPerPixel, Flags);
-            break;
+        switch (ScreenMode)
+        {
+            default:
+            case M64VIDEO_NONE:
+                return M64ERR_INPUT_INVALID;
+            case M64VIDEO_WINDOWED:
+                l_EmuThread->on_VidExt_SetWindowedMode(Width, Height, BitsPerPixel, Flags);
+                break;
+            case M64VIDEO_FULLSCREEN:
+                l_EmuThread->on_VidExt_SetFullscreenMode(Width, Height, BitsPerPixel, Flags);
+                break;
+        }
     }
 
     OnScreenDisplaySetDisplaySize(Width, Height);
@@ -219,6 +235,11 @@ static m64p_function VidExt_GLGetProc(const char *Proc)
     }
 
     return reinterpret_cast<m64p_function>((*l_OGLWidget)->GetProcAddress(Proc));
+}
+
+void* VidExt_GetProcAddress(const char* name)
+{
+    return reinterpret_cast<void*>(VidExt_GLGetProc(name));
 }
 
 static m64p_error VidExt_GLSetAttr(m64p_GLattr Attr, int Value)

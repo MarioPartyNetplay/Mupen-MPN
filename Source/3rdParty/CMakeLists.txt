@@ -285,6 +285,9 @@ set(IMGUI_SOURCES
 )
 add_library(imgui STATIC ${IMGUI_SOURCES})
 target_include_directories(imgui PRIVATE ${IMGUI_DIR})
+if(APPLE)
+    target_compile_definitions(imgui PRIVATE IMGUI_IMPL_OPENGL_ES3)
+endif()
 
 set(SDL_GAMECONTROLLERDB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/SDL_GameControllerDB)
 set(SDL_GAMECONTROLLERDB_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/SDL_GameControllerDB)

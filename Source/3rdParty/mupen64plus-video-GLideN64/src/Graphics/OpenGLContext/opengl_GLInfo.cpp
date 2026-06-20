@@ -116,7 +116,7 @@ void GLInfo::init() {
 		(Utils::isExtensionSupported(*this, "GL_EXT_draw_elements_base_vertex") || numericVersion >= 32);
 #ifdef EGL
 	if (isGLESX && Utils::isExtensionSupported(*this, "GL_EXT_draw_elements_base_vertex") && numericVersion < 32) {
-		ptrDrawRangeElementsBaseVertex = (PFNGLDRAWRANGEELEMENTSBASEVERTEXPROC) eglGetProcAddress("glDrawRangeElementsBaseVertexEXT");
+		ptrDrawRangeElementsBaseVertex = (PFNGLDRAWRANGEELEMENTSBASEVERTEXPROC) getGLProcAddress("glDrawRangeElementsBaseVertexEXT");
 	}
 #endif
 
@@ -141,19 +141,19 @@ void GLInfo::init() {
 	bool ext_draw_buffers_indexed = isGLESX && (Utils::isExtensionSupported(*this, "GL_EXT_draw_buffers_indexed") || numericVersion >= 32);
 #ifdef EGL
 	if (isGLESX && bufferStorage)
-		ptrBufferStorage = (PFNGLBUFFERSTORAGEPROC) eglGetProcAddress("glBufferStorageEXT");
+		ptrBufferStorage = (PFNGLBUFFERSTORAGEPROC) getGLProcAddress("glBufferStorageEXT");
 	if (isGLESX && numericVersion < 32) {
 		if (ext_draw_buffers_indexed) {
-			ptrEnablei = (PFNGLENABLEIPROC) eglGetProcAddress("glEnableiEXT");
-			ptrDisablei = (PFNGLDISABLEIPROC) eglGetProcAddress("glDisableiEXT");
+			ptrEnablei = (PFNGLENABLEIPROC) getGLProcAddress("glEnableiEXT");
+			ptrDisablei = (PFNGLDISABLEIPROC) getGLProcAddress("glDisableiEXT");
 		} else {
 			ptrEnablei = nullptr;
 			ptrDisablei = nullptr;
 		}
 	}
 	if (isGLES2 && shaderStorage) {
-		ptrProgramBinary = (PFNGLPROGRAMBINARYPROC) eglGetProcAddress("glProgramBinaryOES");
-		ptrGetProgramBinary = (PFNGLGETPROGRAMBINARYPROC) eglGetProcAddress("glGetProgramBinaryOES");
+		ptrProgramBinary = (PFNGLPROGRAMBINARYPROC) getGLProcAddress("glProgramBinaryOES");
+		ptrGetProgramBinary = (PFNGLGETPROGRAMBINARYPROC) getGLProcAddress("glGetProgramBinaryOES");
 		ptrProgramParameteri = nullptr;
 	}
 #endif
@@ -233,8 +233,8 @@ void GLInfo::init() {
 #ifdef EGL
 	if (isGLESX)
 	{
-		ptrDebugMessageCallback = (PFNGLDEBUGMESSAGECALLBACKPROC) eglGetProcAddress("glDebugMessageCallbackKHR");
-		ptrDebugMessageControl = (PFNGLDEBUGMESSAGECONTROLPROC) eglGetProcAddress("glDebugMessageControlKHR");
+		ptrDebugMessageCallback = (PFNGLDEBUGMESSAGECALLBACKPROC) getGLProcAddress("glDebugMessageCallbackKHR");
+		ptrDebugMessageControl = (PFNGLDEBUGMESSAGECONTROLPROC) getGLProcAddress("glDebugMessageControlKHR");
 	}
 #endif
 

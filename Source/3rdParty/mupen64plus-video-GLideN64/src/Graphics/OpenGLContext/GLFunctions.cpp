@@ -1,5 +1,36 @@
 #include "GLFunctions.h"
 
+#if defined(MUPENPLUSAPI)
+#include "../../mupenplus/GLideN64_mupenplus.h"
+#endif
+#if defined(OS_MAC_OS_X) || defined(OS_IOS)
+#include <dlfcn.h>
+#endif
+
+void* getGLProcAddress(const char* name)
+{
+#if defined(MUPENPLUSAPI) && defined(EGL)
+	if (CoreVideo_GL_GetProcAddress != nullptr)
+		return reinterpret_cast<void*>(CoreVideo_GL_GetProcAddress(name));
+#endif
+#if defined(EGL)
+	return reinterpret_cast<void*>(eglGetProcAddress(name));
+#elif defined(OS_WINDOWS)
+	return reinterpret_cast<void*>(wglGetProcAddress(name));
+#elif defined(OS_LINUX) || defined(OS_FREEBSD)
+	return reinterpret_cast<void*>(glXGetProcAddress(reinterpret_cast<const GLubyte*>(name)));
+#elif defined(OS_MAC_OS_X)
+	static void* image = nullptr;
+	if (image == nullptr)
+		image = dlopen("/System/Library/Frameworks/OpenGL.framework/Versions/Current/OpenGL", RTLD_LAZY);
+	return image != nullptr ? dlsym(image, name) : nullptr;
+#elif defined(OS_IOS)
+	return dlsym(RTLD_DEFAULT, name);
+#else
+	return nullptr;
+#endif
+}
+
 #define ASSIGN_PROC_ADR(proc_type, proc_name) ptr##proc_name = gl##proc_name
 
 #ifdef OS_WINDOWS
@@ -14,7 +45,7 @@
 
 #elif defined(EGL)
 
-#define glGetProcAddress eglGetProcAddress
+#define glGetProcAddress(name) getGLProcAddress(name)
 #define GL_GET_PROC_ADR(proc_type, proc_name) ptr##proc_name = (proc_type) glGetProcAddress("gl"#proc_name)
 #define GL_GET_PROC_ADR_EGL(proc_type, proc_name) ptr##proc_name = (proc_type) glGetProcAddress("egl"#proc_name)
 

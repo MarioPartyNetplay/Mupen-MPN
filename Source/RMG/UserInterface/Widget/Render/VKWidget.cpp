@@ -50,7 +50,9 @@ bool VKWidget::eventFilter(QObject *object, QEvent *event)
 
 void VKWidget::resizeEvent(QResizeEvent *event)
 {
-    this->queueVideoSizeUpdate(event->size());
+    Q_UNUSED(event);
+    // Resize is handled via the container event filter; QWindow resize events
+    // can report a different size and cause redundant CoreSetVideoSize calls.
 }
 
 void VKWidget::queueVideoSizeUpdate(QSize size)
@@ -83,14 +85,6 @@ void VKWidget::queueVideoSizeUpdate(QSize size)
     }
 
     this->timerId = this->startTimer(100);
-
-    // account for HiDPI scaling
-    // see https://github.com/Rosalie241/RMG/issues/2
-    this->width  = size.width() * this->devicePixelRatio();
-    this->height = size.height() * this->devicePixelRatio();
-
-    this->width  &= ~0x1;
-    this->height &= ~0x1;
 }
 
 void VKWidget::timerEvent(QTimerEvent *event)

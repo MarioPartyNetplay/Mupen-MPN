@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# ./BundleDependenciesMacOS.sh [Bin directory]
+# ./BundleDependenciesMacOS.sh [Bin directory] [--rewrite-only]
 # Example: ./BundleDependenciesMacOS.sh "./Bin/Debug"
 #
 set -e
@@ -8,7 +8,19 @@ set -e
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 toplvl_dir="$(cd "$script_dir/../.." && pwd)"
 
-bin_dir="$(realpath "${1:-$toplvl_dir/Bin/Debug}")"
+rewrite_only=0
+bin_dir=""
+for arg in "$@"
+do
+    if [[ "$arg" == "--rewrite-only" ]]
+    then
+        rewrite_only=1
+    elif [[ -z "$bin_dir" ]]
+    then
+        bin_dir="$(realpath "$arg")"
+    fi
+done
+bin_dir="${bin_dir:-$(realpath "$toplvl_dir/Bin/Debug")}"
 
 # Prefer the .app bundle layout; fall back to plain executable installs.
 if [[ -f "$bin_dir/Mupen-MPN.app/Contents/MacOS/Mupen-MPN" ]]
@@ -24,6 +36,14 @@ then
 else
     echo "BundleDependenciesMacOS.sh: executable not found at $bin_dir/Mupen-MPN.app or $bin_dir/Mupen-MPN"
     exit 1
+fi
+
+build_config="$(basename "$bin_dir")"
+build_exe="$toplvl_dir/Build/$build_config/Source/RMG/Mupen-MPN.app/Contents/MacOS/Mupen-MPN"
+if [[ -f "$build_exe" && "$build_exe" -nt "$exe" ]]
+then
+    echo "BundleDependenciesMacOS.sh: warning: $exe is older than $build_exe"
+    echo "BundleDependenciesMacOS.sh: run 'cmake --install $toplvl_dir/Build/$build_config --prefix=$toplvl_dir' first"
 fi
 
 qt_debug_libs_available() {
@@ -85,9 +105,84 @@ bundle_homebrew_dependencies() {
 
         while IFS= read -r dep_path
         do
+            if [[ "$dep_path" == *Qt*.framework* ]]
+            then
+                continue
+            fi
             bundle_external_dylib "$binary" "$dep_path"
         done < <(otool -L "$binary" 2>/dev/null | awk '/\/opt\/homebrew\/|\/usr\/local\/opt\// { print $1 }')
     done < <(find "$deploy_target/Contents/MacOS" -type f 2>/dev/null)
+}
+
+rewrite_bundled_qt_frameworks() {
+    [[ -n "$deploy_target" && -f "$exe" ]] || return 0
+
+    local frameworks_dir="$deploy_target/Contents/Frameworks"
+    [[ -d "$frameworks_dir" ]] || return 0
+
+    local binary qt_path framework_name fw_binary new_path
+    while IFS= read -r binary
+    do
+        otool -hv "$binary" 2>/dev/null | grep -q "MH_" || continue
+
+        while IFS= read -r qt_path
+        do
+            [[ -n "$qt_path" ]] || continue
+            framework_name="$(sed -n 's#.*/\([^/]*\.framework\)/.*#\1#p' <<< "$qt_path")"
+            [[ "$framework_name" == *.framework ]] || continue
+
+            fw_binary="${framework_name%.framework}"
+            new_path="@executable_path/../Frameworks/$framework_name/Versions/A/$fw_binary"
+            if [[ ! -f "$frameworks_dir/$framework_name/Versions/A/$fw_binary" ]]
+            then
+                continue
+            fi
+
+            install_name_tool -change "$qt_path" "$new_path" "$binary" 2>/dev/null || \
+                echo "BundleDependenciesMacOS.sh: warning: could not rewrite $qt_path in $binary"
+        done < <(otool -L "$binary" 2>/dev/null | awk '/Qt.*\.framework/ && /\/(opt\/|Cellar\/)/ { print $1 }')
+    done < <(find "$deploy_target/Contents/MacOS" -type f 2>/dev/null)
+
+    # The main executable is not always discovered by the MacOS directory scan on some bundle layouts.
+    rewrite_bundled_qt_frameworks_for_binary "$exe"
+}
+
+rewrite_bundled_qt_frameworks_for_binary() {
+    local binary="$1"
+    [[ -f "$binary" ]] || return 0
+
+    local frameworks_dir="$deploy_target/Contents/Frameworks"
+    [[ -d "$frameworks_dir" ]] || return 0
+
+    local qt_path framework_name fw_binary new_path
+    otool -hv "$binary" 2>/dev/null | grep -q "MH_" || return 0
+
+    while IFS= read -r qt_path
+    do
+        [[ -n "$qt_path" ]] || continue
+        framework_name="$(sed -n 's#.*/\([^/]*\.framework\)/.*#\1#p' <<< "$qt_path")"
+        [[ "$framework_name" == *.framework ]] || continue
+
+        fw_binary="${framework_name%.framework}"
+        new_path="@executable_path/../Frameworks/$framework_name/Versions/A/$fw_binary"
+        if [[ ! -f "$frameworks_dir/$framework_name/Versions/A/$fw_binary" ]]
+        then
+            continue
+        fi
+
+        install_name_tool -change "$qt_path" "$new_path" "$binary" 2>/dev/null || \
+            echo "BundleDependenciesMacOS.sh: warning: could not rewrite $qt_path in $binary"
+    done < <(otool -L "$binary" 2>/dev/null | awk '/Qt.*\.framework/ && /\/(opt\/|Cellar\/)/ { print $1 }')
+}
+
+ensure_framework_rpath() {
+    [[ -f "$exe" ]] || return 0
+
+    if ! otool -l "$exe" 2>/dev/null | awk '/cmd LC_RPATH/{getline; print $2}' | grep -qx "@executable_path/../Frameworks"
+    then
+        install_name_tool -add_rpath "@executable_path/../Frameworks" "$exe" 2>/dev/null || \
+            echo "BundleDependenciesMacOS.sh: warning: could not add Frameworks rpath to $exe"
+    fi
 }
 
 staged_plugins_dir=""
@@ -131,6 +226,14 @@ restore_staged_plugins() {
     staged_plugins_manifest=""
 }
 
+if [[ "$rewrite_only" -eq 1 ]]
+then
+    rewrite_bundled_qt_frameworks
+    ensure_framework_rpath
+    bundle_homebrew_dependencies
+    exit 0
+fi
+
 if [[ -n "$deploy_target" ]]
 then
     stash_macdeployqt_incompatible_plugins
@@ -157,6 +260,8 @@ then
     fi
 
     restore_staged_plugins
+    rewrite_bundled_qt_frameworks
+    ensure_framework_rpath
     bundle_homebrew_dependencies
 else
     echo "BundleDependenciesMacOS.sh: plain executable build; skipping macdeployqt"

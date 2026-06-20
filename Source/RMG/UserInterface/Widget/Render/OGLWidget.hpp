@@ -28,9 +28,16 @@ namespace Widget
 {
 class OGLWidget : public QWindow
 {
+    Q_OBJECT
+
   public:
     OGLWidget(QWidget *);
     ~OGLWidget(void);
+
+#ifdef __APPLE__
+    Q_INVOKABLE bool prepareNativeSurface();
+    Q_INVOKABLE bool createAngleContext();
+#endif
 
     void MoveContextToThread(QThread* thread);
     QOpenGLContext* GetContext();
@@ -60,6 +67,8 @@ class OGLWidget : public QWindow
 #ifdef __APPLE__
     AngleContext angleContext;
     int swapInterval = 0;
+    int contextMajorVersion = 3;
+    int contextMinorVersion = 0;
 #endif
     int width   = 0;
     int height  = 0;

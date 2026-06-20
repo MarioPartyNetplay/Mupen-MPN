@@ -18,4 +18,6 @@
 bool SetupVidExt(Thread::EmulationThread* emuThread, UserInterface::MainWindow* mainWindow, 
     UserInterface::Widget::OGLWidget** oglWidget, UserInterface::Widget::VKWidget** vulkanWidget);
 
+void* VidExt_GetProcAddress(const char* name);
+
 #endif // RMG_VIDEXT_HPP

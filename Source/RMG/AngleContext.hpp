@@ -11,6 +11,7 @@
 #define ANGLECONTEXT_HPP
 
 #include <cstdint>
+#include <string>
 
 class QWindow;
 class QThread;
@@ -21,7 +22,7 @@ public:
     AngleContext() = default;
     ~AngleContext();
 
-    bool create(QWindow* window, int swapInterval);
+    bool create(QWindow* window, int swapInterval, int majorVersion, int minorVersion);
     void destroy();
 
     bool isValid() const;
@@ -33,11 +34,14 @@ public:
 
     void moveToThread(QThread* thread);
 
+    const std::string& lastErrorMessage() const;
+
 private:
     void* display = nullptr;
     void* surface = nullptr;
     void* context = nullptr;
     int swapInterval = 0;
+    std::string lastError;
 };
 
 #endif // ANGLECONTEXT_HPP

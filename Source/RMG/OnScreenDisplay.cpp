@@ -8,6 +8,7 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "OnScreenDisplay.hpp"
+#include "VidExt.hpp"
 
 #include <RMG-Core/Settings.hpp>
 
@@ -54,7 +55,17 @@ bool OnScreenDisplayInit(void)
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
-    if (!ImGui_ImplOpenGL3_Init())
+#ifdef __APPLE__
+    ImGui_ImplOpenGL3_SetProcLoader(VidExt_GetProcAddress);
+#endif
+
+    if (!ImGui_ImplOpenGL3_Init(
+#ifdef __APPLE__
+            "#version 300 es"
+#else
+            nullptr
+#endif
+        ))
     {
         return false;
     }
