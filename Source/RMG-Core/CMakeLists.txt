@@ -83,7 +83,6 @@ elseif(APPLE)
     target_link_libraries(RMG-Core iconv)
 endif()
 
-# Regenerate git commit hash on each build (execute_process only runs at configure time).
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(RMG_CORE_VERSION_HASH_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/VersionHash.hpp")
 add_custom_command(
@@ -92,7 +91,6 @@ add_custom_command(
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     COMMENT "Updating RMG-Core git version hash"
 )
-add_custom_target(RMG-Core-version-hash DEPENDS "${RMG_CORE_VERSION_HASH_HEADER}")
 add_dependencies(RMG-Core RMG-Core-version-hash)
 
 set_source_files_properties(Version.cpp PROPERTIES

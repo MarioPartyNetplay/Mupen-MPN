@@ -168,7 +168,6 @@ static void signal_handler(int sig)
 }
 #endif // _WIN32
 
-
 #ifdef PORTABLE_INSTALL
 static std::unique_ptr<QLockFile> l_PortableInstanceLock;
 

@@ -16,6 +16,7 @@
 #include <QPalette>
 #include <QResizeEvent>
 #include <QSurfaceFormat>
+#include <QResizeEvent>
 
 #include <RMG-Core/Video.hpp>
 
@@ -190,9 +191,7 @@ bool OGLWidget::eventFilter(QObject *object, QEvent *event)
 
 void OGLWidget::resizeEvent(QResizeEvent *event)
 {
-    Q_UNUSED(event);
-    // Resize is handled via the container event filter; QWindow resize events
-    // can report a different size and cause redundant CoreSetVideoSize calls.
+    this->queueVideoSizeUpdate(event->size());
 }
 
 void OGLWidget::queueVideoSizeUpdate(QSize size)
@@ -227,6 +226,14 @@ void OGLWidget::queueVideoSizeUpdate(QSize size)
     }
 
     this->timerId = this->startTimer(100);
+
+    // account for HiDPI scaling
+    // see https://github.com/Rosalie241/RMG/issues/2
+    this->width  = size.width() * this->devicePixelRatio();
+    this->height = size.height() * this->devicePixelRatio();
+
+    this->width  &= ~0x1;
+    this->height &= ~0x1;
 
     // Keep OSD anchored while user is actively resizing.
     OnScreenDisplaySetDisplaySize(this->width, this->height);
