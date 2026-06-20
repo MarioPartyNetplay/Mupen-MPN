@@ -15,14 +15,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Initialize submodules
-        run: |
-          git config --global --add safe.directory /__w/Mupen-MPN/Mupen-MPN
-          git submodule update --init --depth 1 Source/3rdParty/libdatachannel
-          git -C Source/3rdParty/libdatachannel submodule update --init --depth 1 --recursive
 
       - name: Setup Flatpak
         run: |
@@ -67,7 +59,7 @@ jobs:
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          manifest-path: Package/flatpak.yml
+          manifest-path: Package/flatpak-ci.yml
           bundle: MupenMPN-linux.flatpak
           cache-key: flatpak-builder-${{ github.sha }}
 
