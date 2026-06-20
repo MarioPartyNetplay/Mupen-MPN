@@ -28,6 +28,37 @@
 #define EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE 0x3489
 #endif
 
+static CAMetalLayer* metalLayerForWindow(QWindow* window)
+{
+    if (window == nullptr || window->winId() == 0)
+    {
+        return nil;
+    }
+
+    NSView* view = reinterpret_cast<NSView*>(window->winId());
+    [view setWantsLayer:YES];
+
+    CALayer* layer = [view layer];
+    if (layer == nil || ![layer isKindOfClass:[CAMetalLayer class]])
+    {
+        [view setLayer:[CAMetalLayer layer]];
+        layer = [view layer];
+    }
+
+    return [layer isKindOfClass:[CAMetalLayer class]] ? static_cast<CAMetalLayer*>(layer) : nil;
+}
+
+static void runOnMainThread(void (^block)(void))
+{
+    if ([NSThread isMainThread])
+    {
+        block();
+        return;
+    }
+
+    dispatch_sync(dispatch_get_main_queue(), block);
+}
+
 AngleContext::~AngleContext()
 {
     this->destroy();
@@ -38,110 +69,115 @@ bool AngleContext::create(QWindow* window, int swapInterval_)
     this->destroy();
     this->swapInterval = swapInterval_;
 
-    if (window == nullptr || window->winId() == 0)
+    if (window == nullptr)
     {
         return false;
     }
 
-    NSView* view = reinterpret_cast<NSView*>(window->winId());
-    [view setWantsLayer:YES];
-    if (view.layer == nil)
-    {
-        view.layer = [CAMetalLayer layer];
-    }
+    __block bool success = false;
+    runOnMainThread(^{
+        CAMetalLayer* metalLayer = metalLayerForWindow(window);
+        if (metalLayer == nil)
+        {
+            return;
+        }
 
-    const EGLAttrib displayAttributes[] = {
-        EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE,
-        EGL_NONE,
-    };
-
-    EGLDisplay eglDisplay = eglGetPlatformDisplay(
-        EGL_PLATFORM_ANGLE_ANGLE,
-        reinterpret_cast<void*>(static_cast<intptr_t>(EGL_DEFAULT_DISPLAY)),
-        displayAttributes);
-    if (eglDisplay == EGL_NO_DISPLAY)
-    {
-        eglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    }
-
-    if (eglDisplay == EGL_NO_DISPLAY || !eglInitialize(eglDisplay, nullptr, nullptr))
-    {
-        return false;
-    }
-
-    if (!eglBindAPI(EGL_OPENGL_ES_API))
-    {
-        eglTerminate(eglDisplay);
-        return false;
-    }
-
-    const EGLint configAttributes[] = {
-        EGL_BUFFER_SIZE, 32,
-        EGL_RED_SIZE, 8,
-        EGL_GREEN_SIZE, 8,
-        EGL_BLUE_SIZE, 8,
-        EGL_ALPHA_SIZE, 8,
-        EGL_DEPTH_SIZE, 24,
-        EGL_STENCIL_SIZE, 0,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
-        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-        EGL_NONE,
-    };
-
-    EGLConfig eglConfig = nullptr;
-    EGLint configCount = 0;
-    if (!eglChooseConfig(eglDisplay, configAttributes, &eglConfig, 1, &configCount) || configCount < 1)
-    {
-        eglTerminate(eglDisplay);
-        return false;
-    }
-
-    EGLSurface eglSurface = eglCreateWindowSurface(eglDisplay, eglConfig, view, nullptr);
-    if (eglSurface == EGL_NO_SURFACE)
-    {
-        eglTerminate(eglDisplay);
-        return false;
-    }
-
-    EGLContext eglContext = EGL_NO_CONTEXT;
-    const EGLint contextAttributes32[] = {
-        EGL_CONTEXT_MAJOR_VERSION, 3,
-        EGL_CONTEXT_MINOR_VERSION, 2,
-        EGL_NONE,
-    };
-    eglContext = eglCreateContext(eglDisplay, eglConfig, EGL_NO_CONTEXT, contextAttributes32);
-
-    if (eglContext == EGL_NO_CONTEXT)
-    {
-        const EGLint contextAttributes31[] = {
-            EGL_CONTEXT_MAJOR_VERSION, 3,
-            EGL_CONTEXT_MINOR_VERSION, 1,
+        const EGLAttrib displayAttributes[] = {
+            EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE,
             EGL_NONE,
         };
-        eglContext = eglCreateContext(eglDisplay, eglConfig, EGL_NO_CONTEXT, contextAttributes31);
-    }
 
-    if (eglContext == EGL_NO_CONTEXT)
-    {
-        eglDestroySurface(eglDisplay, eglSurface);
-        eglTerminate(eglDisplay);
-        return false;
-    }
+        EGLDisplay eglDisplay = eglGetPlatformDisplay(
+            EGL_PLATFORM_ANGLE_ANGLE,
+            reinterpret_cast<void*>(static_cast<intptr_t>(EGL_DEFAULT_DISPLAY)),
+            displayAttributes);
+        if (eglDisplay == EGL_NO_DISPLAY)
+        {
+            eglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+        }
 
-    if (!eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext))
-    {
-        eglDestroyContext(eglDisplay, eglContext);
-        eglDestroySurface(eglDisplay, eglSurface);
-        eglTerminate(eglDisplay);
-        return false;
-    }
+        if (eglDisplay == EGL_NO_DISPLAY || !eglInitialize(eglDisplay, nullptr, nullptr))
+        {
+            return;
+        }
 
-    eglSwapInterval(eglDisplay, this->swapInterval);
+        if (!eglBindAPI(EGL_OPENGL_ES_API))
+        {
+            eglTerminate(eglDisplay);
+            return;
+        }
 
-    this->display = eglDisplay;
-    this->surface = eglSurface;
-    this->context = eglContext;
-    return true;
+        const EGLint configAttributes[] = {
+            EGL_BUFFER_SIZE, 32,
+            EGL_RED_SIZE, 8,
+            EGL_GREEN_SIZE, 8,
+            EGL_BLUE_SIZE, 8,
+            EGL_ALPHA_SIZE, 8,
+            EGL_DEPTH_SIZE, 24,
+            EGL_STENCIL_SIZE, 0,
+            EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
+            EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+            EGL_NONE,
+        };
+
+        EGLConfig eglConfig = nullptr;
+        EGLint configCount = 0;
+        if (!eglChooseConfig(eglDisplay, configAttributes, &eglConfig, 1, &configCount) || configCount < 1)
+        {
+            eglTerminate(eglDisplay);
+            return;
+        }
+
+        // ANGLE's Metal backend expects a CAMetalLayer*, not an NSView*.
+        EGLSurface eglSurface = eglCreateWindowSurface(eglDisplay, eglConfig, metalLayer, nullptr);
+        if (eglSurface == EGL_NO_SURFACE)
+        {
+            eglTerminate(eglDisplay);
+            return;
+        }
+
+        EGLContext eglContext = EGL_NO_CONTEXT;
+        const EGLint contextAttributes32[] = {
+            EGL_CONTEXT_MAJOR_VERSION, 3,
+            EGL_CONTEXT_MINOR_VERSION, 2,
+            EGL_NONE,
+        };
+        eglContext = eglCreateContext(eglDisplay, eglConfig, EGL_NO_CONTEXT, contextAttributes32);
+
+        if (eglContext == EGL_NO_CONTEXT)
+        {
+            const EGLint contextAttributes31[] = {
+                EGL_CONTEXT_MAJOR_VERSION, 3,
+                EGL_CONTEXT_MINOR_VERSION, 1,
+                EGL_NONE,
+            };
+            eglContext = eglCreateContext(eglDisplay, eglConfig, EGL_NO_CONTEXT, contextAttributes31);
+        }
+
+        if (eglContext == EGL_NO_CONTEXT)
+        {
+            eglDestroySurface(eglDisplay, eglSurface);
+            eglTerminate(eglDisplay);
+            return;
+        }
+
+        if (!eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext))
+        {
+            eglDestroyContext(eglDisplay, eglContext);
+            eglDestroySurface(eglDisplay, eglSurface);
+            eglTerminate(eglDisplay);
+            return;
+        }
+
+        eglSwapInterval(eglDisplay, this->swapInterval);
+
+        this->display = eglDisplay;
+        this->surface = eglSurface;
+        this->context = eglContext;
+        success = true;
+    });
+
+    return success;
 }
 
 void AngleContext::destroy()
@@ -150,8 +186,12 @@ void AngleContext::destroy()
     EGLSurface eglSurface = static_cast<EGLSurface>(this->surface);
     EGLContext eglContext = static_cast<EGLContext>(this->context);
 
-    if (eglDisplay != EGL_NO_DISPLAY)
+    if (eglDisplay == EGL_NO_DISPLAY)
     {
+        return;
+    }
+
+    runOnMainThread(^{
         eglMakeCurrent(eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 
         if (eglContext != EGL_NO_CONTEXT)
@@ -165,7 +205,7 @@ void AngleContext::destroy()
         }
 
         eglTerminate(eglDisplay);
-    }
+    });
 
     this->display = nullptr;
     this->surface = nullptr;
