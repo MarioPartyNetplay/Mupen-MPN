@@ -755,8 +755,6 @@ void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool re
         this->ui_LoadSaveStateSlotTimerId = this->startTimer(100);
     }
 
-    this->ui_CheckVideoSizeTimerId = this->startTimer(2000);
-
     this->ui_HideCursorInEmulation = CoreSettingsGetBoolValue(SettingsID::GUI_HideCursorInEmulation);
     this->ui_HideCursorInFullscreenEmulation = CoreSettingsGetBoolValue(SettingsID::GUI_HideCursorInFullscreenEmulation);
 
@@ -1356,42 +1354,6 @@ void MainWindow::timerEvent(QTimerEvent *event)
         this->updateSaveStateSlotActions(CoreIsEmulationRunning(), false);
         this->killTimer(timerId);
         this->ui_UpdateSaveStateSlotTimerId = 0;
-    }
-    else if (timerId == this->ui_CheckVideoSizeTimerId)
-    {
-        if (!CoreIsEmulationRunning())
-        {
-            return;
-        }
-
-        int width  = 0;
-        int height = 0;
-        if (!CoreGetVideoSize(width, height))
-        {
-            return;
-        }
-
-        int expectedWidth  = 0;
-        int expectedHeight = 0;
-        if (this->ui_VidExtRenderMode == VidExtRenderMode::OpenGL)
-        {
-            expectedWidth  = this->ui_Widget_OpenGL->GetWidget()->width()  * this->devicePixelRatio();
-            expectedHeight = this->ui_Widget_OpenGL->GetWidget()->height() * this->devicePixelRatio();
-        }
-        else if (this->ui_VidExtRenderMode == VidExtRenderMode::Vulkan)
-        {
-            expectedWidth  = this->ui_Widget_Vulkan->GetWidget()->width()  * this->devicePixelRatio();
-            expectedHeight = this->ui_Widget_Vulkan->GetWidget()->height() * this->devicePixelRatio();
-        }
-
-        expectedWidth  &= ~0x1;
-        expectedHeight &= ~0x1;
-
-        if (width  != expectedWidth ||
-            height != expectedHeight)
-        {
-            CoreSetVideoSize(expectedWidth, expectedHeight);
-        }
     }
     else if (timerId == this->ui_LoadSaveStateSlotTimerId)
     {
@@ -2181,12 +2143,6 @@ void MainWindow::on_Emulation_Finished(bool ret, QString error)
     {
         this->killTimer(this->ui_FullscreenTimerId);
         this->ui_FullscreenTimerId = 0;
-    }
-
-    if (this->ui_CheckVideoSizeTimerId != 0)
-    {
-        this->killTimer(this->ui_CheckVideoSizeTimerId);
-        this->ui_CheckVideoSizeTimerId = 0;
     }
 
     if (this->ui_QuitAfterEmulation)

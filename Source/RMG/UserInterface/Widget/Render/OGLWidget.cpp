@@ -190,7 +190,9 @@ bool OGLWidget::eventFilter(QObject *object, QEvent *event)
 
 void OGLWidget::resizeEvent(QResizeEvent *event)
 {
-    this->queueVideoSizeUpdate(event->size());
+    Q_UNUSED(event);
+    // Resize is handled via the container event filter; QWindow resize events
+    // can report a different size and cause redundant CoreSetVideoSize calls.
 }
 
 void OGLWidget::queueVideoSizeUpdate(QSize size)
@@ -200,6 +202,24 @@ void OGLWidget::queueVideoSizeUpdate(QSize size)
         return;
     }
 
+    // account for HiDPI scaling
+    // see https://github.com/Rosalie241/RMG/issues/2
+    const int newWidth  = (size.width()  * this->devicePixelRatio()) & ~0x1;
+    const int newHeight = (size.height() * this->devicePixelRatio()) & ~0x1;
+
+    if (newWidth == this->appliedWidth && newHeight == this->appliedHeight)
+    {
+        return;
+    }
+
+    if (newWidth == this->width && newHeight == this->height)
+    {
+        return;
+    }
+
+    this->width  = newWidth;
+    this->height = newHeight;
+
     if (this->timerId != 0)
     {
         this->killTimer(this->timerId);
@@ -207,14 +227,6 @@ void OGLWidget::queueVideoSizeUpdate(QSize size)
     }
 
     this->timerId = this->startTimer(100);
-
-    // account for HiDPI scaling
-    // see https://github.com/Rosalie241/RMG/issues/2
-    this->width  = size.width() * this->devicePixelRatio();
-    this->height = size.height() * this->devicePixelRatio();
-
-    this->width  &= ~0x1;
-    this->height &= ~0x1;
 
     // Keep OSD anchored while user is actively resizing.
     OnScreenDisplaySetDisplaySize(this->width, this->height);
@@ -231,10 +243,19 @@ void OGLWidget::timerEvent(QTimerEvent *event)
         return;
     }
 
+    if (this->width == this->appliedWidth && this->height == this->appliedHeight)
+    {
+        this->killTimer(this->timerId);
+        this->timerId = 0;
+        return;
+    }
+
     // only remove current timer
     // when setting the video size succeeds
     if (CoreSetVideoSize(this->width, this->height))
     {
+        this->appliedWidth  = this->width;
+        this->appliedHeight = this->height;
         this->killTimer(this->timerId);
         this->timerId = 0;
     }

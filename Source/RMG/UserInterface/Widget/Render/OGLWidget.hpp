@@ -64,6 +64,8 @@ class OGLWidget : public QWindow
     int width   = 0;
     int height  = 0;
     int timerId = 0;
+    int appliedWidth  = 0;
+    int appliedHeight = 0;
 };
 } // namespace Widget
 } // namespace UserInterface

@@ -50,7 +50,7 @@ bool VKWidget::eventFilter(QObject *object, QEvent *event)
 
 void VKWidget::resizeEvent(QResizeEvent *event)
 {
-    this->queueVideoSizeUpdate(event->size());
+    Q_UNUSED(event);
 }
 
 void VKWidget::queueVideoSizeUpdate(QSize size)
@@ -60,6 +60,22 @@ void VKWidget::queueVideoSizeUpdate(QSize size)
         return;
     }
 
+    const int newWidth  = (size.width()  * this->devicePixelRatio()) & ~0x1;
+    const int newHeight = (size.height() * this->devicePixelRatio()) & ~0x1;
+
+    if (newWidth == this->appliedWidth && newHeight == this->appliedHeight)
+    {
+        return;
+    }
+
+    if (newWidth == this->width && newHeight == this->height)
+    {
+        return;
+    }
+
+    this->width  = newWidth;
+    this->height = newHeight;
+
     if (this->timerId != 0)
     {
         this->killTimer(this->timerId);
@@ -67,18 +83,12 @@ void VKWidget::queueVideoSizeUpdate(QSize size)
     }
 
     this->timerId = this->startTimer(100);
-
-    // account for HiDPI scaling
-    // see https://github.com/Rosalie241/RMG/issues/2
-    this->width  = size.width() * this->devicePixelRatio();
-    this->height = size.height() * this->devicePixelRatio();
-
-    this->width  &= ~0x1;
-    this->height &= ~0x1;
 }
 
 void VKWidget::timerEvent(QTimerEvent *event)
 {
+    Q_UNUSED(event);
+
     if (!this->isVisible())
     {
         this->killTimer(this->timerId);
@@ -86,10 +96,17 @@ void VKWidget::timerEvent(QTimerEvent *event)
         return;
     }
 
-    // only remove current timer
-    // when setting the video size succeeds
+    if (this->width == this->appliedWidth && this->height == this->appliedHeight)
+    {
+        this->killTimer(this->timerId);
+        this->timerId = 0;
+        return;
+    }
+
     if (CoreSetVideoSize(this->width, this->height))
     {
+        this->appliedWidth  = this->width;
+        this->appliedHeight = this->height;
         this->killTimer(this->timerId);
         this->timerId = 0;
     }
