@@ -166,13 +166,15 @@ jobs:
             echo 'HOMEBREW_PREFIX=/usr/local'
             echo 'HOMEBREW_CELLAR=/usr/local/Cellar'
             echo 'HOMEBREW_REPOSITORY=/usr/local/Homebrew'
-            echo 'PATH=/usr/local/bin:/usr/local/sbin:${PATH}'
           } >> "$GITHUB_ENV"
+          echo '/usr/local/bin' >> "$GITHUB_PATH"
+          echo '/usr/local/sbin' >> "$GITHUB_PATH"
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: macos-rosetta-x86_64
+          install: yes
 
       - name: Install Build Dependencies
         run: |
@@ -181,7 +183,7 @@ jobs:
       - name: Build RMG (x86_64 for Rosetta)
         run: |
           chmod +x ./Source/Script/Build.sh
-          arch -x86_64 env MPN_SKIP_ROSETTA_REEXEC=1 PATH="/usr/local/bin:/usr/local/sbin:${PATH}" ./Source/Script/Build.sh Release
+          arch -x86_64 env MPN_SKIP_ROSETTA_REEXEC=1 ./Source/Script/Build.sh Release
 
       - name: Upload macOS Artifact (Folder Build)
         uses: actions/upload-artifact@v4

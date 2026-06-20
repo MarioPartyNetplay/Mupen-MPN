@@ -60,8 +60,8 @@ void VKWidget::queueVideoSizeUpdate(QSize size)
         return;
     }
 
-    const int newWidth  = (size.width()  * this->devicePixelRatio()) & ~0x1;
-    const int newHeight = (size.height() * this->devicePixelRatio()) & ~0x1;
+    const int newWidth  = static_cast<int>(size.width()  * this->devicePixelRatio()) & ~0x1;
+    const int newHeight = static_cast<int>(size.height() * this->devicePixelRatio()) & ~0x1;
 
     if (newWidth == this->appliedWidth && newHeight == this->appliedHeight)
     {

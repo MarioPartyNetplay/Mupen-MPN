@@ -203,8 +203,8 @@ void OGLWidget::queueVideoSizeUpdate(QSize size)
 
     // account for HiDPI scaling
     // see https://github.com/Rosalie241/RMG/issues/2
-    const int newWidth  = (size.width()  * this->devicePixelRatio()) & ~0x1;
-    const int newHeight = (size.height() * this->devicePixelRatio()) & ~0x1;
+    const int newWidth  = static_cast<int>(size.width()  * this->devicePixelRatio()) & ~0x1;
+    const int newHeight = static_cast<int>(size.height() * this->devicePixelRatio()) & ~0x1;
 
     if (newWidth == this->appliedWidth && newHeight == this->appliedHeight)
     {

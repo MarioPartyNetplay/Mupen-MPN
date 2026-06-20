@@ -50,7 +50,7 @@ bool AngleContext::create(QWindow* window, int swapInterval_)
         view.layer = [CAMetalLayer layer];
     }
 
-    const EGLint displayAttributes[] = {
+    const EGLAttrib displayAttributes[] = {
         EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE,
         EGL_NONE,
     };
