@@ -188,9 +188,7 @@ jobs:
 
       - name: Prepare macOS Artifacts
         run: >
-          mkdir -p build/OUT
-          rsync -av Bin/Release/Mupen-MPN.app/ build/OUT/Mupen-MPN.app/
-          cd build/OUT
+          cd Bin/Release
           hdiutil create -volname "Mupen-MPN" -srcfolder Mupen-MPN.app -ov -format UDZO MupenMPN-macOS-x86_64.dmg
           rm -rf Mupen-MPN.app
 
@@ -198,4 +196,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MupenMPN-macOS-x86_64
-          path: build/OUT/*
+          path: Bin/Release/*
