@@ -3,6 +3,7 @@
  * Copyright (C) 2020-2026 Rosalie Wanders <rosalie@mailbox.org>
  */
 #include "NetplayHostRegistry.hpp"
+#include "NetplayTraversalPunch.hpp"
 
 #include <QDateTime>
 #include <QDebug>
@@ -191,6 +192,10 @@ void NetplayHostRegistry::onReadyRead()
 
 void NetplayHostRegistry::handleServerMessage(const QByteArray& datagram)
 {
+    if (handleTraversalPunchDatagram(datagram, &m_socket)) {
+        return;
+    }
+
     const QList<QByteArray> parts = splitRegistryParts(datagram);
     if (parts.size() < 2) {
         return;

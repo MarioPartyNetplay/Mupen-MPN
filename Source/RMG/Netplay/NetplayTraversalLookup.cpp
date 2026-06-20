@@ -4,6 +4,7 @@
  */
 #include "NetplayTraversalLookup.hpp"
 #include "NetplayProtocol.hpp"
+#include "NetplayTraversalPunch.hpp"
 
 #include <QEventLoop>
 #include <QHostInfo>
@@ -88,6 +89,10 @@ TraversalLookupResult lookupTraversalHost(const QString& hostCode)
     QObject::connect(&socket, &QUdpSocket::readyRead, &loop, [&]() {
         while (socket.hasPendingDatagrams()) {
             const QByteArray datagram = socket.receiveDatagram().data();
+            if (handleTraversalPunchDatagram(datagram, &socket)) {
+                continue;
+            }
+
             const QList<QByteArray> parts = splitRegistryParts(datagram);
             if (parts.size() < 2 || parts.first() != kNetplayRegistryProtocol) {
                 continue;
@@ -111,6 +116,12 @@ TraversalLookupResult lookupTraversalHost(const QString& hostCode)
                 result.success = true;
                 result.address = address;
                 result.port = port;
+
+                QHostAddress hostAddress;
+                if (hostAddress.setAddress(address)) {
+                    performTraversalPunchWindow(&socket, hostAddress, static_cast<quint16>(port));
+                }
+
                 loop.quit();
                 return;
             }

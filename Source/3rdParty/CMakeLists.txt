@@ -309,6 +309,17 @@ ExternalProject_Add(SDL_GameControllerDB
 
 # libdatachannel integration (for WebRTC P2P netplay)
 if (NETPLAY)
+    include(FetchContent)
+    FetchContent_Declare(
+        enet
+        GIT_REPOSITORY https://github.com/lsalzman/enet.git
+        GIT_TAG v1.3.17
+    )
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(enet)
+
+    set(ENET_EXTERNAL_TARGET enet PARENT_SCOPE)
+
     set(LIBDATACHANNEL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libdatachannel")
     
     # MinGW-specific flags for libdatachannel

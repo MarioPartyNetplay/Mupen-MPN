@@ -2053,7 +2053,7 @@ void MainWindow::on_Action_Netplay(void)
 #ifdef NETPLAY
     if (this->netplayCoordinator == nullptr)
     {
-        this->netplayCoordinator = new Netplay::NetplayCoordinator("http://localhost:2626", this);
+        this->netplayCoordinator = new Netplay::NetplayCoordinator("udp://localhost:2626", this);
     }
 
     Dialog::NetplayLobbyDialog dialog(this, this->netplayCoordinator, this->ui_Widget_RomBrowser->GetModelData());

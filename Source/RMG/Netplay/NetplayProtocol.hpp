@@ -18,7 +18,7 @@
 
 namespace UserInterface::Netplay {
 
-static constexpr int kDefaultNetplayHostingPort = 2626;
+static constexpr int kDefaultNetplayHostingPort = 2626; // UDP/ENet signaling
 static constexpr const char* kNetplayIndexHost = "216.201.73.203";
 static constexpr int kNetplayRegistryPort = 9150;
 static constexpr int kNetplayIndexHttpPort = 9151;

@@ -49,7 +49,7 @@
      };
  
      explicit NetplayCoordinator(
-         const QString& serverUrl = "http://localhost:2626",
+         const QString& serverUrl = "udp://localhost:2626",
          QObject* parent = nullptr
      );
      ~NetplayCoordinator();

@@ -8,6 +8,8 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "SocketIOClient.hpp"
+#include "../NetplayProtocol.hpp"
+
 #include <QTimer>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -16,11 +18,14 @@
 #include <QUrl>
 #include <QUuid>
 #include <algorithm>
+#include <enet/enet.h>
 
 using namespace UserInterface::Netplay;
 
 namespace {
 constexpr int kCheatsChunkSize = 32;
+constexpr int kConnectTimeoutMs = 10000;
+constexpr int kServiceIntervalMs = 16;
 
 QJsonArray sliceJsonArray(const QJsonArray& source, int startIndex, int count)
 {
@@ -51,59 +56,142 @@ SocketIOClient::SocketIOClient(const QString& serverUrl, QObject* parent)
     : QObject(parent)
     , m_serverUrl(serverUrl)
     , m_connectionState(Disconnected)
-    , m_pingTimer(nullptr)
 {
-    m_webSocket = std::make_unique<QWebSocket>();
     m_sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     m_persistentId = QUuid::createUuid().toString(QUuid::WithoutBraces);
 
-    QObject::connect(m_webSocket.get(), &QWebSocket::connected, this, &SocketIOClient::on_connected);
-    QObject::connect(m_webSocket.get(), &QWebSocket::disconnected, this, &SocketIOClient::on_disconnected);
-    QObject::connect(m_webSocket.get(), &QWebSocket::textMessageReceived, this, &SocketIOClient::on_textMessageReceived);
-    QObject::connect(m_webSocket.get(), QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error),
-            this, &SocketIOClient::on_error);
-    QObject::connect(m_webSocket.get(), &QWebSocket::pong, this, &SocketIOClient::on_pong);
-    // Note: QWebSocket may not directly expose sslErrors signal
-    // If it does, uncomment the following line:
-    // QObject::connect(m_webSocket.get(), QOverload<const QList<QSslError>&>::of(&QWebSocket::sslErrors),
-    //         this, &SocketIOClient::on_sslErrors);
+    m_serviceTimer = new QTimer(this);
+    m_serviceTimer->setInterval(kServiceIntervalMs);
+    connect(m_serviceTimer, &QTimer::timeout, this, &SocketIOClient::on_serviceTimer);
+
+    m_connectTimer = new QTimer(this);
+    m_connectTimer->setSingleShot(true);
+    connect(m_connectTimer, &QTimer::timeout, this, &SocketIOClient::on_connectTimeout);
+
+    m_pingTimer = new QTimer(this);
+    m_pingTimer->setInterval(10000);
+    connect(m_pingTimer, &QTimer::timeout, this, [this]() {
+        if (m_serverPeer && m_connectionState == Connected) {
+            enet_peer_ping(m_serverPeer);
+            m_lastPingMs = static_cast<int>(m_serverPeer->roundTripTime);
+            emit pingUpdated(m_lastPingMs);
+        }
+    });
 }
 
 SocketIOClient::~SocketIOClient()
 {
-    if (m_webSocket && m_webSocket->isValid()) {
-        m_webSocket->close();
+    disconnect();
+}
+
+bool SocketIOClient::parseServerEndpoint(const QString& serverUrl, QHostAddress* addressOut, quint16* portOut) const
+{
+    QString normalized = serverUrl.trimmed();
+    if (normalized.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive)) {
+        normalized = QStringLiteral("udp://") + normalized.mid(7);
+    } else if (normalized.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive)) {
+        normalized = QStringLiteral("udp://") + normalized.mid(8);
+    } else if (!normalized.startsWith(QStringLiteral("udp://"), Qt::CaseInsensitive)) {
+        normalized = QStringLiteral("udp://") + normalized;
+    }
+
+    const QUrl url(normalized);
+    if (!url.isValid() || url.host().isEmpty()) {
+        return false;
+    }
+
+    QHostAddress address;
+    if (!address.setAddress(url.host())) {
+        return false;
+    }
+
+    const int port = url.port(kDefaultNetplayHostingPort);
+    if (port < 1 || port > 65535) {
+        return false;
+    }
+
+    *addressOut = address;
+    *portOut = static_cast<quint16>(port);
+    return true;
+}
+
+void SocketIOClient::destroyEnetClient()
+{
+    if (m_serviceTimer) {
+        m_serviceTimer->stop();
+    }
+    if (m_connectTimer) {
+        m_connectTimer->stop();
     }
     if (m_pingTimer) {
         m_pingTimer->stop();
-        delete m_pingTimer;
     }
+
+    if (m_enetHost) {
+        if (m_serverPeer) {
+            enet_peer_disconnect(m_serverPeer, 0);
+            ENetEvent event;
+            while (enet_host_service(m_enetHost, &event, 100) > 0) {
+                if (event.type == ENET_EVENT_TYPE_DISCONNECT) {
+                    break;
+                }
+            }
+            m_serverPeer = nullptr;
+        }
+        enet_host_destroy(m_enetHost);
+        m_enetHost = nullptr;
+    }
+
+    shutdownEnetIfIdle();
 }
 
 void SocketIOClient::connectToServer(const QString& playerName)
 {
     m_playerName = playerName;
+    destroyEnetClient();
+
+    if (!parseServerEndpoint(m_serverUrl, &m_serverAddress, &m_serverPort)) {
+        m_connectionState = Error;
+        emit connectionError(QStringLiteral("Invalid signaling server address: %1").arg(m_serverUrl));
+        return;
+    }
+
+    ensureEnetInitialized();
     m_connectionState = Connecting;
 
-    // Convert HTTP URL to WebSocket URL
-    QString wsUrl = m_serverUrl;
-    wsUrl.replace("http://", "ws://");
-    wsUrl.replace("https://", "wss://");
-    wsUrl = wsUrl + "/socket.io/?EIO=4&transport=websocket";
+    m_enetHost = enet_host_create(nullptr, 1, 1, 0, 0);
+    if (!m_enetHost) {
+        m_connectionState = Error;
+        shutdownEnetIfIdle();
+        emit connectionError(QStringLiteral("Failed to create UDP signaling client"));
+        return;
+    }
 
-    qDebug() << "Connecting to Socket.IO server:" << wsUrl;
-    m_webSocket->open(QUrl(wsUrl));
+    ENetAddress address;
+    enet_address_set_host(&address, m_serverAddress.toString().toUtf8().constData());
+    address.port = m_serverPort;
+
+    m_serverPeer = enet_host_connect(m_enetHost, &address, 1, 0);
+    if (!m_serverPeer) {
+        destroyEnetClient();
+        m_connectionState = Error;
+        emit connectionError(QStringLiteral("Failed to initiate UDP signaling connection"));
+        return;
+    }
+
+    qInfo() << "Connecting to UDP signaling server" << m_serverAddress.toString() << m_serverPort;
+    m_serviceTimer->start();
+    m_connectTimer->start(kConnectTimeoutMs);
 }
 
 void SocketIOClient::disconnect()
 {
-    if (m_pingTimer) {
-        m_pingTimer->stop();
+    destroyEnetClient();
+    if (m_connectionState != Disconnected) {
+        m_connectionState = Disconnected;
+        m_lastSentFrameSync = 0;
+        emit disconnected();
     }
-    if (m_webSocket && m_webSocket->isValid()) {
-        m_webSocket->close();
-    }
-    m_connectionState = Disconnected;
     m_roomId.clear();
     m_playerId.clear();
 }
@@ -454,129 +542,72 @@ int SocketIOClient::getLastPingMs() const
 // Private Slots
 //
 
-void SocketIOClient::on_connected()
+void SocketIOClient::on_serviceTimer()
 {
-    qDebug() << "Socket.IO connected";
-    m_connectionState = Connected;
-
-    // Send Socket.IO connection packet (CONNECT - message type 0)
-    m_webSocket->sendTextMessage("0");
-
-    emit connected();
-
-    // Start keep-alive ping
-    if (!m_pingTimer) {
-        m_pingTimer = new QTimer(this);
-        QObject::connect(m_pingTimer, &QTimer::timeout, [this]() {
-            if (m_webSocket && m_connectionState == Connected) {
-                m_webSocket->ping();
-            }
-        });
-    }
-    m_pingTimer->start(10000);
-
-}
-
-void SocketIOClient::on_disconnected()
-{
-    qDebug() << "Socket.IO disconnected";
-    m_connectionState = Disconnected;
-    m_lastSentFrameSync = 0;
-    if (m_pingTimer) {
-        m_pingTimer->stop();
-    }
-    emit disconnected();
-}
-
-void SocketIOClient::on_textMessageReceived(const QString& message)
-{
-    handleSocketIOMessage(message);
-}
-
-void SocketIOClient::on_error(QAbstractSocket::SocketError error)
-{
-    qWarning() << "Socket.IO error:" << error << m_webSocket->errorString();
-    m_connectionState = Error;
-    const QString message = m_webSocket->errorString().isEmpty()
-                                ? QStringLiteral("WebSocket error %1").arg(static_cast<int>(error))
-                                : m_webSocket->errorString();
-    emit connectionError(message);
-}
-
-void SocketIOClient::on_pong(quint64 elapsedTime, const QByteArray& payload)
-{
-    Q_UNUSED(payload);
-    m_lastPingMs = static_cast<int>(elapsedTime);
-    emit pingUpdated(m_lastPingMs);
-}
-
-void SocketIOClient::on_sslErrors(const QList<QSslError>& errors)
-{
-    for (const auto& error : errors) {
-        qWarning() << "Socket.IO SSL Error:" << error.errorString();
-    }
-    // For now, we ignore SSL errors to allow self-signed certificates
-    // In production, this should be more carefully handled
-    if (m_webSocket) {
-        m_webSocket->ignoreSslErrors();
-    }
-}
-
-//
-// Private Methods
-//
-
-void SocketIOClient::handleSocketIOMessage(const QString& message)
-{
-    // Socket.IO message format: [messageType, ...args]
-    // messageType 0 = CONNECT
-    // messageType 2 = EVENT
-    // messageType 3 = ACK
-    // messageType 4 = ERROR
-    // messageType 5 = BINARY_EVENT
-    // messageType 6 = BINARY_ACK
-
-    if (message.isEmpty()) {
+    if (!m_enetHost) {
         return;
     }
 
-    // First character is the message type
-    QChar msgType = message[0];
-    QString payload = message.length() > 1 ? message.mid(1) : "";
-
-    if (msgType == '0') {
-        // CONNECT
-        qDebug() << "Socket.IO CONNECT received";
-    } else if (msgType == '2') {
-        // EVENT - payload can be [eventName, ...args] or [2, eventName, ...args]
-        QJsonDocument doc = QJsonDocument::fromJson(payload.toUtf8());
-        if (doc.isArray()) {
-            QJsonArray arr = doc.array();
-            if (arr.size() > 0) {
-                int eventIndex = 0;
-
-                // Server may include Socket.IO event type (2) as first element.
-                if (arr[0].isDouble() && arr[0].toInt() == 2) {
-                    eventIndex = 1;
-                }
-
-                if (arr.size() > eventIndex && arr[eventIndex].isString()) {
-                    QString eventName = arr[eventIndex].toString();
-                    QJsonArray args;
-                    for (int i = eventIndex + 1; i < arr.size(); ++i) {
-                        args.append(arr[i]);
-                    }
-                    handleEvent(eventName, args);
-                }
+    ENetEvent event;
+    while (enet_host_service(m_enetHost, &event, 0) > 0) {
+        switch (event.type) {
+        case ENET_EVENT_TYPE_CONNECT:
+            if (m_connectTimer) {
+                m_connectTimer->stop();
             }
+            m_connectionState = Connected;
+            qInfo() << "UDP signaling connected";
+            emit connected();
+            if (m_pingTimer) {
+                m_pingTimer->start();
+            }
+            break;
+
+        case ENET_EVENT_TYPE_RECEIVE:
+            handleSignalingPacket(QByteArray(reinterpret_cast<const char*>(event.packet->data),
+                                             static_cast<int>(event.packet->dataLength)));
+            enet_packet_destroy(event.packet);
+            break;
+
+        case ENET_EVENT_TYPE_DISCONNECT:
+            if (m_connectionState == Connected) {
+                m_connectionState = Disconnected;
+                m_lastSentFrameSync = 0;
+                if (m_pingTimer) {
+                    m_pingTimer->stop();
+                }
+                emit disconnected();
+            }
+            m_serverPeer = nullptr;
+            break;
+
+        default:
+            break;
         }
-    } else if (msgType == '3') {
-        // ACK
-        qDebug() << "Socket.IO ACK received";
-    } else if (msgType == '4') {
-        // ERROR
-        qWarning() << "Socket.IO ERROR received:" << payload;
     }
+}
+
+void SocketIOClient::on_connectTimeout()
+{
+    if (m_connectionState != Connecting) {
+        return;
+    }
+
+    destroyEnetClient();
+    m_connectionState = Error;
+    emit connectionError(QStringLiteral("UDP signaling connection timed out"));
+}
+
+void SocketIOClient::handleSignalingPacket(const QByteArray& payload)
+{
+    QString eventName;
+    QJsonArray args;
+    if (!parseSignalingPacket(payload, &eventName, &args)) {
+        qWarning() << "SocketIOClient: Ignoring malformed signaling packet";
+        return;
+    }
+
+    handleEvent(eventName, args);
 }
 
 void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& args)
@@ -778,41 +809,28 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
 
 void SocketIOClient::emitEvent(const QString& eventName, const QJsonObject& payload)
 {
-    QJsonArray arr;
-    arr.append(2);  // Socket.IO EVENT type
-    arr.append(eventName);
-    arr.append(payload);
-    
-    QString jsonStr = QJsonDocument(arr).toJson(QJsonDocument::Compact);
-    QString message = QString("2") + jsonStr; // Engine.IO MESSAGE type is '2'
-    
     if (eventName != QLatin1String("controller-input") &&
         eventName != QLatin1String("frame-sync")) {
         qDebug() << "SocketIOClient: Emitting event" << eventName;
     }
-    
-    if (m_webSocket && m_connectionState == Connected) {
-        m_webSocket->sendTextMessage(message);
-    } else {
-        qWarning() << "SocketIOClient: Cannot emit event, not connected or no socket";
+
+    if (m_connectionState != Connected || !m_serverPeer) {
+        qWarning() << "SocketIOClient: Cannot emit event, not connected";
+        return;
+    }
+
+    if (!sendSignalingEvent(m_serverPeer, eventName, payload)) {
+        qWarning() << "SocketIOClient: Failed to send event" << eventName;
     }
 }
 
 void SocketIOClient::emitEvent(const QString& eventName, const QJsonArray& payload)
 {
-    QJsonArray arr;
-    arr.append(2);  // Socket.IO EVENT type
-    arr.append(eventName);
-    for (const auto& item : payload) {
-        arr.append(item);
+    if (m_connectionState != Connected || !m_serverPeer) {
+        return;
     }
-    
-    QString jsonStr = QJsonDocument(arr).toJson(QJsonDocument::Compact);
-    QString message = QString("2") + jsonStr;  // Engine.IO MESSAGE type is '2'
-    
-    if (m_webSocket && m_connectionState == Connected) {
-        m_webSocket->sendTextMessage(message);
-    }
+
+    sendSignalingEvent(m_serverPeer, eventName, payload);
 }
 
 QJsonObject SocketIOClient::buildOpenRoomPayload(const QString& roomName, const QString& gameId, int maxPlayers)

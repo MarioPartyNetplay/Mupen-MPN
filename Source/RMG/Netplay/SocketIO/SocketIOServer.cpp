@@ -1,5 +1,6 @@
 #include "SocketIOServer.hpp"
-#include <QWebSocket>
+#include "../NetplayProtocol.hpp"
+
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -7,9 +8,12 @@
 #include <QDebug>
 #include <QTimer>
 #include <algorithm>
+#include <enet/enet.h>
 
 namespace {
 constexpr int kCheatsChunkSize = 32;
+constexpr int kServiceIntervalMs = 16;
+constexpr int kMaxSignalingClients = 32;
 
 QJsonArray sliceJsonArray(const QJsonArray& source, int startIndex, int count)
 {
@@ -58,6 +62,10 @@ void SocketIOServer::rebuildLobbySlots(SignalingRoom& room)
 SocketIOServer::SocketIOServer(QObject* parent)
     : QObject(parent)
 {
+    m_serviceTimer = new QTimer(this);
+    m_serviceTimer->setInterval(kServiceIntervalMs);
+    connect(m_serviceTimer, &QTimer::timeout, this, &SocketIOServer::onServiceTimer);
+
     m_pingTimer = new QTimer(this);
     m_pingTimer->setInterval(10000);
     connect(m_pingTimer, &QTimer::timeout, this, &SocketIOServer::onPingTimer);
@@ -70,61 +78,50 @@ SocketIOServer::~SocketIOServer()
 
 bool SocketIOServer::startServer(int port, QString* errorOut)
 {
-    if (m_server && m_server->isListening())
-    {
-        if (errorOut != nullptr)
-        {
+    if (m_enetHost) {
+        if (errorOut != nullptr) {
             *errorOut = tr("Signaling server is already listening.");
         }
         return false;
     }
 
-    m_server = std::make_unique<QWebSocketServer>(
-        "RMG-Signaling-Server",
-        QWebSocketServer::SslMode::NonSecureMode,
-        this);
+    ensureEnetInitialized();
 
-    if (!m_server->listen(QHostAddress::Any, port))
-    {
-        const QString listenError = m_server->errorString();
-        qWarning() << "Signaling server failed to listen on port" << port << ":" << listenError;
+    ENetAddress address;
+    address.host = ENET_HOST_ANY;
+    address.port = static_cast<enet_uint16>(port);
 
-        if (errorOut != nullptr)
-        {
-            if (listenError.contains(QStringLiteral("in use"), Qt::CaseInsensitive))
-            {
-                *errorOut = tr("Port %1 is already in use. Close other netplay sessions or choose a different port.")
-                                .arg(port);
-            }
-            else
-            {
-                *errorOut = tr("Could not listen on port %1: %2").arg(port).arg(listenError);
-            }
+    m_enetHost = enet_host_create(&address, kMaxSignalingClients, 1, 0, 0);
+    if (!m_enetHost) {
+        shutdownEnetIfIdle();
+        const QString listenError = tr("Could not bind UDP signaling port %1").arg(port);
+        qWarning() << listenError;
+
+        if (errorOut != nullptr) {
+            *errorOut = listenError;
         }
-
-        m_server.reset();
         return false;
     }
 
-    connect(m_server.get(), &QWebSocketServer::newConnection,
-            this, &SocketIOServer::onNewConnection);
-
+    m_listenPort = port;
+    m_serviceTimer->start();
     m_pingTimer->start();
 
-    qInfo() << "Signaling server started on port" << port;
+    qInfo() << "UDP signaling server started on port" << port;
     return true;
 }
 
 void SocketIOServer::stopServer()
 {
-    if (!m_server)
+    if (!m_enetHost) {
         return;
+    }
 
-    // Disconnect all clients
-    for (auto* client : m_clients.keys())
-    {
-        client->disconnect();
-        client->close();
+    for (auto* client : m_clients.values()) {
+        if (client && client->peer) {
+            enet_peer_disconnect(client->peer, 0);
+        }
+        delete client;
     }
     m_clients.clear();
     m_clientsById.clear();
@@ -133,18 +130,28 @@ void SocketIOServer::stopServer()
     if (m_pingTimer) {
         m_pingTimer->stop();
     }
+    if (m_serviceTimer) {
+        m_serviceTimer->stop();
+    }
 
-    m_server->close();
-    m_server.reset();
+    ENetEvent event;
+    while (enet_host_service(m_enetHost, &event, 100) > 0) {
+        if (event.type == ENET_EVENT_TYPE_RECEIVE) {
+            enet_packet_destroy(event.packet);
+        }
+    }
 
-    qInfo() << "Signaling server stopped";
+    enet_host_destroy(m_enetHost);
+    m_enetHost = nullptr;
+    m_listenPort = 0;
+    shutdownEnetIfIdle();
+
+    qInfo() << "UDP signaling server stopped";
 }
 
 int SocketIOServer::getPort() const
 {
-    if (!m_server)
-        return -1;
-    return m_server->serverPort();
+    return m_listenPort;
 }
 
 void SocketIOServer::createInitialRoom(const QString& roomId, const QString& hostName, const QString& gameName)
@@ -169,7 +176,7 @@ void SocketIOServer::createInitialRoom(const QString& roomId, const QString& hos
     hostClient->roomId = roomId;
     hostClient->slotIndex = 0;
     hostClient->playerId = "p0";
-    hostClient->socket = nullptr;
+    hostClient->peer = nullptr;
     room.lobbyOrder.append(hostClient);
     rebuildLobbySlots(room);
     
@@ -177,9 +184,9 @@ void SocketIOServer::createInitialRoom(const QString& roomId, const QString& hos
     qInfo() << "SocketIOServer: Created initial room" << roomId << "for host" << hostName;
 }
 
-void SocketIOServer::handle_JoinRoom(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_JoinRoom(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client)
         return;
 
@@ -277,9 +284,9 @@ void SocketIOServer::handle_JoinRoom(QWebSocket* socket, const QJsonObject& msg)
     emit playerJoined(roomId, client->id, client->slotIndex);
 }
 
-void SocketIOServer::handle_CheatsUpdate(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_CheatsUpdate(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client || client->roomId.isEmpty())
         return;
 
@@ -305,7 +312,7 @@ void SocketIOServer::handle_CheatsUpdate(QWebSocket* socket, const QJsonObject& 
         for (auto it = room->players.constBegin(); it != room->players.constEnd(); ++it)
         {
             ClientConnection* player = it.value();
-            if (player && player->id != client->id && player->socket && player->socket->isValid())
+            if (player && player->id != client->id && peerIsConnected(player->peer))
             {
                 emitToClient(player->id, "cheats-updated", payload);
             }
@@ -342,7 +349,7 @@ void SocketIOServer::handle_CheatsUpdate(QWebSocket* socket, const QJsonObject& 
     {
         ClientConnection* player = it.value();
         // Check player validity, ensure it's not the sender, and make sure their socket is alive
-        if (player && player->id != client->id && player->socket && player->socket->isValid())
+        if (player && player->id != client->id && peerIsConnected(player->peer))
         {
             emitToClient(player->id, "cheats-updated", payload);
         }
@@ -352,9 +359,9 @@ void SocketIOServer::handle_CheatsUpdate(QWebSocket* socket, const QJsonObject& 
 }
 
 
-void SocketIOServer::handle_SaveSyncUpdate(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_SaveSyncUpdate(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client || client->roomId.isEmpty())
         return;
 
@@ -371,7 +378,7 @@ void SocketIOServer::handle_SaveSyncUpdate(QWebSocket* socket, const QJsonObject
     for (auto it = room->players.constBegin(); it != room->players.constEnd(); ++it)
     {
         ClientConnection* player = it.value();
-        if (player && player->id != client->id && player->socket && player->socket->isValid())
+        if (player && player->id != client->id && peerIsConnected(player->peer))
         {
             emitToClient(player->id, "save-sync", payload);
         }
@@ -379,9 +386,9 @@ void SocketIOServer::handle_SaveSyncUpdate(QWebSocket* socket, const QJsonObject
     emit saveSyncReceived(client->roomId, room->activeSaves);
 }
 
-void SocketIOServer::handle_InputDelayUpdate(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_InputDelayUpdate(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client || client->roomId.isEmpty())
         return;
 
@@ -398,16 +405,16 @@ void SocketIOServer::handle_InputDelayUpdate(QWebSocket* socket, const QJsonObje
     // Distribute frame delay configuration across active clients securely
     for (auto* player : room->players)
     {
-        if (player && player->socket && player->socket->isValid())
+        if (player && peerIsConnected(player->peer))
         {
             emitToClient(player->id, "update-input-delay", payload);
         }
     }
 }
 
-void SocketIOServer::handle_EmulationPauseUpdate(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_EmulationPauseUpdate(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client || client->roomId.isEmpty())
         return;
 
@@ -636,11 +643,11 @@ void SocketIOServer::tryBroadcastEmulationBegin(SignalingRoom* room)
     emit emulationBegin(room->id);
 }
 
-void SocketIOServer::handle_EmulationReady(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_EmulationReady(ENetPeer* socket, const QJsonObject& msg)
 {
     Q_UNUSED(msg);
 
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client || client->roomId.isEmpty() || client->slotIndex < 0) {
         return;
     }
@@ -673,95 +680,83 @@ void SocketIOServer::broadcastChatMessage(const QString& roomId, const QString& 
     emitToRoom(roomId, "chat-message", payload);
 }
 
-void SocketIOServer::onNewConnection()
+void SocketIOServer::onServiceTimer()
 {
-    if (!m_server)
+    if (!m_enetHost) {
         return;
+    }
 
-    // Loop through all pending connections waiting in the queue
-    while (true)
-    {
-        QWebSocket* socket = m_server->nextPendingConnection();
-        if (!socket)
-            break; // No more clients waiting, exit cleanly
+    ENetEvent event;
+    while (enet_host_service(m_enetHost, &event, 0) > 0) {
+        switch (event.type) {
+        case ENET_EVENT_TYPE_CONNECT:
+            onClientConnected(event.peer);
+            break;
 
-        // 1. Set payload limits immediately on every connection as they come in
-        socket->setMaxAllowedIncomingMessageSize(15728640);
-        socket->setMaxAllowedIncomingFrameSize(15728640);
+        case ENET_EVENT_TYPE_RECEIVE: {
+            const QByteArray payload(reinterpret_cast<const char*>(event.packet->data),
+                                     static_cast<int>(event.packet->dataLength));
+            handleSignalingPacket(event.peer, payload);
+            enet_packet_destroy(event.packet);
+            break;
+        }
 
-        // 2. Create and configure your client connection safely
-        auto* client = new ClientConnection();
-        client->id = generateClientId();
-        client->socket = socket;
+        case ENET_EVENT_TYPE_DISCONNECT:
+            onClientDisconnected(event.peer);
+            break;
 
-        m_clients[socket] = client;
-        m_clientsById[client->id] = client;
-
-        connect(socket, &QWebSocket::textMessageReceived,
-                this, &SocketIOServer::onTextMessageReceived);
-        connect(socket, &QWebSocket::disconnected,
-                this, &SocketIOServer::onClientDisconnected);
-        connect(socket, &QWebSocket::pong, this,
-                [client](quint64 elapsedTime, const QByteArray&) {
-            if (client) {
-                client->lastPingMs = static_cast<int>(elapsedTime);
-            }
-        });
-
-        // Socket.IO connect message (engine.io type 0)
-        QJsonArray connectMsg;
-        connectMsg.append(0);  // Socket.IO CONNECT type
-        connectMsg.append(QString::number(0));
-        QJsonObject data;
-        data["sid"] = client->id;
-        connectMsg.append(data);
-        sendSocketIOMessage(socket, 0, connectMsg);
-
-        qInfo() << "Client connected:" << client->id;
-        emit clientConnected(client->id);
+        default:
+            break;
+        }
     }
 }
 
-void SocketIOServer::onTextMessageReceived(const QString& message)
+void SocketIOServer::onClientConnected(ENetPeer* peer)
 {
-    QWebSocket* socket = qobject_cast<QWebSocket*>(sender());
-    if (!socket)
+    if (!peer) {
         return;
+    }
 
-    handleSocketIOMessage(socket, message);
+    auto* client = new ClientConnection();
+    client->id = generateClientId();
+    client->peer = peer;
+    peer->data = client;
+
+    m_clients[peer] = client;
+    m_clientsById[client->id] = client;
+
+    QJsonObject welcome;
+    welcome["sid"] = client->id;
+    sendSignalingEvent(peer, QStringLiteral("connected"), welcome);
+
+    qInfo() << "Client connected:" << client->id;
+    emit clientConnected(client->id);
 }
 
-void SocketIOServer::onClientDisconnected()
+void SocketIOServer::onClientDisconnected(ENetPeer* peer)
 {
-    QWebSocket* socket = qobject_cast<QWebSocket*>(sender());
-    if (!socket)
+    if (!peer) {
         return;
+    }
 
-    ClientConnection* client = getClientFromSocket(socket);
-    if (!client)
+    ClientConnection* client = getClientFromPeer(peer);
+    if (!client) {
         return;
+    }
 
-    QString clientId = client->id;
-    QString roomId = client->roomId;
+    const QString clientId = client->id;
+    const QString roomId = client->roomId;
 
-    // Remove from room
-    if (!roomId.isEmpty())
-    {
+    if (!roomId.isEmpty()) {
         SignalingRoom* room = getRoomById(roomId);
-        if (room)
-        {
-            // Remove player from slot
-            if (client->slotIndex >= 0 && client->slotIndex < 4)
-            {
+        if (room) {
+            if (client->slotIndex >= 0 && client->slotIndex < 4) {
                 room->players.remove(client->slotIndex);
             }
 
-            // Broadcast room update
             broadcastRoomUpdate(roomId);
 
-            // If host left, close room
-            if (room->hostId == clientId)
-            {
+            if (room->hostId == clientId) {
                 m_rooms.remove(roomId);
             }
 
@@ -769,56 +764,33 @@ void SocketIOServer::onClientDisconnected()
         }
     }
 
-    m_clients.remove(socket);
+    m_clients.remove(peer);
     m_clientsById.remove(clientId);
+    peer->data = nullptr;
     delete client;
 
     qInfo() << "Client disconnected:" << clientId;
     emit clientDisconnected(clientId);
 }
 
-void SocketIOServer::handleSocketIOMessage(QWebSocket* socket, const QString& message)
+void SocketIOServer::handleSignalingPacket(ENetPeer* peer, const QByteArray& payload)
 {
-    // Socket.IO message format: engine.io type + Socket.IO packet
-    // For example: "0" = Engine.IO OPEN, "2" = Engine.IO MESSAGE + Socket.IO packet
-
-    if (message.isEmpty())
+    QString eventName;
+    QJsonArray args;
+    if (!parseSignalingPacket(payload, &eventName, &args)) {
         return;
-
-    char engineType = message[0].toLatin1();
-
-    switch (engineType)
-    {
-        case '2':  // Engine.IO MESSAGE
-        {
-            // Socket.IO packet is after the engine.io type
-            QString socketIOPacket = message.mid(1);
-
-            // Parse Socket.IO JSON
-            // Typical format: [Socket.IO type, event name, data object]
-            QJsonDocument doc = QJsonDocument::fromJson(socketIOPacket.toUtf8());
-            if (doc.isArray())
-            {
-                QJsonArray arr = doc.array();
-                if (arr.size() >= 1)
-                {
-                    handleEvent(socket, arr);
-                }
-            }
-            break;
-        }
-
-        case '4':  // Engine.IO UPGRADE
-        case '3':  // Engine.IO UPGRADE
-            // Acknowledge upgrade
-            break;
-
-        default:
-            break;
     }
+
+    QJsonArray message;
+    message.append(2);
+    message.append(eventName);
+    for (const QJsonValue& value : args) {
+        message.append(value);
+    }
+    handleEvent(peer, message);
 }
 
-void SocketIOServer::handleEvent(QWebSocket* socket, const QJsonArray& args)
+void SocketIOServer::handleEvent(ENetPeer* socket, const QJsonArray& args)
 {
     if (args.isEmpty())
         return;
@@ -872,9 +844,9 @@ void SocketIOServer::handleEvent(QWebSocket* socket, const QJsonArray& args)
     }
 }
 
-void SocketIOServer::handle_OpenRoom(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_OpenRoom(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client)
         return;
 
@@ -920,9 +892,9 @@ void SocketIOServer::handle_OpenRoom(QWebSocket* socket, const QJsonObject& msg)
     emit roomCreated(roomId);
 }
 
-void SocketIOServer::handle_LeaveRoom(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_LeaveRoom(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client)
         return;
 
@@ -953,9 +925,9 @@ void SocketIOServer::handle_LeaveRoom(QWebSocket* socket, const QJsonObject& msg
     emit playerLeft(roomId, client->id);
 }
 
-void SocketIOServer::handle_ClaimSlot(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_ClaimSlot(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client || client->roomId.isEmpty())
         return;
 
@@ -963,9 +935,9 @@ void SocketIOServer::handle_ClaimSlot(QWebSocket* socket, const QJsonObject& msg
     Q_UNUSED(msg);
 }
 
-void SocketIOServer::handle_SetName(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_SetName(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client)
         return;
 
@@ -1004,7 +976,7 @@ bool SocketIOServer::relayHostedWebRTCSignal(const QString& roomId, const QStrin
         }
     }
 
-    if (!targetClient || !targetClient->socket || !targetClient->socket->isValid()) {
+    if (!targetClient || !peerIsConnected(targetClient->peer)) {
         return false;
     }
 
@@ -1014,9 +986,9 @@ bool SocketIOServer::relayHostedWebRTCSignal(const QString& roomId, const QStrin
     return true;
 }
 
-void SocketIOServer::handle_WebRTCSignal(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_WebRTCSignal(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client || client->roomId.isEmpty())
         return;
 
@@ -1051,7 +1023,7 @@ void SocketIOServer::handle_WebRTCSignal(QWebSocket* socket, const QJsonObject& 
     QJsonObject signal = msg;
     signal[QStringLiteral("from")] = client->playerId;
 
-    if (!targetClient->socket || !targetClient->socket->isValid()) {
+    if (!peerIsConnected(targetClient->peer)) {
         emit hostedWebRTCSignalReceived(client->playerId, signal);
         qDebug() << "SocketIOServer: WebRTC signal delivered to embedded host from" << client->playerId;
         return;
@@ -1063,9 +1035,9 @@ void SocketIOServer::handle_WebRTCSignal(QWebSocket* socket, const QJsonObject& 
              << "to" << toPlayerId;
 }
 
-void SocketIOServer::handle_StartGame(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_StartGame(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client || client->roomId.isEmpty())
         return;
 
@@ -1087,9 +1059,9 @@ void SocketIOServer::handle_StartGame(QWebSocket* socket, const QJsonObject& msg
     emit gameStarted(client->roomId);
 }
 
-void SocketIOServer::handle_ListRooms(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_ListRooms(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client)
         return;
 
@@ -1153,9 +1125,9 @@ void SocketIOServer::handle_ListRooms(QWebSocket* socket, const QJsonObject& msg
     emitToClient(client->id, "rooms-list", response);
 }
 
-void SocketIOServer::handle_ChatMessage(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_ChatMessage(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client)
         return;
 
@@ -1178,7 +1150,7 @@ void SocketIOServer::handle_ChatMessage(QWebSocket* socket, const QJsonObject& m
             // Send to all players in room
             for (auto* player : room->players)
             {
-                if (player && player->socket)
+                if (player && player->peer)
                 {
                     emitToClient(player->id, "chat-message", chatPayload);
                 }
@@ -1190,9 +1162,9 @@ void SocketIOServer::handle_ChatMessage(QWebSocket* socket, const QJsonObject& m
     }
 }
 
-void SocketIOServer::handle_ControllerInput(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_ControllerInput(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client || client->roomId.isEmpty() || client->slotIndex < 0)
         return;
 
@@ -1202,9 +1174,9 @@ void SocketIOServer::handle_ControllerInput(QWebSocket* socket, const QJsonObjec
     broadcastControllerInput(client->roomId, client->slotIndex, frameNumber, controllerState);
 }
 
-void SocketIOServer::handle_FrameSync(QWebSocket* socket, const QJsonObject& msg)
+void SocketIOServer::handle_FrameSync(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromSocket(socket);
+    ClientConnection* client = getClientFromPeer(socket);
     if (!client || client->roomId.isEmpty() || client->slotIndex < 0)
         return;
 
@@ -1227,7 +1199,7 @@ void SocketIOServer::handle_FrameSync(QWebSocket* socket, const QJsonObject& msg
     broadcastFrameSync(client->roomId, client->slotIndex, frameNumber, stateHash);
 }
 
-SocketIOServer::ClientConnection* SocketIOServer::getClientFromSocket(QWebSocket* socket)
+SocketIOServer::ClientConnection* SocketIOServer::getClientFromPeer(ENetPeer* socket)
 {
     auto it = m_clients.find(socket);
     if (it != m_clients.end())
@@ -1268,25 +1240,6 @@ QString SocketIOServer::generateClientId()
     return QUuid::createUuid().toString(QUuid::WithoutBraces).left(12);
 }
 
-void SocketIOServer::sendSocketIOMessage(QWebSocket* socket, int type, const QJsonArray& args)
-{
-    if (!socket || !socket->isValid())
-        return;
-
-    QJsonArray message;
-    message.append(type);
-    for (const auto& arg : args) {
-        message.append(arg);
-    }
-
-    QJsonDocument doc(message);
-    QString payload = QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
-
-    // Engine.IO MESSAGE type is '2'
-    socket->sendTextMessage("2" + payload);
-}
-
-
 void SocketIOServer::emitToRoom(const QString& roomId, const QString& eventName, const QJsonObject& data)
 {
     SignalingRoom* room = getRoomById(roomId);
@@ -1295,7 +1248,7 @@ void SocketIOServer::emitToRoom(const QString& roomId, const QString& eventName,
 
     for (auto* player : room->players)
     {
-        if (player && player->socket && player->socket->isValid())
+        if (player && peerIsConnected(player->peer))
         {
             emitToClient(player->id, eventName, data);
         }
@@ -1311,7 +1264,7 @@ void SocketIOServer::emitToConnectedRoomClients(const QString& roomId, const QSt
     for (auto it = room->players.constBegin(); it != room->players.constEnd(); ++it)
     {
         ClientConnection* player = it.value();
-        if (player && player->socket && player->socket->isValid())
+        if (player && peerIsConnected(player->peer))
         {
             emitToClient(player->id, eventName, data);
         }
@@ -1352,9 +1305,11 @@ void SocketIOServer::broadcastRoomUpdate(const QString& roomId)
 void SocketIOServer::onPingTimer()
 {
     for (auto it = m_clients.constBegin(); it != m_clients.constEnd(); ++it) {
-        QWebSocket* socket = it.key();
-        if (socket && socket->state() == QAbstractSocket::ConnectedState) {
-            socket->ping();
+        ENetPeer* peer = it.key();
+        ClientConnection* client = it.value();
+        if (peerIsConnected(peer) && client) {
+            enet_peer_ping(peer);
+            client->lastPingMs = static_cast<int>(peer->roundTripTime);
         }
     }
 
@@ -1400,21 +1355,19 @@ void SocketIOServer::broadcastRoomPlayerPings(const QString& roomId)
 void SocketIOServer::emitToClient(const QString& clientId, const QString& eventName, const QJsonObject& data)
 {
     ClientConnection* client = getClientById(clientId);
-    if (!client || !client->socket) return;
+    if (!client || !peerIsConnected(client->peer)) {
+        return;
+    }
 
-    QJsonArray args;
-    args.append(eventName);
-    args.append(data);
-    sendSocketIOMessage(client->socket, 2, args);
+    sendSignalingEvent(client->peer, eventName, data);
 }
 
 void SocketIOServer::emitToClient(const QString& clientId, const QString& eventName, const QJsonArray& data)
 {
     ClientConnection* client = getClientById(clientId);
-    if (!client || !client->socket) return;
+    if (!client || !peerIsConnected(client->peer)) {
+        return;
+    }
 
-    QJsonArray args;
-    args.append(eventName);
-    args.append(data);
-    sendSocketIOMessage(client->socket, 2, args);
+    sendSignalingEvent(client->peer, eventName, data);
 }

@@ -390,8 +390,8 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
         connectPort = lookup.port;
     }
 
-    // Recreate the Socket.IO client with the new server URL
-    QString serverUrl = QString("http://%1:%2").arg(connectAddress).arg(connectPort);
+    // Recreate the signaling client with the new server endpoint
+    QString serverUrl = QString("udp://%1:%2").arg(connectAddress).arg(connectPort);
     
     // Disconnect existing client if connected
     if (m_socketIO && m_socketIO->getConnectionState() != SocketIOClient::Disconnected)

@@ -10,31 +10,29 @@
 #ifndef SOCKETIOCLIENT_HPP
 #define SOCKETIOCLIENT_HPP
 
+#include "../NetplayEnet.hpp"
+
 #include <QString>
 #include <QMap>
 #include <QHash>
-#include <QWebSocket>
 #include <QObject>
 #include <QUrl>
 #include <QJsonObject>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QTimer>
+#include <QHostAddress>
 #include <functional>
 #include <memory>
+
+struct _ENetHost;
+struct _ENetPeer;
 
 namespace UserInterface::Netplay {
 
 /**
  * @class SocketIOClient
- * @brief Socket.IO client for WebRTC signaling server communication
- * 
- * Handles:
- * - Connection to Socket.IO signaling server
- * - Room creation/joining/leaving
- * - WebRTC offer/answer/ICE candidate relay
- * - Player state management
- * - Game state events
+ * @brief UDP/ENet client for netplay signaling server communication
  */
 class SocketIOClient : public QObject {
     Q_OBJECT
@@ -76,7 +74,7 @@ public:
     };
 
     struct GameConfig {
-        QString mode;          // "lockstep" or "streaming"
+        QString mode;
         bool resyncEnabled;
         QString romHash;
     };
@@ -87,61 +85,47 @@ public:
         int chunkCount = 0;
     };
 
-    // Constructor/Destructor
-    explicit SocketIOClient(const QString& serverUrl = "http://localhost:2626", QObject* parent = nullptr);
+    explicit SocketIOClient(const QString& serverUrl = "udp://localhost:2626", QObject* parent = nullptr);
     ~SocketIOClient();
 
-    // Connection Management
     void connectToServer(const QString& playerName);
     void disconnect();
     ConnectionState getConnectionState() const;
 
-    // Room Management
     void openRoom(const QString& roomName, const QString& gameId, int maxPlayers = 4);
     void joinRoom(const QString& roomId, bool asSpectator = false);
     void leaveRoom();
     void setPlayerName(const QString& name);
     void claimSlot(int slot);
 
-    // Game Control
     void startGame(const QString& mode, bool resyncEnabled, const QString& romHash);
     void endGame();
     void setGameMode(const QString& mode);
     void sendControllerInput(uint32_t frameNumber, uint32_t controllerState);
     void sendFrameSync(uint32_t frameNumber, uint32_t stateHash);
 
-    // WebRTC Signaling
     void sendOffer(const QString& targetPlayerId, const QString& sdpOffer);
     void sendAnswer(const QString& targetPlayerId, const QString& sdpAnswer);
     void sendICECandidate(const QString& targetPlayerId, const QString& candidate, int sdpMLineIndex = 0);
 
-    // ROM Sharing
     void setROMSharingEnabled(bool enabled);
     void declareROMReady(bool ready);
     void declareROMInfo(const QString& fileName, const QString& hash, uint32_t fileSize);
 
-    // Game Data Upload
     void sendSyncLog(const QString& matchId, const QJsonArray& entries, const QJsonObject& summary);
     void sendDebugLog(const QString& matchId, const QString& logContent);
 
-    // Chat
     void sendChatMessage(const QString& message);
-
-    // Cheats sync
     void sendCheatsUpdate(const QJsonArray& cheats);
-
-    // Save sync
     void sendSaveSync(const QJsonArray& saveFiles);
     void sendCoreSettingsSync(const QJsonObject& coreSettings);
 
-    // Room List
     void requestRoomList(bool waiting = false);
     
     void sendInputDelayUpdate(int frames);
     void sendEmulationPauseUpdate(bool paused);
     void sendEmulationReady();
 
-    // Getters
     QString getPlayerId() const;
     QString getRoomId() const;
     RoomInfo getCurrentRoom() const;
@@ -149,15 +133,11 @@ public:
     GameConfig getGameConfig() const;
     int getLastPingMs() const;
 
-    // Event Callbacks (use signals instead for Qt integration)
-
 signals:
-    // Connection signals
     void connected();
     void disconnected();
     void connectionError(const QString& error);
 
-    // Room signals
     void roomCreated(const QString& roomId);
     void roomJoined(const QString& roomId, int slotIndex);
     void roomLeft();
@@ -166,80 +146,63 @@ signals:
     void pingUpdated(int pingMs);
     void playerPingsReceived(const QJsonArray& pings);
     void spectatorCountUpdated(int count);
-    void roomsListed(const QJsonArray& rooms);  // Response from list-rooms request
+    void roomsListed(const QJsonArray& rooms);
 
-    // Game signals
     void gameStarted(const QString& mode, bool resyncEnabled, const QString& matchId);
     void gameEnded();
     void gameModeChanged(const QString& mode);
     void controllerInputReceived(int slot, uint32_t frameNumber, uint32_t controllerState);
     void frameSyncReceived(int slot, uint32_t frameNumber, uint32_t stateHash);
 
-    // WebRTC Signaling signals
     void offerReceived(const QString& fromPlayerId, const QString& sdpOffer);
     void answerReceived(const QString& fromPlayerId, const QString& sdpAnswer);
     void iceCandidateReceived(const QString& fromPlayerId, const QString& candidate, int sdpMLineIndex);
 
-    // ROM Management signals
     void romSharingUpdated(bool enabled);
     void playerROMReady(const QString& playerId);
     void romDeclared(const QString& playerId, const QString& fileName, const QString& hash);
 
-    // Upload Token signals
     void uploadTokenReceived(const QString& token);
     void reconnectTokenReceived(const QString& token);
 
-    // Chat signals
     void chatMessageReceived(const QString& playerName, const QString& message);
-
-    // Cheats signals
     void cheatsUpdated(const QJsonArray& cheats);
-
-    // Save sync signals
     void saveSyncReceived(const QJsonArray& saveFiles);
-
-    // Core timing settings sync
     void coreSettingsSyncReceived(const QJsonObject& coreSettings);
-
-    // Input delay sync
     void inputDelayReceived(int frames);
-
-    // Pause sync
     void emulationPauseReceived(bool paused);
-
-    /** Server confirmed all peers are ready; begin lockstep together. */
     void emulationBeginReceived();
 
 private slots:
-    void on_connected();
-    void on_disconnected();
-    void on_textMessageReceived(const QString& message);
-    void on_error(QAbstractSocket::SocketError error);
-    void on_sslErrors(const QList<QSslError>& errors);
-    void on_pong(quint64 elapsedTime, const QByteArray& payload);
+    void on_serviceTimer();
+    void on_connectTimeout();
 
 private:
-    // Socket.IO message handling
-    void handleSocketIOMessage(const QString& message);
-    void parseEngineIOFrame(const QString& data);
+    void handleSignalingPacket(const QByteArray& payload);
     void handleEvent(const QString& eventName, const QJsonArray& args);
 
-    // Emit Socket.IO events
     void emitEvent(const QString& eventName, const QJsonObject& payload);
     void emitEvent(const QString& eventName, const QJsonArray& payload);
 
-    // JSON payload builders
     QJsonObject buildOpenRoomPayload(const QString& roomName, const QString& gameId, int maxPlayers);
     QJsonObject buildJoinRoomPayload(const QString& roomId, bool spectate);
     QJsonObject buildWebRTCSignal(const QString& target, const QString& type, const QString& payload);
 
-    // State management
     void updateRoomState(const QJsonObject& roomData);
     void updatePlayerList(const QJsonArray& players);
+    void destroyEnetClient();
 
-    // Internal state
-    std::unique_ptr<QWebSocket> m_webSocket;
+    bool parseServerEndpoint(const QString& serverUrl, QHostAddress* addressOut, quint16* portOut) const;
+
+    ENetHost* m_enetHost = nullptr;
+    ENetPeer* m_serverPeer = nullptr;
+    QTimer* m_serviceTimer = nullptr;
+    QTimer* m_connectTimer = nullptr;
+    QTimer* m_pingTimer = nullptr;
+
     QString m_serverUrl;
+    QHostAddress m_serverAddress;
+    quint16 m_serverPort = kDefaultNetplayHostingPort;
     QString m_playerId;
     QString m_playerName;
     QString m_roomId;
@@ -251,9 +214,6 @@ private:
     QHash<QString, ChunkedCheatUpdate> m_pendingCheatUpdates;
     uint32_t m_lastSentFrameSync = 0;
     int m_lastPingMs = -1;
-
-    // Keep-alive
-    QTimer* m_pingTimer;
 };
 
 } // namespace UserInterface::Netplay
