@@ -185,8 +185,16 @@ jobs:
           chmod +x ./Source/Script/Build.sh
           arch -x86_64 env MPN_SKIP_ROSETTA_REEXEC=1 ./Source/Script/Build.sh Release
 
+      - name: Prepare macOS Artifacts
+        run: >
+          mkdir -p build/OUT
+          rsync -av Bin/Release/Mupen-MPN.app/ build/OUT/Mupen-MPN.app/
+          cd build/OUT
+          hdiutil create -volname "Mupen-MPN" -srcfolder Mupen-MPN.app -ov -format UDZO MupenMPN-macOS-x86_64.dmg
+          rm -rf Mupen-MPN.app
+
       - name: Upload macOS Artifact (Folder Build)
         uses: actions/upload-artifact@v4
         with:
           name: MupenMPN-macOS-x86_64
-          path: Bin/Release/*
+          path: build/OUT/*
