@@ -177,7 +177,7 @@ jobs:
 
       - name: Install Build Dependencies
         run: |
-          arch -x86_64 /usr/local/bin/brew install cmake qt sdl3 nasm speexdsp libsamplerate minizip pkg-config openssl nlohmann-json srtp libusb libpng molten-vk vulkan-loader vulkan-headers
+          arch -x86_64 /usr/local/bin/brew install cmake qt sdl3 nasm speexdsp libsamplerate minizip pkg-config openssl nlohmann-json srtp libusb libpng molten-vk vulkan-loader vulkan-headers hidapi
 
       - name: Build RMG (x86_64 for Rosetta)
         run: |
