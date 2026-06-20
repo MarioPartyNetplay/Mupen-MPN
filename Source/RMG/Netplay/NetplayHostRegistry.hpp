@@ -14,7 +14,7 @@
 
 namespace UserInterface::Netplay {
 
-/** Registers the host with the browse server (UDP). No hole punching or STUN. */
+/** Registers the host with the browse server (UDP) and handles traversal hole-punch packets. */
 class NetplayHostRegistry : public QObject {
     Q_OBJECT
 

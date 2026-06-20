@@ -280,7 +280,7 @@ struct ImGui_ImplOpenGL3_VtxAttribState
 };
 #endif
 
-#if defined(IMGUI_IMPL_OPENGL_ES3) && defined(__APPLE__) && !TARGET_OS_IOS && !TARGET_OS_TV
+#if !defined(IMGUI_IMPL_OPENGL_LOADER_CUSTOM)
 typedef void* (*ImGui_ImplOpenGL3_GetProcAddressProc)(const char*);
 static ImGui_ImplOpenGL3_GetProcAddressProc G_ImGuiGLProcLoader = nullptr;
 
@@ -298,6 +298,7 @@ bool    ImGui_ImplOpenGL3_Init(const char* glsl_version)
     IM_ASSERT(io.BackendRendererUserData == nullptr && "Already initialized a renderer backend!");
 
     // Initialize our loader
+#if !defined(IMGUI_IMPL_OPENGL_LOADER_CUSTOM)
 #if defined(IMGUI_IMPL_OPENGL_ES3) && defined(__APPLE__) && !TARGET_OS_IOS && !TARGET_OS_TV
     if (G_ImGuiGLProcLoader == nullptr)
     {
@@ -309,12 +310,21 @@ bool    ImGui_ImplOpenGL3_Init(const char* glsl_version)
         fprintf(stderr, "Failed to initialize OpenGL loader (is a GLES context current?)!\n");
         return false;
     }
-#elif !defined(IMGUI_IMPL_OPENGL_ES2) && !defined(IMGUI_IMPL_OPENGL_ES3) && !defined(IMGUI_IMPL_OPENGL_LOADER_CUSTOM)
-    if (imgl3wInit() != 0)
+#elif !defined(IMGUI_IMPL_OPENGL_ES2) && !defined(IMGUI_IMPL_OPENGL_ES3)
+    if (G_ImGuiGLProcLoader != nullptr)
+    {
+        if (imgl3wInit2((GL3WGetProcAddressProc)G_ImGuiGLProcLoader) != 0)
+        {
+            fprintf(stderr, "Failed to initialize OpenGL loader (is an OpenGL context current?)!\n");
+            return false;
+        }
+    }
+    else if (imgl3wInit() != 0)
     {
         fprintf(stderr, "Failed to initialize OpenGL loader!\n");
         return false;
     }
+#endif
 #endif
 
     // Setup backend capabilities flags

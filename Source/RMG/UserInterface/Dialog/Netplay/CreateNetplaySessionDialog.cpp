@@ -421,23 +421,6 @@ void CreateNetplaySessionDialog::timerEvent(QTimerEvent* event)
     }
 }
 
-// WebSocket handlers are no longer used - we use coordinator for hosting
-// Kept for reference but not actively used
-void CreateNetplaySessionDialog::on_webSocket_textMessageReceived(QString message)
-{
-    // Deprecated - using coordinator instead
-}
-
-void CreateNetplaySessionDialog::on_webSocket_pong(quint64 elapsedTime, const QByteArray&)
-{
-    // Deprecated - using coordinator instead
-}
-
-void CreateNetplaySessionDialog::on_webSocket_connected()
-{
-    // Deprecated - using coordinator instead
-}
-
 void CreateNetplaySessionDialog::on_broadcastSocket_readyRead()
 {
     while (this->broadcastSocket.hasPendingDatagrams())

@@ -11,6 +11,7 @@
 #define SOCKETIOCLIENT_HPP
 
 #include "../NetplayEnet.hpp"
+#include "../NetplayProtocol.hpp"
 
 #include <QString>
 #include <QMap>

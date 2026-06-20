@@ -8,6 +8,7 @@
 #include "NetplayProtocol.hpp"
 
 #include <QDateTime>
+#include <QNetworkDatagram>
 #include <QThread>
 
 namespace UserInterface::Netplay {

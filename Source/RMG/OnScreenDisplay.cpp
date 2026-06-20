@@ -55,9 +55,7 @@ bool OnScreenDisplayInit(void)
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
-#ifdef __APPLE__
     ImGui_ImplOpenGL3_SetProcLoader(VidExt_GetProcAddress);
-#endif
 
     if (!ImGui_ImplOpenGL3_Init(
 #ifdef __APPLE__

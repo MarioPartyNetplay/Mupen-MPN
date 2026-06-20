@@ -9,9 +9,10 @@
 
 void* getGLProcAddress(const char* name)
 {
-#if defined(MUPENPLUSAPI) && defined(EGL)
+#if defined(MUPENPLUSAPI)
 	if (CoreVideo_GL_GetProcAddress != nullptr)
 		return reinterpret_cast<void*>(CoreVideo_GL_GetProcAddress(name));
+	return nullptr;
 #endif
 #if defined(EGL)
 	return reinterpret_cast<void*>(eglGetProcAddress(name));
@@ -51,6 +52,10 @@ void* getGLProcAddress(const char* name)
 
 #elif defined(OS_LINUX)
 
+#if defined(MUPENPLUSAPI)
+#define glGetProcAddress(name) getGLProcAddress(name)
+#define GL_GET_PROC_ADR(proc_type, proc_name) ptr##proc_name = (proc_type) glGetProcAddress("gl"#proc_name)
+#else
 #include <X11/Xutil.h>
 typedef XID GLXContextID;
 typedef XID GLXPixmap;
@@ -64,6 +69,7 @@ typedef struct __GLXFBConfigRec *GLXFBConfig;
 #include <GL/glxext.h>
 #define glGetProcAddress glXGetProcAddress
 #define GL_GET_PROC_ADR(proc_type, proc_name) ptr##proc_name = (proc_type) glGetProcAddress((const GLubyte*)"gl"#proc_name)
+#endif
 
 #elif defined(OS_MAC_OS_X)
 #include <dlfcn.h>

@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <enet/enet.h>
 
+using namespace UserInterface::Netplay;
+
 namespace {
 constexpr int kCheatsChunkSize = 32;
 constexpr int kServiceIntervalMs = 16;

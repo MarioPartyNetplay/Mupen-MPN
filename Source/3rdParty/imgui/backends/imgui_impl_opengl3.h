@@ -45,8 +45,10 @@ IMGUI_IMPL_API void     ImGui_ImplOpenGL3_DestroyDeviceObjects();
 //#define IMGUI_IMPL_OPENGL_ES2     // Enable ES 2 (Auto-detected on Emscripten)
 //#define IMGUI_IMPL_OPENGL_ES3     // Enable ES 3 (Auto-detected on iOS/Android)
 
-// macOS ANGLE/EGL: call before ImGui_ImplOpenGL3_Init() to load GLES entry points.
-#if defined(__APPLE__) && !defined(IMGUI_IMPL_OPENGL_ES2)
+// Optional: call before ImGui_ImplOpenGL3_Init() to load GL entry points from the
+// application's active context (required on macOS ANGLE/EGL; recommended on Linux
+// Wayland/EGL to avoid GLX proc-address crashes).
+#if !defined(IMGUI_IMPL_OPENGL_LOADER_CUSTOM)
 IMGUI_IMPL_API void     ImGui_ImplOpenGL3_SetProcLoader(void* (*loader)(const char*));
 #endif
 

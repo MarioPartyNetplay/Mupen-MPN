@@ -14,7 +14,6 @@
 #include <QComboBox>
 #include <QJsonObject>
 #include <QTimerEvent>
-#include <QWebSocket>
 #include <QSpinBox>
 #include <QUdpSocket>
 #include <QWidget>
@@ -89,9 +88,6 @@ class CreateNetplaySessionDialog : public QWidget, private Ui::CreateNetplaySess
     void timerEvent(QTimerEvent *event) Q_DECL_OVERRIDE;
 
   private slots:
-  	void on_webSocket_textMessageReceived(QString message);
-    void on_webSocket_pong(quint64 elapsedTime, const QByteArray&);
-    void on_webSocket_connected(void);
     void on_broadcastSocket_readyRead(void);
 
     void on_nickNameLineEdit_textChanged(void);
