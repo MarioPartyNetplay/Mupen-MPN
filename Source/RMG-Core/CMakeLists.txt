@@ -91,6 +91,7 @@ add_custom_command(
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     COMMENT "Updating RMG-Core git version hash"
 )
+add_custom_target(RMG-Core-version-hash DEPENDS "${RMG_CORE_VERSION_HASH_HEADER}")
 add_dependencies(RMG-Core RMG-Core-version-hash)
 
 set_source_files_properties(Version.cpp PROPERTIES
