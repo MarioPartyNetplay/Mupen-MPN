@@ -126,7 +126,8 @@ bool NetplayHostRegistry::ensureSocketBound(QString* errorOut)
         return true;
     }
 
-    if (!m_socket.bind(QHostAddress::AnyIPv4, 0, QUdpSocket::DefaultForPlatform)) {
+    // Ephemeral port only — must not share the ENet signaling port (Dolphin uses one socket).
+    if (!m_socket.bind(QHostAddress::AnyIPv4, 0, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
         if (errorOut) {
             *errorOut = QString("Failed to bind browse registry socket: %1").arg(m_socket.errorString());
         }

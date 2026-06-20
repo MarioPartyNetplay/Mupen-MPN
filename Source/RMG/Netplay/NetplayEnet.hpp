@@ -16,11 +16,23 @@
 
 namespace UserInterface::Netplay {
 
+/** Non-ENet UDP packets filtered by netplayEnetIntercept (Dolphin-style). */
+constexpr int kEnetSkippableEvent = 42;
+
 /** One-time ENet library init (reference counted). */
 void ensureEnetInitialized();
 
 /** Release ENet when the last netplay session ends. */
 void shutdownEnetIfIdle();
+
+/**
+ * Like enet_host_create(), but sets SO_REUSEADDR before bind so traversal punch
+ * ports can be reused and the host registry can share the signaling port.
+ */
+ENetHost* createSignalingEnetHost(const ENetAddress* address, size_t peerCount, size_t channelLimit,
+                                  enet_uint32 incomingBandwidth = 0, enet_uint32 outgoingBandwidth = 0);
+
+void installNetplayEnetIntercept(ENetHost* host);
 
 bool peerIsConnected(ENetPeer* peer);
 

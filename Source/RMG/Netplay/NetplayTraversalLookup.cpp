@@ -64,7 +64,7 @@ TraversalLookupResult lookupTraversalHost(const QString& hostCode)
     }
 
     QUdpSocket socket;
-    if (!socket.bind(QHostAddress::AnyIPv4, 0, QUdpSocket::DefaultForPlatform)) {
+    if (!socket.bind(QHostAddress::AnyIPv4, 0, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
         result.error = QStringLiteral("Failed to bind traversal lookup socket: %1")
                            .arg(socket.errorString());
         return result;
@@ -123,7 +123,7 @@ TraversalLookupResult lookupTraversalHost(const QString& hostCode)
                     performTraversalPunchWindow(&socket, hostAddress, static_cast<quint16>(port));
                 }
 
-                socket.close();
+                socket.abort();
                 loop.quit();
                 return;
             }

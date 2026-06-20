@@ -93,7 +93,7 @@ bool SocketIOServer::startServer(int port, QString* errorOut)
     address.host = ENET_HOST_ANY;
     address.port = static_cast<enet_uint16>(port);
 
-    m_enetHost = enet_host_create(&address, kMaxSignalingClients, 1, 0, 0);
+    m_enetHost = createSignalingEnetHost(&address, kMaxSignalingClients, 1, 0, 0);
     if (!m_enetHost) {
         shutdownEnetIfIdle();
         const QString listenError = tr("Could not bind UDP signaling port %1").arg(port);
@@ -708,6 +708,9 @@ void SocketIOServer::onServiceTimer()
             break;
 
         default:
+            if (event.type == static_cast<ENetEventType>(UserInterface::Netplay::kEnetSkippableEvent)) {
+                break;
+            }
             break;
         }
     }

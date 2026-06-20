@@ -469,7 +469,7 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
     
     // Now connect to the server
     setState(Connecting);
-    m_socketIO->connectToServer(playerName, bindUdpPort);
+    m_socketIO->connectToServer(playerName, bindUdpPort, bindUdpPort > 0);
 }
 
 void NetplayCoordinator::createRoom(const QString& roomName, const QString& gameId, int maxPlayers)

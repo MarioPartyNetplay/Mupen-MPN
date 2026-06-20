@@ -7,6 +7,7 @@
 
 #include <QJsonDocument>
 #include <atomic>
+#include <cstring>
 
 namespace UserInterface::Netplay {
 
@@ -31,6 +32,149 @@ void shutdownEnetIfIdle()
     if (remaining <= 0) {
         g_enetRefCount.store(0);
         enet_deinitialize();
+    }
+}
+
+ENetHost* createSignalingEnetHost(const ENetAddress* address, size_t peerCount, size_t channelLimit,
+                                  enet_uint32 incomingBandwidth, enet_uint32 outgoingBandwidth)
+{
+    if (peerCount > ENET_PROTOCOL_MAXIMUM_PEER_ID) {
+        return nullptr;
+    }
+
+    ENetHost* host = static_cast<ENetHost*>(enet_malloc(sizeof(ENetHost)));
+    if (!host) {
+        return nullptr;
+    }
+    std::memset(host, 0, sizeof(ENetHost));
+
+    host->peers = static_cast<ENetPeer*>(enet_malloc(peerCount * sizeof(ENetPeer)));
+    if (!host->peers) {
+        enet_free(host);
+        return nullptr;
+    }
+    std::memset(host->peers, 0, peerCount * sizeof(ENetPeer));
+
+    host->socket = enet_socket_create(ENET_SOCKET_TYPE_DATAGRAM);
+    if (host->socket == ENET_SOCKET_NULL) {
+        enet_free(host->peers);
+        enet_free(host);
+        return nullptr;
+    }
+
+    enet_socket_set_option(host->socket, ENET_SOCKOPT_REUSEADDR, 1);
+
+    if (address != nullptr && enet_socket_bind(host->socket, address) < 0) {
+        enet_socket_destroy(host->socket);
+        enet_free(host->peers);
+        enet_free(host);
+        return nullptr;
+    }
+
+    enet_socket_set_option(host->socket, ENET_SOCKOPT_NONBLOCK, 1);
+    enet_socket_set_option(host->socket, ENET_SOCKOPT_BROADCAST, 1);
+    enet_socket_set_option(host->socket, ENET_SOCKOPT_RCVBUF, ENET_HOST_RECEIVE_BUFFER_SIZE);
+    enet_socket_set_option(host->socket, ENET_SOCKOPT_SNDBUF, ENET_HOST_SEND_BUFFER_SIZE);
+
+    if (address != nullptr && enet_socket_get_address(host->socket, &host->address) < 0) {
+        host->address = *address;
+    }
+
+    if (!channelLimit || channelLimit > ENET_PROTOCOL_MAXIMUM_CHANNEL_COUNT) {
+        channelLimit = ENET_PROTOCOL_MAXIMUM_CHANNEL_COUNT;
+    } else if (channelLimit < ENET_PROTOCOL_MINIMUM_CHANNEL_COUNT) {
+        channelLimit = ENET_PROTOCOL_MINIMUM_CHANNEL_COUNT;
+    }
+
+    host->randomSeed = static_cast<enet_uint32>(reinterpret_cast<size_t>(host));
+    host->randomSeed += enet_host_random_seed();
+    host->randomSeed = (host->randomSeed << 16) | (host->randomSeed >> 16);
+    host->channelLimit = channelLimit;
+    host->incomingBandwidth = incomingBandwidth;
+    host->outgoingBandwidth = outgoingBandwidth;
+    host->bandwidthThrottleEpoch = 0;
+    host->recalculateBandwidthLimits = 0;
+    host->mtu = ENET_HOST_DEFAULT_MTU;
+    host->peerCount = peerCount;
+    host->commandCount = 0;
+    host->bufferCount = 0;
+    host->checksum = nullptr;
+    host->receivedAddress.host = ENET_HOST_ANY;
+    host->receivedAddress.port = 0;
+    host->receivedData = nullptr;
+    host->receivedDataLength = 0;
+    host->totalSentData = 0;
+    host->totalSentPackets = 0;
+    host->totalReceivedData = 0;
+    host->totalReceivedPackets = 0;
+    host->connectedPeers = 0;
+    host->bandwidthLimitedPeers = 0;
+    host->duplicatePeers = ENET_PROTOCOL_MAXIMUM_PEER_ID;
+    host->maximumPacketSize = ENET_HOST_DEFAULT_MAXIMUM_PACKET_SIZE;
+    host->maximumWaitingData = ENET_HOST_DEFAULT_MAXIMUM_WAITING_DATA;
+    host->compressor.context = nullptr;
+    host->compressor.compress = nullptr;
+    host->compressor.decompress = nullptr;
+    host->compressor.destroy = nullptr;
+    host->intercept = nullptr;
+
+    enet_list_clear(&host->dispatchQueue);
+
+    for (ENetPeer* currentPeer = host->peers; currentPeer < &host->peers[host->peerCount]; ++currentPeer) {
+        currentPeer->host = host;
+        currentPeer->incomingPeerID = currentPeer - host->peers;
+        currentPeer->outgoingSessionID = currentPeer->incomingSessionID = 0xFF;
+        currentPeer->data = nullptr;
+        enet_list_clear(&currentPeer->acknowledgements);
+        enet_list_clear(&currentPeer->sentReliableCommands);
+        enet_list_clear(&currentPeer->outgoingCommands);
+        enet_list_clear(&currentPeer->outgoingSendReliableCommands);
+        enet_list_clear(&currentPeer->dispatchedCommands);
+        enet_peer_reset(currentPeer);
+    }
+
+    installNetplayEnetIntercept(host);
+    return host;
+}
+
+int ENET_CALLBACK netplayEnetIntercept(ENetHost* host, ENetEvent* event)
+{
+    if (!host || !event) {
+        return 0;
+    }
+
+    if (host->receivedDataLength == 1 && host->receivedData[0] == 0) {
+        event->type = static_cast<ENetEventType>(kEnetSkippableEvent);
+        return 1;
+    }
+
+    if (host->receivedDataLength >= 8 &&
+        std::memcmp(host->receivedData, kNetplayRegistryProtocol, 8) == 0) {
+        const QByteArray datagram(reinterpret_cast<const char*>(host->receivedData),
+                                  static_cast<int>(host->receivedDataLength));
+        const QList<QByteArray> parts = datagram.split('|');
+        if (parts.size() >= 2 && parts.at(1) == "PUNCH" && parts.size() >= 4) {
+            static const QByteArray kPunchPayload =
+                QByteArray(kNetplayRegistryProtocol) + "|PUNCHACK";
+            ENetBuffer buffer;
+            buffer.data = const_cast<char*>(kPunchPayload.constData());
+            buffer.dataLength = static_cast<size_t>(kPunchPayload.size());
+            for (int i = 0; i < 3; ++i) {
+                enet_socket_send(host->socket, &host->receivedAddress, &buffer, 1);
+            }
+        }
+
+        event->type = static_cast<ENetEventType>(kEnetSkippableEvent);
+        return 1;
+    }
+
+    return 0;
+}
+
+void installNetplayEnetIntercept(ENetHost* host)
+{
+    if (host) {
+        host->intercept = netplayEnetIntercept;
     }
 }
 

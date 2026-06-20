@@ -19,6 +19,7 @@
 #include <QUrl>
 #include <QUuid>
 #include <QUdpSocket>
+#include <QThread>
 #include <algorithm>
 #include <enet/enet.h>
 
@@ -83,7 +84,7 @@ SocketIOClient::SocketIOClient(const QString& serverUrl, QObject* parent)
     m_punchTimer = new QTimer(this);
     m_punchTimer->setInterval(200);
     connect(m_punchTimer, &QTimer::timeout, this, [this]() {
-        if (m_connectionState == Connecting) {
+        if (m_connectionState == Connecting && m_useTraversalPunch && m_punchSocket) {
             sendConnectPunchBursts();
         }
     });
@@ -110,20 +111,18 @@ bool SocketIOClient::parseServerEndpoint(const QString& serverUrl, QHostAddress*
         return false;
     }
 
-    QHostAddress address;
-    const QString host = url.host().toLower();
-    if (host == QStringLiteral("localhost")) {
-        address.setAddress(QHostAddress::LocalHost);
-    } else if (!address.setAddress(url.host())) {
-        return false;
-    }
-
     const int port = url.port(kDefaultNetplayHostingPort);
     if (port < 1 || port > 65535) {
         return false;
     }
 
-    *addressOut = address;
+    const QString host = url.host().toLower();
+    if (host == QStringLiteral("localhost")) {
+        addressOut->setAddress(QHostAddress::LocalHost);
+    } else {
+        addressOut->setAddress(url.host());
+    }
+
     *portOut = static_cast<quint16>(port);
     return true;
 }
@@ -164,17 +163,12 @@ void SocketIOClient::destroyEnetClient()
 
 bool SocketIOClient::setEnetPeerAddress(ENetAddress* addressOut) const
 {
-    if (!addressOut) {
+    if (!addressOut || m_serverHostname.isEmpty()) {
         return false;
     }
 
     addressOut->port = m_serverPort;
-    if (m_serverAddress.protocol() == QAbstractSocket::IPv4Protocol) {
-        addressOut->host = m_serverAddress.toIPv4Address();
-        return true;
-    }
-
-    const QByteArray hostBytes = m_serverAddress.toString().toUtf8();
+    const QByteArray hostBytes = m_serverHostname.toUtf8();
     return enet_address_set_host(addressOut, hostBytes.constData()) == 0;
 }
 
@@ -187,15 +181,24 @@ void SocketIOClient::sendConnectPunchBursts()
     sendUdpPunchBursts(m_punchSocket.get(), m_serverAddress, m_serverPort, 3);
 }
 
-void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpPort)
+void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpPort, bool useTraversalPunch)
 {
     m_playerName = playerName;
+    m_useTraversalPunch = useTraversalPunch;
     destroyEnetClient();
 
     if (!parseServerEndpoint(m_serverUrl, &m_serverAddress, &m_serverPort)) {
         m_connectionState = Error;
         emit connectionError(QStringLiteral("Invalid signaling server address: %1").arg(m_serverUrl));
         return;
+    }
+
+    {
+        const QUrl url(m_serverUrl.trimmed().startsWith(QStringLiteral("udp://"), Qt::CaseInsensitive)
+                           ? m_serverUrl.trimmed()
+                           : QStringLiteral("udp://") + m_serverUrl.trimmed());
+        const QString host = url.host().toLower();
+        m_serverHostname = host == QStringLiteral("localhost") ? QStringLiteral("127.0.0.1") : url.host();
     }
 
     ensureEnetInitialized();
@@ -205,15 +208,24 @@ void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpP
         ENetAddress bindAddress;
         bindAddress.host = ENET_HOST_ANY;
         bindAddress.port = bindUdpPort;
-        m_enetHost = enet_host_create(&bindAddress, 1, 1, 0, 0);
+        for (int attempt = 0; attempt < 5 && !m_enetHost; ++attempt) {
+            m_enetHost = createSignalingEnetHost(&bindAddress, 1, 1, 0, 0);
+            if (!m_enetHost && attempt < 4) {
+                QThread::msleep(50);
+            }
+        }
         if (!m_enetHost) {
-            qWarning() << "SocketIOClient: Failed to bind traversal UDP port" << bindUdpPort
-                       << "- falling back to ephemeral port";
+            destroyEnetClient();
+            m_connectionState = Error;
+            shutdownEnetIfIdle();
+            emit connectionError(QStringLiteral(
+                "Failed to bind traversal UDP port %1 after NAT punch — retry join").arg(bindUdpPort));
+            return;
         }
     }
 
     if (!m_enetHost) {
-        m_enetHost = enet_host_create(nullptr, 1, 1, 0, 0);
+        m_enetHost = createSignalingEnetHost(nullptr, 1, 1, 0, 0);
     }
     if (!m_enetHost) {
         m_connectionState = Error;
@@ -243,17 +255,21 @@ void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpP
     m_serverPeer->timeoutMaximum = 5000;
 
     m_punchSocket = std::make_unique<QUdpSocket>();
-    if (m_punchSocket->bind(QHostAddress::AnyIPv4, 0, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
+    if (m_useTraversalPunch &&
+        m_punchSocket->bind(QHostAddress::AnyIPv4, 0, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
         sendConnectPunchBursts();
     } else {
         m_punchSocket.reset();
     }
 
-    qInfo() << "Connecting to UDP signaling server" << m_serverAddress.toString() << m_serverPort
-            << "local UDP port" << (bindUdpPort > 0 ? bindUdpPort : m_enetHost->address.port);
+    qInfo() << "Connecting to UDP signaling server" << m_serverHostname << m_serverPort
+            << "local UDP port" << (bindUdpPort > 0 ? bindUdpPort : m_enetHost->address.port)
+            << "traversal punch" << m_useTraversalPunch;
     m_serviceTimer->start();
     m_connectTimer->start(kConnectTimeoutMs);
-    m_punchTimer->start();
+    if (m_useTraversalPunch && m_punchSocket) {
+        m_punchTimer->start();
+    }
 }
 
 void SocketIOClient::disconnect()
@@ -664,6 +680,9 @@ void SocketIOClient::on_serviceTimer()
             break;
 
         default:
+            if (event.type == static_cast<ENetEventType>(kEnetSkippableEvent)) {
+                break;
+            }
             break;
         }
     }

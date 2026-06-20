@@ -90,7 +90,8 @@ public:
     explicit SocketIOClient(const QString& serverUrl = "udp://localhost:2626", QObject* parent = nullptr);
     ~SocketIOClient();
 
-    void connectToServer(const QString& playerName, quint16 bindUdpPort = 0);
+
+    void connectToServer(const QString& playerName, quint16 bindUdpPort = 0, bool useTraversalPunch = false);
     void disconnect();
     ConnectionState getConnectionState() const;
 
@@ -208,8 +209,10 @@ private:
     std::unique_ptr<QUdpSocket> m_punchSocket;
 
     QString m_serverUrl;
+    QString m_serverHostname;
     QHostAddress m_serverAddress;
     quint16 m_serverPort = kDefaultNetplayHostingPort;
+    bool m_useTraversalPunch = false;
     QString m_playerId;
     QString m_playerName;
     QString m_roomId;
