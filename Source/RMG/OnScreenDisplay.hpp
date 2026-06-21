@@ -39,4 +39,15 @@ void OnScreenDisplayPause(void);
 // resumes OSD rendering
 void OnScreenDisplayResume(void);
 
+// enables configure mode highlight while Alt is held
+void OnScreenDisplaySetConfigureModifier(bool active);
+
+// handles mouse input for dragging OSD elements (returns true when consumed)
+bool OnScreenDisplayHandleMousePress(float x, float y, bool configureModifier);
+bool OnScreenDisplayHandleMouseMove(float x, float y, bool configureModifier);
+bool OnScreenDisplayHandleMouseRelease(void);
+
+// returns true while an OSD element is being dragged
+bool OnScreenDisplayIsDragging(void);
+
 #endif // RMG_ONSCREENDISPLAY_HPP

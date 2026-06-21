@@ -510,6 +510,7 @@ void SettingsDialog::loadInterfaceOSDSettings(void)
     this->osdVerticalPaddingSpinBox->setValue(CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayPaddingY));
     this->osdHorizontalPaddingSpinBox->setValue(CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayPaddingX));
     this->osdDurationSpinBox->setValue(CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayDuration));
+    this->osdScaleSpinBox->setValue(CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayScale));
     this->osdFpsCounterCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayFPSCounter));
     {
         QSignalBlocker blocker(this->turnCountFileCheckBox);
@@ -686,6 +687,7 @@ void SettingsDialog::loadDefaultInterfaceOSDSettings(void)
     this->osdVerticalPaddingSpinBox->setValue(CoreSettingsGetDefaultIntValue(SettingsID::GUI_OnScreenDisplayPaddingY));
     this->osdHorizontalPaddingSpinBox->setValue(CoreSettingsGetDefaultIntValue(SettingsID::GUI_OnScreenDisplayPaddingX));
     this->osdDurationSpinBox->setValue(CoreSettingsGetDefaultIntValue(SettingsID::GUI_OnScreenDisplayDuration));
+    this->osdScaleSpinBox->setValue(CoreSettingsGetDefaultIntValue(SettingsID::GUI_OnScreenDisplayScale));
     this->osdFpsCounterCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_OnScreenDisplayFPSCounter));
     {
         QSignalBlocker blocker(this->turnCountFileCheckBox);
@@ -938,6 +940,7 @@ void SettingsDialog::saveInterfaceOSDSettings(void)
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayPaddingY, this->osdVerticalPaddingSpinBox->value());
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayPaddingX, this->osdHorizontalPaddingSpinBox->value());
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayDuration, this->osdDurationSpinBox->value());
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayScale, this->osdScaleSpinBox->value());
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayFPSCounter, this->osdFpsCounterCheckBox->isChecked());
     CoreSettingsSetValue(SettingsID::GUI_TurnCountFile, this->turnCountFileCheckBox->isChecked());
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayBackgroundColor, std::vector<int>({ this->currentBackgroundColor.red(),
@@ -1620,6 +1623,20 @@ void SettingsDialog::on_changePALPifRomButton_clicked(void)
 void SettingsDialog::on_osdFpsCounterCheckBox_toggled(bool checked)
 {
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayFPSCounter, checked);
+    CoreSettingsSave();
+}
+
+void SettingsDialog::on_osdScaleSpinBox_valueChanged(int value)
+{
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayScale, value);
+    OnScreenDisplayLoadSettings();
+    CoreSettingsSave();
+}
+
+void SettingsDialog::on_osdResetLayoutButton_clicked(void)
+{
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayCustomLayout, false);
+    OnScreenDisplayLoadSettings();
     CoreSettingsSave();
 }
 

@@ -184,6 +184,21 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::GUI_OnScreenDisplayNetplayChatMessages:
         setting = {SETTING_SECTION_GUI, "OnScreenDisplayNetplayChatMessages", false};
         break;
+    case SettingsID::GUI_OnScreenDisplayScale:
+        setting = {SETTING_SECTION_GUI, "OnScreenDisplayScale", 100};
+        break;
+    case SettingsID::GUI_OnScreenDisplayCustomLayout:
+        setting = {SETTING_SECTION_GUI, "OnScreenDisplayCustomLayout", false};
+        break;
+    case SettingsID::GUI_OnScreenDisplayMessagePos:
+        setting = {SETTING_SECTION_GUI, "OnScreenDisplayMessagePos", std::string("20;950")};
+        break;
+    case SettingsID::GUI_OnScreenDisplayOverlayPos:
+        setting = {SETTING_SECTION_GUI, "OnScreenDisplayOverlayPos", std::string("950;20")};
+        break;
+    case SettingsID::GUI_OnScreenDisplayTurnCountPos:
+        setting = {SETTING_SECTION_GUI, "OnScreenDisplayTurnCountPos", std::string("20;20")};
+        break;
     case SettingsID::GUI_NetplayShareSystemMessagesInChat:
         setting = {SETTING_SECTION_GUI, "NetplayShareSystemMessagesInChat", true};
         break;

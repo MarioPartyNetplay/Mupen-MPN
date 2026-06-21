@@ -164,6 +164,8 @@ class SettingsDialog : public QDialog, private Ui::SettingsDialog
     void on_changeNTSCPifRomButton_clicked(void);
     void on_changePALPifRomButton_clicked(void);
     void on_osdFpsCounterCheckBox_toggled(bool checked);
+    void on_osdScaleSpinBox_valueChanged(int value);
+    void on_osdResetLayoutButton_clicked(void);
     void on_turnCountHudCheckBox_toggled(bool checked);
     void on_turnCountFileCheckBox_toggled(bool checked);
     void on_netplayHudBufferAlertsCheckBox_toggled(bool checked);

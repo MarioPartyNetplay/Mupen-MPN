@@ -16,10 +16,29 @@
 #include <backends/imgui_impl_opengl3.h>
 #include <imgui.h>
 #include <chrono>
+#include <mutex>
 
-//
-// Local Variables
-//
+namespace
+{
+
+enum class OsdElement : int
+{
+    Message = 0,
+    Overlay,
+    TurnCount,
+    Count
+};
+
+struct OsdElementRect
+{
+    float x      = 0.0f;
+    float y      = 0.0f;
+    float width  = 0.0f;
+    float height = 0.0f;
+    bool  valid  = false;
+};
+
+constexpr int PERMILLE_MAX = 1000;
 
 static bool l_Initialized     = false;
 static bool l_Enabled         = false;
@@ -40,6 +59,225 @@ static float       l_TextGreen       = 1.0f;
 static float       l_TextBlue        = 1.0f;
 static float       l_TextAlpha       = 1.0f;
 static int         l_MessageDuration = 3;
+static float       l_Scale           = 1.0f;
+static bool        l_CustomLayout    = false;
+static int         l_CustomPosPermille[static_cast<int>(OsdElement::Count)][2] = {};
+
+static std::mutex       l_Mutex;
+static bool             l_ConfigureModifier = false;
+static int              l_DraggingElement   = -1;
+static float            l_DragOffsetX         = 0.0f;
+static float            l_DragOffsetY         = 0.0f;
+static OsdElementRect   l_ElementRects[static_cast<int>(OsdElement::Count)] = {};
+static int              l_DisplayWidth        = 0;
+static int              l_DisplayHeight       = 0;
+
+static void load_custom_positions(void)
+{
+    const std::vector<std::pair<SettingsID, OsdElement>> settings = {
+        {SettingsID::GUI_OnScreenDisplayMessagePos, OsdElement::Message},
+        {SettingsID::GUI_OnScreenDisplayOverlayPos, OsdElement::Overlay},
+        {SettingsID::GUI_OnScreenDisplayTurnCountPos, OsdElement::TurnCount},
+    };
+
+    for (const auto& entry : settings)
+    {
+        const int index = static_cast<int>(entry.second);
+        const std::vector<int> pos = CoreSettingsGetIntListValue(entry.first);
+        if (pos.size() == 2)
+        {
+            l_CustomPosPermille[index][0] = pos.at(0);
+            l_CustomPosPermille[index][1] = pos.at(1);
+        }
+    }
+}
+
+static void save_custom_positions(void)
+{
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayCustomLayout, true);
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayMessagePos,
+                         std::vector<int>({l_CustomPosPermille[static_cast<int>(OsdElement::Message)][0],
+                                           l_CustomPosPermille[static_cast<int>(OsdElement::Message)][1]}));
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayOverlayPos,
+                         std::vector<int>({l_CustomPosPermille[static_cast<int>(OsdElement::Overlay)][0],
+                                           l_CustomPosPermille[static_cast<int>(OsdElement::Overlay)][1]}));
+    CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayTurnCountPos,
+                         std::vector<int>({l_CustomPosPermille[static_cast<int>(OsdElement::TurnCount)][0],
+                                           l_CustomPosPermille[static_cast<int>(OsdElement::TurnCount)][1]}));
+    CoreSettingsSave();
+}
+
+static ImVec2 permille_to_pos(int xPermille, int yPermille, const ImVec2& displaySize)
+{
+    return ImVec2(displaySize.x * static_cast<float>(xPermille) / static_cast<float>(PERMILLE_MAX),
+                  displaySize.y * static_cast<float>(yPermille) / static_cast<float>(PERMILLE_MAX));
+}
+
+static void pos_to_permille(float x, float y, const ImVec2& displaySize, int& xPermille, int& yPermille)
+{
+    if (displaySize.x <= 0.0f || displaySize.y <= 0.0f)
+    {
+        xPermille = 0;
+        yPermille = 0;
+        return;
+    }
+
+    xPermille = static_cast<int>((x / displaySize.x) * static_cast<float>(PERMILLE_MAX));
+    yPermille = static_cast<int>((y / displaySize.y) * static_cast<float>(PERMILLE_MAX));
+
+    if (xPermille < 0)
+    {
+        xPermille = 0;
+    }
+    else if (xPermille > PERMILLE_MAX)
+    {
+        xPermille = PERMILLE_MAX;
+    }
+
+    if (yPermille < 0)
+    {
+        yPermille = 0;
+    }
+    else if (yPermille > PERMILLE_MAX)
+    {
+        yPermille = PERMILLE_MAX;
+    }
+}
+
+static void clamp_pos_to_display(float& x, float& y, float width, float height, const ImVec2& displaySize)
+{
+    const float maxX = displaySize.x - width;
+    const float maxY = displaySize.y - height;
+
+    if (x < 0.0f)
+    {
+        x = 0.0f;
+    }
+    else if (x > maxX)
+    {
+        x = maxX;
+    }
+
+    if (y < 0.0f)
+    {
+        y = 0.0f;
+    }
+    else if (y > maxY)
+    {
+        y = maxY;
+    }
+}
+
+static ImVec2 legacy_position(OsdElement element, const ImVec2& displaySize, ImVec2& pivot)
+{
+    switch (element)
+    {
+    case OsdElement::Message:
+        switch (l_MessagePosition)
+        {
+        default:
+        case 0: // left bottom
+            pivot = ImVec2(0.0f, 1.0f);
+            return ImVec2(l_MessagePaddingX, displaySize.y - l_MessagePaddingY);
+        case 1: // left top
+            pivot = ImVec2(0.0f, 0.0f);
+            return ImVec2(l_MessagePaddingX, l_MessagePaddingY);
+        case 2: // right top
+            pivot = ImVec2(1.0f, 0.0f);
+            return ImVec2(displaySize.x - l_MessagePaddingX, l_MessagePaddingY);
+        case 3: // right bottom
+            pivot = ImVec2(1.0f, 1.0f);
+            return ImVec2(displaySize.x - l_MessagePaddingX, displaySize.y - l_MessagePaddingY);
+        }
+    case OsdElement::Overlay:
+        pivot = ImVec2(1.0f, 0.0f);
+        return ImVec2(displaySize.x - l_MessagePaddingX, l_MessagePaddingY);
+    case OsdElement::TurnCount:
+        pivot = ImVec2(0.0f, 0.0f);
+        return ImVec2(l_MessagePaddingX, l_MessagePaddingY);
+    default:
+        pivot = ImVec2(0.0f, 0.0f);
+        return ImVec2(l_MessagePaddingX, l_MessagePaddingY);
+    }
+}
+
+static bool point_in_rect(float x, float y, const OsdElementRect& rect)
+{
+    return rect.valid &&
+           x >= rect.x && x <= (rect.x + rect.width) &&
+           y >= rect.y && y <= (rect.y + rect.height);
+}
+
+static void draw_configure_highlight(const OsdElementRect& rect)
+{
+    if (!rect.valid)
+    {
+        return;
+    }
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    drawList->AddRect(ImVec2(rect.x, rect.y),
+                      ImVec2(rect.x + rect.width, rect.y + rect.height),
+                      IM_COL32(255, 220, 64, 220),
+                      0.0f,
+                      0,
+                      2.0f);
+}
+
+static void render_osd_window(OsdElement element,
+                              const char* windowId,
+                              const char* text,
+                              const ImVec2& displaySize,
+                              bool configureModifier,
+                              int draggingElement,
+                              bool customLayout,
+                              const int customPosPermille[static_cast<int>(OsdElement::Count)][2],
+                              OsdElementRect* outRect)
+{
+    const int elementIndex = static_cast<int>(element);
+    ImVec2 pivot(0.0f, 0.0f);
+    ImVec2 pos;
+
+    if (customLayout || draggingElement == elementIndex)
+    {
+        pos = permille_to_pos(customPosPermille[elementIndex][0],
+                              customPosPermille[elementIndex][1],
+                              displaySize);
+    }
+    else
+    {
+        pos = legacy_position(element, displaySize, pivot);
+    }
+
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
+
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(l_BackgroundRed, l_BackgroundGreen, l_BackgroundBlue, l_BackgroundAlpha));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(l_TextRed, l_TextGreen, l_TextBlue, l_TextAlpha));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f * l_Scale, 8.0f * l_Scale));
+
+    ImGui::Begin(windowId, nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
+    ImGui::SetWindowFontScale(l_Scale);
+    ImGui::Text("%s", text);
+    const ImVec2 windowPos = ImGui::GetWindowPos();
+    const ImVec2 windowSize = ImGui::GetWindowSize();
+    ImGui::End();
+
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(2);
+
+    outRect->x      = windowPos.x;
+    outRect->y      = windowPos.y;
+    outRect->width  = windowSize.x;
+    outRect->height = windowSize.y;
+    outRect->valid  = true;
+
+    if (configureModifier)
+    {
+        draw_configure_highlight(*outRect);
+    }
+}
+
+} // namespace
 
 //
 // Exported Functions
@@ -87,15 +325,36 @@ void OnScreenDisplayShutdown(void)
     l_OverlayText     = "";
     l_Initialized     = false;
     l_RenderingPaused = false;
+    l_DraggingElement = -1;
+
+    std::lock_guard<std::mutex> lock(l_Mutex);
+    for (auto& rect : l_ElementRects)
+    {
+        rect = {};
+    }
 }
 
 void OnScreenDisplayLoadSettings(void)
 {
     l_Enabled         = CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayEnabled);
     l_MessagePosition = CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayLocation);
-    l_MessagePaddingX = CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayPaddingX);
-    l_MessagePaddingY = CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayPaddingY);
+    l_MessagePaddingX = static_cast<float>(CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayPaddingX));
+    l_MessagePaddingY = static_cast<float>(CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayPaddingY));
     l_MessageDuration = CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayDuration);
+    l_CustomLayout    = CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayCustomLayout);
+
+    int scalePercent = CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayScale);
+    if (scalePercent < 25)
+    {
+        scalePercent = 25;
+    }
+    else if (scalePercent > 400)
+    {
+        scalePercent = 400;
+    }
+    l_Scale = static_cast<float>(scalePercent) / 100.0f;
+
+    load_custom_positions();
 
     std::vector<int> backgroundColor = CoreSettingsGetIntListValue(SettingsID::GUI_OnScreenDisplayBackgroundColor);
     std::vector<int> textColor       = CoreSettingsGetIntListValue(SettingsID::GUI_OnScreenDisplayTextColor);
@@ -125,6 +384,9 @@ bool OnScreenDisplaySetDisplaySize(int width, int height)
     ImGuiIO& io    = ImGui::GetIO();
     io.IniFilename = nullptr;
     io.DisplaySize = ImVec2((float)width, (float)height);
+
+    l_DisplayWidth  = width;
+    l_DisplayHeight = height;
     return true;
 }
 
@@ -147,6 +409,116 @@ void OnScreenDisplaySetOverlayText(std::string text)
     }
 
     l_OverlayText = text;
+}
+
+void OnScreenDisplaySetConfigureModifier(bool active)
+{
+    std::lock_guard<std::mutex> lock(l_Mutex);
+    l_ConfigureModifier = active;
+}
+
+bool OnScreenDisplayHandleMousePress(float x, float y, bool configureModifier)
+{
+    if (!l_Initialized || !l_Enabled)
+    {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(l_Mutex);
+    l_ConfigureModifier = configureModifier;
+
+    if (!configureModifier)
+    {
+        return false;
+    }
+
+    if (!l_CustomLayout)
+    {
+        const ImVec2 displaySize(static_cast<float>(l_DisplayWidth), static_cast<float>(l_DisplayHeight));
+        for (int index = 0; index < static_cast<int>(OsdElement::Count); ++index)
+        {
+            if (!l_ElementRects[index].valid)
+            {
+                continue;
+            }
+
+            pos_to_permille(l_ElementRects[index].x,
+                            l_ElementRects[index].y,
+                            displaySize,
+                            l_CustomPosPermille[index][0],
+                            l_CustomPosPermille[index][1]);
+        }
+    }
+
+    for (int index = static_cast<int>(OsdElement::Count) - 1; index >= 0; --index)
+    {
+        if (!point_in_rect(x, y, l_ElementRects[index]))
+        {
+            continue;
+        }
+
+        l_DraggingElement = index;
+        l_DragOffsetX     = x - l_ElementRects[index].x;
+        l_DragOffsetY     = y - l_ElementRects[index].y;
+        l_CustomLayout    = true;
+
+        const ImVec2 displaySize(static_cast<float>(l_DisplayWidth), static_cast<float>(l_DisplayHeight));
+        pos_to_permille(l_ElementRects[index].x,
+                        l_ElementRects[index].y,
+                        displaySize,
+                        l_CustomPosPermille[index][0],
+                        l_CustomPosPermille[index][1]);
+        return true;
+    }
+
+    return false;
+}
+
+bool OnScreenDisplayHandleMouseMove(float x, float y, bool configureModifier)
+{
+    if (!l_Initialized || !l_Enabled)
+    {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(l_Mutex);
+    l_ConfigureModifier = configureModifier;
+
+    if (l_DraggingElement < 0)
+    {
+        return false;
+    }
+
+    const ImVec2 displaySize(static_cast<float>(l_DisplayWidth), static_cast<float>(l_DisplayHeight));
+    float posX = x - l_DragOffsetX;
+    float posY = y - l_DragOffsetY;
+    clamp_pos_to_display(posX, posY, l_ElementRects[l_DraggingElement].width, l_ElementRects[l_DraggingElement].height, displaySize);
+    pos_to_permille(posX, posY, displaySize, l_CustomPosPermille[l_DraggingElement][0], l_CustomPosPermille[l_DraggingElement][1]);
+    return true;
+}
+
+bool OnScreenDisplayHandleMouseRelease(void)
+{
+    if (!l_Initialized || !l_Enabled)
+    {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(l_Mutex);
+    if (l_DraggingElement < 0)
+    {
+        return false;
+    }
+
+    l_DraggingElement = -1;
+    save_custom_positions();
+    return true;
+}
+
+bool OnScreenDisplayIsDragging(void)
+{
+    std::lock_guard<std::mutex> lock(l_Mutex);
+    return l_DraggingElement >= 0;
 }
 
 void OnScreenDisplayRender(void)
@@ -176,64 +548,80 @@ void OnScreenDisplayRender(void)
         return;
     }
 
+    bool configureModifier = false;
+    int draggingElement    = -1;
+    bool customLayout      = false;
+    int customPosPermille[static_cast<int>(OsdElement::Count)][2] = {};
+    OsdElementRect frameRects[static_cast<int>(OsdElement::Count)] = {};
+    {
+        std::lock_guard<std::mutex> lock(l_Mutex);
+        configureModifier = l_ConfigureModifier;
+        draggingElement   = l_DraggingElement;
+        customLayout      = l_CustomLayout;
+        for (int index = 0; index < static_cast<int>(OsdElement::Count); ++index)
+        {
+            customPosPermille[index][0] = l_CustomPosPermille[index][0];
+            customPosPermille[index][1] = l_CustomPosPermille[index][1];
+        }
+    }
+
     ImGui_ImplOpenGL3_NewFrame();
     ImGui::NewFrame();
-    
+
     ImGuiIO& io = ImGui::GetIO();
 
     if (showMessage)
     {
-        switch (l_MessagePosition)
-        {
-        default:
-        case 0: // left bottom
-            ImGui::SetNextWindowPos(ImVec2(l_MessagePaddingX, io.DisplaySize.y - l_MessagePaddingY), ImGuiCond_Always, ImVec2(0.0f, 1.0f));
-            break;
-        case 1: // left top
-            ImGui::SetNextWindowPos(ImVec2(l_MessagePaddingX, l_MessagePaddingY), ImGuiCond_Always, ImVec2(0.0f, 0.0f));
-            break;
-        case 2: // right top
-            ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - l_MessagePaddingX, l_MessagePaddingY), ImGuiCond_Always, ImVec2(1.0f, 0));
-            break;
-        case 3: // right bottom
-            ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - l_MessagePaddingX, io.DisplaySize.y - l_MessagePaddingY), ImGuiCond_Always, ImVec2(1.0f, 1.0f));
-            break;
-        }
-
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(l_BackgroundRed, l_BackgroundGreen, l_BackgroundBlue, l_BackgroundAlpha));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(l_TextRed, l_TextGreen, l_TextBlue, l_TextAlpha));
-
-        ImGui::Begin("Message", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
-        ImGui::Text("%s", l_Message.c_str());
-        ImGui::End();
-
-        ImGui::PopStyleColor(2);
+        render_osd_window(OsdElement::Message,
+                          "Message",
+                          l_Message.c_str(),
+                          io.DisplaySize,
+                          configureModifier,
+                          draggingElement,
+                          customLayout,
+                          customPosPermille,
+                          &frameRects[static_cast<int>(OsdElement::Message)]);
     }
 
     if (showOverlay)
     {
-        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - l_MessagePaddingX, l_MessagePaddingY), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(l_BackgroundRed, l_BackgroundGreen, l_BackgroundBlue, l_BackgroundAlpha));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(l_TextRed, l_TextGreen, l_TextBlue, l_TextAlpha));
-
-        ImGui::Begin("Overlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
-        ImGui::Text("%s", l_OverlayText.c_str());
-        ImGui::End();
-
-        ImGui::PopStyleColor(2);
+        render_osd_window(OsdElement::Overlay,
+                          "Overlay",
+                          l_OverlayText.c_str(),
+                          io.DisplaySize,
+                          configureModifier,
+                          draggingElement,
+                          customLayout,
+                          customPosPermille,
+                          &frameRects[static_cast<int>(OsdElement::Overlay)]);
     }
 
     if (showTurnOverlay)
     {
-        ImGui::SetNextWindowPos(ImVec2(l_MessagePaddingX, l_MessagePaddingY), ImGuiCond_Always, ImVec2(0.0f, 0.0f));
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(l_BackgroundRed, l_BackgroundGreen, l_BackgroundBlue, l_BackgroundAlpha));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(l_TextRed, l_TextGreen, l_TextBlue, l_TextAlpha));
+        render_osd_window(OsdElement::TurnCount,
+                          "TurnOverlay",
+                          turnOverlayText.c_str(),
+                          io.DisplaySize,
+                          configureModifier,
+                          draggingElement,
+                          customLayout,
+                          customPosPermille,
+                          &frameRects[static_cast<int>(OsdElement::TurnCount)]);
+    }
 
-        ImGui::Begin("TurnOverlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
-        ImGui::Text("%s", turnOverlayText.c_str());
-        ImGui::End();
-
-        ImGui::PopStyleColor(2);
+    {
+        std::lock_guard<std::mutex> lock(l_Mutex);
+        for (auto& rect : l_ElementRects)
+        {
+            rect = {};
+        }
+        for (int index = 0; index < static_cast<int>(OsdElement::Count); ++index)
+        {
+            if (frameRects[index].valid)
+            {
+                l_ElementRects[index] = frameRects[index];
+            }
+        }
     }
 
     ImGui::Render();

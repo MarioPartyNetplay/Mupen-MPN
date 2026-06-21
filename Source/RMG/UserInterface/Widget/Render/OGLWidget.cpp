@@ -14,6 +14,7 @@
 #include <QMetaObject>
 #include <QCoreApplication>
 #include <QThread>
+#include <QMouseEvent>
 
 #include <QEvent>
 #include <QPalette>
@@ -261,6 +262,52 @@ bool OGLWidget::eventFilter(QObject *object, QEvent *event)
     if (object == this->widgetContainer && event->type() == QEvent::Resize)
     {
         this->queueVideoSizeUpdate(static_cast<QResizeEvent *>(event)->size());
+    }
+    else if (object == this->widgetContainer)
+    {
+        switch (event->type())
+        {
+        case QEvent::MouseButtonPress:
+        case QEvent::MouseMove:
+        case QEvent::MouseButtonRelease:
+        {
+            QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
+            const float scale       = static_cast<float>(this->devicePixelRatio());
+            const float x           = static_cast<float>(mouseEvent->position().x()) * scale;
+            const float y           = static_cast<float>(mouseEvent->position().y()) * scale;
+            const bool configureModifier = (mouseEvent->modifiers() & Qt::AltModifier) != 0;
+            bool consumed = false;
+
+            switch (event->type())
+            {
+            case QEvent::MouseButtonPress:
+                if (mouseEvent->button() == Qt::LeftButton)
+                {
+                    consumed = OnScreenDisplayHandleMousePress(x, y, configureModifier);
+                }
+                break;
+            case QEvent::MouseMove:
+                consumed = OnScreenDisplayHandleMouseMove(x, y, configureModifier);
+                break;
+            case QEvent::MouseButtonRelease:
+                if (mouseEvent->button() == Qt::LeftButton)
+                {
+                    consumed = OnScreenDisplayHandleMouseRelease();
+                }
+                break;
+            default:
+                break;
+            }
+
+            if (consumed || OnScreenDisplayIsDragging())
+            {
+                return true;
+            }
+            break;
+        }
+        default:
+            break;
+        }
     }
 
     return QWindow::eventFilter(object, event);

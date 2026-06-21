@@ -1385,6 +1385,11 @@ void MainWindow::timerEvent(QTimerEvent *event)
 
 void MainWindow::on_EventFilter_KeyPressed(QKeyEvent *event)
 {
+    if (event->key() == Qt::Key_Alt)
+    {
+        OnScreenDisplaySetConfigureModifier(true);
+    }
+
     if (!CoreIsEmulationRunning())
     {
         QMainWindow::keyPressEvent(event);
@@ -1399,6 +1404,11 @@ void MainWindow::on_EventFilter_KeyPressed(QKeyEvent *event)
 
 void MainWindow::on_EventFilter_KeyReleased(QKeyEvent *event)
 {
+    if (event->key() == Qt::Key_Alt)
+    {
+        OnScreenDisplaySetConfigureModifier(false);
+    }
+
     if (!CoreIsEmulationRunning())
     {
         QMainWindow::keyReleaseEvent(event);
