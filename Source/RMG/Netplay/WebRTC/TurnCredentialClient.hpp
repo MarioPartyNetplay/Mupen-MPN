@@ -55,7 +55,7 @@ inline void applyNetplayConnectionSettings(NetplayConnectionMode mode, bool useU
     Q_UNUSED(useUpnp);
     TurnCredentialClient& client = TurnCredentialClient::instance();
     client.setConnectionReversalEnabled(mode == NetplayConnectionMode::TraversalServer);
-    if (turnCredentialsAvailable()) {
+    if (turnCredentialsAvailable() || !qgetenv("RMG_ICE_CONFIG_FILE").isEmpty()) {
         client.prefetch();
     }
 }

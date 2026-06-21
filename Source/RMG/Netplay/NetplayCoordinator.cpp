@@ -11,6 +11,7 @@
 #include "NetplayProtocol.hpp"
 #include "NetplayTraversalLookup.hpp"
 #include "Netplay.hpp"
+#include "WebRTC/TurnCredentialClient.hpp"
 #include <RMG-Core/Netplay.hpp>
 #include <RMG-Core/Emulation.hpp>
 #include <algorithm>
@@ -1641,6 +1642,8 @@ void NetplayCoordinator::on_hostedWebRTCSignalReceived(const QString& fromPlayer
 void NetplayCoordinator::setupPeerConnections(const QList<SocketIOClient::PlayerInfo>& players)
 {
     qDebug() << "NetplayCoordinator: Setting up peer connections for" << players.size() << "players";
+
+    TurnCredentialClient::instance().ensureCredentials(15000);
 
     for (const auto& player : players) {
         if (player.slot == m_gameSession.localSlot) {

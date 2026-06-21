@@ -3,6 +3,8 @@ Build/
 Bin/
 # Clangd cache
 .cache/
+.idea/
+.flatpak-builder/
 # Archlinux Package
 Package/ArchLinux/pkg/
 Package/ArchLinux/rmg/
@@ -38,5 +40,4 @@ lib/libdiscord-rpc.a
 
 # Local environment overrides
 .env
-
 *.DS_Store
