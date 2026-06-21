@@ -2699,6 +2699,19 @@ void MainWindow::on_Core_DebugCallback(QList<CoreCallbackMessage> messages)
     this->ui_ResetStatusBarTimerId = this->startTimer(this->ui_StatusBarTimerTimeout * 1000);
 }
 
+void MainWindow::updateOsdOverlay(void)
+{
+    std::string overlay;
+
+    if (CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayFPSCounter) &&
+        !this->ui_LastFpsOverlayText.empty())
+    {
+        overlay = this->ui_LastFpsOverlayText;
+    }
+
+    OnScreenDisplaySetOverlayText(overlay);
+}
+
 void MainWindow::on_Core_StateCallback(CoreStateCallbackType type, int value)
 {
     switch (type)
@@ -2842,15 +2855,8 @@ void MainWindow::on_Core_StateCallback(CoreStateCallbackType type, int value)
                 stream << std::fixed << std::setprecision(0) << (30000.0 / value) << " VI/s";
                 std::string result = stream.str();
                 this->ui_StatusBar_SpeedLabel->setText(result.c_str());
-
-                if (CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayFPSCounter))
-                {
-                    OnScreenDisplaySetOverlayText(result);
-                }
-                else
-                {
-                    OnScreenDisplaySetOverlayText("");
-                }
+                this->ui_LastFpsOverlayText = result;
+                this->updateOsdOverlay();
             }
         } break;
     }

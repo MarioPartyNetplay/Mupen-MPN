@@ -10,6 +10,7 @@
 #define CORE_INTERNAL
 
 #include "Discord.hpp"
+#include "TurnCount.hpp"
 #include "m64p/Api.hpp"
 #include "MPNMemory.h"
 #include "Settings.hpp"
@@ -112,10 +113,9 @@ static const uint8_t* get_rdram_pointer(void)
     return static_cast<const uint8_t*>(m64p::Core.DebugMemGetPointer(M64P_DBG_PTR_RDRAM));
 }
 
-// Safely read memory without crashing if an invalid offset boundary is passed
 static uint8_t safe_read_rdram(const uint8_t* rdram, uint32_t offset)
 {
-    if (rdram == nullptr || offset >= 0x800000) // standard N64 8MB RDRAM limit
+    if (rdram == nullptr || offset >= 0x800000)
     {
         return 0;
     }
@@ -129,6 +129,8 @@ static void update_presence_from_memory(void)
     {
         return;
     }
+
+    const CoreTurnCountInfo turnInfo = CoreTurnCountGetInfo();
 
     std::string details = preferred_title(l_DiscordHeader, l_DiscordSettings);
     std::string state = "Setting Up...";
@@ -147,7 +149,6 @@ static void update_presence_from_memory(void)
 
         const uint8_t boardId = safe_read_rdram(rdram, MP3_MEM_BOARD);
         const uint8_t gameType = safe_read_rdram(rdram, MP3_MEM_GAMETYPE);
-        const uint8_t currentTurn = safe_read_rdram(rdram, MP3_MEM_CURRENT_TURN);
         const uint8_t totalTurns = safe_read_rdram(rdram, MP3_MEM_TOTAL_TURNS);
 
         if (gameType >= 1 && gameType <= 6 && totalTurns > 0 && boardId < (sizeof(MP3_BOARDS) / sizeof(MP3_BOARDS[0])))
@@ -159,9 +160,9 @@ static void update_presence_from_memory(void)
             else
                 state = MP3_BOARDS[boardId];
 
-            if (gameType != 5 && gameType != 6)
+            if (turnInfo.valid)
             {
-                state += " Turn: " + std::to_string(currentTurn) + "/" + std::to_string(totalTurns);
+                state += " Turn: " + std::to_string(turnInfo.current) + "/" + std::to_string(turnInfo.total);
             }
             
             if (boardId < (sizeof(MP3_BOARDS_THUMB) / sizeof(MP3_BOARDS_THUMB[0])))
@@ -181,16 +182,18 @@ static void update_presence_from_memory(void)
         imageText = "Mario Party 2";
 
         const uint8_t boardId = safe_read_rdram(rdram, MP2_MEM_BOARD);
-        const uint8_t currentTurn = safe_read_rdram(rdram, MP2_MEM_CURRENT_TURN);
         const uint8_t totalTurns = safe_read_rdram(rdram, MP2_MEM_TOTAL_TURNS);
-        const uint8_t gameState = safe_read_rdram(rdram, MP2_MEM_GAMESTATE); 
+        const uint8_t gameState = safe_read_rdram(rdram, MP2_MEM_GAMESTATE);
 
         if (gameState > 1 && totalTurns > 0 && boardId < (sizeof(MP2_BOARDS) / sizeof(MP2_BOARDS[0])))
         {
-            state = MP2_BOARDS[boardId];
-            if (boardId != 7) 
+            if (boardId != 7)
             {
-                state += " Turn: " + std::to_string(currentTurn) + "/" + std::to_string(totalTurns);
+                state = MP2_BOARDS[boardId];
+                if (turnInfo.valid)
+                {
+                    state += " Turn: " + std::to_string(turnInfo.current) + "/" + std::to_string(turnInfo.total);
+                }
             }
             else
             {
@@ -217,12 +220,16 @@ static void update_presence_from_memory(void)
         const uint8_t currentTurn = safe_read_rdram(rdram, MP1_MEM_CURRENT_TURN);
         const uint8_t totalTurns = safe_read_rdram(rdram, MP1_MEM_TOTAL_TURNS);
 
-        if (totalTurns > 0 && totalTurns <= 50 && currentTurn <= totalTurns && boardId < (sizeof(MP1_BOARDS) / sizeof(MP1_BOARDS[0])))
+        if (totalTurns > 0 && totalTurns <= 50 && currentTurn <= totalTurns &&
+            boardId < (sizeof(MP1_BOARDS) / sizeof(MP1_BOARDS[0])))
         {
-            state = MP1_BOARDS[boardId];
-            if (boardId != 10) 
+            if (boardId != 10)
             {
-                state += " Turn: " + std::to_string(currentTurn) + "/" + std::to_string(totalTurns);
+                state = MP1_BOARDS[boardId];
+                if (turnInfo.valid)
+                {
+                    state += " Turn: " + std::to_string(turnInfo.current) + "/" + std::to_string(turnInfo.total);
+                }
             }
             else
             {

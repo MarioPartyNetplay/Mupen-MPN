@@ -11,6 +11,7 @@
 #include "VidExt.hpp"
 
 #include <RMG-Core/Settings.hpp>
+#include <RMG-Core/TurnCount.hpp>
 
 #include <backends/imgui_impl_opengl3.h>
 #include <imgui.h>
@@ -164,7 +165,13 @@ void OnScreenDisplayRender(void)
     }
 
     const bool showOverlay = !l_OverlayText.empty();
-    if (!showMessage && !showOverlay)
+    std::string turnOverlayText;
+    if (CoreSettingsGetBoolValue(SettingsID::GUI_TurnCountHud))
+    {
+        turnOverlayText = CoreGetTurnCountOverlayText();
+    }
+    const bool showTurnOverlay = !turnOverlayText.empty();
+    if (!showMessage && !showOverlay && !showTurnOverlay)
     {
         return;
     }
@@ -211,6 +218,19 @@ void OnScreenDisplayRender(void)
 
         ImGui::Begin("Overlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
         ImGui::Text("%s", l_OverlayText.c_str());
+        ImGui::End();
+
+        ImGui::PopStyleColor(2);
+    }
+
+    if (showTurnOverlay)
+    {
+        ImGui::SetNextWindowPos(ImVec2(l_MessagePaddingX, l_MessagePaddingY), ImGuiCond_Always, ImVec2(0.0f, 0.0f));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(l_BackgroundRed, l_BackgroundGreen, l_BackgroundBlue, l_BackgroundAlpha));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(l_TextRed, l_TextGreen, l_TextBlue, l_TextAlpha));
+
+        ImGui::Begin("TurnOverlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
+        ImGui::Text("%s", turnOverlayText.c_str());
         ImGui::End();
 
         ImGui::PopStyleColor(2);

@@ -53,6 +53,7 @@ set(RMG_CORE_SOURCES
     Video.cpp
     Error.cpp
     Discord.cpp
+    TurnCount.cpp
     Core.cpp
     File.cpp
     Key.cpp

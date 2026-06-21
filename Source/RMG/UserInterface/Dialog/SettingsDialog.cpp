@@ -19,6 +19,7 @@
 #include <QFileDialog>
 #include <QColorDialog>
 #include <QDirIterator>
+#include <QSignalBlocker>
 #include <QLabel>
 #include <QDir>
 
@@ -472,6 +473,10 @@ void SettingsDialog::loadInterfaceGeneralSettings(void)
     this->checkForUpdatesCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_CheckForUpdates));
 #endif // UPDATER
     this->enableDiscordRpcCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_EnableDiscordRPC));
+    {
+        QSignalBlocker blocker(this->turnCountHudCheckBox);
+        this->turnCountHudCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_TurnCountHud));
+    }
 }
 
 void SettingsDialog::loadInterfaceEmulationSettings(void)
@@ -506,6 +511,10 @@ void SettingsDialog::loadInterfaceOSDSettings(void)
     this->osdHorizontalPaddingSpinBox->setValue(CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayPaddingX));
     this->osdDurationSpinBox->setValue(CoreSettingsGetIntValue(SettingsID::GUI_OnScreenDisplayDuration));
     this->osdFpsCounterCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayFPSCounter));
+    {
+        QSignalBlocker blocker(this->turnCountFileCheckBox);
+        this->turnCountFileCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::GUI_TurnCountFile));
+    }
 
     std::vector<int> backgroundColor = CoreSettingsGetIntListValue(SettingsID::GUI_OnScreenDisplayBackgroundColor);
     std::vector<int> textColor = CoreSettingsGetIntListValue(SettingsID::GUI_OnScreenDisplayTextColor);
@@ -640,6 +649,10 @@ void SettingsDialog::loadDefaultInterfaceGeneralSettings(void)
     this->checkForUpdatesCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_CheckForUpdates));
 #endif // UPDATER
     this->enableDiscordRpcCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_EnableDiscordRPC));
+    {
+        QSignalBlocker blocker(this->turnCountHudCheckBox);
+        this->turnCountHudCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_TurnCountHud));
+    }
 }
 
 void SettingsDialog::loadDefaultInterfaceEmulationSettings(void)
@@ -674,6 +687,10 @@ void SettingsDialog::loadDefaultInterfaceOSDSettings(void)
     this->osdHorizontalPaddingSpinBox->setValue(CoreSettingsGetDefaultIntValue(SettingsID::GUI_OnScreenDisplayPaddingX));
     this->osdDurationSpinBox->setValue(CoreSettingsGetDefaultIntValue(SettingsID::GUI_OnScreenDisplayDuration));
     this->osdFpsCounterCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_OnScreenDisplayFPSCounter));
+    {
+        QSignalBlocker blocker(this->turnCountFileCheckBox);
+        this->turnCountFileCheckBox->setChecked(CoreSettingsGetDefaultBoolValue(SettingsID::GUI_TurnCountFile));
+    }
 
     const std::vector<int> backgroundColor = CoreSettingsGetDefaultIntListValue(SettingsID::GUI_OnScreenDisplayBackgroundColor);
     const std::vector<int> textColor = CoreSettingsGetDefaultIntListValue(SettingsID::GUI_OnScreenDisplayTextColor);
@@ -887,6 +904,7 @@ void SettingsDialog::saveInterfaceGeneralSettings(void)
     CoreSettingsSetValue(SettingsID::GUI_CheckForUpdates, this->checkForUpdatesCheckBox->isChecked());
 #endif // UPDATER
     CoreSettingsSetValue(SettingsID::GUI_EnableDiscordRPC, this->enableDiscordRpcCheckBox->isChecked());
+    CoreSettingsSetValue(SettingsID::GUI_TurnCountHud, this->turnCountHudCheckBox->isChecked());
 }
 
 void SettingsDialog::saveInterfaceEmulationSettings(void)
@@ -921,6 +939,7 @@ void SettingsDialog::saveInterfaceOSDSettings(void)
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayPaddingX, this->osdHorizontalPaddingSpinBox->value());
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayDuration, this->osdDurationSpinBox->value());
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayFPSCounter, this->osdFpsCounterCheckBox->isChecked());
+    CoreSettingsSetValue(SettingsID::GUI_TurnCountFile, this->turnCountFileCheckBox->isChecked());
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayBackgroundColor, std::vector<int>({ this->currentBackgroundColor.red(),
                                                                                             this->currentBackgroundColor.green(),
                                                                                             this->currentBackgroundColor.blue(),
@@ -1601,6 +1620,18 @@ void SettingsDialog::on_changePALPifRomButton_clicked(void)
 void SettingsDialog::on_osdFpsCounterCheckBox_toggled(bool checked)
 {
     CoreSettingsSetValue(SettingsID::GUI_OnScreenDisplayFPSCounter, checked);
+    CoreSettingsSave();
+}
+
+void SettingsDialog::on_turnCountHudCheckBox_toggled(bool checked)
+{
+    CoreSettingsSetValue(SettingsID::GUI_TurnCountHud, checked);
+    CoreSettingsSave();
+}
+
+void SettingsDialog::on_turnCountFileCheckBox_toggled(bool checked)
+{
+    CoreSettingsSetValue(SettingsID::GUI_TurnCountFile, checked);
     CoreSettingsSave();
 }
 

@@ -9,6 +9,7 @@
  */
 #define CORE_INTERNAL
 #include "Discord.hpp"
+#include "TurnCount.hpp"
 #include "ConvertStringEncoding.hpp"
 #include "Callback.hpp"
 #include "Library.hpp"
@@ -79,6 +80,7 @@ void CoreStateCallback(void*, m64p_core_param param, int value)
 
     if (param == static_cast<m64p_core_param>(CoreStateCallbackType::Frame))
     {
+        CoreTurnCountUpdateFrame();
         CoreDiscordUpdateFrame(value);
     }
 

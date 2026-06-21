@@ -131,6 +131,13 @@
                 </widget>
                </item>
                <item>
+                <widget class="QCheckBox" name="turnCountHudCheckBox">
+                 <property name="text">
+                  <string>Show turn count HUD</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
                 <spacer name="verticalSpacer_6">
                  <property name="orientation">
                   <enum>Qt::Orientation::Vertical</enum>
@@ -572,6 +579,13 @@
                 <widget class="QCheckBox" name="osdFpsCounterCheckBox">
                  <property name="text">
                   <string>Show FPS counter in OSD HUD</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QCheckBox" name="turnCountFileCheckBox">
+                 <property name="text">
+                  <string>Write TurnCount.txt file</string>
                  </property>
                 </widget>
                </item>

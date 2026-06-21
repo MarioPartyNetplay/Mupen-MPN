@@ -71,6 +71,42 @@ static std::vector<std::string> l_keyList;
 #define SETTING_SECTION_GCA         SETTING_SECTION_GUI  " - GameCube Adapter Input Plugin"
 #define SETTING_SECTION_RSP         "Rsp-HLE"
 
+static int get_default_int(const l_Setting& setting)
+{
+    if (const int* value = std::get_if<int>(&setting.DefaultValue))
+    {
+        return *value;
+    }
+    return 0;
+}
+
+static bool get_default_bool(const l_Setting& setting)
+{
+    if (const bool* value = std::get_if<bool>(&setting.DefaultValue))
+    {
+        return *value;
+    }
+    return false;
+}
+
+static float get_default_float(const l_Setting& setting)
+{
+    if (const float* value = std::get_if<float>(&setting.DefaultValue))
+    {
+        return *value;
+    }
+    return 0.0f;
+}
+
+static std::string get_default_string(const l_Setting& setting)
+{
+    if (const std::string* value = std::get_if<std::string>(&setting.DefaultValue))
+    {
+        return *value;
+    }
+    return "";
+}
+
 // retrieves l_Setting from settingId
 static l_Setting get_setting(SettingsID settingId)
 {
@@ -1368,6 +1404,12 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::GCAInput_SwapZL:
         setting = {SETTING_SECTION_GCA, "GCAInput_SwapZL", true};
         break;
+    case SettingsID::GUI_TurnCountFile:
+        setting = {SETTING_SECTION_GUI, "TurnCountFile", true};
+        break;
+    case SettingsID::GUI_TurnCountHud:
+        setting = {SETTING_SECTION_GUI, "TurnCountHud", true};
+        break;
     }
 
     return setting;
@@ -2001,31 +2043,31 @@ CORE_EXPORT bool CoreSettingsSetValue(std::string section, std::string key, std:
 CORE_EXPORT int CoreSettingsGetDefaultIntValue(SettingsID settingId)
 {
     l_Setting setting = get_setting(settingId);
-    return std::get<int>(setting.DefaultValue);
+    return get_default_int(setting);
 }
 
 CORE_EXPORT bool CoreSettingsGetDefaultBoolValue(SettingsID settingId)
 {
     l_Setting setting = get_setting(settingId);
-    return std::get<bool>(setting.DefaultValue);
+    return get_default_bool(setting);
 }
 
 CORE_EXPORT float CoreSettingsGetDefaultFloatValue(SettingsID settingId)
 {
     l_Setting setting = get_setting(settingId);
-    return std::get<float>(setting.DefaultValue);
+    return get_default_float(setting);
 }
 
 CORE_EXPORT std::string CoreSettingsGetDefaultStringValue(SettingsID settingId)
 {
     l_Setting setting = get_setting(settingId);
-    return std::get<std::string>(setting.DefaultValue);
+    return get_default_string(setting);
 }
 
 CORE_EXPORT std::vector<int> CoreSettingsGetDefaultIntListValue(SettingsID settingId)
 {
     l_Setting setting = get_setting(settingId);
-    std::string string = std::get<std::string>(setting.DefaultValue);
+    std::string string = get_default_string(setting);
     std::vector<int> intList;
     if (!string_to_int_list(string, intList))
     {
@@ -2037,7 +2079,7 @@ CORE_EXPORT std::vector<int> CoreSettingsGetDefaultIntListValue(SettingsID setti
 CORE_EXPORT int CoreSettingsGetIntValue(SettingsID settingId)
 {
     l_Setting setting = get_setting(settingId);
-    int value = setting.DefaultValue.index() == 0 ? 0 : std::get<int>(setting.DefaultValue);
+    int value = get_default_int(setting);
     config_option_get(setting.Section, setting.Key, M64TYPE_INT, &value, sizeof(value));
     return value;
 }
@@ -2045,7 +2087,7 @@ CORE_EXPORT int CoreSettingsGetIntValue(SettingsID settingId)
 CORE_EXPORT bool CoreSettingsGetBoolValue(SettingsID settingId)
 {
     l_Setting setting = get_setting(settingId);
-    int value = setting.DefaultValue.index() == 0 ? 0 : (std::get<bool>(setting.DefaultValue) ? 1 : 0);
+    int value = get_default_bool(setting) ? 1 : 0;
     config_option_get(setting.Section, setting.Key, M64TYPE_BOOL, &value, sizeof(value));
     return value > 0;
 }
@@ -2053,7 +2095,7 @@ CORE_EXPORT bool CoreSettingsGetBoolValue(SettingsID settingId)
 CORE_EXPORT float CoreSettingsGetFloatValue(SettingsID settingId)
 {
     l_Setting setting = get_setting(settingId);
-    float value = setting.DefaultValue.index() == 0 ? 0.0f : std::get<float>(setting.DefaultValue);
+    float value = get_default_float(setting);
     config_option_get(setting.Section, setting.Key, M64TYPE_FLOAT, &value, sizeof(value));
     return value;
 }
@@ -2081,7 +2123,7 @@ CORE_EXPORT std::vector<std::string> CoreSettingsGetStringListValue(SettingsID s
 CORE_EXPORT int CoreSettingsGetIntValue(SettingsID settingId, std::string section)
 {
     l_Setting setting = get_setting(settingId);
-    int value = setting.DefaultValue.index() == 0 ? 0 : std::get<int>(setting.DefaultValue);
+    int value = get_default_int(setting);
     config_option_get(section, setting.Key, M64TYPE_INT, &value, sizeof(value));
     return value;
 }
@@ -2089,15 +2131,15 @@ CORE_EXPORT int CoreSettingsGetIntValue(SettingsID settingId, std::string sectio
 CORE_EXPORT bool CoreSettingsGetBoolValue(SettingsID settingId, std::string section)
 {
     l_Setting setting = get_setting(settingId);
-    int value = setting.DefaultValue.index() == 0 ? 0 : (std::get<bool>(setting.DefaultValue) ? 1 : 0);
+    int value = get_default_bool(setting) ? 1 : 0;
     config_option_get(section, setting.Key, M64TYPE_BOOL, &value, sizeof(value));
-    return value;
+    return value > 0;
 }
 
 CORE_EXPORT float CoreSettingsGetFloatValue(SettingsID settingId, std::string section)
 {
     l_Setting setting = get_setting(settingId);
-    float value = setting.DefaultValue.index() == 0 ? 0.0f : std::get<float>(setting.DefaultValue);
+    float value = get_default_float(setting);
     config_option_get(section, setting.Key, M64TYPE_FLOAT, &value, sizeof(value));
     return value;
 }

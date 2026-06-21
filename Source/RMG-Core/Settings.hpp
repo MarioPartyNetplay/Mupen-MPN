@@ -468,6 +468,9 @@ enum class SettingsID
     GCAInput_TriggerTreshold,
     GCAInput_SwapZL,
 
+    GUI_TurnCountFile,
+    GUI_TurnCountHud,
+
     Invalid
 };
 

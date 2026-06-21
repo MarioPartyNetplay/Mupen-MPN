@@ -111,5 +111,11 @@ void CoreCallbacks::coreStateCallback(CoreStateCallbackType type, int value)
         return;
     }
 
+    // Frame callbacks fire every VI; turn count and Discord are handled in CoreStateCallback.
+    if (type == CoreStateCallbackType::Frame)
+    {
+        return;
+    }
+
     emit l_CoreCallbacks->OnCoreStateCallback(type, value);
 }

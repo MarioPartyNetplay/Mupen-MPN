@@ -35,6 +35,8 @@
 #include <QMessageBox>
 #include <QAction>
 
+#include <string>
+
 #include "ui_MainWindow.h"
 
 namespace UserInterface
@@ -117,6 +119,9 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     int ui_LoadSaveStateSlotTimerId = -1;
 
     QString ui_WindowTitle;
+    std::string ui_LastFpsOverlayText;
+
+    void updateOsdOverlay(void);
 
     Dialog::LogDialog logDialog;
 #ifdef NETPLAY
