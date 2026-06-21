@@ -16,10 +16,11 @@
 #include <QNetworkRequest>
 #include <QTimer>
 #include <QUrl>
+#include <QUrlQuery>
 
 #include <QDebug>
 
-#include <stdexcept>
+#include <algorithm>
 
 using namespace UserInterface::Netplay;
 
@@ -27,11 +28,137 @@ namespace {
 
 constexpr int kCredentialRefreshSkewSeconds = 300;
 constexpr int kDefaultTurnCredentialCacheTtlSeconds = 86400;
+constexpr int kMaxLibjuiceTurnServers = 2;
+
+struct ParsedIceUrl {
+    QString scheme;
+    QString host;
+    uint16_t port = 0;
+    QString transport;
+    bool valid = false;
+};
 
 struct ParsedIceServers {
     std::vector<rtc::IceServer> stun;
     std::vector<rtc::IceServer> turn;
 };
+
+uint16_t defaultPortForScheme(const QString& scheme)
+{
+    if (scheme == QLatin1String("turns") || scheme == QLatin1String("stuns")) {
+        return 5349;
+    }
+    return 3478;
+}
+
+ParsedIceUrl parseIceServerUrl(const QString& urlString)
+{
+    ParsedIceUrl result;
+    const QString trimmed = urlString.trimmed();
+    if (trimmed.isEmpty()) {
+        return result;
+    }
+
+    // QUrl extracts the scheme for stun:/turn:/turns: URLs, but host:port lives in path().
+    const QUrl url(trimmed);
+    if (!url.isValid()) {
+        return result;
+    }
+
+    result.scheme = url.scheme().toLower();
+    if (result.scheme.isEmpty()) {
+        return result;
+    }
+
+    QString hostPort = url.host();
+    if (hostPort.isEmpty()) {
+        hostPort = url.path();
+    }
+    if (hostPort.isEmpty()) {
+        return result;
+    }
+
+    const QString query = url.query();
+    if (!query.isEmpty()) {
+        result.transport = QUrlQuery(query).queryItemValue(QStringLiteral("transport")).toLower();
+    }
+
+    const uint16_t defaultPort = defaultPortForScheme(result.scheme);
+
+    if (hostPort.startsWith(QLatin1Char('['))) {
+        const int closeIndex = hostPort.indexOf(QLatin1Char(']'));
+        if (closeIndex <= 1) {
+            return result;
+        }
+        result.host = hostPort.mid(1, closeIndex - 1);
+        const QString portPart = hostPort.mid(closeIndex + 1).trimmed();
+        if (portPart.startsWith(QLatin1Char(':'))) {
+            bool ok = false;
+            const int parsed = portPart.mid(1).toInt(&ok);
+            if (!ok || parsed < 1 || parsed > 65535) {
+                return result;
+            }
+            result.port = static_cast<uint16_t>(parsed);
+        } else {
+            result.port = defaultPort;
+        }
+    } else {
+        const int colonIndex = hostPort.lastIndexOf(QLatin1Char(':'));
+        if (colonIndex > 0) {
+            bool ok = false;
+            const int parsed = hostPort.mid(colonIndex + 1).toInt(&ok);
+            if (ok && parsed >= 1 && parsed <= 65535) {
+                result.host = hostPort.left(colonIndex);
+                result.port = static_cast<uint16_t>(parsed);
+            } else {
+                result.host = hostPort;
+                result.port = defaultPort;
+            }
+        } else {
+            result.host = hostPort;
+            result.port = defaultPort;
+        }
+    }
+
+    if (result.host.isEmpty()) {
+        return result;
+    }
+
+    result.valid = true;
+    return result;
+}
+
+rtc::IceServer::RelayType relayTypeForParsedUrl(const ParsedIceUrl& iceUrl)
+{
+    if (iceUrl.scheme == QLatin1String("turns") || iceUrl.scheme == QLatin1String("stuns")) {
+        return rtc::IceServer::RelayType::TurnTls;
+    }
+
+    if (iceUrl.transport == QLatin1String("tcp")) {
+        return rtc::IceServer::RelayType::TurnTcp;
+    }
+
+    return rtc::IceServer::RelayType::TurnUdp;
+}
+
+bool shouldSkipIceUrl(const ParsedIceUrl& iceUrl)
+{
+    if (!iceUrl.valid || iceUrl.host.isEmpty()) {
+        return true;
+    }
+
+    // Cloudflare documents port 53 as prone to timeouts in some clients.
+    if (iceUrl.port == 53) {
+        return true;
+    }
+
+    return false;
+}
+
+rtc::IceServer makeStunServer(const ParsedIceUrl& iceUrl)
+{
+    return rtc::IceServer(iceUrl.host.toStdString(), iceUrl.port);
+}
 
 QJsonArray iceUrlsFromJsonValue(const QJsonValue& value)
 {
@@ -49,53 +176,6 @@ QJsonArray iceUrlsFromJsonValue(const QJsonValue& value)
     return urls;
 }
 
-bool shouldSkipIceServerPort(uint16_t port)
-{
-    // Cloudflare documents port 53 as prone to timeouts in some clients.
-    return port == 53;
-}
-
-bool appendIceServerUrl(
-    const QString& urlString,
-    const QString& username,
-    const QString& credential,
-    ParsedIceServers* servers)
-{
-    if (!servers) {
-        return false;
-    }
-
-    const QString trimmed = urlString.trimmed();
-    if (trimmed.isEmpty()) {
-        return false;
-    }
-
-    try {
-        rtc::IceServer server(trimmed.toStdString());
-        if (shouldSkipIceServerPort(server.port)) {
-            return false;
-        }
-
-        if (server.type == rtc::IceServer::Type::Turn) {
-            if (username.isEmpty() || credential.isEmpty()) {
-                return false;
-            }
-
-            server.username = username.toStdString();
-            server.password = credential.toStdString();
-            servers->turn.push_back(std::move(server));
-            return true;
-        }
-
-        servers->stun.push_back(std::move(server));
-        return true;
-    } catch (const std::exception& exception) {
-        qWarning() << "TurnCredentialClient: Skipping invalid ICE URL"
-                   << trimmed << "-" << exception.what();
-        return false;
-    }
-}
-
 void parseIceServerEntry(const QJsonObject& entry, ParsedIceServers* servers)
 {
     if (!servers || entry.isEmpty()) {
@@ -109,7 +189,33 @@ void parseIceServerEntry(const QJsonObject& entry, ParsedIceServers* servers)
             : entry.value(QStringLiteral("credential")).toString();
 
     for (const QJsonValue& urlValue : iceUrlsFromJsonValue(entry.value(QStringLiteral("urls")))) {
-        appendIceServerUrl(urlValue.toString(), username, credential, servers);
+        const ParsedIceUrl iceUrl = parseIceServerUrl(urlValue.toString());
+        if (shouldSkipIceUrl(iceUrl)) {
+            continue;
+        }
+
+        if (iceUrl.scheme == QLatin1String("stun") || iceUrl.scheme == QLatin1String("stuns")) {
+            servers->stun.push_back(makeStunServer(iceUrl));
+            continue;
+        }
+
+        if (iceUrl.scheme == QLatin1String("turn") || iceUrl.scheme == QLatin1String("turns")) {
+            if (username.isEmpty() || credential.isEmpty()) {
+                continue;
+            }
+
+            const rtc::IceServer::RelayType relayType = relayTypeForParsedUrl(iceUrl);
+            if (relayType != rtc::IceServer::RelayType::TurnUdp) {
+                continue;
+            }
+
+            servers->turn.emplace_back(
+                iceUrl.host.toStdString(),
+                iceUrl.port,
+                username.toStdString(),
+                credential.toStdString(),
+                relayType);
+        }
     }
 }
 
@@ -122,6 +228,74 @@ ParsedIceServers parseIceEntries(const QJsonArray& iceServers)
     }
 
     return servers;
+}
+
+bool iceServerIdentityLess(const rtc::IceServer& lhs, const rtc::IceServer& rhs)
+{
+    if (lhs.type != rhs.type) {
+        return lhs.type < rhs.type;
+    }
+    if (lhs.hostname != rhs.hostname) {
+        return lhs.hostname < rhs.hostname;
+    }
+    return lhs.port < rhs.port;
+}
+
+void appendUniqueIceServer(std::vector<rtc::IceServer>& servers, const rtc::IceServer& server)
+{
+    for (const rtc::IceServer& existing : servers) {
+        if (existing.type == server.type && existing.hostname == server.hostname &&
+            existing.port == server.port) {
+            return;
+        }
+    }
+    servers.push_back(server);
+}
+
+void appendFallbackStun(std::vector<rtc::IceServer>& servers)
+{
+    const QString stunHost = stunServerHost().trimmed();
+    const quint16 stunPort = stunServerPort();
+    if (stunHost.isEmpty() || stunPort == 0) {
+        return;
+    }
+
+    appendUniqueIceServer(servers, rtc::IceServer(stunHost.toStdString(), static_cast<uint16_t>(stunPort)));
+}
+
+std::vector<rtc::IceServer> finalizeIceServers(std::vector<rtc::IceServer> servers)
+{
+    std::vector<rtc::IceServer> stunServers;
+    std::vector<rtc::IceServer> turnServers;
+
+    for (const rtc::IceServer& server : servers) {
+        if (server.type == rtc::IceServer::Type::Stun) {
+            appendUniqueIceServer(stunServers, server);
+        } else if (server.relayType == rtc::IceServer::RelayType::TurnUdp) {
+            appendUniqueIceServer(turnServers, server);
+        }
+    }
+
+    appendFallbackStun(stunServers);
+
+    std::sort(turnServers.begin(), turnServers.end(), [](const rtc::IceServer& lhs, const rtc::IceServer& rhs) {
+        const bool lhsPreferred = lhs.hostname.find("turnv2.realtime.cloudflare.com") != std::string::npos;
+        const bool rhsPreferred = rhs.hostname.find("turnv2.realtime.cloudflare.com") != std::string::npos;
+        if (lhsPreferred != rhsPreferred) {
+            return lhsPreferred;
+        }
+        return iceServerIdentityLess(lhs, rhs);
+    });
+
+    if (static_cast<int>(turnServers.size()) > kMaxLibjuiceTurnServers) {
+        turnServers.erase(turnServers.begin() + kMaxLibjuiceTurnServers, turnServers.end());
+    }
+
+    std::vector<rtc::IceServer> finalized;
+    finalized.reserve(stunServers.size() + turnServers.size());
+    finalized.insert(finalized.end(), stunServers.begin(), stunServers.end());
+    finalized.insert(finalized.end(), turnServers.begin(), turnServers.end());
+    return finalized;
 }
 
 } // namespace
@@ -200,9 +374,17 @@ std::vector<rtc::IceServer> TurnCredentialClient::turnServers() const
 
 bool TurnCredentialClient::credentialsAreFreshLocked() const
 {
-    return m_expiresAt.isValid() &&
-           m_expiresAt > QDateTime::currentDateTimeUtc().addSecs(kCredentialRefreshSkewSeconds) &&
-           (!m_stunServers.empty() || !m_turnServers.empty());
+    if (!m_expiresAt.isValid() ||
+        m_expiresAt <= QDateTime::currentDateTimeUtc().addSecs(kCredentialRefreshSkewSeconds)) {
+        return false;
+    }
+
+    // Broker-backed NAT traversal requires relay credentials, not just STUN discovery.
+    if (turnCredentialsAvailable() || !qgetenv("RMG_ICE_CONFIG_FILE").isEmpty()) {
+        return !m_turnServers.empty();
+    }
+
+    return !m_stunServers.empty();
 }
 
 bool TurnCredentialClient::fetchCredentialsBlocking(int timeoutMs)
@@ -366,7 +548,7 @@ std::vector<rtc::IceServer> buildIceServers()
     TurnCredentialClient& iceClient = TurnCredentialClient::instance();
     if (turnCredentialsAvailable() || !qgetenv("RMG_ICE_CONFIG_FILE").isEmpty()) {
         if (!iceClient.ensureCredentials()) {
-            qWarning() << "TurnCredentialClient: Failed to refresh ICE credentials; using cached or fallback STUN";
+            qWarning() << "TurnCredentialClient: Failed to refresh ICE credentials; using cached or fallback STUN/TURN";
         }
 
         const std::vector<rtc::IceServer> brokerStunServers = iceClient.stunServers();
@@ -376,23 +558,14 @@ std::vector<rtc::IceServer> buildIceServers()
         servers.insert(servers.end(), turnServers.begin(), turnServers.end());
     }
 
-    if (servers.empty()) {
-        const QString stunHost = stunServerHost().trimmed();
-        const quint16 stunPort = stunServerPort();
-        if (!stunHost.isEmpty() && stunPort > 0) {
-            servers.emplace_back(stunHost.toStdString(), static_cast<uint16_t>(stunPort));
-        }
-    }
+    servers = finalizeIceServers(std::move(servers));
 
     for (const rtc::IceServer& server : servers) {
         if (server.type == rtc::IceServer::Type::Stun) {
             qInfo() << "ICE STUN server:" << QString::fromStdString(server.hostname) << server.port;
         } else {
             qInfo() << "ICE TURN server:" << QString::fromStdString(server.hostname) << server.port
-                    << "(relay"
-                    << (server.relayType == rtc::IceServer::RelayType::TurnTls ? "TLS" :
-                        server.relayType == rtc::IceServer::RelayType::TurnTcp ? "TCP" : "UDP")
-                    << ")";
+                    << "(relay UDP, user" << !server.username.empty() << ")";
         }
     }
 

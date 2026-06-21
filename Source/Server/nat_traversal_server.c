@@ -1565,8 +1565,8 @@ static int turn_fetch_cloudflare_credentials(char* out, size_t out_size, size_t*
     CURLcode result = curl_easy_perform(curl);
     if (result == CURLE_OK) {
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-        if (http_code == 201 && response.data != NULL && response.size > 0 && strstr(response.data, "\"iceServers\"") != NULL &&
-            response.size < out_size) {
+        if (http_code >= 200 && http_code < 300 && response.data != NULL && response.size > 0 &&
+            strstr(response.data, "\"iceServers\"") != NULL && response.size < out_size) {
             memcpy(out, response.data, response.size);
             out[response.size] = '\0';
             *out_len = response.size;
