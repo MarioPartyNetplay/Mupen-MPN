@@ -826,6 +826,7 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Cheats));
     this->action_System_Cheats->setEnabled(inEmulation && !netplayRestrictions);
     this->action_System_Cheats->setShortcut(QKeySequence(keyBinding));
+    this->action_System_Modifications->setEnabled(!UserInterface::Netplay::shouldBlockModifications());
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_GSButton));
     this->action_System_GSButton->setEnabled(inEmulation && !netplayRestrictions);
     this->action_System_GSButton->setShortcut(QKeySequence(keyBinding));
@@ -1910,6 +1911,12 @@ void MainWindow::on_Action_System_Cheats(void)
 
 void MainWindow::on_Action_System_Modifications(void)
 {
+    if (UserInterface::Netplay::shouldBlockModifications())
+    {
+        this->showErrorMessage("Modifications cannot be edited during a netplay session");
+        return;
+    }
+
     Dialog::ModificationsDialog dialog(this);
     if (!dialog.HasFailed())
     {

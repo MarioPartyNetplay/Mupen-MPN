@@ -79,6 +79,11 @@ bool UserInterface::Netplay::shouldBlockFocusLossPause()
     }
 }
 
+bool UserInterface::Netplay::shouldBlockModifications()
+{
+    return shouldBlockFocusLossPause();
+}
+
 void UserInterface::Netplay::submitNetplayFrameInput(uint32_t controllerState)
 {
     if (g_netplayCoordinator && g_netplayCoordinator->isInGame()) {
@@ -132,6 +137,11 @@ bool UserInterface::Netplay::isNetplayActive()
 bool UserInterface::Netplay::shouldBlockFocusLossPause()
 {
     return CoreIsEmbeddedNetplayActive() || CoreHasInitNetplay();
+}
+
+bool UserInterface::Netplay::shouldBlockModifications()
+{
+    return shouldBlockFocusLossPause();
 }
 
 void UserInterface::Netplay::submitNetplayFrameInput(uint32_t)

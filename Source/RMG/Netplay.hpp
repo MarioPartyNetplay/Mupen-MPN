@@ -36,6 +36,11 @@ bool isNetplayActive();
 bool shouldBlockFocusLossPause();
 
 /**
+ * Returns true when modification cheats must not be edited.
+ */
+bool shouldBlockModifications();
+
+/**
  * Submit frame input during emulation
  * Called from emulation loop with current controller state
  */

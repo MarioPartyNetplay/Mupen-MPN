@@ -85,4 +85,12 @@ modules:
     sources:
       - type: git
         url: https://github.com/MarioPartyNetplay/Mupen-MPN.git
+        disable-submodules: true
+      - type: shell
+        commands:
+          - |
+            if [ ! -f Source/3rdParty/libdatachannel/CMakeLists.txt ]; then
+              git clone --depth 1 https://github.com/paullouisageneau/libdatachannel.git Source/3rdParty/libdatachannel
+              git -C Source/3rdParty/libdatachannel submodule update --init --depth 1 --recursive
+            fi
 
