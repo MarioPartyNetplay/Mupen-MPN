@@ -263,6 +263,11 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
 
                 m_cachedPlayers = players;
                 synchronizeLockstepPlayerCount();
+
+                if (m_state == Connected || m_state == InLobby || m_state == StartingGame) {
+                    setupPeerConnections(players);
+                }
+
                 emit playersUpdated(players);
             });
 
@@ -347,6 +352,9 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
 
     qInfo() << "Hosting signaling server on port" << port;
 
+    setState(InLobby);
+    TurnCredentialClient::instance().ensureCredentials(15000);
+
     // For hosting, emit roomJoined directly (host doesn't need to connect as Socket.IO client)
     // This allows the session dialog to open immediately
     emit roomJoined(m_gameSession.roomId, 0);
@@ -379,6 +387,11 @@ void NetplayCoordinator::connectToServer(const QString& playerName)
 void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int port, const QString& playerName,
                                                const QString& roomId)
 {
+    const NetplayConnectionMode connectionMode =
+        looksLikeTraversalCode(ipAddress.trimmed()) ? NetplayConnectionMode::TraversalServer
+                                                  : NetplayConnectionMode::Direct;
+    applyNetplayConnectionSettings(connectionMode, false);
+
     m_playerName = playerName;
     m_shouldAutoJoinRoom = true;
     m_autoJoinRoomId = roomId.trimmed();
@@ -862,7 +875,7 @@ void NetplayCoordinator::on_socketIO_playersUpdated(const QList<SocketIOClient::
         }
     }
 
-    if (m_state == InLobby || m_state == StartingGame) {
+    if (m_state == Connected || m_state == InLobby || m_state == StartingGame) {
         setupPeerConnections(players);
     }
 

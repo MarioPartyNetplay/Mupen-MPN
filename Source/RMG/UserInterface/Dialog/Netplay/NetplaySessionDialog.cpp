@@ -14,6 +14,7 @@
 #include "NetplaySessionDialog.hpp"
 #include "Netplay/NetplayProtocol.hpp"
 #include "Netplay/SocketIO/SocketIOServer.hpp"
+#include "Netplay/WebRTC/TurnCredentialClient.hpp"
 
 #include <enet/enet.h>
 
@@ -201,6 +202,16 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     QJsonObject sessionJson = sessionDoc.object();
     this->sessionJson = sessionJson;
     this->romFile = sessionJson.value("rom_path").toString();
+
+    {
+        const Netplay::NetplayConnectionMode connectionMode =
+            Netplay::netplayConnectionModeFromString(sessionJson.value("connection_mode").toString(
+                Netplay::sessionUsesNatTraversal(sessionJson) ? QStringLiteral("traversal")
+                                                              : QStringLiteral("direct")));
+        Netplay::applyNetplayConnectionSettings(connectionMode,
+                                                sessionJson.value("use_upnp").toBool(false));
+    }
+
     this->sessionSlot = sessionJson.value("slot").toInt(sessionJson.value("slotIndex").toInt(-1));
     if (this->sessionSlot < 0 && this->coordinator) {
         this->sessionSlot = this->coordinator->getGameSession().localSlot;

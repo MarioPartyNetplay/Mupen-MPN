@@ -1703,6 +1703,7 @@ static void handle_http_client(socket_t client)
             http_send_all(client, "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
             return;
         }
+        printf("[http] GET /turn/ice-servers\n");
         http_reply_turn_ice_servers(client);
         return;
     }

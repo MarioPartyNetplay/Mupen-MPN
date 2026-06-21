@@ -331,16 +331,23 @@ bool TurnCredentialClient::connectionReversalEnabled() const
 void TurnCredentialClient::prefetch()
 {
     if (!turnCredentialsAvailable() && qgetenv("RMG_ICE_CONFIG_FILE").isEmpty()) {
+        qInfo() << "TurnCredentialClient: ICE broker prefetch skipped (broker disabled or not configured)";
         return;
     }
 
     QMutexLocker locker(&m_mutex);
-    if (credentialsAreFreshLocked() || m_fetchInProgress) {
+    if (credentialsAreFreshLocked()) {
+        qInfo() << "TurnCredentialClient: ICE credentials already cached; skipping prefetch";
+        return;
+    }
+    if (m_fetchInProgress) {
+        qInfo() << "TurnCredentialClient: ICE credential fetch already in progress; skipping prefetch";
         return;
     }
     m_fetchInProgress = true;
     locker.unlock();
 
+    qInfo() << "TurnCredentialClient: Prefetching ICE credentials from" << netplayTurnIceServersUrl().toString();
     fetchCredentialsBlocking(10000);
 }
 
@@ -416,11 +423,13 @@ bool TurnCredentialClient::fetchCredentialsBlocking(int timeoutMs)
 
     const QUrl brokerUrl = netplayTurnIceServersUrl();
     if (brokerUrl.isEmpty()) {
+        qInfo() << "TurnCredentialClient: No ICE broker URL configured";
         QMutexLocker locker(&m_mutex);
         m_fetchInProgress = false;
         return false;
     }
 
+    qInfo() << "TurnCredentialClient: Fetching ICE credentials from" << brokerUrl.toString();
     if (fetchFromBroker(brokerUrl, timeoutMs, &fetchedStunServers, &fetchedTurnServers, &errorMessage)) {
         QMutexLocker locker(&m_mutex);
         m_fetchInProgress = false;
