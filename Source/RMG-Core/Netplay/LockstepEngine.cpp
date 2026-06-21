@@ -25,6 +25,9 @@ namespace {
 
 constexpr uint32_t kMinInputFrameSlack = 8;
 constexpr uint32_t kMinInputDelayFrames = 1;
+// Cap how many future frames we publish per emulated frame so a large buffer
+// setting does not burst hundreds of WebRTC/signaling packets at once.
+constexpr uint32_t kMaxInputPrefillPerSubmit = 8;
 
 uint32_t inputFrameSlackForDelay(int inputDelayFrames)
 {
@@ -139,8 +142,12 @@ LockstepEngine::submitLocalInput(uint32_t controllerState)
 
         // Dolphin-style pad buffer: keep the delay window filled so frame 0
         // has usable input instead of waiting for the delay to elapse.
+        // Prefill is spread across emulated frames so high buffer values do
+        // not flood peers and drop the data channel or signaling connection.
+        uint32_t prefilled = 0;
         for (uint32_t frame = m_currentFrameNumber;
-             frame <= sendFrame;
+             frame <= sendFrame &&
+             prefilled < kMaxInputPrefillPerSubmit;
              ++frame) {
 
             FrameInputs& frameInputs = m_frameBuffer[frame];
@@ -157,6 +164,7 @@ LockstepEngine::submitLocalInput(uint32_t controllerState)
 
             outbound.emplace_back(frame, controllerState);
             notifyInputProgressUnlocked(frame);
+            ++prefilled;
         }
 
         m_lastKnownInputs[m_config.localPlayerSlot] = controllerState;
@@ -531,10 +539,8 @@ void LockstepEngine::broadcastInput(
             continue;
         }
 
-        const bool sent = m_dataChannels[slot]->sendBinary(packet);
-        if (!sent) {
-            m_dataChannels[slot] = nullptr;
-        }
+        // Signaling still relays inputs; treat send backpressure as transient.
+        (void)m_dataChannels[slot]->sendBinary(packet);
     }
 }
 

@@ -173,6 +173,10 @@
      void on_socketIO_inputDelayReceived(int frames);
      void on_socketIO_emulationBeginReceived();
      void relayLocalControllerInput(quint32 sendFrameNumber, quint32 state);
+     void relayLocalControllerInputBurst(
+         quint32 startFrameNumber,
+         quint32 endFrameNumber,
+         quint32 state);
      void on_socketIO_emulationPauseReceived(bool paused);
      void on_peerFrameSyncReceived(int slot, uint32_t frameNumber, uint32_t stateHash);
 

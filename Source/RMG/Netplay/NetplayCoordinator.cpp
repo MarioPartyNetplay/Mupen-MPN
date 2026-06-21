@@ -579,13 +579,51 @@ void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
             ? socketDispatchConnectionType(m_server.get())
             : socketDispatchConnectionType(m_socketIO.get());
 
-    for (const auto& [sendFrameNumber, state] : outbound) {
+    if (outbound.empty()) {
+        return;
+    }
+
+    uint32_t startFrame = outbound.front().first;
+    uint32_t endFrame = outbound.front().first;
+    const uint32_t state = outbound.front().second;
+    for (const auto& [frameNumber, frameState] : outbound) {
+        startFrame = std::min(startFrame, frameNumber);
+        endFrame = std::max(endFrame, frameNumber);
+        (void)frameState;
+    }
+
+    if (startFrame == endFrame) {
         QMetaObject::invokeMethod(
             this,
             "relayLocalControllerInput",
             dispatchType,
-            Q_ARG(quint32, sendFrameNumber),
+            Q_ARG(quint32, startFrame),
             Q_ARG(quint32, state));
+        return;
+    }
+
+    QMetaObject::invokeMethod(
+        this,
+        "relayLocalControllerInputBurst",
+        dispatchType,
+        Q_ARG(quint32, startFrame),
+        Q_ARG(quint32, endFrame),
+        Q_ARG(quint32, state));
+}
+
+void NetplayCoordinator::relayLocalControllerInputBurst(
+    quint32 startFrameNumber,
+    quint32 endFrameNumber,
+    quint32 state)
+{
+    if (endFrameNumber < startFrameNumber) {
+        return;
+    }
+
+    for (quint32 frameNumber = startFrameNumber;
+         frameNumber <= endFrameNumber;
+         ++frameNumber) {
+        relayLocalControllerInput(frameNumber, state);
     }
 }
 
