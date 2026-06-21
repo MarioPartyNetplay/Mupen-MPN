@@ -131,9 +131,9 @@
                 </widget>
                </item>
                <item>
-                <widget class="QCheckBox" name="turnCountHudCheckBox">
+                <widget class="QCheckBox" name="turnCountFileCheckBox">
                  <property name="text">
-                  <string>Show turn count HUD</string>
+                  <string>Log Turn Count to File</string>
                  </property>
                 </widget>
                </item>
@@ -583,9 +583,9 @@
                 </widget>
                </item>
                <item>
-                <widget class="QCheckBox" name="turnCountFileCheckBox">
+                <widget class="QCheckBox" name="turnCountHudCheckBox">
                  <property name="text">
-                  <string>Write TurnCount.txt file</string>
+                  <string>Show Turn Count</string>
                  </property>
                 </widget>
                </item>
