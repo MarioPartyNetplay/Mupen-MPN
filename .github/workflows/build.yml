@@ -59,8 +59,8 @@ jobs:
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          manifest-path: Package/flatpak-ci.yml
-          bundle: MupenMPN-linux.flatpak
+          manifest-path: Package/flatpak.yml
+          bundle: MupenMPN-linux-x86_64.flatpak
           cache-key: flatpak-builder-${{ github.sha }}
 
       - name: Upload Linux Artifact
