@@ -740,6 +740,8 @@ void SocketIOServer::onClientConnected(ENetPeer* peer)
         return;
     }
 
+    applySignalingPeerTimeout(peer);
+
     auto* client = new ClientConnection();
     client->id = generateClientId();
     client->peer = peer;

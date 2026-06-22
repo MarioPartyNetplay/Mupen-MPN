@@ -36,6 +36,9 @@ void installNetplayEnetIntercept(ENetHost* host);
 
 bool peerIsConnected(ENetPeer* peer);
 
+/** Apply signaling peer timeouts tolerant of high-latency internet play. */
+void applySignalingPeerTimeout(ENetPeer* peer);
+
 bool sendSignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonObject& payload);
 bool sendSignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonArray& payload);
 

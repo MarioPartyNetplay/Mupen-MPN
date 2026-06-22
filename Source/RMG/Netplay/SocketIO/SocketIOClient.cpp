@@ -250,8 +250,7 @@ void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpP
         return;
     }
 
-    m_serverPeer->timeoutMinimum = 2000;
-    m_serverPeer->timeoutMaximum = 5000;
+    applySignalingPeerTimeout(m_serverPeer);
 
     if (m_useTraversalPunch) {
         sendConnectPunchBursts();
