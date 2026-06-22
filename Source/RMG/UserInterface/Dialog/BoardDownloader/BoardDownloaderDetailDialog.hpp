@@ -39,7 +39,7 @@ class BoardDownloaderDetailDialog : public QDialog, private Ui::BoardDownloaderD
     MarioPartyTarget targetGame(void) const;
     void populateDetails(void);
     bool downloadLatestBoardFile(QString& localPath, QString& remoteFileName);
-    bool patchRom(const QString& boardFilePath, const QString& romFilePath, const QString& outputFilePath, bool* partialSuccess = nullptr);
+    bool patchRom(const QString& boardFilePath, const QString& romFilePath, const QString& outputFilePath);
 
   private slots:
     void on_downloadButton_clicked(void);

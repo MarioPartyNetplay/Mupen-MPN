@@ -278,13 +278,8 @@ bool BoardDownloaderDetailDialog::downloadLatestBoardFile(QString& localPath, QS
 
 bool BoardDownloaderDetailDialog::patchRom(const QString& boardFilePath,
                                            const QString& romFilePath,
-                                           const QString& outputFilePath,
-                                           bool* partialSuccess)
+                                           const QString& outputFilePath)
 {
-    if (partialSuccess != nullptr)
-    {
-        *partialSuccess = false;
-    }
     const std::optional<PartyPlannerCliInfo> cli = resolvePartyPlannerCli();
     if (!cli.has_value())
     {
@@ -318,8 +313,7 @@ bool BoardDownloaderDetailDialog::patchRom(const QString& boardFilePath,
               << QStringLiteral("--rom-file") << nativeRomPath
               << QStringLiteral("--target-board-index") << QStringLiteral("0")
               << QStringLiteral("--board-file") << nativeBoardPath
-              << QStringLiteral("--output-file") << nativeOutputPath
-              << QStringLiteral("--force");
+              << QStringLiteral("--output-file") << nativeOutputPath;
 
     if (cli->usesWine)
     {
@@ -370,20 +364,6 @@ bool BoardDownloaderDetailDialog::patchRom(const QString& boardFilePath,
                                 ? QStringLiteral("PartyPlanner64 CLI finished without creating %1.").arg(nativeOutputPath)
                                 : cliOutput);
         return false;
-    }
-
-    if (cliOutput.contains(QStringLiteral("did not fully complete"), Qt::CaseInsensitive))
-    {
-        if (partialSuccess != nullptr)
-        {
-            *partialSuccess = true;
-        }
-
-        QtMessageBox::Info(this,
-                           QStringLiteral("Patched ROM saved with warnings"),
-                           QStringLiteral("Board overwrite did not fully complete. The ROM was saved with "
-                                          "best-effort changes and may not work correctly.\n\n%1")
-                               .arg(cliOutput));
     }
 
     return true;
@@ -482,21 +462,17 @@ void BoardDownloaderDetailDialog::on_patchButton_clicked(void)
         outputFilePath += QStringLiteral(".z64");
     }
 
-    bool partialSuccess = false;
-    if (!this->patchRom(boardFilePath, romFilePath, outputFilePath, &partialSuccess))
+    if (!this->patchRom(boardFilePath, romFilePath, outputFilePath))
     {
         QFile::remove(boardFilePath);
         return;
     }
 
     QFile::remove(boardFilePath);
-    if (!partialSuccess)
-    {
-        QtMessageBox::Info(this,
-                           QStringLiteral("Patched ROM saved successfully"),
-                           romMatch.has_value()
-                               ? QStringLiteral("Used %1 from your ROM directory.").arg(romMatch->goodName)
-                               : QString());
-    }
+    QtMessageBox::Info(this,
+                       QStringLiteral("Patched ROM saved successfully"),
+                       romMatch.has_value()
+                           ? QStringLiteral("Used %1 from your ROM directory.").arg(romMatch->goodName)
+                           : QString());
     emit romPatched();
 }
