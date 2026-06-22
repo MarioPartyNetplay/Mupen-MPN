@@ -81,69 +81,7 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
 {
     // Create Socket.IO client
     m_socketIO = std::make_unique<SocketIOClient>(serverUrl, this);
-
-    // Connect Socket.IO signals
-    connect(m_socketIO.get(), &SocketIOClient::connected,
-            this, &NetplayCoordinator::on_socketIO_connected);
-    connect(m_socketIO.get(), &SocketIOClient::disconnected,
-            this, &NetplayCoordinator::on_socketIO_disconnected);
-    connect(m_socketIO.get(), &SocketIOClient::connectionError,
-            this, &NetplayCoordinator::on_socketIO_connectionError);
-
-    connect(m_socketIO.get(), &SocketIOClient::roomCreated,
-            this, &NetplayCoordinator::on_socketIO_roomCreated);
-    connect(m_socketIO.get(), &SocketIOClient::roomJoined,
-            this, &NetplayCoordinator::on_socketIO_roomJoined);
-    connect(m_socketIO.get(), &SocketIOClient::roomLeft,
-            this, &NetplayCoordinator::on_socketIO_roomLeft);
-    connect(m_socketIO.get(), &SocketIOClient::roomClosed,
-            this, &NetplayCoordinator::on_socketIO_roomClosed);
-    connect(m_socketIO.get(), &SocketIOClient::playersUpdated,
-            this, &NetplayCoordinator::on_socketIO_playersUpdated);
-
-    connect(m_socketIO.get(), &SocketIOClient::gameStarted,
-            this, &NetplayCoordinator::on_socketIO_gameStarted);
-    connect(m_socketIO.get(), &SocketIOClient::gameEnded,
-            this, &NetplayCoordinator::on_socketIO_gameEnded);
-        connect(m_socketIO.get(), &SocketIOClient::controllerInputReceived,
-            this, &NetplayCoordinator::on_socketIO_controllerInputReceived);
-    connect(m_socketIO.get(), &SocketIOClient::frameSyncReceived,
-            this, &NetplayCoordinator::on_peerFrameSyncReceived);
-
-    connect(m_socketIO.get(), &SocketIOClient::offerReceived,
-            this, &NetplayCoordinator::on_socketIO_offerReceived);
-    connect(m_socketIO.get(), &SocketIOClient::answerReceived,
-            this, &NetplayCoordinator::on_socketIO_answerReceived);
-    connect(m_socketIO.get(), &SocketIOClient::iceCandidateReceived,
-            this, &NetplayCoordinator::on_socketIO_iceCandidateReceived);
-
-    connect(m_socketIO.get(), &SocketIOClient::chatMessageReceived,
-            this, &NetplayCoordinator::chatMessageReceived);
-    connect(m_socketIO.get(), &SocketIOClient::cheatsUpdated,
-            this, &NetplayCoordinator::on_socketIO_cheatsUpdated);
-        connect(m_socketIO.get(), &SocketIOClient::saveSyncReceived,
-            this, &NetplayCoordinator::on_socketIO_saveSyncReceived);
-    connect(m_socketIO.get(), &SocketIOClient::coreSettingsSyncReceived,
-            this, &NetplayCoordinator::on_socketIO_coreSettingsSyncReceived);
-    connect(m_socketIO.get(), &SocketIOClient::roomsListed,
-            this, &NetplayCoordinator::on_socketIO_roomsListed);
-    connect(m_socketIO.get(), &SocketIOClient::inputDelayReceived,
-            this, &NetplayCoordinator::on_socketIO_inputDelayReceived);
-        connect(m_socketIO.get(), &SocketIOClient::emulationPauseReceived,
-            this, &NetplayCoordinator::on_socketIO_emulationPauseReceived);
-    connect(m_socketIO.get(), &SocketIOClient::emulationBeginReceived,
-            this, &NetplayCoordinator::on_socketIO_emulationBeginReceived);
-    connect(m_socketIO.get(), &SocketIOClient::pingUpdated,
-            this, [this](int pingMs) {
-        if (m_gameSession.localSlot >= 0) {
-            m_playerPingMs[m_gameSession.localSlot] = pingMs;
-        }
-        emit playerPingsUpdated();
-    });
-    connect(m_socketIO.get(), &SocketIOClient::playerPingsReceived,
-            this, [this](const QJsonArray& pings) {
-        applyPlayerPings(pings);
-    });
+    connectSocketIOClientSignals(m_socketIO.get());
 
     // Initialize lockstep config
     m_lockstepConfig.numPlayers = 2;
@@ -425,67 +363,7 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
     
     // Create new client with the direct IP server URL
     m_socketIO = std::make_unique<SocketIOClient>(serverUrl, this);
-    
-    // Reconnect all signals
-    connect(m_socketIO.get(), &SocketIOClient::connected,
-            this, &NetplayCoordinator::on_socketIO_connected);
-    connect(m_socketIO.get(), &SocketIOClient::disconnected,
-            this, &NetplayCoordinator::on_socketIO_disconnected);
-    connect(m_socketIO.get(), &SocketIOClient::connectionError,
-            this, &NetplayCoordinator::on_socketIO_connectionError);
-
-    connect(m_socketIO.get(), &SocketIOClient::roomCreated,
-            this, &NetplayCoordinator::on_socketIO_roomCreated);
-    connect(m_socketIO.get(), &SocketIOClient::roomJoined,
-            this, &NetplayCoordinator::on_socketIO_roomJoined);
-    connect(m_socketIO.get(), &SocketIOClient::roomLeft,
-            this, &NetplayCoordinator::on_socketIO_roomLeft);
-    connect(m_socketIO.get(), &SocketIOClient::roomClosed,
-            this, &NetplayCoordinator::on_socketIO_roomClosed);
-    connect(m_socketIO.get(), &SocketIOClient::playersUpdated,
-            this, &NetplayCoordinator::on_socketIO_playersUpdated);
-    connect(m_socketIO.get(), &SocketIOClient::roomsListed,
-            this, &NetplayCoordinator::on_socketIO_roomsListed);
-
-    connect(m_socketIO.get(), &SocketIOClient::gameStarted,
-            this, &NetplayCoordinator::on_socketIO_gameStarted);
-    connect(m_socketIO.get(), &SocketIOClient::gameEnded,
-            this, &NetplayCoordinator::on_socketIO_gameEnded);
-        connect(m_socketIO.get(), &SocketIOClient::controllerInputReceived,
-            this, &NetplayCoordinator::on_socketIO_controllerInputReceived);
-    connect(m_socketIO.get(), &SocketIOClient::frameSyncReceived,
-            this, &NetplayCoordinator::on_peerFrameSyncReceived);
-
-    connect(m_socketIO.get(), &SocketIOClient::offerReceived,
-            this, &NetplayCoordinator::on_socketIO_offerReceived);
-    connect(m_socketIO.get(), &SocketIOClient::answerReceived,
-            this, &NetplayCoordinator::on_socketIO_answerReceived);
-    connect(m_socketIO.get(), &SocketIOClient::iceCandidateReceived,
-            this, &NetplayCoordinator::on_socketIO_iceCandidateReceived);
-
-    connect(m_socketIO.get(), &SocketIOClient::chatMessageReceived,
-            this, &NetplayCoordinator::chatMessageReceived);
-    connect(m_socketIO.get(), &SocketIOClient::cheatsUpdated,
-            this, &NetplayCoordinator::on_socketIO_cheatsUpdated);
-        connect(m_socketIO.get(), &SocketIOClient::saveSyncReceived,
-            this, &NetplayCoordinator::on_socketIO_saveSyncReceived);
-    connect(m_socketIO.get(), &SocketIOClient::coreSettingsSyncReceived,
-            this, &NetplayCoordinator::on_socketIO_coreSettingsSyncReceived);
-        connect(m_socketIO.get(), &SocketIOClient::emulationPauseReceived,
-            this, &NetplayCoordinator::on_socketIO_emulationPauseReceived);
-    connect(m_socketIO.get(), &SocketIOClient::emulationBeginReceived,
-            this, &NetplayCoordinator::on_socketIO_emulationBeginReceived);
-    connect(m_socketIO.get(), &SocketIOClient::pingUpdated,
-            this, [this](int pingMs) {
-        if (m_gameSession.localSlot >= 0) {
-            m_playerPingMs[m_gameSession.localSlot] = pingMs;
-        }
-        emit playerPingsUpdated();
-    });
-    connect(m_socketIO.get(), &SocketIOClient::playerPingsReceived,
-            this, [this](const QJsonArray& pings) {
-        applyPlayerPings(pings);
-    });
+    connectSocketIOClientSignals(m_socketIO.get());
     
     // Now connect to the server
     setState(Connecting);
@@ -771,6 +649,79 @@ bool NetplayCoordinator::isInGame() const
 // Private Slots - Socket.IO
 //
 
+void NetplayCoordinator::connectSocketIOClientSignals(SocketIOClient* client)
+{
+    if (!client) {
+        return;
+    }
+
+    connect(client, &SocketIOClient::connected,
+            this, &NetplayCoordinator::on_socketIO_connected);
+    connect(client, &SocketIOClient::disconnected,
+            this, &NetplayCoordinator::on_socketIO_disconnected);
+    connect(client, &SocketIOClient::reconnecting,
+            this, &NetplayCoordinator::on_socketIO_reconnecting);
+    connect(client, &SocketIOClient::reconnected,
+            this, &NetplayCoordinator::on_socketIO_reconnected);
+    connect(client, &SocketIOClient::connectionError,
+            this, &NetplayCoordinator::on_socketIO_connectionError);
+
+    connect(client, &SocketIOClient::roomCreated,
+            this, &NetplayCoordinator::on_socketIO_roomCreated);
+    connect(client, &SocketIOClient::roomJoined,
+            this, &NetplayCoordinator::on_socketIO_roomJoined);
+    connect(client, &SocketIOClient::roomLeft,
+            this, &NetplayCoordinator::on_socketIO_roomLeft);
+    connect(client, &SocketIOClient::roomClosed,
+            this, &NetplayCoordinator::on_socketIO_roomClosed);
+    connect(client, &SocketIOClient::playersUpdated,
+            this, &NetplayCoordinator::on_socketIO_playersUpdated);
+
+    connect(client, &SocketIOClient::gameStarted,
+            this, &NetplayCoordinator::on_socketIO_gameStarted);
+    connect(client, &SocketIOClient::gameEnded,
+            this, &NetplayCoordinator::on_socketIO_gameEnded);
+    connect(client, &SocketIOClient::controllerInputReceived,
+            this, &NetplayCoordinator::on_socketIO_controllerInputReceived);
+    connect(client, &SocketIOClient::frameSyncReceived,
+            this, &NetplayCoordinator::on_peerFrameSyncReceived);
+
+    connect(client, &SocketIOClient::offerReceived,
+            this, &NetplayCoordinator::on_socketIO_offerReceived);
+    connect(client, &SocketIOClient::answerReceived,
+            this, &NetplayCoordinator::on_socketIO_answerReceived);
+    connect(client, &SocketIOClient::iceCandidateReceived,
+            this, &NetplayCoordinator::on_socketIO_iceCandidateReceived);
+
+    connect(client, &SocketIOClient::chatMessageReceived,
+            this, &NetplayCoordinator::chatMessageReceived);
+    connect(client, &SocketIOClient::cheatsUpdated,
+            this, &NetplayCoordinator::on_socketIO_cheatsUpdated);
+    connect(client, &SocketIOClient::saveSyncReceived,
+            this, &NetplayCoordinator::on_socketIO_saveSyncReceived);
+    connect(client, &SocketIOClient::coreSettingsSyncReceived,
+            this, &NetplayCoordinator::on_socketIO_coreSettingsSyncReceived);
+    connect(client, &SocketIOClient::roomsListed,
+            this, &NetplayCoordinator::on_socketIO_roomsListed);
+    connect(client, &SocketIOClient::inputDelayReceived,
+            this, &NetplayCoordinator::on_socketIO_inputDelayReceived);
+    connect(client, &SocketIOClient::emulationPauseReceived,
+            this, &NetplayCoordinator::on_socketIO_emulationPauseReceived);
+    connect(client, &SocketIOClient::emulationBeginReceived,
+            this, &NetplayCoordinator::on_socketIO_emulationBeginReceived);
+    connect(client, &SocketIOClient::pingUpdated,
+            this, [this](int pingMs) {
+        if (m_gameSession.localSlot >= 0) {
+            m_playerPingMs[m_gameSession.localSlot] = pingMs;
+        }
+        emit playerPingsUpdated();
+    });
+    connect(client, &SocketIOClient::playerPingsReceived,
+            this, [this](const QJsonArray& pings) {
+        applyPlayerPings(pings);
+    });
+}
+
 void NetplayCoordinator::on_socketIO_connected()
 {
     qDebug() << "NetplayCoordinator: Socket.IO connected";
@@ -789,6 +740,17 @@ void NetplayCoordinator::on_socketIO_connected()
     }
 
     emit connected();
+}
+
+void NetplayCoordinator::on_socketIO_reconnecting()
+{
+    qWarning() << "NetplayCoordinator: Signaling connection lost, attempting reconnect";
+}
+
+void NetplayCoordinator::on_socketIO_reconnected()
+{
+    qInfo() << "NetplayCoordinator: Signaling connection restored";
+    attachExistingPeerDataChannels();
 }
 
 void NetplayCoordinator::on_socketIO_disconnected()
@@ -1170,28 +1132,22 @@ void NetplayCoordinator::on_webRTC_connectionEstablished(const QString& peerId)
 
 void NetplayCoordinator::on_webRTC_connectionFailed(const QString& peerId, const QString& reason)
 {
-    qWarning() << "NetplayCoordinator: WebRTC connection failed for peer" << peerId << ":" << reason;
+    qWarning() << "NetplayCoordinator: WebRTC connection degraded for peer" << peerId << ":" << reason;
 
-    int peerSlot = -1;
     for (int slot = 0; slot < 4; ++slot) {
-        if (m_peers.contains(slot)) {
-            auto peer = m_peers[slot];
-            if (peer && peer->getPeerId() == peerId) {
-                peerSlot = slot;
-                
-                // CRITICAL: Tell the engine this slot is DEAD
-                if (m_lockstepEngine) {
-                    m_lockstepEngine->setDataChannel(slot, nullptr);
-                }
-                
-                m_peers.remove(slot); 
-                break;
-            }
+        if (!m_peers.contains(slot)) {
+            continue;
         }
-    }
 
-    if (peerSlot >= 0) {
-        emit peerDisconnected(peerSlot);
+        auto peer = m_peers[slot];
+        if (!peer || peer->getPeerId() != peerId) {
+            continue;
+        }
+
+        if (m_lockstepEngine) {
+            m_lockstepEngine->setDataChannel(slot, nullptr);
+        }
+        return;
     }
 }
 

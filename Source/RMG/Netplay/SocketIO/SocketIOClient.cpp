@@ -28,6 +28,8 @@ namespace {
 constexpr int kCheatsChunkSize = 32;
 constexpr int kConnectTimeoutMs = 10000;
 constexpr int kServiceIntervalMs = 16;
+constexpr int kReconnectIntervalMs = 2000;
+constexpr int kMaxReconnectAttempts = 30;
 
 QJsonArray sliceJsonArray(const QJsonArray& source, int startIndex, int count)
 {
@@ -87,6 +89,10 @@ SocketIOClient::SocketIOClient(const QString& serverUrl, QObject* parent)
             sendConnectPunchBursts();
         }
     });
+
+    m_reconnectTimer = new QTimer(this);
+    m_reconnectTimer->setSingleShot(true);
+    connect(m_reconnectTimer, &QTimer::timeout, this, &SocketIOClient::on_reconnectTimer);
 }
 
 SocketIOClient::~SocketIOClient()
@@ -140,6 +146,9 @@ void SocketIOClient::destroyEnetClient()
     if (m_punchTimer) {
         m_punchTimer->stop();
     }
+    if (m_reconnectTimer) {
+        m_reconnectTimer->stop();
+    }
 
     if (m_enetHost) {
         if (m_serverPeer) {
@@ -183,7 +192,15 @@ void SocketIOClient::sendConnectPunchBursts()
 void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpPort, bool useTraversalPunch)
 {
     m_playerName = playerName;
-    m_useTraversalPunch = useTraversalPunch;
+    m_savedBindUdpPort = bindUdpPort;
+    m_savedUseTraversalPunch = useTraversalPunch;
+    m_intentionalDisconnect = false;
+    m_awaitingReconnectAck = false;
+    m_reconnectAttempts = 0;
+    if (m_reconnectTimer) {
+        m_reconnectTimer->stop();
+    }
+
     destroyEnetClient();
 
     if (!parseServerEndpoint(m_serverUrl, &m_serverAddress, &m_serverPort)) {
@@ -203,6 +220,19 @@ void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpP
     ensureEnetInitialized();
     m_connectionState = Connecting;
 
+    if (!startTransportConnect(bindUdpPort, useTraversalPunch)) {
+        return;
+    }
+
+    qInfo() << "Connecting to UDP signaling server" << m_serverHostname << m_serverPort
+            << "local UDP port" << (bindUdpPort > 0 ? bindUdpPort : m_enetHost->address.port)
+            << "traversal punch" << useTraversalPunch;
+}
+
+bool SocketIOClient::startTransportConnect(quint16 bindUdpPort, bool useTraversalPunch)
+{
+    m_useTraversalPunch = useTraversalPunch;
+
     if (bindUdpPort > 0) {
         ENetAddress bindAddress;
         bindAddress.host = ENET_HOST_ANY;
@@ -219,7 +249,7 @@ void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpP
             shutdownEnetIfIdle();
             emit connectionError(QStringLiteral(
                 "Failed to bind traversal UDP port %1 after NAT punch — retry join").arg(bindUdpPort));
-            return;
+            return false;
         }
     }
 
@@ -230,7 +260,7 @@ void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpP
         m_connectionState = Error;
         shutdownEnetIfIdle();
         emit connectionError(QStringLiteral("Failed to create UDP signaling client"));
-        return;
+        return false;
     }
 
     ENetAddress address;
@@ -239,7 +269,7 @@ void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpP
         m_connectionState = Error;
         emit connectionError(QStringLiteral("Failed to resolve signaling server address: %1")
                                  .arg(m_serverAddress.toString()));
-        return;
+        return false;
     }
 
     m_serverPeer = enet_host_connect(m_enetHost, &address, 1, 0);
@@ -247,7 +277,7 @@ void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpP
         destroyEnetClient();
         m_connectionState = Error;
         emit connectionError(QStringLiteral("Failed to initiate UDP signaling connection"));
-        return;
+        return false;
     }
 
     applySignalingPeerTimeout(m_serverPeer);
@@ -256,26 +286,105 @@ void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpP
         sendConnectPunchBursts();
     }
 
-    qInfo() << "Connecting to UDP signaling server" << m_serverHostname << m_serverPort
-            << "local UDP port" << (bindUdpPort > 0 ? bindUdpPort : m_enetHost->address.port)
-            << "traversal punch" << m_useTraversalPunch;
     m_serviceTimer->start();
     m_connectTimer->start(kConnectTimeoutMs);
     if (m_useTraversalPunch) {
         m_punchTimer->start();
     }
+
+    return true;
 }
 
 void SocketIOClient::disconnect()
 {
+    m_intentionalDisconnect = true;
+    if (m_reconnectTimer) {
+        m_reconnectTimer->stop();
+    }
     destroyEnetClient();
     if (m_connectionState != Disconnected) {
         m_connectionState = Disconnected;
         m_lastSentFrameSync = 0;
+        m_awaitingReconnectAck = false;
         emit disconnected();
     }
     m_roomId.clear();
     m_playerId.clear();
+    m_reconnectToken.clear();
+}
+
+void SocketIOClient::beginReconnect()
+{
+    m_serverPeer = nullptr;
+    if (m_pingTimer) {
+        m_pingTimer->stop();
+    }
+    if (m_connectTimer) {
+        m_connectTimer->stop();
+    }
+    if (m_punchTimer) {
+        m_punchTimer->stop();
+    }
+
+    m_connectionState = Reconnecting;
+    m_reconnectAttempts = 0;
+    m_awaitingReconnectAck = false;
+    qWarning() << "SocketIOClient: Signaling connection lost, attempting reconnect to room" << m_roomId;
+    emit reconnecting();
+    m_reconnectTimer->start(kReconnectIntervalMs);
+}
+
+void SocketIOClient::failReconnect()
+{
+    if (m_reconnectTimer) {
+        m_reconnectTimer->stop();
+    }
+    destroyEnetClient();
+    m_connectionState = Disconnected;
+    m_awaitingReconnectAck = false;
+    qWarning() << "SocketIOClient: Reconnect attempts exhausted";
+    emit disconnected();
+}
+
+void SocketIOClient::sendReconnectRoom()
+{
+    if (m_roomId.isEmpty() || m_reconnectToken.isEmpty()) {
+        failReconnect();
+        return;
+    }
+
+    m_awaitingReconnectAck = true;
+
+    QJsonObject extra;
+    extra["reconnectToken"] = m_reconnectToken;
+    extra["persistentId"] = m_persistentId;
+    extra["player_name"] = m_playerName;
+    extra["roomId"] = m_roomId;
+
+    QJsonObject payload;
+    payload["roomId"] = m_roomId;
+    payload["extra"] = extra;
+    emitEvent("reconnect-room", payload);
+}
+
+void SocketIOClient::on_reconnectTimer()
+{
+    if (m_connectionState != Reconnecting) {
+        return;
+    }
+
+    if (++m_reconnectAttempts > kMaxReconnectAttempts) {
+        failReconnect();
+        return;
+    }
+
+    destroyEnetClient();
+    ensureEnetInitialized();
+    m_connectionState = Reconnecting;
+
+    if (!startTransportConnect(m_savedBindUdpPort, m_savedUseTraversalPunch)) {
+        m_reconnectTimer->start(kReconnectIntervalMs);
+    }
 }
 
 SocketIOClient::ConnectionState SocketIOClient::getConnectionState() const
@@ -640,11 +749,18 @@ void SocketIOClient::on_serviceTimer()
             if (m_punchTimer) {
                 m_punchTimer->stop();
             }
-            m_connectionState = Connected;
-            qInfo() << "UDP signaling connected";
-            emit connected();
-            if (m_pingTimer) {
-                m_pingTimer->start();
+            {
+                const bool resumeSession = (m_connectionState == Reconnecting);
+                m_connectionState = Connected;
+                qInfo() << "UDP signaling connected";
+                if (m_pingTimer) {
+                    m_pingTimer->start();
+                }
+                if (resumeSession && !m_roomId.isEmpty() && !m_reconnectToken.isEmpty()) {
+                    sendReconnectRoom();
+                    break;
+                }
+                emit connected();
             }
             break;
 
@@ -662,12 +778,19 @@ void SocketIOClient::on_serviceTimer()
                 break;
             }
             if (m_connectionState == Connected) {
+                if (!m_intentionalDisconnect && !m_roomId.isEmpty() && !m_reconnectToken.isEmpty()) {
+                    beginReconnect();
+                    break;
+                }
                 m_connectionState = Disconnected;
                 m_lastSentFrameSync = 0;
                 if (m_pingTimer) {
                     m_pingTimer->stop();
                 }
                 emit disconnected();
+            } else if (m_connectionState == Reconnecting) {
+                m_serverPeer = nullptr;
+                m_reconnectTimer->start(kReconnectIntervalMs);
             }
             m_serverPeer = nullptr;
             break;
@@ -683,13 +806,17 @@ void SocketIOClient::on_serviceTimer()
 
 void SocketIOClient::on_connectTimeout()
 {
-    if (m_connectionState != Connecting) {
+    if (m_connectionState == Connecting) {
+        destroyEnetClient();
+        m_connectionState = Error;
+        emit connectionError(QStringLiteral("UDP signaling connection timed out"));
         return;
     }
 
-    destroyEnetClient();
-    m_connectionState = Error;
-    emit connectionError(QStringLiteral("UDP signaling connection timed out"));
+    if (m_connectionState == Reconnecting) {
+        m_serverPeer = nullptr;
+        m_reconnectTimer->start(kReconnectIntervalMs);
+    }
 }
 
 void SocketIOClient::handleSignalingPacket(const QByteArray& payload)
@@ -711,6 +838,10 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
         QString roomId = data["roomId"].toString();
         m_roomId = roomId;
         m_currentRoom.roomId = roomId;
+        const QString token = data["reconnectToken"].toString();
+        if (!token.isEmpty()) {
+            m_reconnectToken = token;
+        }
         qDebug() << "Room created:" << roomId;
         emit roomCreated(roomId);
 
@@ -725,7 +856,20 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
         }
         m_currentRoom.roomId = roomId;
         m_currentRoom.localSlot = slotIndex;
+        const QString token = data["reconnectToken"].toString();
+        if (!token.isEmpty()) {
+            m_reconnectToken = token;
+        }
         qDebug() << "Room joined:" << roomId << "slot:" << slotIndex;
+        if (m_awaitingReconnectAck) {
+            m_awaitingReconnectAck = false;
+            m_reconnectAttempts = 0;
+            if (m_reconnectTimer) {
+                m_reconnectTimer->stop();
+            }
+            qInfo() << "SocketIOClient: Session restored after reconnect";
+            emit reconnected();
+        }
         emit roomJoined(roomId, slotIndex);
 
     } else if (eventName == "users-updated" && args.size() > 0) {
@@ -816,8 +960,12 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
         emit uploadTokenReceived(token);
 
     } else if (eventName == "reconnect-token" && args.size() > 0) {
-        QString token = args[0].toObject()["token"].toString();
-        emit reconnectTokenReceived(token);
+        m_reconnectToken = args[0].toObject()["token"].toString();
+        emit reconnectTokenReceived(m_reconnectToken);
+
+    } else if (eventName == "reconnect-failed" && args.size() > 0) {
+        qWarning() << "SocketIOClient: Reconnect rejected:" << args[0].toObject()["error"].toString();
+        failReconnect();
 
     } else if (eventName == "chat-message" && args.size() > 0) {
         QJsonObject data = args[0].toObject();
@@ -932,7 +1080,7 @@ QJsonObject SocketIOClient::buildOpenRoomPayload(const QString& roomName, const 
     QJsonObject extra;
     extra["sessionid"] = m_sessionId;
     extra["persistentId"] = m_persistentId;
-    extra["reconnectToken"] = "";
+    extra["reconnectToken"] = m_reconnectToken;
     extra["player_name"] = m_playerName;
     extra["room_name"] = roomName;
     extra["game_id"] = gameId;
@@ -948,7 +1096,7 @@ QJsonObject SocketIOClient::buildJoinRoomPayload(const QString& roomId, bool spe
     QJsonObject extra;
     extra["sessionid"] = m_sessionId;
     extra["persistentId"] = m_persistentId;
-    extra["reconnectToken"] = "";
+    extra["reconnectToken"] = m_reconnectToken;
     extra["player_name"] = m_playerName;
     extra["spectate"] = spectate;
     extra["roomId"] = roomId;

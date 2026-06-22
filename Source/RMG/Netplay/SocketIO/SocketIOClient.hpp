@@ -44,6 +44,7 @@ public:
         Disconnected,
         Connecting,
         Connected,
+        Reconnecting,
         Error
     };
 
@@ -139,6 +140,8 @@ public:
 signals:
     void connected();
     void disconnected();
+    void reconnecting();
+    void reconnected();
     void connectionError(const QString& error);
 
     void roomCreated(const QString& roomId);
@@ -179,8 +182,13 @@ signals:
 private slots:
     void on_serviceTimer();
     void on_connectTimeout();
+    void on_reconnectTimer();
 
 private:
+    void beginReconnect();
+    void failReconnect();
+    void sendReconnectRoom();
+    bool startTransportConnect(quint16 bindUdpPort, bool useTraversalPunch);
     void handleSignalingPacket(const QByteArray& payload);
     void handleEvent(const QString& eventName, const QJsonArray& args);
 
@@ -206,6 +214,7 @@ private:
     QTimer* m_connectTimer = nullptr;
     QTimer* m_pingTimer = nullptr;
     QTimer* m_punchTimer = nullptr;
+    QTimer* m_reconnectTimer = nullptr;
 
     QString m_serverUrl;
     QString m_serverHostname;
@@ -223,6 +232,12 @@ private:
     QHash<QString, ChunkedCheatUpdate> m_pendingCheatUpdates;
     uint32_t m_lastSentFrameSync = 0;
     int m_lastPingMs = -1;
+    QString m_reconnectToken;
+    bool m_intentionalDisconnect = false;
+    bool m_awaitingReconnectAck = false;
+    int m_reconnectAttempts = 0;
+    quint16 m_savedBindUdpPort = 0;
+    bool m_savedUseTraversalPunch = false;
 };
 
 } // namespace UserInterface::Netplay

@@ -157,6 +157,8 @@
  private slots:
      void on_socketIO_connected();
      void on_socketIO_disconnected();
+     void on_socketIO_reconnecting();
+     void on_socketIO_reconnected();
      void on_socketIO_connectionError(const QString& error);
      void on_socketIO_roomCreated(const QString& roomId);
      void on_socketIO_roomJoined(const QString& roomId, int slotIndex);
@@ -201,6 +203,7 @@
      void broadcastFrameSyncIfNeeded(uint32_t frameNumber);
      void bindWebRTCPeerSignals(const std::shared_ptr<WebRTCPeer>& peer, const QString& peerId);
      void attachExistingPeerDataChannels();
+     void connectSocketIOClientSignals(SocketIOClient* client);
      void sendWebRTCOffer(const QString& targetPlayerId, const QString& sdpOffer);
      void sendWebRTCAnswer(const QString& targetPlayerId, const QString& sdpAnswer);
      void sendWebRTCIceCandidate(const QString& targetPlayerId, const QString& candidate, int mLineIndex);

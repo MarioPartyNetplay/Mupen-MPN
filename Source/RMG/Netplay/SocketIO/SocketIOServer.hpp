@@ -84,6 +84,9 @@ private:
         QString playerId;
         ENetPeer* peer = nullptr;
         int lastPingMs = -1;
+        QString reconnectToken;
+        QString persistentId;
+        qint64 disconnectedAtMs = 0;
     };
 
     struct SignalingRoom
@@ -117,6 +120,7 @@ private:
     int m_listenPort = 0;
     QMap<ENetPeer*, ClientConnection*> m_clients;
     QMap<QString, ClientConnection*> m_clientsById;
+    QHash<QString, ClientConnection*> m_disconnectedClientsByToken;
     QMap<QString, SignalingRoom> m_rooms;
     QHash<QString, ChunkedCheatUpdate> m_pendingCheatUpdates;
 
@@ -125,6 +129,7 @@ private:
 
     void handle_OpenRoom(ENetPeer* peer, const QJsonObject& msg);
     void handle_JoinRoom(ENetPeer* peer, const QJsonObject& msg);
+    void handle_ReconnectRoom(ENetPeer* peer, const QJsonObject& msg);
     void handle_LeaveRoom(ENetPeer* peer, const QJsonObject& msg);
     void handle_ClaimSlot(ENetPeer* peer, const QJsonObject& msg);
     void handle_SetName(ENetPeer* peer, const QJsonObject& msg);
@@ -143,6 +148,10 @@ private:
 
     void onClientDisconnected(ENetPeer* peer);
     void onClientConnected(ENetPeer* peer);
+    void purgeExpiredDisconnectedClients();
+    void sendReconnectToken(ClientConnection* client);
+    void sendRoomCatchUp(const QString& roomId, ClientConnection* client);
+    void removeClientFromRoom(ClientConnection* client);
 
     void broadcastRoomPlayerPings(const QString& roomId);
     void tryBroadcastEmulationBegin(SignalingRoom* room);

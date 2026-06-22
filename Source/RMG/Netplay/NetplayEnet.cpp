@@ -276,15 +276,25 @@ bool peerIsConnected(ENetPeer* peer)
     return peer != nullptr && peer->state == ENET_PEER_STATE_CONNECTED;
 }
 
+namespace {
+
+constexpr enet_uint32 kSignalingTimeoutMinimumMs = 15000;
+constexpr enet_uint32 kSignalingTimeoutMaximumMs = 120000;
+
+} // namespace
+
 void applySignalingPeerTimeout(ENetPeer* peer)
 {
     if (!peer) {
         return;
     }
 
-    // ENet defaults are 5s/30s. Use a higher ceiling so transient packet loss
-    // on high-ping links does not tear down an in-progress netplay session.
-    enet_peer_timeout(peer, ENET_PEER_TIMEOUT_LIMIT, ENET_PEER_TIMEOUT_MINIMUM, ENET_PEER_TIMEOUT_MAXIMUM);
+    // Allow brief outages on high-latency links before declaring the peer dead.
+    enet_peer_timeout(
+        peer,
+        ENET_PEER_TIMEOUT_LIMIT,
+        kSignalingTimeoutMinimumMs,
+        kSignalingTimeoutMaximumMs);
 }
 
 static bool sendSignalingPayload(ENetPeer* peer, const QJsonArray& message)
