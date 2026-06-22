@@ -182,6 +182,29 @@ endif(VRU)
 install(FILES ${SDL_GAMECONTROLLERDB} ${CMAKE_SOURCE_DIR}/Data/InputProfileDB.json
     DESTINATION ${DATA_INSTALL_PATH}
 )
+if (WIN32)
+    install(FILES ${CMAKE_SOURCE_DIR}/Data/pp64-cli/partyplanner64-cli-win.exe
+        DESTINATION ${DATA_INSTALL_PATH}/pp64-cli
+        PERMISSIONS ${LIB_PERMISSIONS}
+    )
+elseif(APPLE)
+    if (EXISTS "${CMAKE_SOURCE_DIR}/Data/pp64-cli/partyplanner64-cli-macos")
+        install(FILES ${CMAKE_SOURCE_DIR}/Data/pp64-cli/partyplanner64-cli-macos
+            DESTINATION ${DATA_INSTALL_PATH}/pp64-cli
+            PERMISSIONS ${LIB_PERMISSIONS}
+        )
+    else()
+        install(FILES ${CMAKE_SOURCE_DIR}/Data/pp64-cli/partyplanner64-cli-linux
+            DESTINATION ${DATA_INSTALL_PATH}/pp64-cli
+            PERMISSIONS ${LIB_PERMISSIONS}
+        )
+    endif()
+else()
+    install(FILES ${CMAKE_SOURCE_DIR}/Data/pp64-cli/partyplanner64-cli-linux
+        DESTINATION ${DATA_INSTALL_PATH}/pp64-cli
+        PERMISSIONS ${LIB_PERMISSIONS}
+    )
+endif()
 file(GLOB GENERATED_CHEAT_FILES ${CMAKE_SOURCE_DIR}/Data/Cheats/Generated/*.cht)
 file(GLOB CUSTOM_CHEAT_FILES ${CMAKE_SOURCE_DIR}/Data/Cheats/Custom/*.cht)
 install(FILES ${GENERATED_CHEAT_FILES} ${CUSTOM_CHEAT_FILES}

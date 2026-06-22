@@ -14,6 +14,7 @@
 #include <RMG-Core/Settings.hpp>
 
 #include <QDate>
+#include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
 
@@ -44,7 +45,8 @@ QString boardDownloaderApiBaseUrl(void)
 
 std::optional<PartyPlannerCliInfo> resolvePartyPlannerCli(void)
 {
-    const std::filesystem::path extrasDirectory = CoreGetSharedDataDirectory() / "pp64-cli";
+    const QDir extrasDirectory(
+        QDir(QString::fromStdString(CoreGetSharedDataDirectory().string())).filePath(QStringLiteral("pp64-cli")));
 
 #if defined(Q_OS_WIN)
     const QStringList candidates = {QStringLiteral("partyplanner64-cli-win.exe")};
@@ -59,16 +61,19 @@ std::optional<PartyPlannerCliInfo> resolvePartyPlannerCli(void)
 
     for (const QString& candidate : candidates)
     {
-        const std::filesystem::path cliPath = extrasDirectory / candidate.toStdString();
-        const QFileInfo cliInfo(QString::fromStdString(cliPath.string()));
+        const QFileInfo cliInfo(extrasDirectory.filePath(candidate));
         if (!cliInfo.exists() || !cliInfo.isFile())
         {
             continue;
         }
 
         PartyPlannerCliInfo info;
-        info.path = cliInfo.absoluteFilePath();
-        info.usesWine = candidate.endsWith(QStringLiteral(".exe"));
+        info.path = QDir::toNativeSeparators(cliInfo.absoluteFilePath());
+#if defined(Q_OS_WIN)
+        info.usesWine = false;
+#else
+        info.usesWine = candidate.endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive);
+#endif
         return info;
     }
 

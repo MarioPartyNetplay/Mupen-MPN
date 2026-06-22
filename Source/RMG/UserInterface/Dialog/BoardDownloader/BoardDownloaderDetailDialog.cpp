@@ -227,7 +227,7 @@ bool BoardDownloaderDetailDialog::patchRom(const QString& boardFilePath, const Q
     {
         QtMessageBox::Error(this,
                             QStringLiteral("PartyPlanner64 CLI not found"),
-                            QStringLiteral("Expected a bundled CLI in Data/Plugin/Extras."));
+                            QStringLiteral("Expected a bundled CLI in Data/pp64-cli."));
         return false;
     }
 
