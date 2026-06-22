@@ -24,7 +24,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
-#include <QTemporaryDir>
+#include <QRegularExpression>
 #include <QTemporaryFile>
 
 #include <algorithm>
@@ -34,12 +34,6 @@ using namespace Utilities;
 
 namespace
 {
-
-QString difficultyStars(int difficulty)
-{
-    const int clamped = std::clamp(difficulty, 1, 5);
-    return QString(QStringLiteral("★").repeated(clamped) + QStringLiteral("☆").repeated(5 - clamped));
-}
 
 QByteArray blockingNetworkGet(const QUrl& url, QString& error)
 {
@@ -62,6 +56,68 @@ QByteArray blockingNetworkGet(const QUrl& url, QString& error)
     const QByteArray data = reply->readAll();
     reply->deleteLater();
     return data;
+}
+
+QString difficultyStars(int difficulty)
+{
+    const int clamped = std::clamp(difficulty, 1, 5);
+    return QString(QStringLiteral("★").repeated(clamped) + QStringLiteral("☆").repeated(5 - clamped));
+}
+
+QString absoluteNativePath(const QString& path)
+{
+    return QDir::toNativeSeparators(QFileInfo(path).absoluteFilePath());
+}
+
+QString sanitizeFileName(const QString& fileName)
+{
+    QString sanitized = fileName;
+    sanitized.replace(QRegularExpression(QStringLiteral(R"([\\/:*?"<>|])")), QStringLiteral("_"));
+    return sanitized.trimmed();
+}
+
+bool ensureParentDirectoryExists(const QString& filePath, QString& error)
+{
+    const QFileInfo fileInfo(filePath);
+    const QString directoryPath = fileInfo.absolutePath();
+    if (directoryPath.isEmpty())
+    {
+        error = QStringLiteral("Invalid output path.");
+        return false;
+    }
+
+    QDir directory(directoryPath);
+    if (directory.exists())
+    {
+        return true;
+    }
+
+    if (!directory.mkpath(QStringLiteral(".")))
+    {
+        error = QStringLiteral("Could not create directory: %1").arg(directoryPath);
+        return false;
+    }
+
+    return true;
+}
+
+bool replaceExistingFile(const QString& filePath, QString& error)
+{
+    if (!QFile::exists(filePath))
+    {
+        return true;
+    }
+
+    QFile existingFile(filePath);
+    existingFile.setPermissions(existingFile.permissions() | QFile::WriteOwner | QFile::WriteUser | QFile::WriteGroup |
+                                QFile::WriteOther);
+    if (QFile::remove(filePath))
+    {
+        return true;
+    }
+
+    error = QStringLiteral("Could not overwrite existing file: %1").arg(filePath);
+    return false;
 }
 
 } // namespace
@@ -220,8 +276,15 @@ bool BoardDownloaderDetailDialog::downloadLatestBoardFile(QString& localPath, QS
     return true;
 }
 
-bool BoardDownloaderDetailDialog::patchRom(const QString& boardFilePath, const QString& romFilePath, const QString& outputFilePath)
+bool BoardDownloaderDetailDialog::patchRom(const QString& boardFilePath,
+                                           const QString& romFilePath,
+                                           const QString& outputFilePath,
+                                           bool* partialSuccess)
 {
+    if (partialSuccess != nullptr)
+    {
+        *partialSuccess = false;
+    }
     const std::optional<PartyPlannerCliInfo> cli = resolvePartyPlannerCli();
     if (!cli.has_value())
     {
@@ -231,13 +294,32 @@ bool BoardDownloaderDetailDialog::patchRom(const QString& boardFilePath, const Q
         return false;
     }
 
+    const QString nativeBoardPath = absoluteNativePath(boardFilePath);
+    const QString nativeRomPath = absoluteNativePath(romFilePath);
+    const QString nativeOutputPath = absoluteNativePath(outputFilePath);
+
+    QString directoryError;
+    if (!ensureParentDirectoryExists(nativeOutputPath, directoryError))
+    {
+        QtMessageBox::Error(this, QStringLiteral("Failed to save patched ROM"), directoryError);
+        return false;
+    }
+
+    QString replaceError;
+    if (!replaceExistingFile(nativeOutputPath, replaceError))
+    {
+        QtMessageBox::Error(this, QStringLiteral("Failed to save patched ROM"), replaceError);
+        return false;
+    }
+
     QProcess process;
     QStringList arguments;
     arguments << QStringLiteral("overwrite")
-              << QStringLiteral("--rom-file") << romFilePath
+              << QStringLiteral("--rom-file") << nativeRomPath
               << QStringLiteral("--target-board-index") << QStringLiteral("0")
-              << QStringLiteral("--board-file") << boardFilePath
-              << QStringLiteral("--output-file") << outputFilePath;
+              << QStringLiteral("--board-file") << nativeBoardPath
+              << QStringLiteral("--output-file") << nativeOutputPath
+              << QStringLiteral("--force");
 
     if (cli->usesWine)
     {
@@ -251,6 +333,7 @@ bool BoardDownloaderDetailDialog::patchRom(const QString& boardFilePath, const Q
     {
         process.setProgram(cli->path);
         process.setArguments(arguments);
+        process.setWorkingDirectory(QFileInfo(cli->path).absolutePath());
     }
 
     process.setProcessChannelMode(QProcess::MergedChannels);
@@ -268,11 +351,39 @@ bool BoardDownloaderDetailDialog::patchRom(const QString& boardFilePath, const Q
         return false;
     }
 
+    const QString cliOutput = QString::fromUtf8(process.readAll()).trimmed();
+    const QFileInfo outputInfo(nativeOutputPath);
     if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0)
     {
         QtMessageBox::Error(this, QStringLiteral("Failed to patch ROM"),
-                            QString::fromUtf8(process.readAll()));
+                            cliOutput.isEmpty() ? QStringLiteral("PartyPlanner64 CLI exited with code %1.")
+                                                                      .arg(process.exitCode())
+                                              : cliOutput);
         return false;
+    }
+
+    if (!outputInfo.exists() || !outputInfo.isFile() || outputInfo.size() <= 0)
+    {
+        QtMessageBox::Error(this,
+                            QStringLiteral("Failed to patch ROM"),
+                            cliOutput.isEmpty()
+                                ? QStringLiteral("PartyPlanner64 CLI finished without creating %1.").arg(nativeOutputPath)
+                                : cliOutput);
+        return false;
+    }
+
+    if (cliOutput.contains(QStringLiteral("did not fully complete"), Qt::CaseInsensitive))
+    {
+        if (partialSuccess != nullptr)
+        {
+            *partialSuccess = true;
+        }
+
+        QtMessageBox::Info(this,
+                           QStringLiteral("Patched ROM saved with warnings"),
+                           QStringLiteral("Board overwrite did not fully complete. The ROM was saved with "
+                                          "best-effort changes and may not work correctly.\n\n%1")
+                               .arg(cliOutput));
     }
 
     return true;
@@ -350,7 +461,7 @@ void BoardDownloaderDetailDialog::on_patchButton_clicked(void)
     }
 
     const QString romDirectory = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::RomBrowser_Directory));
-    const QString defaultOutputName = QFileInfo(this->details.value(QStringLiteral("name")).toString()).completeBaseName() +
+    const QString defaultOutputName = sanitizeFileName(this->details.value(QStringLiteral("name")).toString()) +
                                       QStringLiteral(" (patched).z64");
     const QString defaultOutputPath = QDir(romDirectory).filePath(defaultOutputName);
 
@@ -366,38 +477,26 @@ void BoardDownloaderDetailDialog::on_patchButton_clicked(void)
         return;
     }
 
-    QTemporaryDir temporaryDirectory;
-    if (!temporaryDirectory.isValid())
+    if (!outputFilePath.endsWith(QStringLiteral(".z64"), Qt::CaseInsensitive))
     {
-        QtMessageBox::Error(this, QStringLiteral("Failed to create temporary directory"), QString());
-        QFile::remove(boardFilePath);
-        return;
+        outputFilePath += QStringLiteral(".z64");
     }
 
-    const QString temporaryOutputPath = temporaryDirectory.filePath(QStringLiteral("patched.z64"));
-    if (!this->patchRom(boardFilePath, romFilePath, temporaryOutputPath))
+    bool partialSuccess = false;
+    if (!this->patchRom(boardFilePath, romFilePath, outputFilePath, &partialSuccess))
     {
-        QFile::remove(boardFilePath);
-        return;
-    }
-
-    if (QFile::exists(outputFilePath))
-    {
-        QFile::remove(outputFilePath);
-    }
-
-    if (!QFile::copy(temporaryOutputPath, outputFilePath))
-    {
-        QtMessageBox::Error(this, QStringLiteral("Failed to save patched ROM"), outputFilePath);
         QFile::remove(boardFilePath);
         return;
     }
 
     QFile::remove(boardFilePath);
-    QtMessageBox::Info(this,
-                       QStringLiteral("Patched ROM saved successfully"),
-                       romMatch.has_value()
-                           ? QStringLiteral("Used %1 from your ROM directory.").arg(romMatch->goodName)
-                           : QString());
+    if (!partialSuccess)
+    {
+        QtMessageBox::Info(this,
+                           QStringLiteral("Patched ROM saved successfully"),
+                           romMatch.has_value()
+                               ? QStringLiteral("Used %1 from your ROM directory.").arg(romMatch->goodName)
+                               : QString());
+    }
     emit romPatched();
 }
