@@ -76,25 +76,7 @@ BoardDownloaderDetailDialog::BoardDownloaderDetailDialog(QWidget* parent, int pr
 
 MarioPartyTarget BoardDownloaderDetailDialog::targetGame(void) const
 {
-    const MarioPartyTarget gameIdTarget = marioPartyTargetFromGameId(this->details.value(QStringLiteral("gameId")).toInt());
-    if (gameIdTarget != MarioPartyTarget::Unknown)
-    {
-        return gameIdTarget;
-    }
-
-    MarioPartyTarget target = detectMarioPartyTargetFromText(this->details.value(QStringLiteral("name")).toString());
-    if (target != MarioPartyTarget::Unknown)
-    {
-        return target;
-    }
-
-    target = detectMarioPartyTargetFromText(this->details.value(QStringLiteral("description")).toString());
-    if (target != MarioPartyTarget::Unknown)
-    {
-        return target;
-    }
-
-    return MarioPartyTarget::MarioParty1;
+    return marioPartyTargetFromGameId(gameIdFromJson(this->details));
 }
 
 void BoardDownloaderDetailDialog::populateDetails(void)
@@ -120,19 +102,29 @@ void BoardDownloaderDetailDialog::populateDetails(void)
     this->descriptionTextEdit->setPlainText(description);
 
     const MarioPartyTarget target = this->targetGame();
-    this->targetGameLabel->setText(QStringLiteral("Target Game: %1").arg(marioPartyTargetLabel(target)));
-
-    const std::optional<MarioPartyRomMatch> romMatch = findBestMarioPartyRom(target);
-    if (romMatch.has_value())
+    if (target == MarioPartyTarget::Unknown)
     {
-        this->baseRomLabel->setText(QStringLiteral("Base ROM: %1").arg(romMatch->goodName));
-        this->patchButton->setEnabled(true);
-        this->patchButton->setToolTip(romMatch->path);
+        this->targetGameLabel->setText(QStringLiteral("Target Game: Unknown"));
+        this->baseRomLabel->setText(QStringLiteral("Base ROM: game not specified by the API"));
+        this->patchButton->setEnabled(false);
     }
     else
     {
-        this->baseRomLabel->setText(QStringLiteral("Base ROM: not found in ROM directory for %1").arg(marioPartyTargetLabel(target)));
-        this->patchButton->setEnabled(false);
+        this->targetGameLabel->setText(QStringLiteral("Target Game: %1").arg(marioPartyTargetLabel(target)));
+
+        const std::optional<MarioPartyRomMatch> romMatch = findBestMarioPartyRom(target);
+        if (romMatch.has_value())
+        {
+            this->baseRomLabel->setText(QStringLiteral("Base ROM: %1").arg(romMatch->goodName));
+            this->patchButton->setEnabled(true);
+            this->patchButton->setToolTip(romMatch->path);
+        }
+        else
+        {
+            this->baseRomLabel->setText(QStringLiteral("Base ROM: not found in ROM directory for %1")
+                                            .arg(marioPartyTargetLabel(target)));
+            this->patchButton->setEnabled(false);
+        }
     }
 
     if (!this->iconPixmap.isNull())
@@ -228,49 +220,14 @@ bool BoardDownloaderDetailDialog::downloadLatestBoardFile(QString& localPath, QS
     return true;
 }
 
-bool BoardDownloaderDetailDialog::ensurePartyPlannerCli(QString& cliPath)
-{
-    const QString configDirectory = boardDownloaderConfigDirectory();
-    QDir().mkpath(configDirectory);
-
-#ifdef Q_OS_WIN
-    cliPath = configDirectory + QStringLiteral("/partyplanner-cli.exe");
-    const QUrl cliUrl(QStringLiteral("https://github.com/PartyPlanner64/PartyPlanner64/releases/download/v0.8.2/partyplanner64-cli-win.exe"));
-#else
-    cliPath = configDirectory + QStringLiteral("/partyplanner-cli.exe");
-    const QUrl cliUrl(QStringLiteral("https://github.com/PartyPlanner64/PartyPlanner64/releases/download/v0.8.2/partyplanner64-cli-win.exe"));
-#endif
-
-    if (QFile::exists(cliPath))
-    {
-        return true;
-    }
-
-    QString error;
-    const QByteArray cliData = blockingNetworkGet(cliUrl, error);
-    if (cliData.isEmpty())
-    {
-        QtMessageBox::Error(this, QStringLiteral("Failed to download PartyPlanner64 CLI"), error);
-        return false;
-    }
-
-    QFile cliFile(cliPath);
-    if (!cliFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
-    {
-        QtMessageBox::Error(this, QStringLiteral("Failed to write PartyPlanner64 CLI"), QString());
-        return false;
-    }
-
-    cliFile.write(cliData);
-    cliFile.close();
-    return true;
-}
-
 bool BoardDownloaderDetailDialog::patchRom(const QString& boardFilePath, const QString& romFilePath, const QString& outputFilePath)
 {
-    QString cliPath;
-    if (!this->ensurePartyPlannerCli(cliPath))
+    const std::optional<PartyPlannerCliInfo> cli = resolvePartyPlannerCli();
+    if (!cli.has_value())
     {
+        QtMessageBox::Error(this,
+                            QStringLiteral("PartyPlanner64 CLI not found"),
+                            QStringLiteral("Expected a bundled CLI in Data/Plugin/Extras."));
         return false;
     }
 
@@ -282,17 +239,21 @@ bool BoardDownloaderDetailDialog::patchRom(const QString& boardFilePath, const Q
               << QStringLiteral("--board-file") << boardFilePath
               << QStringLiteral("--output-file") << outputFilePath;
 
-#ifdef Q_OS_WIN
-    process.setProgram(cliPath);
-    process.setArguments(arguments);
-#else
-    process.setProgram(QStringLiteral("wine"));
-    QStringList wineArguments;
-    wineArguments << cliPath;
-    wineArguments.append(arguments);
-    process.setArguments(wineArguments);
-#endif
+    if (cli->usesWine)
+    {
+        process.setProgram(QStringLiteral("wine"));
+        QStringList wineArguments;
+        wineArguments << cli->path;
+        wineArguments.append(arguments);
+        process.setArguments(wineArguments);
+    }
+    else
+    {
+        process.setProgram(cli->path);
+        process.setArguments(arguments);
+    }
 
+    process.setProcessChannelMode(QProcess::MergedChannels);
     process.start();
     if (!process.waitForStarted())
     {
@@ -310,7 +271,7 @@ bool BoardDownloaderDetailDialog::patchRom(const QString& boardFilePath, const Q
     if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0)
     {
         QtMessageBox::Error(this, QStringLiteral("Failed to patch ROM"),
-                            QString::fromUtf8(process.readAllStandardError()));
+                            QString::fromUtf8(process.readAll()));
         return false;
     }
 
@@ -354,6 +315,12 @@ void BoardDownloaderDetailDialog::on_downloadButton_clicked(void)
 void BoardDownloaderDetailDialog::on_patchButton_clicked(void)
 {
     const MarioPartyTarget target = this->targetGame();
+    if (target == MarioPartyTarget::Unknown)
+    {
+        QtMessageBox::Error(this, QStringLiteral("Cannot patch ROM"), QStringLiteral("The API did not specify a target game for this board."));
+        return;
+    }
+
     const std::optional<MarioPartyRomMatch> romMatch = findBestMarioPartyRom(target);
     QString romFilePath;
 
@@ -432,4 +399,5 @@ void BoardDownloaderDetailDialog::on_patchButton_clicked(void)
                        romMatch.has_value()
                            ? QStringLiteral("Used %1 from your ROM directory.").arg(romMatch->goodName)
                            : QString());
+    emit romPatched();
 }

@@ -42,33 +42,74 @@
     </layout>
    </item>
    <item>
+    <layout class="QHBoxLayout" name="filterLayout">
+     <item>
+      <widget class="QLabel" name="gameFilterLabel">
+       <property name="text">
+        <string>Game:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="gameFilterComboBox">
+       <item>
+        <property name="text">
+         <string>All Games</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Mario Party</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Mario Party 2</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Mario Party 3</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item>
+      <spacer name="filterSpacer">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
     <widget class="QLabel" name="statusLabel">
      <property name="text">
-      <string>Search for custom Mario Party boards from PartyPlanner64.</string>
+      <string>Loading top boards...</string>
      </property>
     </widget>
    </item>
    <item>
-    <widget class="QScrollArea" name="resultsScrollArea">
-     <property name="widgetResizable">
+    <widget class="QListWidget" name="resultsListWidget">
+     <property name="alternatingRowColors">
       <bool>true</bool>
      </property>
-     <widget class="QWidget" name="resultsContainer">
-      <layout class="QGridLayout" name="resultsGridLayout">
-       <property name="leftMargin">
-        <number>0</number>
-       </property>
-       <property name="topMargin">
-        <number>0</number>
-       </property>
-       <property name="rightMargin">
-        <number>0</number>
-       </property>
-       <property name="bottomMargin">
-        <number>0</number>
-       </property>
-      </layout>
-     </widget>
+     <property name="selectionMode">
+      <enum>QAbstractItemView::SelectionMode::SingleSelection</enum>
+     </property>
+     <property name="iconSize">
+      <size>
+       <width>48</width>
+       <height>48</height>
+      </size>
+     </property>
     </widget>
    </item>
    <item>

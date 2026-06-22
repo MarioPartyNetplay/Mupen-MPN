@@ -15,6 +15,7 @@
 
 #include <QDate>
 #include <QDirIterator>
+#include <QFileInfo>
 
 namespace UserInterface
 {
@@ -41,11 +42,37 @@ QString boardDownloaderApiBaseUrl(void)
     return QStringLiteral("https://ppapi.tabs.gay");
 }
 
-QString boardDownloaderConfigDirectory(void)
+std::optional<PartyPlannerCliInfo> resolvePartyPlannerCli(void)
 {
-    std::filesystem::path directory = CoreGetUserConfigDirectory();
-    directory /= "BoardDownloaderMPN";
-    return QString::fromStdString(directory.string());
+    const std::filesystem::path extrasDirectory = CoreGetSharedDataDirectory() / "pp64-cli";
+
+#if defined(Q_OS_WIN)
+    const QStringList candidates = {QStringLiteral("partyplanner64-cli-win.exe")};
+#elif defined(Q_OS_MACOS)
+    const QStringList candidates = {
+        QStringLiteral("partyplanner64-cli-macos"),
+        QStringLiteral("partyplanner64-cli-linux"),
+    };
+#else
+    const QStringList candidates = {QStringLiteral("partyplanner64-cli-linux")};
+#endif
+
+    for (const QString& candidate : candidates)
+    {
+        const std::filesystem::path cliPath = extrasDirectory / candidate.toStdString();
+        const QFileInfo cliInfo(QString::fromStdString(cliPath.string()));
+        if (!cliInfo.exists() || !cliInfo.isFile())
+        {
+            continue;
+        }
+
+        PartyPlannerCliInfo info;
+        info.path = cliInfo.absoluteFilePath();
+        info.usesWine = candidate.endsWith(QStringLiteral(".exe"));
+        return info;
+    }
+
+    return std::nullopt;
 }
 
 bool isMarioParty3(const CoreRomHeader& header, const CoreRomSettings& settings)
@@ -112,24 +139,15 @@ MarioPartyTarget marioPartyTargetFromGameId(int gameId)
     }
 }
 
-MarioPartyTarget detectMarioPartyTargetFromText(const QString& text)
+int gameIdFromJson(const QJsonObject& object)
 {
-    if (containsTitle(text, "Mario Party 3") || containsTitle(text, "MarioParty3") || containsTitle(text, "MP3"))
+    const int gameId = object.value(QStringLiteral("gameId")).toInt();
+    if (gameId > 0)
     {
-        return MarioPartyTarget::MarioParty3;
+        return gameId;
     }
 
-    if (containsTitle(text, "Mario Party 2") || containsTitle(text, "MarioParty2") || containsTitle(text, "MP2"))
-    {
-        return MarioPartyTarget::MarioParty2;
-    }
-
-    if (containsTitle(text, "Mario Party") || containsTitle(text, "MarioParty") || containsTitle(text, "MP1"))
-    {
-        return MarioPartyTarget::MarioParty1;
-    }
-
-    return MarioPartyTarget::Unknown;
+    return object.value(QStringLiteral("game_id")).toInt();
 }
 
 int goodNameQualityScore(const QString& goodName)

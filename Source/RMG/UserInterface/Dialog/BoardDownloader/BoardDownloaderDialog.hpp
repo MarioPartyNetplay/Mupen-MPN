@@ -13,6 +13,7 @@
 #include <QDialog>
 #include <QJsonObject>
 #include <QNetworkReply>
+#include <QPixmap>
 
 #include "ui_BoardDownloaderDialog.h"
 
@@ -29,21 +30,76 @@ class BoardDownloaderDialog : public QDialog, private Ui::BoardDownloaderDialog
     explicit BoardDownloaderDialog(QWidget* parent = nullptr);
     ~BoardDownloaderDialog(void) override;
 
-  private:
-    QNetworkAccessManager* networkManager = nullptr;
-    QNetworkReply* searchReply = nullptr;
+  signals:
+    void romListRefreshRequested(void);
 
-    void clearResults(void);
-    void setSearching(bool searching);
-    void fetchProjectDetails(int projectId, const QString& projectName, int gameId);
-    void addProjectCard(int projectId, const QString& projectName, const QJsonObject& details, const QPixmap& icon);
-    void handleProjectDetailsReply(QNetworkReply* reply, int projectId, const QString& projectName, int gameId);
-    void fetchProjectIcon(int projectId, const QJsonObject& details);
+  private:
+    struct ProjectEntry
+    {
+        int projectId = 0;
+        int gameId = 0;
+        QString name;
+        QString author;
+        QJsonObject details;
+        QPixmap icon;
+        bool hasDetails = false;
+        bool iconLoaded = false;
+        bool revealed = false;
+    };
+
+    QNetworkAccessManager* networkManager = nullptr;
+    QNetworkReply* projectListReply = nullptr;
+    QNetworkReply* activeProjectReply = nullptr;
+    QNetworkReply* activeGameIdReply = nullptr;
+    QNetworkReply* activeIconReply = nullptr;
+    QList<ProjectEntry> projects;
+    QList<int> loadQueue;
+    int loadQueueIndex = 0;
+    bool isLoadingProject = false;
+    quint64 loadSessionId = 0;
+    quint64 activeSessionId = 0;
+
+    bool isStaleSession(quint64 sessionId) const;
+    bool isCanceledReply(QNetworkReply* reply) const;
+    void abortReply(QNetworkReply*& reply);
+    void releaseReply(QNetworkReply*& member, QNetworkReply* reply);
+    void setLoading(bool loading);
+    void abortActiveRequests(void);
+    void loadTopProjects(void);
+    void loadSearchProjects(const QString& searchTerm);
+    void beginProjectListRequest(const QUrl& url, const QString& loadingText);
+    void handleProjectListReply(QNetworkReply* reply, quint64 sessionId);
+    void queueProjectDetails(const QJsonArray& results, quint64 sessionId);
+    void processLoadQueue(void);
+    ProjectEntry* findProjectEntry(int projectId);
+    const ProjectEntry* findProjectEntry(int projectId) const;
+    QListWidgetItem* findListItem(int projectId) const;
+    void fetchProjectDetails(int projectId, const QString& projectName, int gameId, const QString& author, quint64 sessionId);
+    void handleProjectDetailsReply(QNetworkReply* reply,
+                                   int projectId,
+                                   const QString& projectName,
+                                   int gameId,
+                                   const QString& author,
+                                   quint64 sessionId);
+    void fetchProjectGameId(int projectId, const QString& projectName, const QJsonObject& details, quint64 sessionId);
+    void fetchProjectIcon(int projectId, const QJsonObject& details, quint64 sessionId);
+    void handleProjectIconReply(QNetworkReply* reply, int projectId, const QJsonObject& details, quint64 sessionId);
+    void finishCurrentProjectLoad(void);
+    void updateListItem(const ProjectEntry& entry);
+    int resolvedGameId(const ProjectEntry& entry) const;
+    bool passesGameFilter(const ProjectEntry& entry) const;
+    void refreshResultsList(void);
+    void updateStatusLabel(void);
+    void openProjectDetails(int projectId);
+    QString projectListText(const ProjectEntry& entry) const;
+    QIcon projectListIcon(const ProjectEntry& entry) const;
 
   private slots:
     void on_searchButton_clicked(void);
     void on_searchLineEdit_returnPressed(void);
-    void on_searchReply_finished(void);
+    void on_gameFilterComboBox_currentIndexChanged(int index);
+    void on_resultsListWidget_itemDoubleClicked(void);
+    void on_romPatched(void);
 };
 
 } // namespace Dialog

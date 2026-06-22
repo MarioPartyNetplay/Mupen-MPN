@@ -9,24 +9,17 @@
  */
 #include "BoardDownloaderDialog.hpp"
 #include "BoardDownloaderDetailDialog.hpp"
+#include "BoardDownloaderCommon.hpp"
 #include "Utilities/QtMessageBox.hpp"
 
-#include "BoardDownloaderCommon.hpp"
-
-#include <QFrame>
-#include <QGridLayout>
-#include <QLabel>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QJsonObject>
+#include <QListWidgetItem>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QPushButton>
-#include <QRegularExpression>
+#include <QSignalBlocker>
 #include <QUrlQuery>
-
-#include <functional>
 
 using namespace UserInterface::Dialog;
 using namespace Utilities;
@@ -34,60 +27,56 @@ using namespace Utilities;
 namespace
 {
 
-QString truncateDescription(const QString& text, int wordLimit = 12)
+constexpr int kProjectIdRole = Qt::UserRole;
+
+QJsonObject normalizeProjectDetails(const QJsonObject& details,
+                                    const QString& projectName,
+                                    int gameId,
+                                    const QString& author)
 {
-    const QStringList words = text.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
-    if (words.size() <= wordLimit)
+    QJsonObject normalized = details;
+    normalized.insert(QStringLiteral("name"), normalized.value(QStringLiteral("name")).toString(projectName));
+    normalized.insert(QStringLiteral("author"), normalized.value(QStringLiteral("author")).toString(author));
+    normalized.insert(QStringLiteral("creation_date"), normalized.value(QStringLiteral("creation_date")).toString());
+
+    const int resolvedGameId = gameId > 0 ? gameId : gameIdFromJson(normalized);
+    if (resolvedGameId > 0)
     {
-        return text;
+        normalized.insert(QStringLiteral("gameId"), resolvedGameId);
     }
 
-    return words.mid(0, wordLimit).join(QStringLiteral(" ")) + QStringLiteral("...");
+    normalized.insert(QStringLiteral("custom_events"),
+                      normalized.contains(QStringLiteral("customEvents"))
+                          ? normalized.value(QStringLiteral("customEvents")).toBool()
+                          : normalized.value(QStringLiteral("custom_events")).toInt() != 0);
+    normalized.insert(QStringLiteral("custom_music"),
+                      normalized.contains(QStringLiteral("customMusic"))
+                          ? normalized.value(QStringLiteral("customMusic")).toBool()
+                          : normalized.value(QStringLiteral("custom_music")).toInt() != 0);
+    return normalized;
 }
 
-QFrame* createProjectCard(QWidget* parent,
-                          const QString& title,
-                          const QString& description,
-                          const QPixmap& icon,
-                          const std::function<void()>& onMoreInfo)
+QJsonArray projectListResultsFromDocument(const QJsonDocument& document, QString& errorMessage)
 {
-    auto* card = new QFrame(parent);
-    card->setFrameShape(QFrame::StyledPanel);
-    card->setMinimumSize(300, 220);
-    card->setMaximumWidth(360);
+    errorMessage.clear();
 
-    auto* layout = new QVBoxLayout(card);
-
-    auto* iconLabel = new QLabel(card);
-    iconLabel->setAlignment(Qt::AlignCenter);
-    iconLabel->setMinimumHeight(96);
-    if (!icon.isNull())
+    if (document.isArray())
     {
-        iconLabel->setPixmap(icon.scaled(96, 96, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        return document.array();
     }
-    else
+
+    if (document.isObject())
     {
-        iconLabel->setPixmap(QIcon::fromTheme("image-line").pixmap(64, 64));
+        const QJsonObject object = document.object();
+        if (object.contains(QStringLiteral("error")))
+        {
+            errorMessage = object.value(QStringLiteral("error")).toString();
+            return {};
+        }
     }
-    layout->addWidget(iconLabel);
 
-    auto* titleLabel = new QLabel(title, card);
-    titleLabel->setWordWrap(true);
-    QFont titleFont = titleLabel->font();
-    titleFont.setBold(true);
-    titleLabel->setFont(titleFont);
-    layout->addWidget(titleLabel);
-
-    auto* descriptionLabel = new QLabel(description, card);
-    descriptionLabel->setWordWrap(true);
-    descriptionLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-    layout->addWidget(descriptionLabel);
-
-    auto* button = new QPushButton(QStringLiteral("More Info"), card);
-    QObject::connect(button, &QPushButton::clicked, card, onMoreInfo);
-    layout->addWidget(button);
-
-    return card;
+    errorMessage = QStringLiteral("Unexpected response from board API.");
+    return {};
 }
 
 } // namespace
@@ -97,165 +86,433 @@ BoardDownloaderDialog::BoardDownloaderDialog(QWidget* parent) : QDialog(parent)
     this->setupUi(this);
     this->setWindowIcon(QIcon::fromTheme("download-cloud-line", QIcon(":Resource/RMG.png")));
     this->networkManager = new QNetworkAccessManager(this);
+
+    connect(this->resultsListWidget, &QListWidget::itemDoubleClicked,
+            this, &BoardDownloaderDialog::on_resultsListWidget_itemDoubleClicked);
+
+    this->loadTopProjects();
 }
 
-BoardDownloaderDialog::~BoardDownloaderDialog(void) = default;
-
-void BoardDownloaderDialog::clearResults(void)
+BoardDownloaderDialog::~BoardDownloaderDialog(void)
 {
-    QLayoutItem* item = nullptr;
-    while ((item = this->resultsGridLayout->takeAt(0)) != nullptr)
-    {
-        if (item->widget() != nullptr)
-        {
-            item->widget()->deleteLater();
-        }
-        delete item;
-    }
+    this->abortActiveRequests();
 }
 
-void BoardDownloaderDialog::setSearching(bool searching)
+bool BoardDownloaderDialog::isStaleSession(quint64 sessionId) const
 {
-    this->searchButton->setEnabled(!searching);
-    this->searchLineEdit->setEnabled(!searching);
+    return sessionId != this->loadSessionId;
 }
 
-void BoardDownloaderDialog::on_searchButton_clicked(void)
+bool BoardDownloaderDialog::isCanceledReply(QNetworkReply* reply) const
 {
-    const QString searchTerm = this->searchLineEdit->text().trimmed();
-    if (searchTerm.isEmpty())
+    return reply != nullptr && reply->error() == QNetworkReply::OperationCanceledError;
+}
+
+void BoardDownloaderDialog::releaseReply(QNetworkReply*& member, QNetworkReply* reply)
+{
+    if (reply == nullptr)
     {
         return;
     }
 
-    if (this->searchReply != nullptr)
+    QObject::disconnect(reply, nullptr, this, nullptr);
+    reply->deleteLater();
+    if (member == reply)
     {
-        this->searchReply->abort();
-        this->searchReply->deleteLater();
-        this->searchReply = nullptr;
+        member = nullptr;
+    }
+}
+
+void BoardDownloaderDialog::abortReply(QNetworkReply*& reply)
+{
+    if (reply == nullptr)
+    {
+        return;
     }
 
-    this->clearResults();
-    this->setSearching(true);
-    this->statusLabel->setText(QStringLiteral("Searching for \"%1\"...").arg(searchTerm));
+    QObject::disconnect(reply, nullptr, this, nullptr);
+    reply->abort();
+    reply->deleteLater();
+    reply = nullptr;
+}
 
+void BoardDownloaderDialog::abortActiveRequests(void)
+{
+    this->abortReply(this->projectListReply);
+    this->abortReply(this->activeProjectReply);
+    this->abortReply(this->activeGameIdReply);
+    this->abortReply(this->activeIconReply);
+    this->isLoadingProject = false;
+}
+
+void BoardDownloaderDialog::setLoading(bool loading)
+{
+    this->searchButton->setEnabled(!loading);
+    this->searchLineEdit->setEnabled(!loading);
+}
+
+void BoardDownloaderDialog::loadTopProjects(void)
+{
+    this->beginProjectListRequest(QUrl(boardDownloaderApiBaseUrl() + QStringLiteral("/project/top")),
+                                  QStringLiteral("Loading top boards..."));
+}
+
+void BoardDownloaderDialog::loadSearchProjects(const QString& searchTerm)
+{
     QUrl url(boardDownloaderApiBaseUrl() + QStringLiteral("/project/search"));
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("searchTerm"), searchTerm);
     url.setQuery(query);
 
+    this->beginProjectListRequest(url, QStringLiteral("Searching for \"%1\"...").arg(searchTerm));
+}
+
+void BoardDownloaderDialog::beginProjectListRequest(const QUrl& url, const QString& loadingText)
+{
+    this->loadSessionId++;
+    this->abortActiveRequests();
+
+    this->projects.clear();
+    this->loadQueue.clear();
+    this->loadQueueIndex = 0;
+    this->activeSessionId = 0;
+    this->resultsListWidget->clear();
+    this->setLoading(true);
+    this->statusLabel->setText(loadingText);
+
+    const quint64 sessionId = this->loadSessionId;
+
     QNetworkRequest request(url);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-    this->searchReply = this->networkManager->get(request);
-    connect(this->searchReply, &QNetworkReply::finished, this, &BoardDownloaderDialog::on_searchReply_finished);
+    QNetworkReply* reply = this->networkManager->get(request);
+    this->projectListReply = reply;
+    connect(reply, &QNetworkReply::finished, this, [this, sessionId, reply]() {
+        this->handleProjectListReply(reply, sessionId);
+    });
 }
 
-void BoardDownloaderDialog::on_searchLineEdit_returnPressed(void)
+void BoardDownloaderDialog::handleProjectListReply(QNetworkReply* reply, quint64 sessionId)
 {
-    this->on_searchButton_clicked();
-}
+    this->setLoading(false);
 
-void BoardDownloaderDialog::on_searchReply_finished(void)
-{
-    this->setSearching(false);
-
-    if (this->searchReply == nullptr)
+    if (reply == nullptr || this->isStaleSession(sessionId))
     {
+        this->releaseReply(this->projectListReply, reply);
         return;
     }
 
-    if (this->searchReply->error() != QNetworkReply::NoError)
+    if (reply->error() != QNetworkReply::NoError)
     {
-        QtMessageBox::Error(this, QStringLiteral("Search failed"), this->searchReply->errorString());
-        this->statusLabel->setText(QStringLiteral("Search failed."));
-        this->searchReply->deleteLater();
-        this->searchReply = nullptr;
+        if (!this->isCanceledReply(reply))
+        {
+            QtMessageBox::Error(this, QStringLiteral("Failed to load boards"), reply->errorString());
+            this->statusLabel->setText(QStringLiteral("Failed to load boards."));
+        }
+
+        this->releaseReply(this->projectListReply, reply);
         return;
     }
 
-    const QJsonDocument document = QJsonDocument::fromJson(this->searchReply->readAll());
-    this->searchReply->deleteLater();
-    this->searchReply = nullptr;
+    QString apiError;
+    const QJsonDocument document = QJsonDocument::fromJson(reply->readAll());
+    const QJsonArray results = projectListResultsFromDocument(document, apiError);
+    this->releaseReply(this->projectListReply, reply);
 
-    const QJsonArray results = document.array();
+    if (!apiError.isEmpty())
+    {
+        this->statusLabel->setText(apiError);
+        return;
+    }
+
     if (results.isEmpty())
     {
         this->statusLabel->setText(QStringLiteral("No projects found."));
         return;
     }
 
-    this->statusLabel->setText(QStringLiteral("Found %1 project(s). Loading details...").arg(results.size()));
+    this->queueProjectDetails(results, sessionId);
+}
+
+void BoardDownloaderDialog::queueProjectDetails(const QJsonArray& results, quint64 sessionId)
+{
+    if (this->isStaleSession(sessionId))
+    {
+        return;
+    }
+
+    this->activeSessionId = sessionId;
+    this->statusLabel->setText(QStringLiteral("Found %1 project(s). Loading boards...").arg(results.size()));
 
     for (const QJsonValue& value : results)
     {
         const QJsonObject project = value.toObject();
-        const int projectId = project.value(QStringLiteral("projectId")).toInt();
+        const int projectId = project.contains(QStringLiteral("projectId"))
+                                  ? project.value(QStringLiteral("projectId")).toInt()
+                                  : project.value(QStringLiteral("id")).toInt();
         const QString projectName = project.value(QStringLiteral("name")).toString();
         const int gameId = project.value(QStringLiteral("gameId")).toInt();
+        const QString author = project.contains(QStringLiteral("author"))
+                                   ? project.value(QStringLiteral("author")).toString()
+                                   : project.value(QStringLiteral("creator")).toString();
+
         if (projectId <= 0)
         {
             continue;
         }
 
-        this->fetchProjectDetails(projectId, projectName, gameId);
+        ProjectEntry entry;
+        entry.projectId = projectId;
+        entry.gameId = gameId;
+        entry.name = projectName;
+        entry.author = author;
+        this->projects.push_back(entry);
+        this->loadQueue.push_back(projectId);
     }
+
+    this->processLoadQueue();
 }
 
-void BoardDownloaderDialog::fetchProjectDetails(int projectId, const QString& projectName, int gameId)
+void BoardDownloaderDialog::processLoadQueue(void)
 {
+    if (this->isStaleSession(this->activeSessionId))
+    {
+        return;
+    }
+
+    if (this->isLoadingProject || this->loadQueueIndex >= this->loadQueue.size())
+    {
+        if (!this->isLoadingProject && this->loadQueueIndex >= this->loadQueue.size() && !this->loadQueue.isEmpty())
+        {
+            this->updateStatusLabel();
+        }
+        return;
+    }
+
+    const int projectId = this->loadQueue.at(this->loadQueueIndex);
+    ProjectEntry* entry = this->findProjectEntry(projectId);
+    if (entry == nullptr)
+    {
+        this->loadQueueIndex++;
+        this->processLoadQueue();
+        return;
+    }
+
+    this->isLoadingProject = true;
+    this->updateStatusLabel();
+
+    if (this->passesGameFilter(*entry))
+    {
+        entry->revealed = true;
+        this->updateListItem(*entry);
+    }
+
+    this->fetchProjectDetails(projectId, entry->name, entry->gameId, entry->author, this->activeSessionId);
+}
+
+BoardDownloaderDialog::ProjectEntry* BoardDownloaderDialog::findProjectEntry(int projectId)
+{
+    for (ProjectEntry& entry : this->projects)
+    {
+        if (entry.projectId == projectId)
+        {
+            return &entry;
+        }
+    }
+
+    return nullptr;
+}
+
+const BoardDownloaderDialog::ProjectEntry* BoardDownloaderDialog::findProjectEntry(int projectId) const
+{
+    for (const ProjectEntry& entry : this->projects)
+    {
+        if (entry.projectId == projectId)
+        {
+            return &entry;
+        }
+    }
+
+    return nullptr;
+}
+
+QListWidgetItem* BoardDownloaderDialog::findListItem(int projectId) const
+{
+    for (int row = 0; row < this->resultsListWidget->count(); row++)
+    {
+        QListWidgetItem* item = this->resultsListWidget->item(row);
+        if (item != nullptr && item->data(kProjectIdRole).toInt() == projectId)
+        {
+            return item;
+        }
+    }
+
+    return nullptr;
+}
+
+void BoardDownloaderDialog::fetchProjectDetails(int projectId,
+                                                const QString& projectName,
+                                                int gameId,
+                                                const QString& author,
+                                                quint64 sessionId)
+{
+    if (this->isStaleSession(sessionId))
+    {
+        return;
+    }
+
     const QUrl url(boardDownloaderApiBaseUrl() + QStringLiteral("/project/%1").arg(projectId));
     QNetworkRequest request(url);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
 
     QNetworkReply* reply = this->networkManager->get(request);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, projectId, projectName, gameId]() {
-        this->handleProjectDetailsReply(reply, projectId, projectName, gameId);
+    this->activeProjectReply = reply;
+    connect(reply, &QNetworkReply::finished, this, [this, sessionId, projectId, projectName, gameId, author, reply]() {
+        this->handleProjectDetailsReply(reply, projectId, projectName, gameId, author, sessionId);
     });
 }
 
-void BoardDownloaderDialog::handleProjectDetailsReply(QNetworkReply* reply, int projectId, const QString& projectName, int gameId)
+void BoardDownloaderDialog::handleProjectDetailsReply(QNetworkReply* reply,
+                                                      int projectId,
+                                                      const QString& projectName,
+                                                      int gameId,
+                                                      const QString& author,
+                                                      quint64 sessionId)
 {
-    if (reply->error() != QNetworkReply::NoError)
+    if (this->isStaleSession(sessionId))
     {
-        this->addProjectCard(projectId,
-                             projectName,
-                             QJsonObject{
-                                 {QStringLiteral("name"), projectName},
-                                 {QStringLiteral("gameId"), gameId},
-                                 {QStringLiteral("description"), QStringLiteral("Failed to load project details.")},
-                             },
-                             QPixmap());
-        reply->deleteLater();
+        this->releaseReply(this->activeProjectReply, reply);
         return;
     }
 
-    QJsonObject details = QJsonDocument::fromJson(reply->readAll()).object();
-    reply->deleteLater();
-
-    details.insert(QStringLiteral("name"), details.value(QStringLiteral("name")).toString(projectName));
-    details.insert(QStringLiteral("creation_date"), details.value(QStringLiteral("creation_date")).toString());
-    if (gameId > 0)
+    QJsonObject details;
+    if (reply != nullptr && reply->error() == QNetworkReply::NoError)
     {
-        details.insert(QStringLiteral("gameId"), gameId);
+        details = QJsonDocument::fromJson(reply->readAll()).object();
     }
-    details.insert(QStringLiteral("custom_events"),
-                   details.contains(QStringLiteral("customEvents"))
-                       ? details.value(QStringLiteral("customEvents")).toBool()
-                       : details.value(QStringLiteral("custom_events")).toInt() != 0);
-    details.insert(QStringLiteral("custom_music"),
-                   details.contains(QStringLiteral("customMusic"))
-                       ? details.value(QStringLiteral("customMusic")).toBool()
-                       : details.value(QStringLiteral("custom_music")).toInt() != 0);
 
-    this->fetchProjectIcon(projectId, details);
+    this->releaseReply(this->activeProjectReply, reply);
+
+    if (this->isStaleSession(sessionId))
+    {
+        return;
+    }
+
+    details = normalizeProjectDetails(details, projectName, gameId, author);
+
+    ProjectEntry* entry = this->findProjectEntry(projectId);
+    if (entry != nullptr)
+    {
+        entry->details = details;
+        entry->hasDetails = true;
+        entry->gameId = gameIdFromJson(details);
+        if (entry->gameId <= 0)
+        {
+            entry->gameId = gameId;
+        }
+
+        if (this->passesGameFilter(*entry))
+        {
+            entry->revealed = true;
+            this->updateListItem(*entry);
+        }
+    }
+
+    if (entry != nullptr && entry->gameId <= 0)
+    {
+        this->fetchProjectGameId(projectId, projectName, details, sessionId);
+        return;
+    }
+
+    this->fetchProjectIcon(projectId, details, sessionId);
 }
 
-void BoardDownloaderDialog::fetchProjectIcon(int projectId, const QJsonObject& details)
+void BoardDownloaderDialog::fetchProjectGameId(int projectId, const QString& projectName, const QJsonObject& details, quint64 sessionId)
 {
+    if (this->isStaleSession(sessionId))
+    {
+        return;
+    }
+
+    QUrl url(boardDownloaderApiBaseUrl() + QStringLiteral("/project/search"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("searchTerm"), projectName);
+    url.setQuery(query);
+
+    QNetworkRequest request(url);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+
+    QNetworkReply* reply = this->networkManager->get(request);
+    this->activeGameIdReply = reply;
+    connect(reply, &QNetworkReply::finished, this, [this, sessionId, projectId, details, reply]() {
+        if (this->isStaleSession(sessionId))
+        {
+            this->releaseReply(this->activeGameIdReply, reply);
+            return;
+        }
+
+        QJsonObject updatedDetails = details;
+        int resolvedGameId = 0;
+
+        if (reply != nullptr && reply->error() == QNetworkReply::NoError)
+        {
+            QString apiError;
+            const QJsonArray results = projectListResultsFromDocument(QJsonDocument::fromJson(reply->readAll()), apiError);
+            Q_UNUSED(apiError);
+
+            for (const QJsonValue& value : results)
+            {
+                const QJsonObject project = value.toObject();
+                const int resultProjectId = project.value(QStringLiteral("projectId")).toInt();
+                if (resultProjectId != projectId)
+                {
+                    continue;
+                }
+
+                resolvedGameId = gameIdFromJson(project);
+                break;
+            }
+        }
+
+        this->releaseReply(this->activeGameIdReply, reply);
+
+        if (this->isStaleSession(sessionId))
+        {
+            return;
+        }
+
+        if (resolvedGameId > 0)
+        {
+            updatedDetails.insert(QStringLiteral("gameId"), resolvedGameId);
+        }
+
+        ProjectEntry* entry = this->findProjectEntry(projectId);
+        if (entry != nullptr)
+        {
+            entry->details = updatedDetails;
+            entry->gameId = resolvedGameId;
+
+            if (this->passesGameFilter(*entry))
+            {
+                entry->revealed = true;
+                this->updateListItem(*entry);
+            }
+        }
+
+        this->fetchProjectIcon(projectId, updatedDetails, sessionId);
+    });
+}
+
+void BoardDownloaderDialog::fetchProjectIcon(int projectId, const QJsonObject& details, quint64 sessionId)
+{
+    if (this->isStaleSession(sessionId))
+    {
+        return;
+    }
+
     const QString iconUrl = details.value(QStringLiteral("icon")).toString();
     if (iconUrl.isEmpty())
     {
-        this->addProjectCard(projectId, details.value(QStringLiteral("name")).toString(), details, QPixmap());
+        this->handleProjectIconReply(nullptr, projectId, details, sessionId);
         return;
     }
 
@@ -264,43 +521,262 @@ void BoardDownloaderDialog::fetchProjectIcon(int projectId, const QJsonObject& d
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
 
     QNetworkReply* reply = this->networkManager->get(request);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, projectId, details]() {
-        QPixmap icon;
-        if (reply->error() == QNetworkReply::NoError)
-        {
-            icon.loadFromData(reply->readAll());
-        }
-
-        reply->deleteLater();
-        this->addProjectCard(projectId, details.value(QStringLiteral("name")).toString(), details, icon);
+    this->activeIconReply = reply;
+    connect(reply, &QNetworkReply::finished, this, [this, sessionId, projectId, details, reply]() {
+        this->handleProjectIconReply(reply, projectId, details, sessionId);
     });
 }
 
-void BoardDownloaderDialog::addProjectCard(int projectId,
-                                           const QString& projectName,
-                                           const QJsonObject& details,
-                                           const QPixmap& icon)
+void BoardDownloaderDialog::handleProjectIconReply(QNetworkReply* reply, int projectId, const QJsonObject& details, quint64 sessionId)
 {
-    const QString author = details.value(QStringLiteral("author")).toString();
-    const QString description = truncateDescription(
-        details.value(QStringLiteral("description")).toString(QStringLiteral("No description available")));
+    Q_UNUSED(details);
 
-    const int cardCount = this->resultsGridLayout->count();
-    const int row = cardCount / 2;
-    const int column = cardCount % 2;
+    if (this->isStaleSession(sessionId))
+    {
+        this->releaseReply(this->activeIconReply, reply);
+        return;
+    }
 
-    QJsonObject detailCopy = details;
+    QPixmap icon;
+    if (reply != nullptr && reply->error() == QNetworkReply::NoError)
+    {
+        icon.loadFromData(reply->readAll());
+    }
 
-    QFrame* card = createProjectCard(
-        this->resultsContainer,
-        author.isEmpty() ? projectName : QStringLiteral("%1: by %2").arg(projectName, author),
-        description,
-        icon,
-        [this, projectId, detailCopy, icon]() {
-            BoardDownloaderDetailDialog dialog(this, projectId, detailCopy, icon);
-            dialog.exec();
-        });
+    this->releaseReply(this->activeIconReply, reply);
 
-    this->resultsGridLayout->addWidget(card, row, column);
-    this->statusLabel->setText(QStringLiteral("Loaded %1 project(s).").arg(this->resultsGridLayout->count()));
+    if (this->isStaleSession(sessionId))
+    {
+        return;
+    }
+
+    ProjectEntry* entry = this->findProjectEntry(projectId);
+    if (entry != nullptr)
+    {
+        entry->icon = icon;
+        entry->iconLoaded = true;
+
+        if (this->passesGameFilter(*entry))
+        {
+            this->updateListItem(*entry);
+        }
+    }
+
+    this->finishCurrentProjectLoad();
+}
+
+void BoardDownloaderDialog::finishCurrentProjectLoad(void)
+{
+    if (this->isStaleSession(this->activeSessionId))
+    {
+        this->isLoadingProject = false;
+        return;
+    }
+
+    this->isLoadingProject = false;
+    this->loadQueueIndex++;
+    this->processLoadQueue();
+}
+
+int BoardDownloaderDialog::resolvedGameId(const ProjectEntry& entry) const
+{
+    if (entry.gameId > 0)
+    {
+        return entry.gameId;
+    }
+
+    if (entry.hasDetails)
+    {
+        return gameIdFromJson(entry.details);
+    }
+
+    return 0;
+}
+
+bool BoardDownloaderDialog::passesGameFilter(const ProjectEntry& entry) const
+{
+    const int filterGameId = this->gameFilterComboBox->currentIndex();
+    if (filterGameId == 0)
+    {
+        return true;
+    }
+
+    return this->resolvedGameId(entry) == filterGameId;
+}
+
+QString BoardDownloaderDialog::projectListText(const ProjectEntry& entry) const
+{
+    QStringList parts;
+    parts << entry.name;
+
+    if (!entry.author.isEmpty())
+    {
+        parts << QStringLiteral("by %1").arg(entry.author);
+    }
+
+    const int gameId = this->resolvedGameId(entry);
+    if (gameId > 0)
+    {
+        parts << marioPartyTargetLabel(marioPartyTargetFromGameId(gameId));
+    }
+
+    return parts.join(QStringLiteral("  •  "));
+}
+
+QIcon BoardDownloaderDialog::projectListIcon(const ProjectEntry& entry) const
+{
+    if (entry.iconLoaded && !entry.icon.isNull())
+    {
+        return QIcon(entry.icon);
+    }
+
+    return QIcon::fromTheme(QStringLiteral("image-line"));
+}
+
+void BoardDownloaderDialog::updateListItem(const ProjectEntry& entry)
+{
+    if (!this->passesGameFilter(entry))
+    {
+        QListWidgetItem* existingItem = this->findListItem(entry.projectId);
+        if (existingItem != nullptr)
+        {
+            const int row = this->resultsListWidget->row(existingItem);
+            delete this->resultsListWidget->takeItem(row);
+        }
+        return;
+    }
+
+    QListWidgetItem* item = this->findListItem(entry.projectId);
+    if (item == nullptr)
+    {
+        item = new QListWidgetItem(this->projectListText(entry));
+        item->setData(kProjectIdRole, entry.projectId);
+        this->resultsListWidget->addItem(item);
+    }
+    else
+    {
+        item->setText(this->projectListText(entry));
+    }
+
+    item->setIcon(this->projectListIcon(entry));
+}
+
+void BoardDownloaderDialog::refreshResultsList(void)
+{
+    const int selectedProjectId = this->resultsListWidget->currentItem() != nullptr
+                                      ? this->resultsListWidget->currentItem()->data(kProjectIdRole).toInt()
+                                      : -1;
+
+    QSignalBlocker blocker(this->resultsListWidget);
+    this->resultsListWidget->clear();
+
+    for (const ProjectEntry& entry : this->projects)
+    {
+        if (!entry.revealed || !this->passesGameFilter(entry))
+        {
+            continue;
+        }
+
+        auto* item = new QListWidgetItem(this->projectListText(entry));
+        item->setData(kProjectIdRole, entry.projectId);
+        item->setIcon(this->projectListIcon(entry));
+        this->resultsListWidget->addItem(item);
+
+        if (entry.projectId == selectedProjectId)
+        {
+            this->resultsListWidget->setCurrentItem(item);
+        }
+    }
+}
+
+void BoardDownloaderDialog::updateStatusLabel(void)
+{
+    if (this->isLoadingProject && this->loadQueueIndex < this->loadQueue.size())
+    {
+        const ProjectEntry* entry = this->findProjectEntry(this->loadQueue.at(this->loadQueueIndex));
+        const QString projectName = entry != nullptr ? entry->name : QStringLiteral("board");
+        this->statusLabel->setText(QStringLiteral("Loading %1 of %2: %3...")
+                                       .arg(this->loadQueueIndex + 1)
+                                       .arg(this->loadQueue.size())
+                                       .arg(projectName));
+        return;
+    }
+
+    int visibleCount = 0;
+    for (const ProjectEntry& entry : this->projects)
+    {
+        if (this->passesGameFilter(entry))
+        {
+            visibleCount++;
+        }
+    }
+
+    this->statusLabel->setText(QStringLiteral("Showing %1 of %2 project(s).")
+                                   .arg(visibleCount)
+                                   .arg(this->projects.size()));
+}
+
+void BoardDownloaderDialog::openProjectDetails(int projectId)
+{
+    for (const ProjectEntry& entry : this->projects)
+    {
+        if (entry.projectId != projectId)
+        {
+            continue;
+        }
+
+        QJsonObject details = entry.hasDetails
+                                  ? entry.details
+                                  : QJsonObject{
+                                        {QStringLiteral("name"), entry.name},
+                                        {QStringLiteral("author"), entry.author},
+                                        {QStringLiteral("gameId"), entry.gameId},
+                                        {QStringLiteral("description"), QStringLiteral("No description available")},
+                                    };
+
+        BoardDownloaderDetailDialog dialog(this, projectId, details, entry.icon);
+        connect(&dialog, &BoardDownloaderDetailDialog::romPatched, this, &BoardDownloaderDialog::on_romPatched);
+        dialog.exec();
+        return;
+    }
+}
+
+void BoardDownloaderDialog::on_searchButton_clicked(void)
+{
+    const QString searchTerm = this->searchLineEdit->text().trimmed();
+    if (searchTerm.isEmpty())
+    {
+        this->loadTopProjects();
+        return;
+    }
+
+    this->loadSearchProjects(searchTerm);
+}
+
+void BoardDownloaderDialog::on_searchLineEdit_returnPressed(void)
+{
+    this->on_searchButton_clicked();
+}
+
+void BoardDownloaderDialog::on_gameFilterComboBox_currentIndexChanged(int index)
+{
+    Q_UNUSED(index);
+    this->refreshResultsList();
+    this->updateStatusLabel();
+}
+
+void BoardDownloaderDialog::on_resultsListWidget_itemDoubleClicked(void)
+{
+    QListWidgetItem* item = this->resultsListWidget->currentItem();
+    if (item == nullptr)
+    {
+        return;
+    }
+
+    this->openProjectDetails(item->data(kProjectIdRole).toInt());
+}
+
+void BoardDownloaderDialog::on_romPatched(void)
+{
+    this->emit romListRefreshRequested();
 }

@@ -2000,6 +2000,8 @@ void MainWindow::on_Action_Settings_Settings(void)
 void MainWindow::on_Action_Settings_BoardDownloader(void)
 {
     Dialog::BoardDownloaderDialog dialog(this);
+    connect(&dialog, &Dialog::BoardDownloaderDialog::romListRefreshRequested,
+            this->ui_Widget_RomBrowser, &Widget::RomBrowserWidget::RefreshRomList);
     dialog.exec();
 }
 

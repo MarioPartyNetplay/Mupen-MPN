@@ -189,6 +189,32 @@ set_target_properties(RMG PROPERTIES
     OUTPUT_NAME "Mupen-MPN"
 )
 
+if (PORTABLE_INSTALL)
+    if (WIN32)
+        set(PP64_CLI_SOURCE "${CMAKE_SOURCE_DIR}/Data/pp64-cli/partyplanner64-cli-win.exe")
+        set(PP64_CLI_NAME "partyplanner64-cli-win.exe")
+    elseif(APPLE)
+        if (EXISTS "${CMAKE_SOURCE_DIR}/Data/pp64-cli/partyplanner64-cli-macos")
+            set(PP64_CLI_SOURCE "${CMAKE_SOURCE_DIR}/Data/pp64-cli/partyplanner64-cli-macos")
+            set(PP64_CLI_NAME "partyplanner64-cli-macos")
+        else()
+            set(PP64_CLI_SOURCE "${CMAKE_SOURCE_DIR}/Data/pp64-cli/partyplanner64-cli-linux")
+            set(PP64_CLI_NAME "partyplanner64-cli-linux")
+        endif()
+    else()
+        set(PP64_CLI_SOURCE "${CMAKE_SOURCE_DIR}/Data/pp64-cli/partyplanner64-cli-linux")
+        set(PP64_CLI_NAME "partyplanner64-cli-linux")
+    endif()
+
+    add_custom_command(TARGET RMG POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}/Data/pp64-cli"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${PP64_CLI_SOURCE}"
+            "${CMAKE_SOURCE_DIR}/Bin/${CMAKE_BUILD_TYPE}/Data/pp64-cli/${PP64_CLI_NAME}"
+        COMMENT "Copying PartyPlanner64 CLI extras"
+    )
+endif()
+
 if (APPLE AND PORTABLE_INSTALL)
     set_target_properties(RMG PROPERTIES
         MACOSX_BUNDLE TRUE

@@ -10,13 +10,13 @@
 #ifndef BOARDDOWNLOADERCOMMON_HPP
 #define BOARDDOWNLOADERCOMMON_HPP
 
+#include <QJsonObject>
 #include <QString>
 #include <QWidget>
 
 #include <RMG-Core/RomHeader.hpp>
 #include <RMG-Core/RomSettings.hpp>
 
-#include <filesystem>
 #include <optional>
 
 namespace UserInterface
@@ -39,8 +39,14 @@ struct MarioPartyRomMatch
     int qualityScore = 0;
 };
 
+struct PartyPlannerCliInfo
+{
+    QString path;
+    bool usesWine = false;
+};
+
 QString boardDownloaderApiBaseUrl(void);
-QString boardDownloaderConfigDirectory(void);
+std::optional<PartyPlannerCliInfo> resolvePartyPlannerCli(void);
 
 bool isMarioParty1(const CoreRomHeader& header, const CoreRomSettings& settings);
 bool isMarioParty2(const CoreRomHeader& header, const CoreRomSettings& settings);
@@ -48,7 +54,7 @@ bool isMarioParty3(const CoreRomHeader& header, const CoreRomSettings& settings)
 
 MarioPartyTarget marioPartyTargetForRom(const CoreRomHeader& header, const CoreRomSettings& settings);
 MarioPartyTarget marioPartyTargetFromGameId(int gameId);
-MarioPartyTarget detectMarioPartyTargetFromText(const QString& text);
+int gameIdFromJson(const QJsonObject& object);
 
 int goodNameQualityScore(const QString& goodName);
 QString marioPartyTargetLabel(MarioPartyTarget target);
