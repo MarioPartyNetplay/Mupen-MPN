@@ -12,6 +12,7 @@
 #include "UserInterface/Dialog/AboutDialog.hpp"
 #include "Dialog/Cheats/CheatsDialog.hpp"
 #include "Dialog/Modifications/ModificationsDialog.hpp"
+#include "Dialog/BoardDownloader/BoardDownloaderDialog.hpp"
 #include "Dialog/SettingsDialog.hpp"
 #include "Dialog/RomInfoDialog.hpp"
 #ifdef UPDATER
@@ -1094,7 +1095,7 @@ void MainWindow::configureActions(void)
         // Settings actions
         this->action_Settings_Graphics, this->action_Settings_Audio,
         this->action_Settings_Rsp, this->action_Settings_Input,
-        this->action_Settings_Settings,
+        this->action_Settings_Settings, this->action_Settings_BoardDownloader,
         // View actions
         this->action_View_Fullscreen, this->action_View_RefreshRoms,
         this->action_View_Log,
@@ -1229,6 +1230,8 @@ void MainWindow::connectActionSignals(void)
             &MainWindow::on_Action_Settings_Input);
     connect(this->action_Settings_Settings, &QAction::triggered, this, &MainWindow::on_Action_Settings_Settings);
     connect(this->action_Settings_Settings2, &QAction::triggered, this, &MainWindow::on_Action_Settings_Settings);
+    connect(this->action_Settings_BoardDownloader, &QAction::triggered, this, &MainWindow::on_Action_Settings_BoardDownloader);
+    connect(this->action_Settings_BoardDownloader2, &QAction::triggered, this, &MainWindow::on_Action_Settings_BoardDownloader);
     connect(this->action_View_Toolbar, &QAction::toggled, this, &MainWindow::on_Action_View_Toolbar);
     connect(this->action_View_StatusBar, &QAction::toggled, this, &MainWindow::on_Action_View_StatusBar);
     connect(this->action_View_GameList, &QAction::toggled, this, &MainWindow::on_Action_View_GameList);
@@ -1992,6 +1995,12 @@ void MainWindow::on_Action_Settings_Settings(void)
     {
         this->on_Action_System_Pause();
     }
+}
+
+void MainWindow::on_Action_Settings_BoardDownloader(void)
+{
+    Dialog::BoardDownloaderDialog dialog(this);
+    dialog.exec();
 }
 
 void MainWindow::on_Action_View_Toolbar(bool checked)

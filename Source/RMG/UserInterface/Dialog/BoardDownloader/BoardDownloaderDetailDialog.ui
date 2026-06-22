@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>BoardDownloaderDetailDialog</class>
+ <widget class="QDialog" name="BoardDownloaderDetailDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>720</width>
+    <height>520</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>640</width>
+    <height>420</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>Board Details</string>
+  </property>
+  <layout class="QHBoxLayout" name="horizontalLayout">
+   <item>
+    <layout class="QVBoxLayout" name="leftLayout">
+     <item>
+      <widget class="QLabel" name="iconLabel">
+       <property name="minimumSize">
+        <size>
+         <width>220</width>
+         <height>220</height>
+        </size>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>220</width>
+         <height>220</height>
+        </size>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+       <property name="alignment">
+        <set>Qt::AlignmentFlag::AlignCenter</set>
+       </property>
+       <property name="scaledContents">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="descriptionTitleLabel">
+       <property name="text">
+        <string>Description</string>
+       </property>
+       <property name="font">
+        <font>
+         <bold>true</bold>
+        </font>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QTextEdit" name="descriptionTextEdit">
+       <property name="readOnly">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QVBoxLayout" name="rightLayout">
+     <item>
+      <widget class="QLabel" name="titleLabel">
+       <property name="text">
+        <string>Project</string>
+       </property>
+       <property name="font">
+        <font>
+         <pointsize>14</pointsize>
+         <bold>true</bold>
+        </font>
+       </property>
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="authorLabel">
+       <property name="text">
+        <string>Author</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="createdLabel">
+       <property name="text">
+        <string>Created</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="difficultyLabel">
+       <property name="text">
+        <string>Difficulty</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="turnsLabel">
+       <property name="text">
+        <string>Recommended Turns</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="eventsLabel">
+       <property name="text">
+        <string>Custom Events</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="musicLabel">
+       <property name="text">
+        <string>Custom Music</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="targetGameLabel">
+       <property name="text">
+        <string>Target Game</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="baseRomLabel">
+       <property name="text">
+        <string>Base ROM</string>
+       </property>
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="verticalSpacer">
+       <property name="orientation">
+        <enum>Qt::Orientation::Vertical</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>20</width>
+         <height>40</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <layout class="QHBoxLayout" name="buttonLayout">
+       <item>
+        <widget class="QPushButton" name="patchButton">
+         <property name="text">
+          <string>Patch ROM</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="downloadButton">
+         <property name="text">
+          <string>Download Board</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="closeButton">
+         <property name="text">
+          <string>Close</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>closeButton</sender>
+   <signal>clicked()</signal>
+   <receiver>BoardDownloaderDetailDialog</receiver>
+   <slot>reject()</slot>
+  </connection>
+ </connections>
+</ui>

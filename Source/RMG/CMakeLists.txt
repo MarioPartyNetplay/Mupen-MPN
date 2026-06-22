@@ -31,7 +31,7 @@ if (APPLE)
     endif()
 endif()
 
-find_package(Qt6 COMPONENTS Gui Widgets Core REQUIRED)
+find_package(Qt6 COMPONENTS Gui Widgets Core Network REQUIRED)
 
 if (NOT WIN32 AND UNIX AND NOT APPLE)
     find_package(Qt6 REQUIRED COMPONENTS DBus)
@@ -97,6 +97,11 @@ set(RMG_SOURCES
     UserInterface/Dialog/Cheats/ChooseCheatOptionDialog.ui
     UserInterface/Dialog/Modifications/ModificationsDialog.cpp
     UserInterface/Dialog/Modifications/ModificationsDialog.ui
+    UserInterface/Dialog/BoardDownloader/BoardDownloaderCommon.cpp
+    UserInterface/Dialog/BoardDownloader/BoardDownloaderDialog.cpp
+    UserInterface/Dialog/BoardDownloader/BoardDownloaderDialog.ui
+    UserInterface/Dialog/BoardDownloader/BoardDownloaderDetailDialog.cpp
+    UserInterface/Dialog/BoardDownloader/BoardDownloaderDetailDialog.ui
     UserInterface/Dialog/RomInfoDialog.cpp
     UserInterface/Dialog/RomInfoDialog.ui
     UserInterface/Dialog/AboutDialog.cpp
@@ -227,7 +232,7 @@ target_include_directories(RMG PRIVATE
     ${IMGUI_DIR}
 )
 
-target_link_libraries(RMG Qt6::Gui Qt6::Widgets)
+target_link_libraries(RMG Qt6::Gui Qt6::Widgets Qt6::Network)
 
 if (UNIX AND NOT APPLE)
     target_link_libraries(RMG Qt6::DBus)

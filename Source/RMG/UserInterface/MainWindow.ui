@@ -122,6 +122,8 @@
     <addaction name="action_Settings_Input"/>
     <addaction name="separator"/>
     <addaction name="action_Settings_Settings"/>
+    <addaction name="separator"/>
+    <addaction name="action_Settings_BoardDownloader"/>
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
@@ -202,6 +204,7 @@
     <addaction name="action_Settings_Graphics2"/>
     <addaction name="action_Settings_Input2"/>
     <addaction name="action_System_Modifications"/>
+    <addaction name="action_Settings_BoardDownloader2"/>
    </widget>
    <action name="action_View_Fullscreen2">
     <property name="icon">
@@ -543,6 +546,22 @@
     </property>
     <property name="text">
      <string>&amp;Settings</string>
+    </property>
+   </action>
+   <action name="action_Settings_BoardDownloader">
+    <property name="icon">
+     <iconset theme="download-cloud-line"/>
+    </property>
+    <property name="text">
+     <string>&amp;Board Downloader</string>
+    </property>
+   </action>
+   <action name="action_Settings_BoardDownloader2">
+    <property name="icon">
+     <iconset theme="download-cloud-line"/>
+    </property>
+    <property name="text">
+     <string>Boards</string>
     </property>
    </action>
    <action name="action_View_Fullscreen">
