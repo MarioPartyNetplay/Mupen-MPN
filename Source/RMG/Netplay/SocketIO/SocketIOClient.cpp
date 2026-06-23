@@ -19,6 +19,7 @@
 #include <QUrl>
 #include <QUuid>
 #include <QThread>
+#include <QDateTime>
 #include <algorithm>
 #include <enet/enet.h>
 
@@ -29,7 +30,10 @@ constexpr int kCheatsChunkSize = 32;
 constexpr int kConnectTimeoutMs = 10000;
 constexpr int kServiceIntervalMs = 16;
 constexpr int kReconnectIntervalMs = 2000;
-constexpr int kMaxReconnectAttempts = 30;
+constexpr int kReconnectFirstAttemptMs = 500;
+constexpr int kReconnectAckTimeoutMs = 15000;
+constexpr int kBaseReconnectAttempts = 60;
+constexpr int kMaxReconnectAttemptsCap = 120;
 
 QJsonArray sliceJsonArray(const QJsonArray& source, int startIndex, int count)
 {
@@ -53,6 +57,22 @@ QJsonObject buildCheatsPayload(const QJsonArray& cheats, const QString& chunkId 
         payload["chunkCount"] = chunkCount;
     }
     return payload;
+}
+
+bool isGameplaySignalingEvent(const QString& eventName)
+{
+    return eventName == QLatin1String("controller-input") ||
+           eventName == QLatin1String("frame-sync") ||
+           eventName == QLatin1String("reconnect-room");
+}
+
+int maxReconnectAttemptsForPing(int lastPingMs)
+{
+    int attempts = kBaseReconnectAttempts;
+    if (lastPingMs > 200) {
+        attempts += (lastPingMs - 200) / 100;
+    }
+    return std::min(kMaxReconnectAttemptsCap, attempts);
 }
 } // namespace
 
@@ -78,6 +98,7 @@ SocketIOClient::SocketIOClient(const QString& serverUrl, QObject* parent)
         if (m_serverPeer && m_connectionState == Connected) {
             enet_peer_ping(m_serverPeer);
             m_lastPingMs = static_cast<int>(m_serverPeer->roundTripTime);
+            refreshSignalingPeerTimeout(m_serverPeer);
             emit pingUpdated(m_lastPingMs);
         }
     });
@@ -329,9 +350,10 @@ void SocketIOClient::beginReconnect()
     m_connectionState = Reconnecting;
     m_reconnectAttempts = 0;
     m_awaitingReconnectAck = false;
+    m_reconnectAckSentAtMs = 0;
     qWarning() << "SocketIOClient: Signaling connection lost, attempting reconnect to room" << m_roomId;
     emit reconnecting();
-    m_reconnectTimer->start(kReconnectIntervalMs);
+    m_reconnectTimer->start(kReconnectFirstAttemptMs);
 }
 
 void SocketIOClient::failReconnect()
@@ -354,6 +376,7 @@ void SocketIOClient::sendReconnectRoom()
     }
 
     m_awaitingReconnectAck = true;
+    m_reconnectAckSentAtMs = QDateTime::currentMSecsSinceEpoch();
 
     QJsonObject extra;
     extra["reconnectToken"] = m_reconnectToken;
@@ -373,7 +396,7 @@ void SocketIOClient::on_reconnectTimer()
         return;
     }
 
-    if (++m_reconnectAttempts > kMaxReconnectAttempts) {
+    if (++m_reconnectAttempts > maxReconnectAttemptsForPing(m_lastPingMs)) {
         failReconnect();
         return;
     }
@@ -492,7 +515,7 @@ void SocketIOClient::setGameMode(const QString& mode)
 
 void SocketIOClient::sendControllerInput(uint32_t frameNumber, uint32_t controllerState)
 {
-    if (m_connectionState != Connected) {
+    if (m_connectionState != Connected && m_connectionState != Reconnecting) {
         return;
     }
 
@@ -504,7 +527,8 @@ void SocketIOClient::sendControllerInput(uint32_t frameNumber, uint32_t controll
 
 void SocketIOClient::sendFrameSync(uint32_t frameNumber, uint32_t stateHash)
 {
-    if (m_connectionState != Connected || frameNumber == m_lastSentFrameSync || stateHash == 0) {
+    if ((m_connectionState != Connected && m_connectionState != Reconnecting) ||
+        frameNumber == m_lastSentFrameSync || stateHash == 0) {
         return;
     }
 
@@ -739,6 +763,20 @@ void SocketIOClient::on_serviceTimer()
         return;
     }
 
+    if (m_awaitingReconnectAck && m_reconnectAckSentAtMs > 0) {
+        const qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_reconnectAckSentAtMs;
+        if (elapsed >= kReconnectAckTimeoutMs) {
+            qWarning() << "SocketIOClient: Reconnect room ack timed out, retrying";
+            m_awaitingReconnectAck = false;
+            m_reconnectAckSentAtMs = 0;
+            if (m_connectionState == Connected && !m_roomId.isEmpty() && !m_reconnectToken.isEmpty()) {
+                sendReconnectRoom();
+            } else if (m_connectionState == Reconnecting) {
+                m_reconnectTimer->start(kReconnectIntervalMs);
+            }
+        }
+    }
+
     ENetEvent event;
     while (enet_host_service(m_enetHost, &event, 0) > 0) {
         switch (event.type) {
@@ -863,6 +901,7 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
         qDebug() << "Room joined:" << roomId << "slot:" << slotIndex;
         if (m_awaitingReconnectAck) {
             m_awaitingReconnectAck = false;
+            m_reconnectAckSentAtMs = 0;
             m_reconnectAttempts = 0;
             if (m_reconnectTimer) {
                 m_reconnectTimer->stop();
@@ -1056,8 +1095,15 @@ void SocketIOClient::emitEvent(const QString& eventName, const QJsonObject& payl
         qDebug() << "SocketIOClient: Emitting event" << eventName;
     }
 
-    if (m_connectionState != Connected || !m_serverPeer) {
-        qWarning() << "SocketIOClient: Cannot emit event, not connected";
+    const bool canEmit =
+        m_serverPeer &&
+        (m_connectionState == Connected ||
+         (m_connectionState == Reconnecting && isGameplaySignalingEvent(eventName)));
+
+    if (!canEmit) {
+        if (!isGameplaySignalingEvent(eventName)) {
+            qWarning() << "SocketIOClient: Cannot emit event, not connected";
+        }
         return;
     }
 

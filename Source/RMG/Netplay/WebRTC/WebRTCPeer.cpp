@@ -16,12 +16,15 @@
 
 #include <QDebug>
 #include <QMap>
+#include <QTimer>
 
 #include <sstream>
 
 using namespace UserInterface::Netplay;
 
 namespace {
+
+constexpr int kDisconnectedGraceMs = 30000;
 
 int candidateMidToLineIndex(const rtc::Candidate& candidate)
 {
@@ -47,6 +50,23 @@ WebRTCPeer::WebRTCPeer(const QString& peerId, bool initiator, QObject* parent)
     , m_initiator(initiator)
     , m_connectionState(New)
 {
+    m_disconnectedGraceTimer = new QTimer(this);
+    m_disconnectedGraceTimer->setSingleShot(true);
+    connect(m_disconnectedGraceTimer, &QTimer::timeout, this, [this]() {
+        if (m_connectionState != Disconnected) {
+            return;
+        }
+
+        qWarning() << "WebRTCPeer: ICE disconnected grace expired for" << m_peerId;
+        if (m_initiator) {
+            attemptRecovery();
+            return;
+        }
+
+        m_lastError = QStringLiteral("Peer connection disconnected");
+        emit connectionFailed(m_lastError);
+    });
+
     qDebug() << "WebRTCPeer created:" << peerId << "initiator=" << initiator;
     initializePeerConnection();
 }
@@ -54,6 +74,27 @@ WebRTCPeer::WebRTCPeer(const QString& peerId, bool initiator, QObject* parent)
 WebRTCPeer::~WebRTCPeer()
 {
     close();
+}
+
+void WebRTCPeer::attemptRecovery()
+{
+    if (!m_peerConnection || m_connectionState == Closed || m_connectionState == Failed) {
+        return;
+    }
+
+    if (!m_initiator) {
+        return;
+    }
+
+    qInfo() << "WebRTCPeer: Attempting ICE recovery for" << m_peerId;
+
+    try {
+        m_peerConnection->setLocalDescription(rtc::Description::Type::Offer);
+        m_localDescriptionSent = true;
+    } catch (const std::exception& exception) {
+        m_lastError = QString::fromStdString(exception.what());
+        emit connectionFailed(m_lastError);
+    }
 }
 
 void WebRTCPeer::createOffer()
@@ -123,6 +164,10 @@ void WebRTCPeer::addICECandidate(const QString& candidate, int sdpMLineIndex)
 void WebRTCPeer::close()
 {
     qDebug() << "WebRTCPeer: Closing connection with" << m_peerId;
+
+    if (m_disconnectedGraceTimer) {
+        m_disconnectedGraceTimer->stop();
+    }
 
     if (m_peerConnection) {
         m_peerConnection->close();
@@ -239,13 +284,24 @@ void WebRTCPeer::bindPeerConnectionCallbacks()
             updateConnectionState(Connecting);
             break;
         case rtc::PeerConnection::State::Connected:
+            if (m_disconnectedGraceTimer) {
+                m_disconnectedGraceTimer->stop();
+            }
             updateConnectionState(Connected);
             emit connectionEstablished();
             break;
         case rtc::PeerConnection::State::Disconnected:
             updateConnectionState(Disconnected);
+            if (m_disconnectedGraceTimer && !m_disconnectedGraceTimer->isActive()) {
+                qWarning() << "WebRTCPeer: ICE disconnected for" << m_peerId
+                           << "- waiting" << kDisconnectedGraceMs << "ms before recovery";
+                m_disconnectedGraceTimer->start(kDisconnectedGraceMs);
+            }
             break;
         case rtc::PeerConnection::State::Failed:
+            if (m_disconnectedGraceTimer) {
+                m_disconnectedGraceTimer->stop();
+            }
             updateConnectionState(Failed);
             m_lastError = QStringLiteral("Peer connection failed");
             emit connectionFailed(m_lastError);

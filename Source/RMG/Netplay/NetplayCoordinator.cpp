@@ -23,6 +23,7 @@
 #include <QCoreApplication>
 #include <QEventLoop>
 #include <QUuid>
+#include <QTimer>
 
 using namespace UserInterface::Netplay;
 using namespace RMGCore;
@@ -751,6 +752,7 @@ void NetplayCoordinator::on_socketIO_reconnected()
 {
     qInfo() << "NetplayCoordinator: Signaling connection restored";
     attachExistingPeerDataChannels();
+    recoverWebRTCPeerConnections();
 }
 
 void NetplayCoordinator::on_socketIO_disconnected()
@@ -1089,6 +1091,83 @@ void NetplayCoordinator::attachExistingPeerDataChannels()
     }
 }
 
+int NetplayCoordinator::findPeerSlotById(const QString& peerId) const
+{
+    for (auto it = m_peers.constBegin(); it != m_peers.constEnd(); ++it) {
+        const auto& peer = it.value();
+        if (peer && peer->getPeerId() == peerId) {
+            return it.key();
+        }
+    }
+
+    return -1;
+}
+
+void NetplayCoordinator::recreatePeerConnection(int slot)
+{
+    QString peerId;
+    for (const auto& player : getPlayerList()) {
+        if (player.slot == slot) {
+            peerId = player.id;
+            break;
+        }
+    }
+
+    if (peerId.isEmpty()) {
+        return;
+    }
+
+    qInfo() << "NetplayCoordinator: Recreating WebRTC peer for slot" << slot;
+
+    if (m_peers.contains(slot)) {
+        auto oldPeer = m_peers[slot];
+        if (oldPeer) {
+            oldPeer->close();
+        }
+        m_peers.remove(slot);
+    }
+
+    if (m_lockstepEngine) {
+        m_lockstepEngine->setDataChannel(slot, nullptr);
+    }
+
+    const bool initiator = m_gameSession.localSlot < slot;
+    auto peer = std::make_shared<WebRTCPeer>(peerId, initiator, this);
+    m_peers[slot] = peer;
+    bindWebRTCPeerSignals(peer, peerId);
+
+    if (initiator) {
+        peer->createDataChannel(QStringLiteral("RMG-Input"));
+        createPeerOffer(slot);
+    }
+}
+
+void NetplayCoordinator::recoverWebRTCPeerConnections()
+{
+    if (m_state != InGame) {
+        return;
+    }
+
+    for (auto it = m_peers.constBegin(); it != m_peers.constEnd(); ++it) {
+        const int slot = it.key();
+        const auto& peer = it.value();
+        if (!peer) {
+            continue;
+        }
+
+        const auto state = peer->getConnectionState();
+        if (state == WebRTCPeer::Connected) {
+            continue;
+        }
+
+        if (peer->isInitiator()) {
+            peer->attemptRecovery();
+        } else if (state == WebRTCPeer::Failed || state == WebRTCPeer::Closed) {
+            recreatePeerConnection(slot);
+        }
+    }
+}
+
 void NetplayCoordinator::on_socketIO_iceCandidateReceived(const QString& fromPlayerId, const QString& candidate, int mLineIndex)
 {
     // Use a more efficient iterator-based lookup
@@ -1132,22 +1211,24 @@ void NetplayCoordinator::on_webRTC_connectionEstablished(const QString& peerId)
 
 void NetplayCoordinator::on_webRTC_connectionFailed(const QString& peerId, const QString& reason)
 {
-    qWarning() << "NetplayCoordinator: WebRTC connection degraded for peer" << peerId << ":" << reason;
+    qWarning() << "NetplayCoordinator: WebRTC connection degraded for peer" << peerId << ":" << reason
+               << "- continuing via signaling relay";
 
-    for (int slot = 0; slot < 4; ++slot) {
-        if (!m_peers.contains(slot)) {
-            continue;
-        }
-
-        auto peer = m_peers[slot];
-        if (!peer || peer->getPeerId() != peerId) {
-            continue;
-        }
-
-        if (m_lockstepEngine) {
-            m_lockstepEngine->setDataChannel(slot, nullptr);
-        }
+    const int slot = findPeerSlotById(peerId);
+    if (slot < 0) {
         return;
+    }
+
+    if (m_lockstepEngine) {
+        m_lockstepEngine->setDataChannel(slot, nullptr);
+    }
+
+    if (m_state == InGame) {
+        QTimer::singleShot(5000, this, [this, slot]() {
+            if (m_state == InGame) {
+                recreatePeerConnection(slot);
+            }
+        });
     }
 }
 

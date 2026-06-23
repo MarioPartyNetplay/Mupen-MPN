@@ -8,9 +8,11 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "VKWidget.hpp"
+#include "OnScreenDisplay.hpp"
 
 #include <QEvent>
 #include <QGuiApplication>
+#include <QMouseEvent>
 #include <QResizeEvent>
 
 #include <RMG-Core/Video.hpp>
@@ -43,6 +45,54 @@ bool VKWidget::eventFilter(QObject *object, QEvent *event)
     if (object == this->widgetContainer && event->type() == QEvent::Resize)
     {
         this->queueVideoSizeUpdate(static_cast<QResizeEvent *>(event)->size());
+    }
+    else if (object == this->widgetContainer)
+    {
+        switch (event->type())
+        {
+        case QEvent::MouseButtonPress:
+        case QEvent::MouseMove:
+        case QEvent::MouseButtonRelease:
+        {
+            QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
+            const float scale       = static_cast<float>(this->devicePixelRatio());
+            const float x           = static_cast<float>(mouseEvent->position().x()) * scale;
+            const float y           = static_cast<float>(mouseEvent->position().y()) * scale;
+            const Qt::KeyboardModifiers keyboardModifiers =
+                mouseEvent->modifiers() | QGuiApplication::keyboardModifiers();
+            const bool configureModifier = (keyboardModifiers & Qt::AltModifier) != 0;
+            bool consumed = false;
+
+            switch (event->type())
+            {
+            case QEvent::MouseButtonPress:
+                if (mouseEvent->button() == Qt::LeftButton)
+                {
+                    consumed = OnScreenDisplayHandleMousePress(x, y, configureModifier);
+                }
+                break;
+            case QEvent::MouseMove:
+                consumed = OnScreenDisplayHandleMouseMove(x, y, configureModifier);
+                break;
+            case QEvent::MouseButtonRelease:
+                if (mouseEvent->button() == Qt::LeftButton)
+                {
+                    consumed = OnScreenDisplayHandleMouseRelease();
+                }
+                break;
+            default:
+                break;
+            }
+
+            if (consumed || OnScreenDisplayIsDragging())
+            {
+                return true;
+            }
+            break;
+        }
+        default:
+            break;
+        }
     }
 
     return QWindow::eventFilter(object, event);
@@ -85,6 +135,9 @@ void VKWidget::queueVideoSizeUpdate(QSize size)
     }
 
     this->timerId = this->startTimer(100);
+
+    // Keep OSD anchored while user is actively resizing.
+    OnScreenDisplaySetDisplaySize(this->width, this->height);
 }
 
 void VKWidget::timerEvent(QTimerEvent *event)

@@ -37,11 +37,9 @@ bool WebRTCDataChannel::sendBinary(const std::vector<uint8_t>& data)
             return m_sendBinaryHandler(data);
         } catch (const std::exception& exception) {
             notifyError(exception.what());
-            notifyClosed();
             return false;
         } catch (...) {
             notifyError("Unknown DataChannel sendBinary exception");
-            notifyClosed();
             return false;
         }
     }
@@ -61,11 +59,9 @@ bool WebRTCDataChannel::sendText(const std::string& text)
             return m_sendTextHandler(text);
         } catch (const std::exception& exception) {
             notifyError(exception.what());
-            notifyClosed();
             return false;
         } catch (...) {
             notifyError("Unknown DataChannel sendText exception");
-            notifyClosed();
             return false;
         }
     }

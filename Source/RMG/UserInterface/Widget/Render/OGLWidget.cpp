@@ -275,7 +275,9 @@ bool OGLWidget::eventFilter(QObject *object, QEvent *event)
             const float scale       = static_cast<float>(this->devicePixelRatio());
             const float x           = static_cast<float>(mouseEvent->position().x()) * scale;
             const float y           = static_cast<float>(mouseEvent->position().y()) * scale;
-            const bool configureModifier = (mouseEvent->modifiers() & Qt::AltModifier) != 0;
+            const Qt::KeyboardModifiers keyboardModifiers =
+                mouseEvent->modifiers() | QGuiApplication::keyboardModifiers();
+            const bool configureModifier = (keyboardModifiers & Qt::AltModifier) != 0;
             bool consumed = false;
 
             switch (event->type())

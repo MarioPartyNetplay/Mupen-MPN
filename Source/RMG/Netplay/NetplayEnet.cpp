@@ -8,6 +8,7 @@
 
 #include <QJsonDocument>
 #include <QAbstractSocket>
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <unordered_map>
@@ -285,15 +286,31 @@ constexpr enet_uint32 kSignalingTimeoutMaximumMs = 120000;
 
 void applySignalingPeerTimeout(ENetPeer* peer)
 {
+    refreshSignalingPeerTimeout(peer);
+}
+
+void refreshSignalingPeerTimeout(ENetPeer* peer)
+{
     if (!peer) {
         return;
     }
 
-    // Allow brief outages on high-latency links before declaring the peer dead.
+    // Scale the minimum timeout with observed RTT so high-ping links are not
+    // dropped during brief packet loss bursts.
+    enet_uint32 minimum = kSignalingTimeoutMinimumMs;
+    if (peer->roundTripTime > 0) {
+        const enet_uint32 rttScaled =
+            static_cast<enet_uint32>(peer->roundTripTime) * 40u;
+        minimum = std::max(minimum, rttScaled);
+    }
+    if (minimum > kSignalingTimeoutMaximumMs / 2u) {
+        minimum = kSignalingTimeoutMaximumMs / 2u;
+    }
+
     enet_peer_timeout(
         peer,
         ENET_PEER_TIMEOUT_LIMIT,
-        kSignalingTimeoutMinimumMs,
+        minimum,
         kSignalingTimeoutMaximumMs);
 }
 

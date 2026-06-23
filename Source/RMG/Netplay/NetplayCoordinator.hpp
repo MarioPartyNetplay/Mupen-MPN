@@ -203,6 +203,9 @@
      void broadcastFrameSyncIfNeeded(uint32_t frameNumber);
      void bindWebRTCPeerSignals(const std::shared_ptr<WebRTCPeer>& peer, const QString& peerId);
      void attachExistingPeerDataChannels();
+     void recoverWebRTCPeerConnections();
+     void recreatePeerConnection(int slot);
+     int findPeerSlotById(const QString& peerId) const;
      void connectSocketIOClientSignals(SocketIOClient* client);
      void sendWebRTCOffer(const QString& targetPlayerId, const QString& sdpOffer);
      void sendWebRTCAnswer(const QString& targetPlayerId, const QString& sdpAnswer);

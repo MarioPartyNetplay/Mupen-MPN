@@ -13,6 +13,7 @@
 #include <QString>
 #include <QObject>
 #include <QByteArray>
+#include <QTimer>
 #include <QMap>
 #include <functional>
 #include <memory>
@@ -59,6 +60,7 @@ public:
 
     // Connection Management
     void createOffer();
+    void attemptRecovery();
     void setRemoteDescription(const QString& sdpAnswer);
     void addICECandidate(const QString& candidate, int sdpMLineIndex = 0);
 
@@ -120,6 +122,7 @@ private:
 
     QMap<QString, std::shared_ptr<WebRTCDataChannel>> m_dataChannels;
     std::shared_ptr<rtc::PeerConnection> m_peerConnection;
+    QTimer* m_disconnectedGraceTimer = nullptr;
 };
 
 } // namespace UserInterface::Netplay

@@ -1388,7 +1388,7 @@ void MainWindow::timerEvent(QTimerEvent *event)
 
 void MainWindow::on_EventFilter_KeyPressed(QKeyEvent *event)
 {
-    if (event->key() == Qt::Key_Alt)
+    if (event->modifiers() & Qt::AltModifier)
     {
         OnScreenDisplaySetConfigureModifier(true);
     }
@@ -1407,10 +1407,7 @@ void MainWindow::on_EventFilter_KeyPressed(QKeyEvent *event)
 
 void MainWindow::on_EventFilter_KeyReleased(QKeyEvent *event)
 {
-    if (event->key() == Qt::Key_Alt)
-    {
-        OnScreenDisplaySetConfigureModifier(false);
-    }
+    OnScreenDisplaySetConfigureModifier((event->modifiers() & Qt::AltModifier) != 0);
 
     if (!CoreIsEmulationRunning())
     {
@@ -2415,7 +2412,7 @@ void MainWindow::on_VidExt_Init(VidExtRenderMode renderMode)
     if (renderMode == VidExtRenderMode::OpenGL)
     {
         this->ui_Widget_OpenGL = new Widget::OGLWidget(this);
-        this->ui_Widget_OpenGL->installEventFilter(this->ui_EventFilter);
+        this->ui_Widget_OpenGL->GetWidget()->installEventFilter(this->ui_EventFilter);
         this->ui_Widget_OpenGL->SetHideCursor(this->ui_HideCursorInEmulation);
 
         this->ui_Widgets->addWidget(this->ui_Widget_OpenGL->GetWidget());
@@ -2423,7 +2420,7 @@ void MainWindow::on_VidExt_Init(VidExtRenderMode renderMode)
     else if (renderMode == VidExtRenderMode::Vulkan)
     {
         this->ui_Widget_Vulkan = new Widget::VKWidget(this);
-        this->ui_Widget_Vulkan->installEventFilter(this->ui_EventFilter);
+        this->ui_Widget_Vulkan->GetWidget()->installEventFilter(this->ui_EventFilter);
         this->ui_Widget_Vulkan->SetHideCursor(this->ui_HideCursorInEmulation);
 
         this->ui_Widgets->addWidget(this->ui_Widget_Vulkan->GetWidget());

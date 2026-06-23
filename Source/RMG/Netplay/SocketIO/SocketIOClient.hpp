@@ -235,6 +235,7 @@ private:
     QString m_reconnectToken;
     bool m_intentionalDisconnect = false;
     bool m_awaitingReconnectAck = false;
+    qint64 m_reconnectAckSentAtMs = 0;
     int m_reconnectAttempts = 0;
     quint16 m_savedBindUdpPort = 0;
     bool m_savedUseTraversalPunch = false;

@@ -425,9 +425,9 @@ bool OnScreenDisplayHandleMousePress(float x, float y, bool configureModifier)
     }
 
     std::lock_guard<std::mutex> lock(l_Mutex);
-    l_ConfigureModifier = configureModifier;
+    l_ConfigureModifier = configureModifier || l_ConfigureModifier;
 
-    if (!configureModifier)
+    if (!l_ConfigureModifier)
     {
         return false;
     }
@@ -482,7 +482,7 @@ bool OnScreenDisplayHandleMouseMove(float x, float y, bool configureModifier)
     }
 
     std::lock_guard<std::mutex> lock(l_Mutex);
-    l_ConfigureModifier = configureModifier;
+    l_ConfigureModifier = configureModifier || l_ConfigureModifier;
 
     if (l_DraggingElement < 0)
     {

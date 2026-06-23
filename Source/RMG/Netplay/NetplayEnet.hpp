@@ -39,6 +39,9 @@ bool peerIsConnected(ENetPeer* peer);
 /** Apply signaling peer timeouts tolerant of high-latency internet play. */
 void applySignalingPeerTimeout(ENetPeer* peer);
 
+/** Re-apply timeouts using the peer's current RTT (call after ping updates). */
+void refreshSignalingPeerTimeout(ENetPeer* peer);
+
 bool sendSignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonObject& payload);
 bool sendSignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonArray& payload);
 

@@ -1476,6 +1476,7 @@ void SocketIOServer::onPingTimer()
         if (peerIsConnected(peer) && client) {
             enet_peer_ping(peer);
             client->lastPingMs = static_cast<int>(peer->roundTripTime);
+            refreshSignalingPeerTimeout(peer);
         }
     }
 
