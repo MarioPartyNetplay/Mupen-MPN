@@ -92,7 +92,9 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
     m_lockstepConfig.desyncDetectionEnabled = true;
     m_lockstepConfig.resyncEnabled = false;
     m_lockstepConfig.resyncCheckIntervalFrames = 180;
-    m_lockstepConfig.stallTimeoutMilliseconds = 0;
+    m_lockstepConfig.stallTimeoutMilliseconds =
+        RMGCore::LockstepEngine::stallTimeoutForDelayFrames(
+            m_lockstepConfig.inputDelayFrames);
 
     qDebug() << "NetplayCoordinator created";
     UserInterface::Netplay::g_netplayCoordinator = this;
@@ -1472,7 +1474,8 @@ void NetplayCoordinator::setInputDelayFrames(int frames)
     }
 
     m_lockstepConfig.inputDelayFrames = frames;
-    m_lockstepConfig.stallTimeoutMilliseconds = 0;
+    m_lockstepConfig.stallTimeoutMilliseconds =
+        RMGCore::LockstepEngine::stallTimeoutForDelayFrames(frames);
     if (m_lockstepEngine) {
         m_lockstepEngine->setInputDelayFrames(frames);
     }

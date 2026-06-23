@@ -1469,7 +1469,8 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
         {
             constexpr int kMaxAdvanceAttempts = 8000;
             int attempts = 0;
-            while (!CoreAdvanceEmbeddedNetplayFrame())
+            bool advanced = CoreAdvanceEmbeddedNetplayFrame();
+            while (!advanced)
             {
                 if (!CoreIsEmbeddedNetplayActive() || ++attempts >= kMaxAdvanceAttempts)
                 {
@@ -1477,14 +1478,18 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
                 }
 
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                advanced = CoreAdvanceEmbeddedNetplayFrame();
             }
 
-            for (int i = 0; i < NUM_CONTROLLERS; i++)
+            if (advanced)
             {
-                l_EmbeddedNetplaySyncedState[i] =
-                    CoreGetEmbeddedNetplayFrameInput(i);
+                for (int i = 0; i < NUM_CONTROLLERS; i++)
+                {
+                    l_EmbeddedNetplaySyncedState[i] =
+                        CoreGetEmbeddedNetplayFrameInput(i);
+                }
+                l_EmbeddedNetplayFrameAdvanced = true;
             }
-            l_EmbeddedNetplayFrameAdvanced = true;
         }
 
         Keys->Value = l_EmbeddedNetplaySyncedState[Control];

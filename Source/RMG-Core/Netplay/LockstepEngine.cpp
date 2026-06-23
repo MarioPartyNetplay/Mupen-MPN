@@ -75,7 +75,8 @@ LockstepEngine::LockstepEngine(const Config& config)
         m_config.inputDelayFrames = static_cast<int>(kMinInputDelayFrames);
     }
 
-    m_config.stallTimeoutMilliseconds = 0;
+    m_config.stallTimeoutMilliseconds =
+        stallTimeoutForDelayFrames(m_config.inputDelayFrames);
 }
 
 LockstepEngine::~LockstepEngine()
@@ -330,15 +331,14 @@ bool LockstepEngine::advanceFrame()
     }
 
     if (m_config.numPlayers > 1) {
-        // Dolphin-style lockstep: wait for real peer inputs when the network
-        // is slow. Only time out while WebRTC channels are still coming up.
+        // Wait for real peer inputs, but never block the emulation thread
+        // indefinitely. VidExt/rendering runs on that thread; an infinite wait
+        // here freezes video (black screen). WebRTC can report "open" before
+        // the peer has finished loading and sent frame 0.
         int timeoutMs = 0;
         {
             std::lock_guard<std::recursive_mutex> lock(m_mutex);
-            if (frameNumber < 300 &&
-                !hasAllRemoteDataChannelsConnectedUnlocked()) {
-                timeoutMs = 8000;
-            }
+            timeoutMs = computeInputWaitTimeoutMsUnlocked(frameNumber);
         }
 
         const bool ready = waitForAllInputs(frameNumber, timeoutMs);
@@ -508,15 +508,19 @@ void LockstepEngine::setInputDelayFrames(int frames)
     }
 
     m_config.inputDelayFrames = frames;
-    m_config.stallTimeoutMilliseconds = 0;
+    m_config.stallTimeoutMilliseconds =
+        stallTimeoutForDelayFrames(frames);
 }
 
 int LockstepEngine::stallTimeoutForDelayFrames(int inputDelayFrames)
 {
-    (void)inputDelayFrames;
-    // Kept for API compatibility. Lockstep waits for real inputs (Dolphin-style)
-    // and only falls back when a peer disconnects or channels are still opening.
-    return 0;
+    if (inputDelayFrames < static_cast<int>(kMinInputDelayFrames)) {
+        inputDelayFrames = static_cast<int>(kMinInputDelayFrames);
+    }
+
+    // Per-frame ceiling before falling back to last-known input. Keeps lockstep
+    // responsive when a peer hitches without freezing emulation/video forever.
+    return 4000 + inputDelayFrames * 500;
 }
 
 void LockstepEngine::wakeInputWaiters()
@@ -875,6 +879,39 @@ bool LockstepEngine::hasAllRemoteDataChannelsConnectedUnlocked() const
     }
 
     return true;
+}
+
+bool LockstepEngine::hasReceivedBootstrapInputFromAllRemotesUnlocked() const
+{
+    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
+        if (slot == m_config.localPlayerSlot) {
+            continue;
+        }
+
+        if (m_lastKnownInputFrames.find(slot) == m_lastKnownInputFrames.end()) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+int LockstepEngine::computeInputWaitTimeoutMsUnlocked(
+    uint32_t frameNumber) const
+{
+    int timeoutMs = m_config.stallTimeoutMilliseconds;
+    if (timeoutMs <= 0) {
+        timeoutMs = stallTimeoutForDelayFrames(m_config.inputDelayFrames);
+    }
+
+    if (!hasAllRemoteDataChannelsConnectedUnlocked() ||
+        !hasReceivedBootstrapInputFromAllRemotesUnlocked()) {
+        timeoutMs = std::max(timeoutMs, 8000);
+    } else if (frameNumber < 300) {
+        timeoutMs = std::max(timeoutMs, 2000);
+    }
+
+    return timeoutMs;
 }
 
 bool LockstepEngine::allMissingInputsAreFromDisconnectedPeersUnlocked(
