@@ -216,6 +216,7 @@ static bool l_IsConfigGuiOpen = false;
 // Embedded netplay synchronization state
 static bool l_EmbeddedNetplayLocalSubmitted = false;
 static bool l_EmbeddedNetplayFrameAdvanced = false;
+static int l_EmbeddedNetplayLastControl = -1;
 static uint32_t l_EmbeddedNetplaySyncedState[NUM_CONTROLLERS] = {0};
 
 //
@@ -1451,44 +1452,56 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
     const bool embeddedNetplay = CoreIsEmbeddedNetplayActive();
     if (embeddedNetplay)
     {
-        if (Control == 0)
+        // Detect a new PIF poll cycle when controller indices wrap (e.g. 1 -> 0)
+        // or when the same index is polled again after the previous frame advanced.
+        if (l_EmbeddedNetplayFrameAdvanced &&
+            (l_EmbeddedNetplayLastControl < 0 || Control <= l_EmbeddedNetplayLastControl))
         {
             l_EmbeddedNetplayLocalSubmitted = false;
             l_EmbeddedNetplayFrameAdvanced = false;
         }
+        l_EmbeddedNetplayLastControl = Control;
 
         if (!l_EmbeddedNetplayLocalSubmitted)
         {
             BUTTONS localKeys = {};
-            fillLocalKeys(0, &localKeys);
+            int localProfile = 0;
+            const int localSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
+            if (localSlot >= 0 &&
+                localSlot < NUM_CONTROLLERS &&
+                l_InputProfiles[localSlot].PluggedIn)
+            {
+                localProfile = localSlot;
+            }
+            fillLocalKeys(localProfile, &localKeys);
             CoreSubmitEmbeddedNetplayFrameInput(localKeys.Value);
             l_EmbeddedNetplayLocalSubmitted = true;
-        }
 
-        if (Control == (NUM_CONTROLLERS - 1) && !l_EmbeddedNetplayFrameAdvanced)
-        {
-            constexpr int kMaxAdvanceAttempts = 8000;
-            int attempts = 0;
-            bool advanced = CoreAdvanceEmbeddedNetplayFrame();
-            while (!advanced)
+            if (!l_EmbeddedNetplayFrameAdvanced)
             {
-                if (!CoreIsEmbeddedNetplayActive() || ++attempts >= kMaxAdvanceAttempts)
+                constexpr int kMaxAdvanceAttempts = 8000;
+                int attempts = 0;
+                bool advanced = CoreAdvanceEmbeddedNetplayFrame();
+                while (!advanced)
                 {
-                    break;
+                    if (!CoreIsEmbeddedNetplayActive() || ++attempts >= kMaxAdvanceAttempts)
+                    {
+                        break;
+                    }
+
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    advanced = CoreAdvanceEmbeddedNetplayFrame();
                 }
 
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                advanced = CoreAdvanceEmbeddedNetplayFrame();
-            }
-
-            if (advanced)
-            {
-                for (int i = 0; i < NUM_CONTROLLERS; i++)
+                if (advanced)
                 {
-                    l_EmbeddedNetplaySyncedState[i] =
-                        CoreGetEmbeddedNetplayFrameInput(i);
+                    for (int i = 0; i < NUM_CONTROLLERS; i++)
+                    {
+                        l_EmbeddedNetplaySyncedState[i] =
+                            CoreGetEmbeddedNetplayFrameInput(i);
+                    }
+                    l_EmbeddedNetplayFrameAdvanced = true;
                 }
-                l_EmbeddedNetplayFrameAdvanced = true;
             }
         }
 
@@ -1528,6 +1541,7 @@ EXPORT int CALL RomOpen(void)
     l_HotkeysThread->SetState(HotkeysThreadState::RomOpened);
     l_EmbeddedNetplayLocalSubmitted = false;
     l_EmbeddedNetplayFrameAdvanced = false;
+    l_EmbeddedNetplayLastControl = -1;
     for (int i = 0; i < NUM_CONTROLLERS; i++)
     {
         l_EmbeddedNetplaySyncedState[i] = 0;

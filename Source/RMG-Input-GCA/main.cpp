@@ -16,6 +16,7 @@
 #include <RMG-Core/m64p/api/m64p_types.h>
 
 #include <RMG-Core/Settings.hpp>
+#include <RMG-Core/Netplay.hpp>
 #include <libusb.h>
 
 #include "UserInterface/MainDialog.hpp"
@@ -115,7 +116,12 @@ static std::array<GameCubeAdapterControllerState, 4> l_ControllerState;
 static std::thread l_PollThread;
 static SettingsProfile l_Settings = {0};
 
-// mupen64plus debug callback
+// Embedded netplay synchronization state
+static bool l_EmbeddedNetplayLocalSubmitted = false;
+static bool l_EmbeddedNetplayFrameAdvanced = false;
+static int l_EmbeddedNetplayLastControl = -1;
+static uint32_t l_EmbeddedNetplaySyncedState[NUM_CONTROLLERS] = {0};
+
 static void (*l_DebugCallback)(void *, int, const char *) = nullptr;
 static void *l_DebugCallContext                           = nullptr;
 
@@ -324,6 +330,85 @@ static double apply_deadzone(const double input, const double deadzone)
     return input;
 }
 
+static void fillLocalKeysFromGCState(int control, BUTTONS* keys)
+{
+    keys->Value = 0;
+
+    l_ControllerStateMutex.lock();
+    GameCubeAdapterControllerState state = l_ControllerState[control];
+    l_ControllerStateMutex.unlock();
+
+    if (!state.Status)
+    {
+        return;
+    }
+
+    keys->A_BUTTON = state.A;
+    keys->B_BUTTON = state.B;
+    keys->START_BUTTON = state.Start;
+    keys->L_DPAD = state.DpadLeft;
+    keys->R_DPAD = state.DpadRight;
+    keys->D_DPAD = state.DpadDown;
+    keys->U_DPAD = state.DpadUp;
+
+    const int triggerTreshold = INT8_MAX * l_Settings.TriggerTreshold;
+    const int cStickTreshold  = INT8_MAX * l_Settings.CButtonTreshold;
+    const int8_t cX = static_cast<int8_t>(state.RightStickX + 128);
+    const int8_t cY = static_cast<int8_t>(state.RightStickY + 128);
+
+    keys->R_TRIG = state.RightTrigger > triggerTreshold;
+    keys->L_TRIG = l_Settings.SwapZL ? state.Z : (state.LeftTrigger > triggerTreshold);
+    keys->Z_TRIG = l_Settings.SwapZL ? (state.LeftTrigger > triggerTreshold) : state.Z;
+
+    keys->L_CBUTTON = cX < -cStickTreshold;
+    keys->R_CBUTTON = cX > cStickTreshold;
+    keys->U_CBUTTON = cY > cStickTreshold;
+    keys->D_CBUTTON = cY < -cStickTreshold;
+
+    const int8_t x = static_cast<int8_t>(state.LeftStickX + 128);
+    const int8_t y = static_cast<int8_t>(state.LeftStickY + 128);
+
+    double modX = (static_cast<double>(x) / static_cast<double>(INT8_MAX)) * N64_AXIS_PEAK * l_Settings.SensitivityValue;
+    double modY = (static_cast<double>(y) / static_cast<double>(INT8_MAX)) * N64_AXIS_PEAK * l_Settings.SensitivityValue;
+
+    modX = apply_deadzone(modX, l_Settings.DeadzoneValue);
+    modY = apply_deadzone(modY, l_Settings.DeadzoneValue);
+
+    keys->X_AXIS = static_cast<int>(modX);
+    keys->Y_AXIS = static_cast<int>(modY);
+}
+
+static void advanceEmbeddedNetplayFrameIfNeeded(void)
+{
+    if (l_EmbeddedNetplayFrameAdvanced)
+    {
+        return;
+    }
+
+    constexpr int kMaxAdvanceAttempts = 8000;
+    int attempts = 0;
+    bool advanced = CoreAdvanceEmbeddedNetplayFrame();
+    while (!advanced)
+    {
+        if (!CoreIsEmbeddedNetplayActive() || ++attempts >= kMaxAdvanceAttempts)
+        {
+            break;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        advanced = CoreAdvanceEmbeddedNetplayFrame();
+    }
+
+    if (advanced)
+    {
+        for (int i = 0; i < NUM_CONTROLLERS; i++)
+        {
+            l_EmbeddedNetplaySyncedState[i] = CoreGetEmbeddedNetplayFrameInput(i);
+        }
+        l_EmbeddedNetplayFrameAdvanced = true;
+    }
+}
+
 //
 // Basic Plugin Functions
 //
@@ -410,49 +495,38 @@ EXPORT void CALL ControllerCommand(int Control, unsigned char* Command)
 
 EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
 {
-    l_ControllerStateMutex.lock();
-    GameCubeAdapterControllerState state = l_ControllerState[Control];
-    l_ControllerStateMutex.unlock();
-
-    if (!state.Status)
+    if (Keys == nullptr || Control < 0 || Control >= NUM_CONTROLLERS)
     {
-        Keys->Value = 0;
         return;
     }
 
-    Keys->A_BUTTON = state.A;
-    Keys->B_BUTTON = state.B;
-    Keys->START_BUTTON = state.Start;
-    Keys->L_DPAD = state.DpadLeft;
-    Keys->R_DPAD = state.DpadRight;
-    Keys->D_DPAD = state.DpadDown;
-    Keys->U_DPAD = state.DpadUp;
+    Keys->Value = 0;
 
-    const int triggerTreshold = INT8_MAX * l_Settings.TriggerTreshold;
-    const int cStickTreshold  = INT8_MAX * l_Settings.CButtonTreshold;
-    const int8_t cX = static_cast<int8_t>(state.RightStickX + 128);
-    const int8_t cY = static_cast<int8_t>(state.RightStickY + 128);
+    const bool embeddedNetplay = CoreIsEmbeddedNetplayActive();
+    if (embeddedNetplay)
+    {
+        if (l_EmbeddedNetplayFrameAdvanced &&
+            (l_EmbeddedNetplayLastControl < 0 || Control <= l_EmbeddedNetplayLastControl))
+        {
+            l_EmbeddedNetplayLocalSubmitted = false;
+            l_EmbeddedNetplayFrameAdvanced = false;
+        }
+        l_EmbeddedNetplayLastControl = Control;
 
-    Keys->R_TRIG = state.RightTrigger > triggerTreshold;
-    Keys->L_TRIG = l_Settings.SwapZL ? state.Z : (state.LeftTrigger > triggerTreshold);
-    Keys->Z_TRIG = l_Settings.SwapZL ? (state.LeftTrigger > triggerTreshold) : state.Z;
+        if (!l_EmbeddedNetplayLocalSubmitted)
+        {
+            BUTTONS localKeys = {};
+            fillLocalKeysFromGCState(0, &localKeys);
+            CoreSubmitEmbeddedNetplayFrameInput(localKeys.Value);
+            l_EmbeddedNetplayLocalSubmitted = true;
+            advanceEmbeddedNetplayFrameIfNeeded();
+        }
 
-    Keys->L_CBUTTON = cX < -cStickTreshold;
-    Keys->R_CBUTTON = cX > cStickTreshold;
-    Keys->U_CBUTTON = cY > cStickTreshold;
-    Keys->D_CBUTTON = cY < -cStickTreshold;
+        Keys->Value = l_EmbeddedNetplaySyncedState[Control];
+        return;
+    }
 
-    const int8_t x = static_cast<int8_t>(state.LeftStickX + 128);
-    const int8_t y = static_cast<int8_t>(state.LeftStickY + 128);
-
-    double modX = (static_cast<double>(x) / static_cast<double>(INT8_MAX)) * N64_AXIS_PEAK * l_Settings.SensitivityValue;
-    double modY = (static_cast<double>(y) / static_cast<double>(INT8_MAX)) * N64_AXIS_PEAK * l_Settings.SensitivityValue;
-
-    modX = apply_deadzone(modX, l_Settings.DeadzoneValue);
-    modY = apply_deadzone(modY, l_Settings.DeadzoneValue);
-
-    Keys->X_AXIS = static_cast<int>(modX);
-    Keys->Y_AXIS = static_cast<int>(modY);
+    fillLocalKeysFromGCState(Control, Keys);
 }
 
 EXPORT void CALL InitiateControllers(CONTROL_INFO ControlInfo)
@@ -471,11 +545,26 @@ EXPORT void CALL InitiateControllers(CONTROL_INFO ControlInfo)
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
+    const bool embeddedNetplay = CoreIsEmbeddedNetplayActive();
+
     l_ControllerStateMutex.lock();
     for (int i = 0; i < NUM_CONTROLLERS; i++)
     {
         GameCubeAdapterControllerState state = l_ControllerState[i];
-        ControlInfo.Controls[i].Present = (state.Status > 0) ? 1 : 0;
+        if (embeddedNetplay)
+        {
+            ControlInfo.Controls[i].Present = 1;
+            if (i != 0)
+            {
+                ControlInfo.Controls[i].Plugin = PLUGIN_NONE;
+                ControlInfo.Controls[i].RawData = 0;
+                ControlInfo.Controls[i].Type = CONT_TYPE_STANDARD;
+            }
+        }
+        else
+        {
+            ControlInfo.Controls[i].Present = (state.Status > 0) ? 1 : 0;
+        }
     }
     l_ControllerStateMutex.unlock();
 
@@ -489,6 +578,13 @@ EXPORT void CALL ReadController(int Control, unsigned char *Command)
 
 EXPORT int CALL RomOpen(void)
 {
+    l_EmbeddedNetplayLocalSubmitted = false;
+    l_EmbeddedNetplayFrameAdvanced = false;
+    l_EmbeddedNetplayLastControl = -1;
+    for (int i = 0; i < NUM_CONTROLLERS; i++)
+    {
+        l_EmbeddedNetplaySyncedState[i] = 0;
+    }
     return 1;
 }
 
