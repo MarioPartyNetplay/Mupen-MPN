@@ -578,7 +578,7 @@ void NetplaySessionDialog::beginHostBrowserRegistration(uint16_t hostingPort, bo
 
     connect(this->hostRegistry.get(), &Netplay::NetplayHostRegistry::traversalConnectRequested,
             this, [this](const QHostAddress& clientAddress, quint16 clientPort) {
-        if (Netplay::SocketIOServer* server = this->coordinator->getHostingServer()) {
+        if (SocketIOServer* server = this->coordinator->getHostingServer()) {
             server->attemptTraversalReversalConnect(clientAddress, clientPort);
         }
     });
