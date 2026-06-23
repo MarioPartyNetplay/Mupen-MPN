@@ -436,7 +436,7 @@ static void trav_send_punch(socket_t sock, const struct sockaddr_in* target, soc
 {
     char reply[96];
     snprintf(reply, sizeof(reply), TRAV_PROTOCOL "|PUNCH|%s|%u", ip_text, target_port);
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 20; ++i) {
         send_reply(sock, (const struct sockaddr*)target, target_len, reply);
     }
 }
