@@ -109,7 +109,7 @@
  
      // Components
      SocketIOClient* getSocketIOClient() { return m_socketIO.get(); }
-     RMGCore::LockstepEngine* getLockstepEngine() { return m_lockstepEngine.get(); }
+     RMGCore::LockstepEngine* getLockstepEngine() { return m_lockstepEngine ? m_lockstepEngine.get() : nullptr; }
      QJsonObject getAutoJoinRoomData() const { return m_autoJoinRoomData; }
     
      // Missing method declarations
@@ -216,7 +216,7 @@
      std::unique_ptr<SocketIOClient> m_socketIO;
      std::unique_ptr<SocketIOServer> m_server;
      QString m_lastHostingError;
-     std::unique_ptr<RMGCore::LockstepEngine> m_lockstepEngine;
+     std::shared_ptr<RMGCore::LockstepEngine> m_lockstepEngine;
      QMap<int, std::shared_ptr<WebRTCPeer>> m_peers;
      QString m_playerId;
 

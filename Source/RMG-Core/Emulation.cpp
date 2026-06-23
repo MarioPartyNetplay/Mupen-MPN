@@ -28,9 +28,22 @@
 
 #include "m64p/Api.hpp"
 
+#include <atomic>
+
+//
+// Local Variables
+//
+
+static std::atomic<bool> l_EmulationStopRequested{false};
+
 //
 // Local Functions
 //
+
+static bool emulation_stop_requested(void)
+{
+    return l_EmulationStopRequested.load(std::memory_order_relaxed);
+}
 
 static bool get_emulation_state(m64p_emu_state& state)
 {
@@ -188,15 +201,24 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
     std::string address, int port, int player)
 {
     std::string error;
-    m64p_error  m64p_ret;
+    m64p_error  m64p_ret = M64ERR_SUCCESS;
     bool        netplay_ret = false;
     CoreRomType type;
     const bool  remoteNetplay = !address.empty();
     const bool  embeddedNetplay = CoreIsEmbeddedNetplayActive();
     const bool  useNetplayCheats = remoteNetplay || embeddedNetplay;
 
+    l_EmulationStopRequested.store(false, std::memory_order_relaxed);
+
     if (!CoreOpenRom(n64rom))
     {
+        return false;
+    }
+
+    if (emulation_stop_requested())
+    {
+        CoreApplyPluginSettings();
+        CoreCloseRom();
         return false;
     }
 
@@ -221,86 +243,92 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
         return false;
     }
 
-    if (useNetplayCheats)
-    { // netplay cheats
-        if (!CoreApplyNetplayCheats())
+    if (!emulation_stop_requested())
+    {
+        if (useNetplayCheats)
+        { // netplay cheats
+            if (!CoreApplyNetplayCheats())
+            {
+                CoreDetachPlugins();
+                CoreApplyPluginSettings();
+                CoreCloseRom();
+                return false;
+            }
+        }
+        else
+        { // local cheats
+            if (!CoreApplyCheats())
+            {
+                CoreDetachPlugins();
+                CoreApplyPluginSettings();
+                CoreCloseRom();
+                return false;
+            }
+        }
+
+        if (!CoreGetRomType(type))
         {
+            CoreClearCheats();
             CoreDetachPlugins();
             CoreApplyPluginSettings();
             CoreCloseRom();
             return false;
         }
-    }
-    else
-    { // local cheats
-        if (!CoreApplyCheats())
+
+        // set disk file in media loader when ROM is a cartridge
+        if (type == CoreRomType::Cartridge)
         {
-            CoreDetachPlugins();
-            CoreApplyPluginSettings();
-            CoreCloseRom();
-            return false;
+            CoreMediaLoaderSetDiskFile(n64ddrom);
         }
-    }
 
-    if (!CoreGetRomType(type))
-    {
-        CoreClearCheats();
-        CoreDetachPlugins();
-        CoreApplyPluginSettings();
-        CoreCloseRom();
-        return false;
-    }
+        // apply core settings overlay
+        apply_coresettings_overlay();
 
-    // set disk file in media loader when ROM is a cartridge
-    if (type == CoreRomType::Cartridge)
-    {
-        CoreMediaLoaderSetDiskFile(n64ddrom);
-    }
+        // apply game core settings overrides
+        apply_game_coresettings_overlay();
 
-    // apply core settings overlay
-    apply_coresettings_overlay();
+        if (embeddedNetplay)
+        {
+            CoreApplyNetplaySyncedRomSettings();
+        }
 
-    // apply game core settings overrides
-    apply_game_coresettings_overlay();
+        // apply pif rom settings
+        apply_pif_rom_settings();
 
-    if (embeddedNetplay)
-    {
-        CoreApplyNetplaySyncedRomSettings();
-    }
-
-    // apply pif rom settings
-    apply_pif_rom_settings();
-
-    CoreRomSettings discordSettings;
-    CoreRomHeader discordHeader;
+        if (!emulation_stop_requested())
+        {
+            CoreRomSettings discordSettings;
+            CoreRomHeader discordHeader;
 
 #ifdef NETPLAY
-    if (remoteNetplay)
-    {
-        netplay_ret = CoreInitNetplay(address, port, player);
-        if (!netplay_ret)
-        {
-            m64p_ret = M64ERR_SYSTEM_FAIL;
-        }
-    }
+            if (remoteNetplay)
+            {
+                netplay_ret = CoreInitNetplay(address, port, player);
+                if (!netplay_ret)
+                {
+                    m64p_ret = M64ERR_SYSTEM_FAIL;
+                }
+            }
 #endif // NETPLAY
 
-    // only start emulation when initializing netplay
-    // is successful or if there's no netplay requested
-    if (!remoteNetplay || netplay_ret)
-    {
-        if (CoreGetCurrentDefaultRomSettings(discordSettings) &&
-            CoreGetCurrentRomHeader(discordHeader))
-        {
-            CoreTurnCountSetRom(discordHeader, discordSettings);
-            CoreDiscordStart(discordHeader, discordSettings);
-        }
+            // only start emulation when initializing netplay
+            // is successful or if there's no netplay requested
+            if (!remoteNetplay || netplay_ret)
+            {
+                if (CoreGetCurrentDefaultRomSettings(discordSettings) &&
+                    CoreGetCurrentRomHeader(discordHeader))
+                {
+                    CoreTurnCountSetRom(discordHeader, discordSettings);
+                    CoreDiscordStart(discordHeader, discordSettings);
+                }
 
-        m64p_ret = m64p::Core.DoCommand(M64CMD_EXECUTE, 0, nullptr);
-        if (m64p_ret != M64ERR_SUCCESS)
-        {
-            error = "CoreStartEmulation m64p::Core.DoCommand(M64CMD_EXECUTE) Failed: ";
-            error += m64p::Core.ErrorMessage(m64p_ret);
+                m64p_ret = m64p::Core.DoCommand(M64CMD_EXECUTE, 0, nullptr);
+                if (m64p_ret != M64ERR_SUCCESS)
+                {
+                    error = "CoreStartEmulation m64p::Core.DoCommand(M64CMD_EXECUTE) Failed: ";
+                    error += m64p::Core.ErrorMessage(m64p_ret);
+                }
+            }
         }
     }
 
@@ -339,6 +367,8 @@ CORE_EXPORT bool CoreStopEmulation(void)
 {
     std::string error;
     m64p_error ret;
+
+    l_EmulationStopRequested.store(true, std::memory_order_relaxed);
 
     if (!m64p::Core.IsHooked())
     {

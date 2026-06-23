@@ -287,6 +287,9 @@ bool LockstepEngine::advanceFrame()
 
     if (m_config.numPlayers > 1) {
         int timeoutMs = m_config.stallTimeoutMilliseconds;
+        if (timeoutMs <= 0) {
+            timeoutMs = stallTimeoutForDelayFrames(m_config.inputDelayFrames);
+        }
         // During ROM boot peers may still be connecting; allow extra time on
         // the first few seconds of frames before falling back to last input.
         if (frameNumber < 300) {

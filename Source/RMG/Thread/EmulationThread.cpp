@@ -38,6 +38,13 @@ EmulationThread::EmulationThread(QObject *parent) : QThread(parent)
 
 EmulationThread::~EmulationThread(void)
 {
+    if (this->isRunning())
+    {
+        CoreStopEmulation();
+        this->wait(30000);
+    }
+
+    this->uninhibitScreensaver();
 }
 
 void EmulationThread::SetRomFile(QString file)

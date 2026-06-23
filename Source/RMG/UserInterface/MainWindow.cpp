@@ -40,6 +40,7 @@
 #endif // UPDATER
 #include <QCoreApplication>
 #include <QDesktopServices>
+#include <QEventLoop>
 #include <QGuiApplication>
 #include <QStyleFactory>
 #include <QActionGroup> 
@@ -81,7 +82,7 @@
 using namespace UserInterface;
 using namespace Utilities;
 
-MainWindow::MainWindow() : QMainWindow(nullptr)
+MainWindow::MainWindow() : QMainWindow(nullptr), logDialog(this)
 {
 }
 
@@ -201,14 +202,41 @@ void MainWindow::closeEvent(QCloseEvent *event)
     Qt::ToolBarArea toolbarArea = this->toolBarArea(this->toolBar);
     CoreSettingsSetValue(SettingsID::GUI_ToolbarArea, this->getToolbarSettingAreaFromArea(toolbarArea));
 
+    // Prevent Qt from quitting while we still need the GUI thread for emulation shutdown.
+    // processEvents() during the wait loop would otherwise deliver QEvent::Quit and leave
+    // the emulation thread running in the background after the window closes.
+    const bool previousQuitOnLastWindowClosed = QGuiApplication::quitOnLastWindowClosed();
+    QGuiApplication::setQuitOnLastWindowClosed(false);
+
+#ifdef NETPLAY
+    if (this->netplaySessionDialog != nullptr)
+    {
+        this->netplaySessionDialog->shutdownSession();
+    }
+    else if (this->netplayCoordinator != nullptr &&
+             (this->netplayCoordinator->isInGame() ||
+              this->netplayCoordinator->getCurrentState() == Netplay::NetplayCoordinator::StartingGame))
+    {
+        this->netplayCoordinator->resetEmulationSync();
+    }
+#endif // NETPLAY
+
     // attempt to shutdown emulation
     this->ui_NoSwitchToRomBrowser = true;
     this->on_Action_System_Shutdown();
 
-    // wait until emulation has shut down
-    while (this->emulationThread->isRunning())
+    if (this->emulationThread->isRunning())
     {
-        QCoreApplication::processEvents();
+        QEventLoop waitLoop;
+        QTimer shutdownTimer;
+        shutdownTimer.setInterval(100);
+        connect(&shutdownTimer, &QTimer::timeout, this, [this]() {
+            this->on_Action_System_Shutdown();
+        });
+        connect(this->emulationThread, &QThread::finished, &waitLoop, &QEventLoop::quit);
+        shutdownTimer.start();
+        waitLoop.exec();
+        shutdownTimer.stop();
     }
 
     this->ui_Widget_RomBrowser->StopRefreshRomList();
@@ -218,7 +246,9 @@ void MainWindow::closeEvent(QCloseEvent *event)
 #ifdef NETPLAY
     if (this->netplaySessionDialog != nullptr)
     {
-        this->netplaySessionDialog->close();
+        this->netplaySessionDialog->shutdownSession();
+        this->netplaySessionDialog->deleteLater();
+        this->netplaySessionDialog = nullptr;
     }
 #endif // NETPLAY
 
@@ -227,7 +257,9 @@ void MainWindow::closeEvent(QCloseEvent *event)
     CoreSettingsSave();
     CoreShutdown();
 
+    QGuiApplication::setQuitOnLastWindowClosed(previousQuitOnLastWindowClosed);
     QMainWindow::closeEvent(event);
+    QGuiApplication::quit();
 }
 
 void MainWindow::initializeUI(bool launchROM)
@@ -1307,7 +1339,7 @@ void MainWindow::showNetplaySessionDialog(QString sessionFile)
         this->netplaySessionDialog = nullptr;
     }
     
-    this->netplaySessionDialog = new Dialog::NetplaySessionDialog(nullptr, this->netplayCoordinator, sessionFile);
+    this->netplaySessionDialog = new Dialog::NetplaySessionDialog(this, this->netplayCoordinator, sessionFile);
     connect(this->netplaySessionDialog, &Dialog::NetplaySessionDialog::OnPlayGame, this, &MainWindow::on_Netplay_PlayGame);
     connect(this->netplaySessionDialog, &Dialog::NetplaySessionDialog::rejected, this, &MainWindow::on_NetplaySessionDialog_rejected);
     this->netplaySessionDialog->show();
@@ -1695,17 +1727,17 @@ void MainWindow::on_Action_System_OpenUserFolder(void)
 
 void MainWindow::on_Action_System_Shutdown(void)
 {
+    if (!this->emulationThread->isRunning() && !CoreIsEmulationRunning() && !CoreIsEmulationPaused())
+    {
+        return;
+    }
+
     if (CoreIsEmulationPaused())
     {
         this->on_Action_System_Pause();
     }
 
-    if (!CoreIsEmulationRunning())
-    {
-        return;
-    }
-
-    if (!CoreStopEmulation())
+    if (!CoreStopEmulation() && CoreIsEmulationRunning())
     {
         this->showErrorMessage("CoreStopEmulation() Failed", QString::fromStdString(CoreGetError()));
     }

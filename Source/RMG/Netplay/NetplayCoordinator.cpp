@@ -24,6 +24,7 @@
 #include <QEventLoop>
 #include <QUuid>
 #include <QTimer>
+#include <thread>
 
 using namespace UserInterface::Netplay;
 using namespace RMGCore;
@@ -462,10 +463,16 @@ void NetplayCoordinator::endGame()
 
 void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
 {
-    if (m_state != InGame || !m_lockstepEngine) return;
+    std::shared_ptr<RMGCore::LockstepEngine> engine;
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        if (m_state != InGame || !m_lockstepEngine) {
+            return;
+        }
+        engine = m_lockstepEngine;
+    }
 
-    const auto outbound =
-        m_lockstepEngine->submitLocalInput(controllerState);
+    const auto outbound = engine->submitLocalInput(controllerState);
 
     const Qt::ConnectionType dispatchType =
         isHostingServer()
@@ -539,12 +546,17 @@ void NetplayCoordinator::relayLocalControllerInput(
 
 bool NetplayCoordinator::advanceFrame()
 {
-    if (m_state != InGame || !m_lockstepEngine) {
-        return false;
+    std::shared_ptr<RMGCore::LockstepEngine> engine;
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        if (m_state != InGame || !m_lockstepEngine) {
+            return false;
+        }
+        engine = m_lockstepEngine;
     }
 
-    const uint32_t completedFrame = m_lockstepEngine->getCurrentFrameNumber();
-    const bool advanced = m_lockstepEngine->advanceFrame();
+    const uint32_t completedFrame = engine->getCurrentFrameNumber();
+    const bool advanced = engine->advanceFrame();
     if (advanced) {
         broadcastFrameSyncIfNeeded(completedFrame);
     }
@@ -991,13 +1003,21 @@ void NetplayCoordinator::resetEmulationSync()
     CoreSetEmbeddedNetplayState(false, 0);
     CoreClearNetplaySyncSettings();
 
-    if (m_lockstepEngine) {
+    std::shared_ptr<RMGCore::LockstepEngine> engine;
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        engine = std::move(m_lockstepEngine);
+    }
+
+    if (engine) {
+        engine->releaseCurrentFrameWait();
         for (int slot = 0; slot < 4; ++slot) {
-            m_lockstepEngine->setDataChannel(slot, nullptr);
+            engine->setDataChannel(slot, nullptr);
         }
     }
 
-    m_lockstepEngine.reset();
+    engine.reset();
+
     m_currentFrameInputs.clear();
     m_sessionSyncCoreSettings = QJsonObject();
     m_lastBroadcastFrameSync = 0;
@@ -1012,7 +1032,7 @@ void NetplayCoordinator::initializeLockstepEngine()
     m_lockstepEngine.reset();
     m_currentFrameInputs.clear();
 
-    m_lockstepEngine = std::make_unique<RMGCore::LockstepEngine>(m_lockstepConfig);
+    m_lockstepEngine = std::make_shared<RMGCore::LockstepEngine>(m_lockstepConfig);
 
     RMGCore::LockstepEngine::Callbacks callbacks;
     callbacks.frameReady = [this](uint32_t frameNumber, const std::map<int, uint32_t>& inputs) {
@@ -1043,12 +1063,16 @@ void NetplayCoordinator::initializeLockstepEngine()
             return;
         }
 
+        // Never block the emulation thread on the UI thread here. A blocking pump
+        // can deadlock with VidExt/input dispatch and looks like a crash when
+        // lockstep stalls while a peer falls behind.
         QMetaObject::invokeMethod(
             this,
             []() {
                 QCoreApplication::processEvents(QEventLoop::AllEvents, 2);
             },
-            Qt::BlockingQueuedConnection);
+            Qt::QueuedConnection);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
     };
 
     m_lockstepEngine->setCallbacks(callbacks);
@@ -1410,6 +1434,8 @@ void NetplayCoordinator::setInputDelayFrames(int frames)
     }
 
     m_lockstepConfig.inputDelayFrames = frames;
+    m_lockstepConfig.stallTimeoutMilliseconds =
+        RMGCore::LockstepEngine::stallTimeoutForDelayFrames(frames);
     if (m_lockstepEngine) {
         m_lockstepEngine->setInputDelayFrames(frames);
     }

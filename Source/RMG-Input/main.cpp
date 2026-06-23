@@ -1467,8 +1467,15 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
 
         if (Control == (NUM_CONTROLLERS - 1) && !l_EmbeddedNetplayFrameAdvanced)
         {
+            constexpr int kMaxAdvanceAttempts = 8000;
+            int attempts = 0;
             while (!CoreAdvanceEmbeddedNetplayFrame())
             {
+                if (!CoreIsEmbeddedNetplayActive() || ++attempts >= kMaxAdvanceAttempts)
+                {
+                    break;
+                }
+
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
 
