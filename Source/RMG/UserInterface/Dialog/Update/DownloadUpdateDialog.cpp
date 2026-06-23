@@ -32,6 +32,7 @@ DownloadUpdateDialog::DownloadUpdateDialog(QWidget *parent, QUrl url, QString fi
 
     QNetworkAccessManager* networkAccessManager = new QNetworkAccessManager(this);
     QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Mupen-MPN-Updater"));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
 
     this->reply = networkAccessManager->get(request);

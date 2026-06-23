@@ -23,6 +23,57 @@
 
 #include <RMG-Core/Settings.hpp>
 
+namespace {
+
+bool matchesCpuArchitecture(const QString& lowerFilename, const QString& osToken)
+{
+    const QString arch = QSysInfo::buildCpuArchitecture().toLower();
+
+    if (lowerFilename.contains(osToken + "-" + arch)) {
+        return true;
+    }
+
+    if (arch == QStringLiteral("x86_64")) {
+        return lowerFilename.contains(osToken + QStringLiteral("64")) ||
+               lowerFilename.contains(QStringLiteral("x86_64")) ||
+               lowerFilename.contains(QStringLiteral("amd64"));
+    }
+
+    return false;
+}
+
+bool matchesWindowsUpdateAsset(const QString& filename, bool isWin32Setup)
+{
+    const QString lowerFilename = filename.toLower();
+
+    if (!lowerFilename.contains(QStringLiteral("windows")) ||
+        !matchesCpuArchitecture(lowerFilename, QStringLiteral("windows"))) {
+        return false;
+    }
+
+    if (isWin32Setup) {
+        return lowerFilename.contains(QStringLiteral("setup")) &&
+               lowerFilename.endsWith(QStringLiteral(".exe"));
+    }
+
+    return lowerFilename.endsWith(QStringLiteral(".zip"));
+}
+
+bool matchesLinuxUpdateAsset(const QString& filename)
+{
+    const QString lowerFilename = filename.toLower();
+
+    if (!lowerFilename.contains(QStringLiteral("linux")) ||
+        !matchesCpuArchitecture(lowerFilename, QStringLiteral("linux"))) {
+        return false;
+    }
+
+    return lowerFilename.endsWith(QStringLiteral(".appimage")) ||
+           lowerFilename.endsWith(QStringLiteral(".zip"));
+}
+
+} // namespace
+
 using namespace UserInterface::Dialog;
 using namespace Utilities;
 
@@ -70,33 +121,26 @@ void UpdateDialog::accept(void)
     QString filenameToDownload;
     QUrl urlToDownload;
 
-#ifdef _WIN32
-    const bool isWin32Setup = QFile::exists("unins000.exe") && QFile::exists("unins000.dat");
-#endif // _WIN32
-
     for (const QJsonValue& value : jsonArray)
     {
         QJsonObject object = value.toObject();
 
-        QString filename      = object.value("name").toString();
-        QString lowerFilename = filename.toLower();
-        QString url           = object.value("browser_download_url").toString();
+        QString filename = object.value("name").toString();
+        QString url      = object.value("browser_download_url").toString();
 
 #ifdef _WIN32
-        if (((QSysInfo::buildCpuArchitecture() == "x86_64" && lowerFilename.contains("windows64")) ||
-              lowerFilename.contains("windows-" + QSysInfo::buildCpuArchitecture())) &&
-            lowerFilename.contains(isWin32Setup ? "setup" : "portable") &&
-            lowerFilename.endsWith(isWin32Setup ? ".exe"  : ".zip"))
+        const bool isWin32Setup =
+            QFile::exists(QStringLiteral("unins000.exe")) &&
+            QFile::exists(QStringLiteral("unins000.dat"));
+
+        if (matchesWindowsUpdateAsset(filename, isWin32Setup))
         {
             filenameToDownload = filename;
             urlToDownload = QUrl(url);
             break;
         }
 #else
-        if (((QSysInfo::buildCpuArchitecture() == "x86_64" && lowerFilename.contains("linux64")) ||
-              lowerFilename.contains("linux-" + QSysInfo::buildCpuArchitecture())) &&
-            lowerFilename.contains("portable") &&
-            lowerFilename.endsWith(".appimage"))
+        if (matchesLinuxUpdateAsset(filename))
         {
             filenameToDownload = filename;
             urlToDownload = QUrl(url);

@@ -133,8 +133,8 @@ void LockstepEngine::setDataChannel(
 
     if (m_dataChannels[peerSlot]) {
         const int boundSlot = peerSlot;
-        auto& boundChannel = m_dataChannels[peerSlot];
         std::weak_ptr<LockstepEngine> weakSelf = weak_from_this();
+        auto& boundChannel = m_dataChannels[peerSlot];
 
         boundChannel->onBinaryMessageReceived =
             [weakSelf, boundSlot](const std::vector<uint8_t>& data) {
@@ -386,7 +386,7 @@ bool LockstepEngine::advanceFrame()
             frameInputs);
     }
 
-    return true;
+    return isAlive();
 }
 
 void LockstepEngine::checkDesync(uint32_t stateHash)
