@@ -93,6 +93,7 @@ public:
 
 
     void connectToServer(const QString& playerName, quint16 bindUdpPort = 0, bool useTraversalPunch = false);
+    void connectViaTraversalCode(const QString& hostCode, const QString& playerName);
     void disconnect();
     ConnectionState getConnectionState() const;
 
@@ -189,6 +190,7 @@ private:
     void failReconnect();
     void sendReconnectRoom();
     bool startTransportConnect(quint16 bindUdpPort, bool useTraversalPunch);
+    bool finishTransportConnect();
     void handleSignalingPacket(const QByteArray& payload);
     void handleEvent(const QString& eventName, const QJsonArray& args);
 

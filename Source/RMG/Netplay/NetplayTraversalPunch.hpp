@@ -21,6 +21,10 @@ bool handleTraversalPunchDatagram(const QByteArray& datagram, _ENetHost* replyHo
 void performTraversalPunchWindow(QUdpSocket* socket, const QHostAddress& hostAddress, quint16 hostSignalingPort,
                                  int durationMs = 5000);
 
+/** Same as performTraversalPunchWindow, but reuses the ENet signaling socket. */
+void performTraversalPunchWindowForEnet(_ENetHost* host, const QHostAddress& hostAddress, quint16 hostSignalingPort,
+                                        int durationMs = 5000);
+
 } // namespace UserInterface::Netplay
 
 #endif // NETPLAYTRAVERSALPUNCH_HPP

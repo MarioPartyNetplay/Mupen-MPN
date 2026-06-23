@@ -145,12 +145,29 @@ void SocketIOServer::attemptTraversalReversalConnect(const QHostAddress& clientA
     m_traversalReversalTargets.insert(endpointKey);
     QTimer::singleShot(30000, this, [this, endpointKey]() { m_traversalReversalTargets.remove(endpointKey); });
 
-    sendEnetPunchBursts(m_enetHost, clientAddress, clientPort, 8);
+    const auto punchClient = [this, clientAddress, clientPort]() {
+        if (m_enetHost) {
+            sendEnetPunchBursts(m_enetHost, clientAddress, clientPort, 8);
+        }
+    };
+
+    punchClient();
+
+    auto* punchTimer = new QTimer(this);
+    punchTimer->setInterval(100);
+    connect(punchTimer, &QTimer::timeout, this, punchClient);
+    punchTimer->start();
+    QTimer::singleShot(15000, punchTimer, [punchTimer]() {
+        punchTimer->stop();
+        punchTimer->deleteLater();
+    });
 
     ENetAddress address;
     address.port = clientPort;
     const QByteArray hostBytes = clientAddress.toString().toUtf8();
-    if (enet_address_set_host(&address, hostBytes.constData()) != 0) {
+    if (clientAddress.protocol() == QAbstractSocket::IPv4Protocol) {
+        address.host = clientAddress.toIPv4Address();
+    } else if (enet_address_set_host(&address, hostBytes.constData()) != 0) {
         qWarning() << "SocketIOServer: Failed to resolve traversal reversal address" << clientAddress;
         return;
     }

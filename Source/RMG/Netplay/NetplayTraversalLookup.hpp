@@ -7,6 +7,8 @@
 
 #include <QString>
 
+struct _ENetHost;
+
 namespace UserInterface::Netplay {
 
 struct TraversalLookupResult {
@@ -18,7 +20,11 @@ struct TraversalLookupResult {
     QString error;
 };
 
+/** Legacy lookup via a temporary QUdpSocket (prefer lookupTraversalHostViaEnet). */
 TraversalLookupResult lookupTraversalHost(const QString& hostCode);
+
+/** Lookup and NAT punch using the same ENet socket that will carry signaling. */
+TraversalLookupResult lookupTraversalHostViaEnet(_ENetHost* host, const QString& hostCode);
 
 } // namespace UserInterface::Netplay
 

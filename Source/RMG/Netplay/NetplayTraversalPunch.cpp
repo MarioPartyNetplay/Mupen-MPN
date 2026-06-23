@@ -10,7 +10,10 @@
 #include <QDateTime>
 #include <QEventLoop>
 #include <QNetworkDatagram>
+#include <QThread>
 #include <QTimer>
+
+#include <enet/enet.h>
 
 namespace UserInterface::Netplay {
 
@@ -118,6 +121,32 @@ void performTraversalPunchWindow(QUdpSocket* socket, const QHostAddress& hostAdd
     });
     timer.start();
     loop.exec();
+}
+
+void performTraversalPunchWindowForEnet(
+    ENetHost* host,
+    const QHostAddress& hostAddress,
+    quint16 hostSignalingPort,
+    int durationMs)
+{
+    if (!host || hostAddress.isNull() || hostSignalingPort == 0) {
+        return;
+    }
+
+    sendEnetPunchBursts(host, hostAddress, hostSignalingPort);
+
+    const qint64 deadline = QDateTime::currentMSecsSinceEpoch() + durationMs;
+    while (QDateTime::currentMSecsSinceEpoch() < deadline) {
+        ENetEvent event;
+        while (enet_host_service(host, &event, 0) > 0) {
+            if (event.type == ENET_EVENT_TYPE_RECEIVE) {
+                enet_packet_destroy(event.packet);
+            }
+        }
+
+        sendEnetPunchBursts(host, hostAddress, hostSignalingPort, 2);
+        QThread::msleep(50);
+    }
 }
 
 } // namespace UserInterface::Netplay

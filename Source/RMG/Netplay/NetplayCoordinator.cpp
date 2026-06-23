@@ -9,7 +9,6 @@
  */
 #include "NetplayCoordinator.hpp"
 #include "NetplayProtocol.hpp"
-#include "NetplayTraversalLookup.hpp"
 #include "Netplay.hpp"
 #include "WebRTC/TurnCredentialClient.hpp"
 #include <RMG-Core/Netplay.hpp>
@@ -352,20 +351,20 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
 
     QString connectAddress = ipAddress.trimmed();
     int connectPort = port;
-    quint16 bindUdpPort = 0;
 
     if (looksLikeTraversalCode(connectAddress)) {
-        const TraversalLookupResult lookup = lookupTraversalHost(connectAddress);
-        if (!lookup.success) {
-            setState(Error);
-            emit connectionError(lookup.error);
-            return;
+        // Recreate the signaling client and connect via traversal on one ENet socket
+        // so the NAT mapping used for LOOKUP matches the signaling connection.
+        if (m_socketIO && m_socketIO->getConnectionState() != SocketIOClient::Disconnected) {
+            m_socketIO->disconnect();
         }
-        connectAddress = lookup.address;
-        connectPort = lookup.port;
-        bindUdpPort = lookup.localUdpPort;
-        qInfo() << "Traversal lookup resolved" << connectAddress << connectPort
-                << "local UDP port" << bindUdpPort;
+
+        m_socketIO = std::make_unique<SocketIOClient>(QString(), this);
+        connectSocketIOClientSignals(m_socketIO.get());
+
+        setState(Connecting);
+        m_socketIO->connectViaTraversalCode(connectAddress, playerName);
+        return;
     }
 
     // Recreate the signaling client with the new server endpoint
@@ -383,7 +382,7 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
     
     // Now connect to the server
     setState(Connecting);
-    m_socketIO->connectToServer(playerName, bindUdpPort, bindUdpPort > 0);
+    m_socketIO->connectToServer(playerName);
 }
 
 void NetplayCoordinator::createRoom(const QString& roomName, const QString& gameId, int maxPlayers)

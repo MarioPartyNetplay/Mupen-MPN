@@ -709,8 +709,16 @@ static void handle_udp(socket_t sock, const char* buffer, int length, const stru
                 host_entry_t* entry = find_host(code);
                 if (entry != NULL) {
                     entry->last_seen = now_seconds();
+                    entry->host_ip = client->sin_addr.s_addr;
+                    entry->traversal_port = ntohs(client->sin_port);
                     if (part_count >= 4) {
-                        entry->list_in_browser = (strcmp(parts[3], "0") != 0);
+                        int parsed_port = atoi(parts[3]);
+                        if (parsed_port >= 1024 && parsed_port <= 65535) {
+                            entry->signaling_port = (uint16_t)parsed_port;
+                        }
+                    }
+                    if (part_count >= 5) {
+                        entry->list_in_browser = (strcmp(parts[4], "0") != 0);
                         if (!entry->list_in_browser) {
                             char session_key[MAX_KEY_LEN];
                             snprintf(session_key, sizeof(session_key), "session/%s", parts[2]);

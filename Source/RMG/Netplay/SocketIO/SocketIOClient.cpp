@@ -10,6 +10,8 @@
 #include "SocketIOClient.hpp"
 #include "../NetplayEnet.hpp"
 #include "../NetplayProtocol.hpp"
+#include "../NetplayTraversalLookup.hpp"
+#include "../NetplayTraversalPunch.hpp"
 
 #include <QTimer>
 #include <QJsonDocument>
@@ -197,6 +199,12 @@ bool SocketIOClient::setEnetPeerAddress(ENetAddress* addressOut) const
     }
 
     addressOut->port = m_serverPort;
+
+    if (m_serverAddress.protocol() == QAbstractSocket::IPv4Protocol) {
+        addressOut->host = m_serverAddress.toIPv4Address();
+        return true;
+    }
+
     const QByteArray hostBytes = m_serverHostname.toUtf8();
     return enet_address_set_host(addressOut, hostBytes.constData()) == 0;
 }
@@ -250,6 +258,66 @@ void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpP
             << "traversal punch" << useTraversalPunch;
 }
 
+void SocketIOClient::connectViaTraversalCode(const QString& hostCode, const QString& playerName)
+{
+    m_playerName = playerName;
+    m_savedBindUdpPort = 0;
+    m_savedUseTraversalPunch = true;
+    m_intentionalDisconnect = false;
+    m_awaitingReconnectAck = false;
+    m_reconnectAttempts = 0;
+    if (m_reconnectTimer) {
+        m_reconnectTimer->stop();
+    }
+
+    destroyEnetClient();
+    ensureEnetInitialized();
+    m_connectionState = Connecting;
+
+    m_enetHost = createSignalingEnetHost(nullptr, 1, 1, 0, 0);
+    if (!m_enetHost) {
+        m_connectionState = Error;
+        shutdownEnetIfIdle();
+        emit connectionError(QStringLiteral("Failed to create UDP signaling client"));
+        return;
+    }
+
+    const TraversalLookupResult lookup = lookupTraversalHostViaEnet(m_enetHost, hostCode);
+    if (!lookup.success) {
+        destroyEnetClient();
+        m_connectionState = Error;
+        emit connectionError(lookup.error);
+        return;
+    }
+
+    m_serverUrl = QStringLiteral("udp://%1:%2").arg(lookup.address).arg(lookup.port);
+    if (!parseServerEndpoint(m_serverUrl, &m_serverAddress, &m_serverPort)) {
+        destroyEnetClient();
+        m_connectionState = Error;
+        emit connectionError(QStringLiteral("Invalid signaling server address: %1").arg(m_serverUrl));
+        return;
+    }
+
+    {
+        const QUrl url(m_serverUrl);
+        const QString host = url.host().toLower();
+        m_serverHostname = host == QStringLiteral("localhost") ? QStringLiteral("127.0.0.1") : url.host();
+    }
+
+    m_useTraversalPunch = true;
+    m_savedBindUdpPort = lookup.localUdpPort;
+
+    qInfo() << "Traversal lookup resolved" << m_serverHostname << m_serverPort
+            << "local UDP port" << m_savedBindUdpPort;
+
+    if (!finishTransportConnect()) {
+        return;
+    }
+
+    qInfo() << "Connecting to UDP signaling server" << m_serverHostname << m_serverPort
+            << "local UDP port" << m_savedBindUdpPort << "traversal punch" << true;
+}
+
 bool SocketIOClient::startTransportConnect(quint16 bindUdpPort, bool useTraversalPunch)
 {
     m_useTraversalPunch = useTraversalPunch;
@@ -284,6 +352,21 @@ bool SocketIOClient::startTransportConnect(quint16 bindUdpPort, bool useTraversa
         return false;
     }
 
+    if (m_useTraversalPunch && !m_serverAddress.isNull() && m_serverPort > 0) {
+        performTraversalPunchWindowForEnet(m_enetHost, m_serverAddress, m_serverPort);
+    }
+
+    return finishTransportConnect();
+}
+
+bool SocketIOClient::finishTransportConnect()
+{
+    if (!m_enetHost) {
+        m_connectionState = Error;
+        emit connectionError(QStringLiteral("Failed to create UDP signaling client"));
+        return false;
+    }
+
     ENetAddress address;
     if (!setEnetPeerAddress(&address)) {
         destroyEnetClient();
@@ -308,7 +391,7 @@ bool SocketIOClient::startTransportConnect(quint16 bindUdpPort, bool useTraversa
     }
 
     m_serviceTimer->start();
-    m_connectTimer->start(m_useTraversalPunch ? 25000 : kConnectTimeoutMs);
+    m_connectTimer->start(m_useTraversalPunch ? 30000 : kConnectTimeoutMs);
     if (m_useTraversalPunch) {
         m_punchTimer->start();
     }
@@ -847,7 +930,13 @@ void SocketIOClient::on_connectTimeout()
     if (m_connectionState == Connecting) {
         destroyEnetClient();
         m_connectionState = Error;
-        emit connectionError(QStringLiteral("UDP signaling connection timed out"));
+        if (m_useTraversalPunch) {
+            emit connectionError(QStringLiteral(
+                "UDP signaling connection timed out. Ensure the host is online with an active netplay session, "
+                "then retry joining with the traversal code."));
+        } else {
+            emit connectionError(QStringLiteral("UDP signaling connection timed out"));
+        }
         return;
     }
 
