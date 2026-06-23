@@ -100,11 +100,13 @@ void DownloadUpdateDialog::on_reply_finished(void)
         this->temporaryDirectory = temporaryDir.path();
         filePath = temporaryDir.filePath(this->filename);
     }
+#if defined(APPIMAGE_UPDATER) && !defined(_WIN32)
     else
     {
         filePath = QString::fromLocal8Bit(appImageEnv);
         filePath += QStringLiteral(".update");
     }
+#endif
 
     QFile file(filePath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
@@ -116,12 +118,15 @@ void DownloadUpdateDialog::on_reply_finished(void)
     }
 
     file.write(this->reply->readAll());
+#if defined(APPIMAGE_UPDATER) && !defined(_WIN32)
     if (useAppImageInPlaceUpdate)
     {
         file.setPermissions(QFile(QString::fromLocal8Bit(appImageEnv)).permissions());
     }
+#endif
     file.close();
 
+#if defined(APPIMAGE_UPDATER) && !defined(_WIN32)
     if (useAppImageInPlaceUpdate)
     {
         int ret = std::rename(filePath.toStdString().c_str(), appImageEnv);
@@ -137,6 +142,7 @@ void DownloadUpdateDialog::on_reply_finished(void)
         process.setProgram(QString::fromLocal8Bit(appImageEnv));
         process.startDetached();
     }
+#endif
 
     this->reply->deleteLater();
     this->accept();
