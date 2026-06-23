@@ -200,7 +200,9 @@
      void synchronizeLockstepPlayerCount();
      void initializeLockstepEngine();
      void applyPlayerPings(const QJsonArray& pings);
-     void broadcastFrameSyncIfNeeded(uint32_t frameNumber);
+     void broadcastFrameSyncIfNeeded(
+         const std::shared_ptr<RMGCore::LockstepEngine>& engine,
+         uint32_t frameNumber);
      void bindWebRTCPeerSignals(const std::shared_ptr<WebRTCPeer>& peer, const QString& peerId);
      void attachExistingPeerDataChannels();
      void recoverWebRTCPeerConnections();
@@ -211,6 +213,7 @@
      void sendWebRTCAnswer(const QString& targetPlayerId, const QString& sdpAnswer);
      void sendWebRTCIceCandidate(const QString& targetPlayerId, const QString& candidate, int mLineIndex);
      void on_hostedWebRTCSignalReceived(const QString& fromPlayerId, const QJsonObject& signal);
+     std::shared_ptr<RMGCore::LockstepEngine> activeLockstepEngine();
  
      // Internal components
      std::unique_ptr<SocketIOClient> m_socketIO;

@@ -10,6 +10,7 @@
 #ifndef LOCKSTEPENGINE_HPP
 #define LOCKSTEPENGINE_HPP
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <map>
@@ -28,7 +29,8 @@ class WebRTCDataChannel;
 
 namespace RMGCore {
 
-class CORE_EXPORT LockstepEngine {
+class CORE_EXPORT LockstepEngine
+    : public std::enable_shared_from_this<LockstepEngine> {
 public:
 
     struct Config {
@@ -101,6 +103,8 @@ public:
     void wakeInputWaiters();
     /** Fill missing peer inputs for the current frame and wake waiters. */
     void releaseCurrentFrameWait();
+    /** Detach callbacks/channels and unblock any waiters (safe during teardown). */
+    void shutdown();
 
     /** Stall timeout (ms) when waiting for missing inputs; 0 waits indefinitely. */
     static int stallTimeoutForDelayFrames(int inputDelayFrames);
@@ -127,11 +131,13 @@ private:
         uint32_t peerHash);
     void pruneOldFrameSyncDataUnlocked(uint32_t oldestFrameToKeep);
     void applyTimeoutFallbackUnlocked(uint32_t frameNumber);
+    bool isAlive() const { return !m_shutdown.load(); }
 
     Config m_config;
     uint32_t m_currentFrameNumber = 0;
     mutable std::recursive_mutex m_mutex;
     std::condition_variable_any m_inputCv;
+    std::atomic<bool> m_shutdown{false};
     bool m_isDesynchronized = false;
     Stats m_stats;
     std::map<uint32_t, FrameInputs> m_frameBuffer;

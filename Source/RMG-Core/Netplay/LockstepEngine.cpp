@@ -81,16 +81,34 @@ LockstepEngine::LockstepEngine(const Config& config)
 
 LockstepEngine::~LockstepEngine()
 {
+    shutdown();
+}
+
+void LockstepEngine::shutdown()
+{
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    if (m_shutdown.exchange(true)) {
+        return;
+    }
+
+    m_callbacks = {};
 
     for (auto& channel : m_dataChannels) {
         detachDataChannelCallbacks(channel);
         channel.reset();
     }
+
+    m_inputCv.notify_all();
 }
 
 void LockstepEngine::setCallbacks(Callbacks callbacks)
 {
+    if (!isAlive()) {
+        return;
+    }
+
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     m_callbacks = std::move(callbacks);
 }
 
@@ -98,6 +116,10 @@ void LockstepEngine::setDataChannel(
     int peerSlot,
     std::shared_ptr<WebRTCDataChannel> channel)
 {
+    if (!isAlive()) {
+        return;
+    }
+
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
     if (peerSlot < 0 || peerSlot >= static_cast<int>(m_dataChannels.size())) {
@@ -112,20 +134,27 @@ void LockstepEngine::setDataChannel(
     if (m_dataChannels[peerSlot]) {
         const int boundSlot = peerSlot;
         auto& boundChannel = m_dataChannels[peerSlot];
+        std::weak_ptr<LockstepEngine> weakSelf = weak_from_this();
 
         boundChannel->onBinaryMessageReceived =
-            [this, boundSlot](const std::vector<uint8_t>& data) {
-                onDataChannelBinaryMessageReceived(boundSlot, data);
+            [weakSelf, boundSlot](const std::vector<uint8_t>& data) {
+                if (auto self = weakSelf.lock()) {
+                    self->onDataChannelBinaryMessageReceived(boundSlot, data);
+                }
             };
 
         boundChannel->onClosed =
-            [this, boundSlot]() {
-                onDataChannelClosed(boundSlot);
+            [weakSelf, boundSlot]() {
+                if (auto self = weakSelf.lock()) {
+                    self->onDataChannelClosed(boundSlot);
+                }
             };
 
         boundChannel->onError =
-            [this, boundSlot](const std::string& error) {
-                onDataChannelError(boundSlot, error);
+            [weakSelf, boundSlot](const std::string& error) {
+                if (auto self = weakSelf.lock()) {
+                    self->onDataChannelError(boundSlot, error);
+                }
             };
     }
 }
@@ -133,6 +162,10 @@ void LockstepEngine::setDataChannel(
 std::vector<std::pair<uint32_t, uint32_t>>
 LockstepEngine::submitLocalInput(uint32_t controllerState)
 {
+    if (!isAlive()) {
+        return {};
+    }
+
     std::vector<std::pair<uint32_t, uint32_t>> outbound;
 
     {
@@ -185,6 +218,10 @@ void LockstepEngine::submitRemoteInput(
     uint32_t frameNumber,
     uint32_t controllerState)
 {
+    if (!isAlive()) {
+        return;
+    }
+
     if (fromSlot < 0 ||
         fromSlot >= m_config.numPlayers ||
         fromSlot == m_config.localPlayerSlot) {
@@ -283,7 +320,15 @@ void LockstepEngine::submitPeerFrameSync(
 
 bool LockstepEngine::advanceFrame()
 {
-    const uint32_t frameNumber = m_currentFrameNumber;
+    if (m_shutdown.load()) {
+        return false;
+    }
+
+    uint32_t frameNumber = 0;
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        frameNumber = m_currentFrameNumber;
+    }
 
     if (m_config.numPlayers > 1) {
         int timeoutMs = m_config.stallTimeoutMilliseconds;
@@ -298,6 +343,10 @@ bool LockstepEngine::advanceFrame()
 
         const bool ready = waitForAllInputs(frameNumber, timeoutMs);
         if (!ready) {
+            if (m_shutdown.load()) {
+                return false;
+            }
+
             std::lock_guard<std::recursive_mutex> lock(m_mutex);
             applyTimeoutFallbackUnlocked(frameNumber);
             ++m_stats.timeoutOccurrences;
@@ -325,6 +374,10 @@ bool LockstepEngine::advanceFrame()
                 : 0);
 
         m_stats.totalFramesProcessed++;
+    }
+
+    if (m_shutdown.load()) {
+        return false;
     }
 
     if (m_callbacks.frameReady) {
@@ -356,6 +409,7 @@ void LockstepEngine::requestResync()
 
 uint32_t LockstepEngine::getCurrentFrameNumber() const
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     return m_currentFrameNumber;
 }
 
@@ -370,6 +424,8 @@ uint32_t LockstepEngine::getSendFrameNumber() const
 std::map<int, uint32_t>
 LockstepEngine::getCurrentFrameInputs() const
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
     auto it = m_frameBuffer.find(m_currentFrameNumber);
 
     if (it == m_frameBuffer.end()) {
@@ -381,6 +437,7 @@ LockstepEngine::getCurrentFrameInputs() const
 
 bool LockstepEngine::isDesynchronized() const
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     return m_isDesynchronized;
 }
 
@@ -498,11 +555,19 @@ void LockstepEngine::onDataChannelBinaryMessageReceived(
     int peerSlot,
     const std::vector<uint8_t>& data)
 {
+    if (!isAlive()) {
+        return;
+    }
+
     processInputPacket(peerSlot, data);
 }
 
 void LockstepEngine::onDataChannelClosed(int peerSlot)
 {
+    if (!isAlive()) {
+        return;
+    }
+
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
     if (peerSlot >= 0 &&
@@ -518,6 +583,10 @@ void LockstepEngine::onDataChannelError(
     int peerSlot,
     const std::string& error)
 {
+    if (!isAlive()) {
+        return;
+    }
+
     std::cerr
         << "LockstepEngine: DataChannel error on slot "
         << peerSlot
@@ -811,6 +880,10 @@ bool LockstepEngine::waitForAllInputs(
     std::unique_lock<std::recursive_mutex> lock(m_mutex);
 
     while (!hasAllInputsForFrameUnlocked(frameNumber)) {
+        if (m_shutdown.load()) {
+            return false;
+        }
+
         if (m_callbacks.pumpNetwork) {
             // Release the lock before pumping Qt/socket events. pumpNetwork runs
             // on the UI thread and may deliver controllerInput -> submitRemoteInput,
