@@ -364,7 +364,17 @@ bool TurnCredentialClient::ensureCredentials(int timeoutMs)
         }
     }
 
-    return fetchCredentialsBlocking(timeoutMs);
+    fetchCredentialsBlocking(timeoutMs);
+
+    if (connectionReversalEnabled()) {
+        QMutexLocker locker(&m_mutex);
+        if (m_turnServers.empty()) {
+            qWarning() << "TurnCredentialClient: NAT traversal requires Cloudflare TURN credentials but none are available";
+            return false;
+        }
+    }
+
+    return true;
 }
 
 std::vector<rtc::IceServer> TurnCredentialClient::stunServers() const

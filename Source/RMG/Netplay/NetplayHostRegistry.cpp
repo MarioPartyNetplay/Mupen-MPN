@@ -236,11 +236,24 @@ void NetplayHostRegistry::onReadyRead()
 
 void NetplayHostRegistry::handleServerMessage(const QByteArray& datagram)
 {
+    const QList<QByteArray> parts = splitRegistryParts(datagram);
+    if (parts.size() >= 2 && parts.at(1) == "PUNCH") {
+        QHostAddress clientAddress;
+        quint16 clientPort = 0;
+        if (parts.size() >= 4) {
+            const QString ipText = QString::fromUtf8(parts.at(2)).trimmed();
+            const int port = QString::fromUtf8(parts.at(3)).toInt();
+            if (port >= 1 && port <= 65535 && clientAddress.setAddress(ipText)) {
+                clientPort = static_cast<quint16>(port);
+                emit traversalConnectRequested(clientAddress, clientPort);
+            }
+        }
+    }
+
     if (!m_enetHost && handleTraversalPunchDatagram(datagram, &m_socket)) {
         return;
     }
 
-    const QList<QByteArray> parts = splitRegistryParts(datagram);
     if (parts.size() < 2) {
         return;
     }

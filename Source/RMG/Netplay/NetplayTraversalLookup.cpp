@@ -142,7 +142,7 @@ TraversalLookupResult lookupTraversalHost(const QString& hostCode)
         }
     });
 
-    timer.start(5000);
+    timer.start(8000);
     loop.exec();
 
     if (!result.success && result.error.isEmpty()) {

@@ -576,6 +576,13 @@ void NetplaySessionDialog::beginHostBrowserRegistration(uint16_t hostingPort, bo
         }
     });
 
+    connect(this->hostRegistry.get(), &Netplay::NetplayHostRegistry::traversalConnectRequested,
+            this, [this](const QHostAddress& clientAddress, quint16 clientPort) {
+        if (Netplay::SocketIOServer* server = this->coordinator->getHostingServer()) {
+            server->attemptTraversalReversalConnect(clientAddress, clientPort);
+        }
+    });
+
     const QString hostCode = this->sessionJson.value("host_code").toString();
     if (!hostCode.isEmpty()) {
         this->hostRegistry->resumeHosting(hostCode, hostingPort, listInBrowser);

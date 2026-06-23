@@ -96,6 +96,7 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
 
     qDebug() << "NetplayCoordinator created";
     UserInterface::Netplay::g_netplayCoordinator = this;
+    TurnCredentialClient::instance().prefetch();
 }
 
 NetplayCoordinator::~NetplayCoordinator()
@@ -333,6 +334,15 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
         looksLikeTraversalCode(ipAddress.trimmed()) ? NetplayConnectionMode::TraversalServer
                                                   : NetplayConnectionMode::Direct;
     applyNetplayConnectionSettings(connectionMode, false);
+
+    if (connectionMode == NetplayConnectionMode::TraversalServer &&
+        !TurnCredentialClient::instance().ensureCredentials(15000)) {
+        setState(Error);
+        emit connectionError(QStringLiteral(
+            "Could not fetch Cloudflare TURN credentials from the traversal server. "
+            "Check your internet connection or try again later."));
+        return;
+    }
 
     m_playerName = playerName;
     m_shouldAutoJoinRoom = true;
@@ -1734,7 +1744,9 @@ void NetplayCoordinator::setupPeerConnections(const QList<SocketIOClient::Player
 {
     qDebug() << "NetplayCoordinator: Setting up peer connections for" << players.size() << "players";
 
-    TurnCredentialClient::instance().ensureCredentials(15000);
+    if (!TurnCredentialClient::instance().ensureCredentials(15000)) {
+        qWarning() << "NetplayCoordinator: Cloudflare TURN credentials unavailable; WebRTC may fail behind NAT";
+    }
 
     for (const auto& player : players) {
         if (player.slot == m_gameSession.localSlot) {

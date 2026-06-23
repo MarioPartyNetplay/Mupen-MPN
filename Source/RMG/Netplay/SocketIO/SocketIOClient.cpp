@@ -104,7 +104,7 @@ SocketIOClient::SocketIOClient(const QString& serverUrl, QObject* parent)
     });
 
     m_punchTimer = new QTimer(this);
-    m_punchTimer->setInterval(200);
+    m_punchTimer->setInterval(100);
     connect(m_punchTimer, &QTimer::timeout, this, [this]() {
         if (m_connectionState == Connecting && m_useTraversalPunch && m_enetHost) {
             sendConnectPunchBursts();
@@ -207,7 +207,7 @@ void SocketIOClient::sendConnectPunchBursts()
         return;
     }
 
-    sendEnetPunchBursts(m_enetHost, m_serverAddress, m_serverPort, 3);
+    sendEnetPunchBursts(m_enetHost, m_serverAddress, m_serverPort, 5);
 }
 
 void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpPort, bool useTraversalPunch)
@@ -308,7 +308,7 @@ bool SocketIOClient::startTransportConnect(quint16 bindUdpPort, bool useTraversa
     }
 
     m_serviceTimer->start();
-    m_connectTimer->start(kConnectTimeoutMs);
+    m_connectTimer->start(m_useTraversalPunch ? 25000 : kConnectTimeoutMs);
     if (m_useTraversalPunch) {
         m_punchTimer->start();
     }

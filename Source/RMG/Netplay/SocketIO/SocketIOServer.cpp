@@ -132,11 +132,46 @@ bool SocketIOServer::startServer(int port, QString* errorOut)
     return true;
 }
 
+void SocketIOServer::attemptTraversalReversalConnect(const QHostAddress& clientAddress, quint16 clientPort)
+{
+    if (!m_enetHost || clientAddress.isNull() || clientPort == 0) {
+        return;
+    }
+
+    const QString endpointKey = QStringLiteral("%1:%2").arg(clientAddress.toString()).arg(clientPort);
+    if (m_traversalReversalTargets.contains(endpointKey)) {
+        return;
+    }
+    m_traversalReversalTargets.insert(endpointKey);
+    QTimer::singleShot(30000, this, [this, endpointKey]() { m_traversalReversalTargets.remove(endpointKey); });
+
+    sendEnetPunchBursts(m_enetHost, clientAddress, clientPort, 8);
+
+    ENetAddress address;
+    address.port = clientPort;
+    const QByteArray hostBytes = clientAddress.toString().toUtf8();
+    if (enet_address_set_host(&address, hostBytes.constData()) != 0) {
+        qWarning() << "SocketIOServer: Failed to resolve traversal reversal address" << clientAddress;
+        return;
+    }
+
+    ENetPeer* peer = enet_host_connect(m_enetHost, &address, 1, 0);
+    if (!peer) {
+        qWarning() << "SocketIOServer: Failed to initiate traversal reversal connect to" << clientAddress << clientPort;
+        return;
+    }
+
+    applySignalingPeerTimeout(peer);
+    qInfo() << "SocketIOServer: Traversal reversal connect to" << clientAddress << clientPort;
+}
+
 void SocketIOServer::stopServer()
 {
     if (!m_enetHost) {
         return;
     }
+
+    m_traversalReversalTargets.clear();
 
     for (auto* client : m_clients.values()) {
         if (client && client->peer) {

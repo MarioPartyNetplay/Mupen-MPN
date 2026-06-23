@@ -142,7 +142,8 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     this->connectionModeComboBox->addItem(QStringLiteral("Direct"));
     this->connectionModeComboBox->setCurrentIndex(0);
     this->connectionModeComboBox->setToolTip(
-        QStringLiteral("Traversal server uses the public TURN relay. Direct uses peer-to-peer WebRTC only."));
+        QStringLiteral("Traversal server punches through NAT and relays game data via Cloudflare TURN. "
+                       "No port forwarding required. Direct mode needs a reachable public IP or UPnP."));
     this->connectionModeComboBox->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     this->useUpnpCheckBox = new QCheckBox("Use UPnP port mapping", this);
@@ -159,6 +160,7 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     serverTypeLayout->addWidget(this->useUpnpCheckBox);
 
     QLabel* portLabel = new QLabel("Hosting Port:", this);
+    portLabel->setObjectName(QStringLiteral("portLabel"));
     portLabel->setToolTip(QString("Port to listen on for incoming player connections (default: %1)")
                               .arg(Netplay::kDefaultNetplayHostingPort));
     this->hostingPortSpinBox = new QSpinBox(this);
@@ -292,6 +294,12 @@ void CreateNetplaySessionDialog::updateConnectionModeUi(void)
         if (!directMode) {
             this->useUpnpCheckBox->setChecked(false);
         }
+    }
+    if (this->hostingPortSpinBox != nullptr) {
+        this->hostingPortSpinBox->setVisible(directMode);
+    }
+    if (QLabel* portLabel = this->findChild<QLabel*>(QStringLiteral("portLabel"))) {
+        portLabel->setVisible(directMode);
     }
 }
 

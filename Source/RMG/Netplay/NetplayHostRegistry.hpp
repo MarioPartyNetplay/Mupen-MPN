@@ -38,6 +38,8 @@ public:
 signals:
     void hostRegistered(const QString& hostCode, const QString& publicAddress, int signalingPort);
     void hostRegistrationFailed(const QString& reason);
+    /** Emitted when the traversal server coordinates a joiner punch (host should connect back). */
+    void traversalConnectRequested(const QHostAddress& clientAddress, quint16 clientPort);
 
 private:
     static void enetRegistryDatagramHandler(const QByteArray& datagram, void* userData);
