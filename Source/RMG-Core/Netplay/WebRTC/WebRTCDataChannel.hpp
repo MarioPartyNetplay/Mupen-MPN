@@ -49,6 +49,8 @@ public:
     void notifyClosed();
     void notifyError(const std::string& error);
     void setBackendHandlers(SendBinaryHandler sendBinary, SendTextHandler sendText, CloseHandler close);
+    /** Drop libdatachannel send/close hooks without touching channel state. */
+    void detachBackendHandlers();
 
     ChannelState getState() const;
     const std::string& getLabel() const;

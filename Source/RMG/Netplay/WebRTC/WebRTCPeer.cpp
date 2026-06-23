@@ -171,10 +171,18 @@ void WebRTCPeer::close()
         m_disconnectedGraceTimer->stop();
     }
 
+    for (auto it = m_dataChannels.begin(); it != m_dataChannels.end(); ++it) {
+        if (it.value()) {
+            it.value()->detachBackendHandlers();
+        }
+    }
+
     if (m_peerConnection) {
         m_peerConnection->close();
         m_peerConnection.reset();
     }
+
+    m_dataChannels.clear();
 
     updateConnectionState(Closed);
     emit connectionClosed();

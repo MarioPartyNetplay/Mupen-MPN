@@ -22,7 +22,16 @@ WebRTCDataChannel::WebRTCDataChannel(const std::string& label)
 
 WebRTCDataChannel::~WebRTCDataChannel()
 {
-    close();
+    // Do not call close() here. WebRTCPeer tears down the libdatachannel backend
+    // first; invoking the stored close handler afterwards double-frees it.
+    onBinaryMessageReceived = nullptr;
+    onClosed = nullptr;
+    onError = nullptr;
+    onTextMessageReceived = nullptr;
+    onStateChanged = nullptr;
+    onBufferedAmountLow = nullptr;
+    detachBackendHandlers();
+    m_state = ChannelState::Closed;
 }
 
 bool WebRTCDataChannel::sendBinary(const std::vector<uint8_t>& data)
@@ -77,11 +86,28 @@ void WebRTCDataChannel::close()
 
     std::cerr << "WebRTCDataChannel: Closing " << m_label << std::endl;
 
-    if (m_closeHandler) {
-        m_closeHandler();
+    CloseHandler closeHandler = std::move(m_closeHandler);
+    m_sendBinaryHandler = nullptr;
+    m_sendTextHandler = nullptr;
+
+    if (closeHandler) {
+        try {
+            closeHandler();
+        } catch (const std::exception& exception) {
+            notifyError(exception.what());
+        } catch (...) {
+            notifyError("Unknown DataChannel close exception");
+        }
     }
 
     notifyClosed();
+}
+
+void WebRTCDataChannel::detachBackendHandlers()
+{
+    m_sendBinaryHandler = nullptr;
+    m_sendTextHandler = nullptr;
+    m_closeHandler = nullptr;
 }
 
 void WebRTCDataChannel::open()
