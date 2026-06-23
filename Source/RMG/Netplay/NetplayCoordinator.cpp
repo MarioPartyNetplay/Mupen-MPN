@@ -680,7 +680,12 @@ void NetplayCoordinator::applyPlayerPings(const QJsonArray& pings)
                     (oneWayMs + kFrameMs - 1) / kFrameMs + 2));
 
             if (requiredBuffer > m_lockstepConfig.inputDelayFrames) {
-                sendInputDelayUpdate(requiredBuffer);
+                // Ramp buffer gradually so peers are not starved mid-spike.
+                constexpr int kMaxBufferStepPerPingUpdate = 3;
+                const int nextBuffer = std::min(
+                    requiredBuffer,
+                    m_lockstepConfig.inputDelayFrames + kMaxBufferStepPerPingUpdate);
+                sendInputDelayUpdate(nextBuffer);
             }
         }
     }
@@ -1189,16 +1194,17 @@ void NetplayCoordinator::recreatePeerConnection(int slot)
 
     qInfo() << "NetplayCoordinator: Recreating WebRTC peer for slot" << slot;
 
+    if (m_lockstepEngine) {
+        m_lockstepEngine->setDataChannel(slot, nullptr);
+        m_lockstepEngine->wakeInputWaiters();
+    }
+
     if (m_peers.contains(slot)) {
         auto oldPeer = m_peers[slot];
+        m_peers.remove(slot);
         if (oldPeer) {
             oldPeer->close();
         }
-        m_peers.remove(slot);
-    }
-
-    if (m_lockstepEngine) {
-        m_lockstepEngine->setDataChannel(slot, nullptr);
     }
 
     const bool initiator = m_gameSession.localSlot < slot;
@@ -1478,6 +1484,7 @@ void NetplayCoordinator::setInputDelayFrames(int frames)
         RMGCore::LockstepEngine::stallTimeoutForDelayFrames(frames);
     if (m_lockstepEngine) {
         m_lockstepEngine->setInputDelayFrames(frames);
+        m_lockstepEngine->wakeInputWaiters();
     }
 }
 

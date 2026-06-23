@@ -331,14 +331,19 @@ bool LockstepEngine::advanceFrame()
     }
 
     if (m_config.numPlayers > 1) {
-        // Wait for real peer inputs, but never block the emulation thread
-        // indefinitely. VidExt/rendering runs on that thread; an infinite wait
-        // here freezes video (black screen). WebRTC can report "open" before
-        // the peer has finished loading and sent frame 0.
+        // Wait for real peer inputs, but fall back after a generous timeout so a
+        // lag spike cannot wedge emulation inside advanceFrame() indefinitely.
         int timeoutMs = 0;
         {
             std::lock_guard<std::recursive_mutex> lock(m_mutex);
-            timeoutMs = computeInputWaitTimeoutMsUnlocked(frameNumber);
+            if (frameNumber < 300 &&
+                !hasAllRemoteDataChannelsConnectedUnlocked()) {
+                timeoutMs = 8000;
+            } else if (m_config.stallTimeoutMilliseconds > 0) {
+                timeoutMs = m_config.stallTimeoutMilliseconds;
+            } else {
+                timeoutMs = stallTimeoutForDelayFrames(m_config.inputDelayFrames);
+            }
         }
 
         const bool ready = waitForAllInputs(frameNumber, timeoutMs);
@@ -508,8 +513,8 @@ void LockstepEngine::setInputDelayFrames(int frames)
     }
 
     m_config.inputDelayFrames = frames;
-    m_config.stallTimeoutMilliseconds =
-        stallTimeoutForDelayFrames(frames);
+    m_config.stallTimeoutMilliseconds = stallTimeoutForDelayFrames(frames);
+    m_inputCv.notify_all();
 }
 
 int LockstepEngine::stallTimeoutForDelayFrames(int inputDelayFrames)
@@ -518,8 +523,6 @@ int LockstepEngine::stallTimeoutForDelayFrames(int inputDelayFrames)
         inputDelayFrames = static_cast<int>(kMinInputDelayFrames);
     }
 
-    // Per-frame ceiling before falling back to last-known input. Keeps lockstep
-    // responsive when a peer hitches without freezing emulation/video forever.
     return 4000 + inputDelayFrames * 500;
 }
 

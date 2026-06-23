@@ -51,6 +51,7 @@ WebRTCPeer::WebRTCPeer(const QString& peerId, bool initiator, QObject* parent)
     , m_peerId(peerId)
     , m_initiator(initiator)
     , m_connectionState(New)
+    , m_callbacksEnabled(std::make_shared<std::atomic<bool>>(true))
 {
     m_disconnectedGraceTimer = new QTimer(this);
     m_disconnectedGraceTimer->setSingleShot(true);
@@ -167,12 +168,22 @@ void WebRTCPeer::close()
 {
     qDebug() << "WebRTCPeer: Closing connection with" << m_peerId;
 
+    if (m_callbacksEnabled) {
+        m_callbacksEnabled->store(false);
+    }
+
     if (m_disconnectedGraceTimer) {
         m_disconnectedGraceTimer->stop();
     }
 
     for (auto it = m_dataChannels.begin(); it != m_dataChannels.end(); ++it) {
         if (it.value()) {
+            it.value()->onBinaryMessageReceived = nullptr;
+            it.value()->onClosed = nullptr;
+            it.value()->onError = nullptr;
+            it.value()->onTextMessageReceived = nullptr;
+            it.value()->onStateChanged = nullptr;
+            it.value()->onBufferedAmountLow = nullptr;
             it.value()->detachBackendHandlers();
         }
     }
@@ -377,46 +388,70 @@ void WebRTCPeer::registerDataChannel(const std::shared_ptr<rtc::DataChannel>& ba
     if (!channel) {
         channel = std::make_shared<WebRTCDataChannel>(label.toStdString());
         m_dataChannels[label] = channel;
+    } else {
+        channel->detachBackendHandlers();
     }
 
     const std::weak_ptr<WebRTCDataChannel> weakChannel = channel;
+    const std::shared_ptr<std::atomic<bool>> callbacksEnabled = m_callbacksEnabled;
     channel->setBackendHandlers(
-        [backendChannel](const std::vector<uint8_t>& data) {
+        [backendChannel, callbacksEnabled](const std::vector<uint8_t>& data) {
+            if (!callbacksEnabled || !callbacksEnabled->load()) {
+                return false;
+            }
             return backendChannel->sendBuffer(data);
         },
-        [backendChannel](const std::string& text) {
+        [backendChannel, callbacksEnabled](const std::string& text) {
+            if (!callbacksEnabled || !callbacksEnabled->load()) {
+                return false;
+            }
             return backendChannel->send(text);
         },
-        [backendChannel]() {
+        [backendChannel, callbacksEnabled]() {
+            if (!callbacksEnabled || !callbacksEnabled->load()) {
+                return;
+            }
             backendChannel->close();
         });
 
-    backendChannel->onOpen([this, weakChannel]() {
-        dispatchToPeerThread([weakChannel]() {
+    backendChannel->onOpen([this, weakChannel, callbacksEnabled]() {
+        dispatchToPeerThread([weakChannel, callbacksEnabled]() {
+            if (!callbacksEnabled || !callbacksEnabled->load()) {
+                return;
+            }
             if (auto channel = weakChannel.lock()) {
                 channel->notifyOpen();
             }
         });
     });
 
-    backendChannel->onClosed([this, weakChannel]() {
-        dispatchToPeerThread([weakChannel]() {
+    backendChannel->onClosed([this, weakChannel, callbacksEnabled]() {
+        dispatchToPeerThread([weakChannel, callbacksEnabled]() {
+            if (!callbacksEnabled || !callbacksEnabled->load()) {
+                return;
+            }
             if (auto channel = weakChannel.lock()) {
                 channel->notifyClosed();
             }
         });
     });
 
-    backendChannel->onError([this, weakChannel](std::string error) {
-        dispatchToPeerThread([weakChannel, error = std::move(error)]() mutable {
+    backendChannel->onError([this, weakChannel, callbacksEnabled](std::string error) {
+        dispatchToPeerThread([weakChannel, callbacksEnabled, error = std::move(error)]() mutable {
+            if (!callbacksEnabled || !callbacksEnabled->load()) {
+                return;
+            }
             if (auto channel = weakChannel.lock()) {
                 channel->notifyError(error);
             }
         });
     });
 
-    backendChannel->onBufferedAmountLow([this, weakChannel]() {
-        dispatchToPeerThread([weakChannel]() {
+    backendChannel->onBufferedAmountLow([this, weakChannel, callbacksEnabled]() {
+        dispatchToPeerThread([weakChannel, callbacksEnabled]() {
+            if (!callbacksEnabled || !callbacksEnabled->load()) {
+                return;
+            }
             if (auto channel = weakChannel.lock()) {
                 if (channel->onBufferedAmountLow) {
                     channel->onBufferedAmountLow();
@@ -425,7 +460,11 @@ void WebRTCPeer::registerDataChannel(const std::shared_ptr<rtc::DataChannel>& ba
         });
     });
 
-    backendChannel->onMessage([this, weakChannel](rtc::message_variant message) {
+    backendChannel->onMessage([this, weakChannel, callbacksEnabled](rtc::message_variant message) {
+        if (!callbacksEnabled || !callbacksEnabled->load()) {
+            return;
+        }
+
         if (std::holds_alternative<rtc::binary>(message)) {
             const auto& binary = std::get<rtc::binary>(message);
             std::vector<uint8_t> payload;
@@ -434,7 +473,10 @@ void WebRTCPeer::registerDataChannel(const std::shared_ptr<rtc::DataChannel>& ba
                 payload.push_back(static_cast<uint8_t>(value));
             }
 
-            dispatchToPeerThread([weakChannel, payload = std::move(payload)]() {
+            dispatchToPeerThread([weakChannel, callbacksEnabled, payload = std::move(payload)]() {
+                if (!callbacksEnabled || !callbacksEnabled->load()) {
+                    return;
+                }
                 if (auto channel = weakChannel.lock()) {
                     if (channel->onBinaryMessageReceived) {
                         channel->onBinaryMessageReceived(payload);
@@ -446,7 +488,10 @@ void WebRTCPeer::registerDataChannel(const std::shared_ptr<rtc::DataChannel>& ba
 
         if (std::holds_alternative<rtc::string>(message)) {
             const std::string text = std::get<rtc::string>(message);
-            dispatchToPeerThread([weakChannel, text]() {
+            dispatchToPeerThread([weakChannel, callbacksEnabled, text]() {
+                if (!callbacksEnabled || !callbacksEnabled->load()) {
+                    return;
+                }
                 if (auto channel = weakChannel.lock()) {
                     if (channel->onTextMessageReceived) {
                         channel->onTextMessageReceived(text);

@@ -15,6 +15,7 @@
 #include <QByteArray>
 #include <QTimer>
 #include <QMap>
+#include <atomic>
 #include <functional>
 #include <memory>
 
@@ -124,6 +125,8 @@ private:
 
     QMap<QString, std::shared_ptr<WebRTCDataChannel>> m_dataChannels;
     std::shared_ptr<rtc::PeerConnection> m_peerConnection;
+    /** Shared with libdatachannel callbacks; cleared in close() before teardown. */
+    std::shared_ptr<std::atomic<bool>> m_callbacksEnabled;
     QTimer* m_disconnectedGraceTimer = nullptr;
 };
 
