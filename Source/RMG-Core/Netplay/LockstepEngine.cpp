@@ -107,6 +107,8 @@ void LockstepEngine::setDataChannel(
     detachDataChannelCallbacks(m_dataChannels[peerSlot]);
     m_dataChannels[peerSlot] = std::move(channel);
 
+    m_inputCv.notify_all();
+
     if (m_dataChannels[peerSlot]) {
         const int boundSlot = peerSlot;
         auto& boundChannel = m_dataChannels[peerSlot];
@@ -285,9 +287,10 @@ bool LockstepEngine::advanceFrame()
 
     if (m_config.numPlayers > 1) {
         int timeoutMs = m_config.stallTimeoutMilliseconds;
-        // During ROM boot peers may still be connecting; avoid hanging forever on frame 0.
-        if (timeoutMs == 0 && frameNumber < 300) {
-            timeoutMs = 8000;
+        // During ROM boot peers may still be connecting; allow extra time on
+        // the first few seconds of frames before falling back to last input.
+        if (frameNumber < 300) {
+            timeoutMs = std::max(timeoutMs, 8000);
         }
 
         const bool ready = waitForAllInputs(frameNumber, timeoutMs);
@@ -450,11 +453,29 @@ void LockstepEngine::setInputDelayFrames(int frames)
         stallTimeoutForDelayFrames(frames);
 }
 
-int LockstepEngine::stallTimeoutForDelayFrames(int /*inputDelayFrames*/)
+int LockstepEngine::stallTimeoutForDelayFrames(int inputDelayFrames)
 {
-    // Dolphin-style lockstep: never advance without every peer's input.
-    // Faster machines wait (lag) until the slowest peer catches up.
-    return 0;
+    if (inputDelayFrames < static_cast<int>(kMinInputDelayFrames)) {
+        inputDelayFrames = static_cast<int>(kMinInputDelayFrames);
+    }
+
+    // Brief hitches should only add lag. A hard infinite wait lets emulation sit
+    // inside advanceFrame() until signaling/WebRTC times out, which feels like a
+    // crash. Fall back to last-known input after a generous delay.
+    return 4000 + inputDelayFrames * 500;
+}
+
+void LockstepEngine::wakeInputWaiters()
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    m_inputCv.notify_all();
+}
+
+void LockstepEngine::releaseCurrentFrameWait()
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    applyTimeoutFallbackUnlocked(m_currentFrameNumber);
+    m_inputCv.notify_all();
 }
 
 void LockstepEngine::pruneOldFrames(uint32_t oldestFrameToKeep)

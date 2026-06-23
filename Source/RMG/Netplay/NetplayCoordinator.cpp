@@ -758,17 +758,23 @@ void NetplayCoordinator::on_socketIO_reconnected()
 void NetplayCoordinator::on_socketIO_disconnected()
 {
     qDebug() << "NetplayCoordinator: Socket.IO disconnected";
-    
-    // Kill all engine slots so it doesn't stay stuck in advanceFrame()
+
+    const bool wasInGame = (m_state == InGame || m_state == StartingGame);
+
     if (m_lockstepEngine) {
-        for (int i = 0; i < 4; ++i) {
-            m_lockstepEngine->setDataChannel(i, nullptr);
-        }
+        m_lockstepEngine->releaseCurrentFrameWait();
     }
-    
+
     m_peers.clear();
     m_cachedPlayers.clear();
-    CoreClearNetplaySyncSettings();
+
+    if (wasInGame) {
+        resetEmulationSync();
+        emit gameEnded();
+    } else {
+        CoreClearNetplaySyncSettings();
+    }
+
     setState(Idle);
     emit disconnected();
 }
@@ -1221,6 +1227,8 @@ void NetplayCoordinator::on_webRTC_connectionFailed(const QString& peerId, const
 
     if (m_lockstepEngine) {
         m_lockstepEngine->setDataChannel(slot, nullptr);
+        // Inputs still arrive over signaling; unblock any wait on the data channel.
+        m_lockstepEngine->wakeInputWaiters();
     }
 
     if (m_state == InGame) {
@@ -1505,6 +1513,12 @@ void NetplayCoordinator::on_peerFrameSyncReceived(int slot, uint32_t frameNumber
 void NetplayCoordinator::broadcastFrameSyncIfNeeded(uint32_t frameNumber)
 {
     if (m_state != InGame || frameNumber == 0 || !m_lockstepEngine) {
+        return;
+    }
+
+    // Comparing hashes while still waiting on peer input produces false desyncs
+    // during lag spikes when one side has already fallen back to last input.
+    if (m_lockstepEngine->getPendingInputsCount() > 0) {
         return;
     }
 

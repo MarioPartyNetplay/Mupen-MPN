@@ -97,6 +97,10 @@ public:
     void setInputDelayFrames(int frames);
     void setNumPlayers(int numPlayers);
     void setLocalPlayerSlot(int slot);
+    /** Unblock advanceFrame() waiters (e.g. after signaling loss). */
+    void wakeInputWaiters();
+    /** Fill missing peer inputs for the current frame and wake waiters. */
+    void releaseCurrentFrameWait();
 
     /** Stall timeout (ms) when waiting for missing inputs; 0 waits indefinitely. */
     static int stallTimeoutForDelayFrames(int inputDelayFrames);
