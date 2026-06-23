@@ -353,34 +353,14 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
     int connectPort = port;
 
     if (looksLikeTraversalCode(connectAddress)) {
-        // Recreate the signaling client and connect via traversal on one ENet socket
-        // so the NAT mapping used for LOOKUP matches the signaling connection.
-        if (m_socketIO && m_socketIO->getConnectionState() != SocketIOClient::Disconnected) {
-            m_socketIO->disconnect();
-        }
-
-        m_socketIO = std::make_unique<SocketIOClient>(QString(), this);
-        connectSocketIOClientSignals(m_socketIO.get());
-
+        replaceSocketIOClient(std::make_unique<SocketIOClient>(QString(), this));
         setState(Connecting);
         m_socketIO->connectViaTraversalCode(connectAddress, playerName);
         return;
     }
 
-    // Recreate the signaling client with the new server endpoint
     QString serverUrl = QString("udp://%1:%2").arg(connectAddress).arg(connectPort);
-    
-    // Disconnect existing client if connected
-    if (m_socketIO && m_socketIO->getConnectionState() != SocketIOClient::Disconnected)
-    {
-        m_socketIO->disconnect();
-    }
-    
-    // Create new client with the direct IP server URL
-    m_socketIO = std::make_unique<SocketIOClient>(serverUrl, this);
-    connectSocketIOClientSignals(m_socketIO.get());
-    
-    // Now connect to the server
+    replaceSocketIOClient(std::make_unique<SocketIOClient>(serverUrl, this));
     setState(Connecting);
     m_socketIO->connectToServer(playerName);
 }
@@ -781,9 +761,43 @@ void NetplayCoordinator::connectSocketIOClientSignals(SocketIOClient* client)
     });
 }
 
+void NetplayCoordinator::disconnectSocketIOClientSignals(SocketIOClient* client)
+{
+    if (!client) {
+        return;
+    }
+
+    disconnect(client, nullptr, this, nullptr);
+}
+
+void NetplayCoordinator::replaceSocketIOClient(std::unique_ptr<SocketIOClient> client)
+{
+    if (m_socketIO) {
+        disconnectSocketIOClientSignals(m_socketIO.get());
+        m_socketIO->disconnect();
+        m_socketIO.reset();
+    }
+
+    m_socketIO = std::move(client);
+    if (m_socketIO) {
+        connectSocketIOClientSignals(m_socketIO.get());
+    }
+}
+
+bool NetplayCoordinator::socketIOEventFromCurrentClient() const
+{
+    const auto* senderClient = qobject_cast<const SocketIOClient*>(sender());
+    return senderClient != nullptr && senderClient == m_socketIO.get();
+}
+
 void NetplayCoordinator::on_socketIO_connected()
 {
+    if (!socketIOEventFromCurrentClient()) {
+        return;
+    }
+
     qDebug() << "NetplayCoordinator: Socket.IO connected";
+    m_signalingReconnecting = false;
     setState(Connected);
 
     // Set player name now that we're connected
@@ -803,11 +817,25 @@ void NetplayCoordinator::on_socketIO_connected()
 
 void NetplayCoordinator::on_socketIO_reconnecting()
 {
+    if (!socketIOEventFromCurrentClient()) {
+        return;
+    }
+
     qWarning() << "NetplayCoordinator: Signaling connection lost, attempting reconnect";
+    m_signalingReconnecting = true;
+
+    if (m_lockstepEngine) {
+        m_lockstepEngine->releaseCurrentFrameWait();
+    }
 }
 
 void NetplayCoordinator::on_socketIO_reconnected()
 {
+    if (!socketIOEventFromCurrentClient()) {
+        return;
+    }
+
+    m_signalingReconnecting = false;
     qInfo() << "NetplayCoordinator: Signaling connection restored";
     attachExistingPeerDataChannels();
     recoverWebRTCPeerConnections();
@@ -815,7 +843,12 @@ void NetplayCoordinator::on_socketIO_reconnected()
 
 void NetplayCoordinator::on_socketIO_disconnected()
 {
+    if (!socketIOEventFromCurrentClient()) {
+        return;
+    }
+
     qDebug() << "NetplayCoordinator: Socket.IO disconnected";
+    m_signalingReconnecting = false;
 
     const bool wasInGame = (m_state == InGame || m_state == StartingGame);
 
@@ -839,6 +872,10 @@ void NetplayCoordinator::on_socketIO_disconnected()
 
 void NetplayCoordinator::on_socketIO_connectionError(const QString& error)
 {
+    if (!socketIOEventFromCurrentClient()) {
+        return;
+    }
+
     qWarning() << "NetplayCoordinator: Socket.IO error:" << error;
     setState(Error);
     emit connectionError(error);

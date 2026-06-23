@@ -157,7 +157,7 @@ void SocketIOServer::attemptTraversalReversalConnect(const QHostAddress& clientA
     punchTimer->setInterval(100);
     connect(punchTimer, &QTimer::timeout, this, punchClient);
     punchTimer->start();
-    QTimer::singleShot(15000, punchTimer, [punchTimer]() {
+    QTimer::singleShot(45000, punchTimer, [punchTimer]() {
         punchTimer->stop();
         punchTimer->deleteLater();
     });

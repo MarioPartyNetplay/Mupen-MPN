@@ -19,11 +19,11 @@ bool handleTraversalPunchDatagram(const QByteArray& datagram, _ENetHost* replyHo
 
 /** After LOOKUPOK, punch the host signaling endpoint and listen briefly for reciprocal punches. */
 void performTraversalPunchWindow(QUdpSocket* socket, const QHostAddress& hostAddress, quint16 hostSignalingPort,
-                                 int durationMs = 5000);
+                                 int durationMs = 8000);
 
 /** Same as performTraversalPunchWindow, but reuses the ENet signaling socket. */
 void performTraversalPunchWindowForEnet(_ENetHost* host, const QHostAddress& hostAddress, quint16 hostSignalingPort,
-                                        int durationMs = 5000);
+                                        int durationMs = 8000);
 
 } // namespace UserInterface::Netplay
 

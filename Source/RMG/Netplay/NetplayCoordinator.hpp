@@ -209,6 +209,9 @@
      void recreatePeerConnection(int slot);
      int findPeerSlotById(const QString& peerId) const;
      void connectSocketIOClientSignals(SocketIOClient* client);
+     void disconnectSocketIOClientSignals(SocketIOClient* client);
+     void replaceSocketIOClient(std::unique_ptr<SocketIOClient> client);
+     bool socketIOEventFromCurrentClient() const;
      void sendWebRTCOffer(const QString& targetPlayerId, const QString& sdpOffer);
      void sendWebRTCAnswer(const QString& targetPlayerId, const QString& sdpAnswer);
      void sendWebRTCIceCandidate(const QString& targetPlayerId, const QString& candidate, int mLineIndex);
@@ -243,6 +246,7 @@
      QJsonObject m_sessionSyncCoreSettings;
      uint32_t m_lastBroadcastFrameSync = 0;
      int m_sessionMaxPingMs = 0;
+     bool m_signalingReconnecting = false;
      
      mutable std::recursive_mutex m_mutex;
  };

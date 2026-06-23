@@ -391,7 +391,7 @@ bool SocketIOClient::finishTransportConnect()
     }
 
     m_serviceTimer->start();
-    m_connectTimer->start(m_useTraversalPunch ? 30000 : kConnectTimeoutMs);
+    m_connectTimer->start(m_useTraversalPunch ? 45000 : kConnectTimeoutMs);
     if (m_useTraversalPunch) {
         m_punchTimer->start();
     }
@@ -406,7 +406,12 @@ void SocketIOClient::disconnect()
         m_reconnectTimer->stop();
     }
     destroyEnetClient();
-    if (m_connectionState != Disconnected) {
+    if (m_connectionState == Error) {
+        // Failed connect attempts are replaced by a new client during join retries.
+        m_connectionState = Disconnected;
+        m_lastSentFrameSync = 0;
+        m_awaitingReconnectAck = false;
+    } else if (m_connectionState != Disconnected) {
         m_connectionState = Disconnected;
         m_lastSentFrameSync = 0;
         m_awaitingReconnectAck = false;
