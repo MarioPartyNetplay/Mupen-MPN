@@ -113,6 +113,8 @@ private:
     void bindPeerConnectionCallbacks();
     void registerDataChannel(const std::shared_ptr<rtc::DataChannel>& backendChannel);
     void updateConnectionState(ConnectionState state);
+    void dispatchToPeerThread(std::function<void()> action);
+    void handlePeerConnectionState(int state);
 
     QString m_peerId;
     bool m_initiator;

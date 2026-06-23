@@ -16,6 +16,8 @@
 
 #include <QDebug>
 #include <QMap>
+#include <QMetaObject>
+#include <QThread>
 #include <QTimer>
 
 #include <sstream>
@@ -250,6 +252,58 @@ void WebRTCPeer::initializePeerConnection()
     bindPeerConnectionCallbacks();
 }
 
+void WebRTCPeer::dispatchToPeerThread(std::function<void()> action)
+{
+    if (QThread::currentThread() == thread()) {
+        action();
+        return;
+    }
+
+    QMetaObject::invokeMethod(
+        this,
+        [action = std::move(action)]() mutable { action(); },
+        Qt::QueuedConnection);
+}
+
+void WebRTCPeer::handlePeerConnectionState(int state)
+{
+    switch (static_cast<rtc::PeerConnection::State>(state)) {
+    case rtc::PeerConnection::State::New:
+        updateConnectionState(New);
+        break;
+    case rtc::PeerConnection::State::Connecting:
+        updateConnectionState(Connecting);
+        break;
+    case rtc::PeerConnection::State::Connected:
+        if (m_disconnectedGraceTimer) {
+            m_disconnectedGraceTimer->stop();
+        }
+        updateConnectionState(Connected);
+        emit connectionEstablished();
+        break;
+    case rtc::PeerConnection::State::Disconnected:
+        updateConnectionState(Disconnected);
+        if (m_disconnectedGraceTimer && !m_disconnectedGraceTimer->isActive()) {
+            qWarning() << "WebRTCPeer: ICE disconnected for" << m_peerId
+                       << "- waiting" << kDisconnectedGraceMs << "ms before recovery";
+            m_disconnectedGraceTimer->start(kDisconnectedGraceMs);
+        }
+        break;
+    case rtc::PeerConnection::State::Failed:
+        if (m_disconnectedGraceTimer) {
+            m_disconnectedGraceTimer->stop();
+        }
+        updateConnectionState(Failed);
+        m_lastError = QStringLiteral("Peer connection failed");
+        emit connectionFailed(m_lastError);
+        break;
+    case rtc::PeerConnection::State::Closed:
+        updateConnectionState(Closed);
+        emit connectionClosed();
+        break;
+    }
+}
+
 void WebRTCPeer::bindPeerConnectionCallbacks()
 {
     if (!m_peerConnection) {
@@ -258,67 +312,41 @@ void WebRTCPeer::bindPeerConnectionCallbacks()
 
     m_peerConnection->onLocalDescription([this](rtc::Description description) {
         const QString sdp = QString::fromStdString(std::string(description));
-        if (description.type() == rtc::Description::Type::Offer) {
-            emit offerCreated(sdp);
-        } else if (description.type() == rtc::Description::Type::Answer) {
-            emit answerReceived(sdp);
-        }
+        const auto descriptionType = description.type();
+        dispatchToPeerThread([this, sdp, descriptionType]() {
+            if (descriptionType == rtc::Description::Type::Offer) {
+                emit offerCreated(sdp);
+            } else if (descriptionType == rtc::Description::Type::Answer) {
+                emit answerReceived(sdp);
+            }
+        });
     });
 
     m_peerConnection->onLocalCandidate([this](rtc::Candidate candidate) {
-        emit iceCandidateGenerated(
-            QString::fromStdString(candidate.candidate()),
-            candidateMidToLineIndex(candidate));
+        const QString candidateSdp = QString::fromStdString(candidate.candidate());
+        const int lineIndex = candidateMidToLineIndex(candidate);
+        dispatchToPeerThread([this, candidateSdp, lineIndex]() {
+            emit iceCandidateGenerated(candidateSdp, lineIndex);
+        });
     });
 
     m_peerConnection->onDataChannel([this](std::shared_ptr<rtc::DataChannel> backendChannel) {
-        registerDataChannel(backendChannel);
+        dispatchToPeerThread([this, backendChannel]() { registerDataChannel(backendChannel); });
     });
 
     m_peerConnection->onStateChange([this](rtc::PeerConnection::State state) {
-        switch (state) {
-        case rtc::PeerConnection::State::New:
-            updateConnectionState(New);
-            break;
-        case rtc::PeerConnection::State::Connecting:
-            updateConnectionState(Connecting);
-            break;
-        case rtc::PeerConnection::State::Connected:
-            if (m_disconnectedGraceTimer) {
-                m_disconnectedGraceTimer->stop();
-            }
-            updateConnectionState(Connected);
-            emit connectionEstablished();
-            break;
-        case rtc::PeerConnection::State::Disconnected:
-            updateConnectionState(Disconnected);
-            if (m_disconnectedGraceTimer && !m_disconnectedGraceTimer->isActive()) {
-                qWarning() << "WebRTCPeer: ICE disconnected for" << m_peerId
-                           << "- waiting" << kDisconnectedGraceMs << "ms before recovery";
-                m_disconnectedGraceTimer->start(kDisconnectedGraceMs);
-            }
-            break;
-        case rtc::PeerConnection::State::Failed:
-            if (m_disconnectedGraceTimer) {
-                m_disconnectedGraceTimer->stop();
-            }
-            updateConnectionState(Failed);
-            m_lastError = QStringLiteral("Peer connection failed");
-            emit connectionFailed(m_lastError);
-            break;
-        case rtc::PeerConnection::State::Closed:
-            updateConnectionState(Closed);
-            emit connectionClosed();
-            break;
-        }
+        const int stateValue = static_cast<int>(state);
+        dispatchToPeerThread([this, stateValue]() { handlePeerConnectionState(stateValue); });
     });
 
     m_peerConnection->onIceStateChange([this](rtc::PeerConnection::IceState state) {
-        emit iceConnectionStateChanged(enumToString(state));
+        const QString stateString = enumToString(state);
+        dispatchToPeerThread([this, stateString]() { emit iceConnectionStateChanged(stateString); });
     });
 
     m_peerConnection->onGatheringStateChange([this](rtc::PeerConnection::GatheringState state) {
-        emit iceGatheringStateChanged(enumToString(state));
+        const QString stateString = enumToString(state);
+        dispatchToPeerThread([this, stateString]() { emit iceGatheringStateChanged(stateString); });
     });
 }
 
@@ -347,38 +375,41 @@ void WebRTCPeer::registerDataChannel(const std::shared_ptr<rtc::DataChannel>& ba
             backendChannel->close();
         });
 
-    backendChannel->onOpen([weakChannel]() {
-        if (auto channel = weakChannel.lock()) {
-            channel->notifyOpen();
-        }
-    });
-
-    backendChannel->onClosed([weakChannel]() {
-        if (auto channel = weakChannel.lock()) {
-            channel->notifyClosed();
-        }
-    });
-
-    backendChannel->onError([weakChannel](std::string error) {
-        if (auto channel = weakChannel.lock()) {
-            channel->notifyError(error);
-        }
-    });
-
-    backendChannel->onBufferedAmountLow([weakChannel]() {
-        if (auto channel = weakChannel.lock()) {
-            if (channel->onBufferedAmountLow) {
-                channel->onBufferedAmountLow();
+    backendChannel->onOpen([this, weakChannel]() {
+        dispatchToPeerThread([weakChannel]() {
+            if (auto channel = weakChannel.lock()) {
+                channel->notifyOpen();
             }
-        }
+        });
     });
 
-    backendChannel->onMessage([weakChannel](rtc::message_variant message) {
-        auto channel = weakChannel.lock();
-        if (!channel) {
-            return;
-        }
+    backendChannel->onClosed([this, weakChannel]() {
+        dispatchToPeerThread([weakChannel]() {
+            if (auto channel = weakChannel.lock()) {
+                channel->notifyClosed();
+            }
+        });
+    });
 
+    backendChannel->onError([this, weakChannel](std::string error) {
+        dispatchToPeerThread([weakChannel, error = std::move(error)]() mutable {
+            if (auto channel = weakChannel.lock()) {
+                channel->notifyError(error);
+            }
+        });
+    });
+
+    backendChannel->onBufferedAmountLow([this, weakChannel]() {
+        dispatchToPeerThread([weakChannel]() {
+            if (auto channel = weakChannel.lock()) {
+                if (channel->onBufferedAmountLow) {
+                    channel->onBufferedAmountLow();
+                }
+            }
+        });
+    });
+
+    backendChannel->onMessage([this, weakChannel](rtc::message_variant message) {
         if (std::holds_alternative<rtc::binary>(message)) {
             const auto& binary = std::get<rtc::binary>(message);
             std::vector<uint8_t> payload;
@@ -386,16 +417,26 @@ void WebRTCPeer::registerDataChannel(const std::shared_ptr<rtc::DataChannel>& ba
             for (rtc::byte value : binary) {
                 payload.push_back(static_cast<uint8_t>(value));
             }
-            if (channel->onBinaryMessageReceived) {
-                channel->onBinaryMessageReceived(payload);
-            }
+
+            dispatchToPeerThread([weakChannel, payload = std::move(payload)]() {
+                if (auto channel = weakChannel.lock()) {
+                    if (channel->onBinaryMessageReceived) {
+                        channel->onBinaryMessageReceived(payload);
+                    }
+                }
+            });
             return;
         }
 
         if (std::holds_alternative<rtc::string>(message)) {
-            if (channel->onTextMessageReceived) {
-                channel->onTextMessageReceived(std::get<rtc::string>(message));
-            }
+            const std::string text = std::get<rtc::string>(message);
+            dispatchToPeerThread([weakChannel, text]() {
+                if (auto channel = weakChannel.lock()) {
+                    if (channel->onTextMessageReceived) {
+                        channel->onTextMessageReceived(text);
+                    }
+                }
+            });
         }
     });
 
