@@ -1476,8 +1476,7 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
                     break;
                 }
 
-                std::this_thread::yield();
-                std::this_thread::sleep_for(std::chrono::microseconds(500));
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
 
             for (int i = 0; i < NUM_CONTROLLERS; i++)

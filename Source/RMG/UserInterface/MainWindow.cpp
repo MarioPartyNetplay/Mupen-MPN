@@ -35,6 +35,7 @@
 
 #ifdef UPDATER
 #include <QNetworkAccessManager>
+#include <QNetworkRequest>
 #include <QJsonDocument>
 #include <QJsonObject>
 #endif // UPDATER
@@ -1288,6 +1289,25 @@ void MainWindow::connectActionSignals(void)
 }
 
 #ifdef UPDATER
+namespace {
+
+QString normalizeUpdateVersion(QString version)
+{
+    version = version.trimmed();
+    if (version.startsWith(QLatin1Char('v'), Qt::CaseInsensitive)) {
+        version = version.mid(1);
+    }
+    return version;
+}
+
+bool isDevelopmentVersion(const QString& version)
+{
+    // git-describe style builds (e.g. 17509f6-17-gfa9207c4) are local dev builds.
+    return version.contains(QLatin1Char('-'));
+}
+
+} // namespace
+
 void MainWindow::checkForUpdates(bool silent, bool force)
 {
     if (!force && !CoreSettingsGetBoolValue(SettingsID::GUI_CheckForUpdates))
@@ -1295,9 +1315,8 @@ void MainWindow::checkForUpdates(bool silent, bool force)
         return;
     }
 
-    // only check for updates on the stable versions unless forced
     QString currentVersion = QString::fromStdString(CoreGetVersion());
-    if (!force && currentVersion.size() != 6)
+    if (!force && isDevelopmentVersion(currentVersion))
     {
         return;
     }
@@ -1325,7 +1344,11 @@ void MainWindow::checkForUpdates(bool silent, bool force)
     QNetworkAccessManager* networkAccessManager = new QNetworkAccessManager(this);
     connect(networkAccessManager, &QNetworkAccessManager::finished, this, &MainWindow::on_networkAccessManager_Finished);
     networkAccessManager->setTransferTimeout(15000);
-    networkAccessManager->get(QNetworkRequest(QUrl("https://api.github.com/repos/MarioPartyNetplay/Mupen-MPN/releases/latest")));
+
+    QNetworkRequest request(
+        QUrl(QStringLiteral("https://api.github.com/repos/MarioPartyNetplay/Mupen-MPN/releases/latest")));
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Mupen-MPN-Updater"));
+    networkAccessManager->get(request);
 }
 #endif // UPDATER
 
@@ -1577,13 +1600,13 @@ void MainWindow::on_networkAccessManager_Finished(QNetworkReply* reply)
     QJsonDocument jsonDocument = QJsonDocument::fromJson(reply->readAll());
     QJsonObject jsonObject = jsonDocument.object();
 
-    QString currentVersion = QString::fromStdString(CoreGetVersion());
-    QString latestVersion = jsonObject.value("tag_name").toString();
+    QString currentVersion = normalizeUpdateVersion(QString::fromStdString(CoreGetVersion()));
+    QString latestVersion = normalizeUpdateVersion(jsonObject.value("tag_name").toString());
 
     reply->deleteLater();
 
     // do nothing when versions match
-    if (currentVersion == latestVersion)
+    if (!latestVersion.isEmpty() && currentVersion == latestVersion)
     {
         if (!this->ui_SilentUpdateCheck)
         {

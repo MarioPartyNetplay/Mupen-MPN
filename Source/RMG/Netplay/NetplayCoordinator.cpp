@@ -215,19 +215,14 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
 
     connect(m_server.get(), &SocketIOServer::controllerInputReceived,
         this, [this](const QString& roomId, int slot, uint32_t frameNumber, uint32_t controllerState) {
-            std::shared_ptr<RMGCore::LockstepEngine> engine;
-            {
-                std::lock_guard<std::recursive_mutex> lock(m_mutex);
-                if (roomId != m_gameSession.roomId || m_state != InGame || !m_lockstepEngine) {
-                    return;
-                }
-                if (slot == m_gameSession.localSlot) {
-                    return;
-                }
-                engine = m_lockstepEngine;
+            if (roomId != m_gameSession.roomId || m_state != InGame || !m_lockstepEngine)
+                return;
+
+            if (slot == m_gameSession.localSlot) {
+                return;
             }
 
-            engine->submitRemoteInput(slot, frameNumber, controllerState);
+            m_lockstepEngine->submitRemoteInput(slot, frameNumber, controllerState);
         });
 
     connect(m_server.get(), &SocketIOServer::frameSyncReceived,
@@ -779,6 +774,10 @@ void NetplayCoordinator::on_socketIO_disconnected()
     qDebug() << "NetplayCoordinator: Socket.IO disconnected";
 
     const bool wasInGame = (m_state == InGame || m_state == StartingGame);
+
+    if (m_lockstepEngine) {
+        m_lockstepEngine->releaseCurrentFrameWait();
+    }
 
     m_peers.clear();
     m_cachedPlayers.clear();
@@ -1501,46 +1500,38 @@ void NetplayCoordinator::on_socketIO_emulationPauseReceived(bool paused)
 
 void NetplayCoordinator::on_socketIO_controllerInputReceived(int slot, uint32_t frameNumber, uint32_t controllerState)
 {
-    std::shared_ptr<RMGCore::LockstepEngine> engine;
-    {
-        std::lock_guard<std::recursive_mutex> lock(m_mutex);
-        if (m_state != InGame || !m_lockstepEngine) {
-            return;
-        }
-        if (slot == m_gameSession.localSlot) {
-            return;
-        }
-        engine = m_lockstepEngine;
+    if (m_state != InGame || !m_lockstepEngine) {
+        return;
+    }
+
+    if (slot == m_gameSession.localSlot) {
+        return;
     }
 
     if (slot >= 0 && slot < m_lockstepConfig.numPlayers) {
-        engine->submitRemoteInput(slot, frameNumber, controllerState);
+        m_lockstepEngine->submitRemoteInput(slot, frameNumber, controllerState);
     } else if (slot == -1 && m_lockstepConfig.numPlayers == 2) {
         // Fallback for 2-player simple sync
-        const int inferredSlot = (m_gameSession.localSlot == 0) ? 1 : 0;
-        engine->submitRemoteInput(inferredSlot, frameNumber, controllerState);
+        int inferredSlot = (m_gameSession.localSlot == 0) ? 1 : 0;
+        m_lockstepEngine->submitRemoteInput(inferredSlot, frameNumber, controllerState);
     }
 }
 
 void NetplayCoordinator::on_peerFrameSyncReceived(int slot, uint32_t frameNumber, uint32_t stateHash)
 {
-    std::shared_ptr<RMGCore::LockstepEngine> engine;
-    {
-        std::lock_guard<std::recursive_mutex> lock(m_mutex);
-        if (m_state != InGame || !m_lockstepEngine) {
-            return;
-        }
-        if (slot == m_gameSession.localSlot) {
-            return;
-        }
-        engine = m_lockstepEngine;
+    if (m_state != InGame || !m_lockstepEngine) {
+        return;
+    }
+
+    if (slot == m_gameSession.localSlot) {
+        return;
     }
 
     if (slot >= 0 && slot < m_lockstepConfig.numPlayers) {
-        engine->submitPeerFrameSync(slot, frameNumber, stateHash);
+        m_lockstepEngine->submitPeerFrameSync(slot, frameNumber, stateHash);
     } else if (slot == -1 && m_lockstepConfig.numPlayers == 2) {
         const int inferredSlot = (m_gameSession.localSlot == 0) ? 1 : 0;
-        engine->submitPeerFrameSync(inferredSlot, frameNumber, stateHash);
+        m_lockstepEngine->submitPeerFrameSync(inferredSlot, frameNumber, stateHash);
     }
 }
 
