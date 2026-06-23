@@ -1631,17 +1631,29 @@ void MainWindow::on_networkAccessManager_Finished(QNetworkReply* reply)
         return;
     }
 
-#ifdef APPIMAGE_UPDATER
-    this->ui_ForceClose = true;
-    this->close();
-#else // normal updater
-    Dialog::InstallUpdateDialog installUpdateDialog(this, QCoreApplication::applicationDirPath(), downloadUpdateDialog.GetTempDirectory(), downloadUpdateDialog.GetFileName());
-    ret = installUpdateDialog.exec();
-    if (ret != QDialog::Accepted)
+    const bool usedAppImageInPlaceUpdate =
+#if defined(APPIMAGE_UPDATER) && !defined(_WIN32)
+        std::getenv("APPIMAGE") != nullptr &&
+        downloadUpdateDialog.GetTempDirectory().isEmpty() &&
+        downloadUpdateDialog.GetFileName().endsWith(QStringLiteral(".AppImage"), Qt::CaseInsensitive);
+#else
+        false;
+#endif
+
+    if (usedAppImageInPlaceUpdate)
     {
-        return;
+        this->ui_ForceClose = true;
+        this->close();
     }
-#endif // APPIMAGE_UPDATER
+    else
+    {
+        Dialog::InstallUpdateDialog installUpdateDialog(this, QCoreApplication::applicationDirPath(), downloadUpdateDialog.GetTempDirectory(), downloadUpdateDialog.GetFileName());
+        ret = installUpdateDialog.exec();
+        if (ret != QDialog::Accepted)
+        {
+            return;
+        }
+    }
 }
 #endif // UPDATER
 

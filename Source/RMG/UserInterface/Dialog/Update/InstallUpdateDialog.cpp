@@ -13,6 +13,7 @@
 #include <QTextStream>
 #include <QProcess>
 #include <QDir>
+#include <QFileInfo>
 
 #include <RMG-Core/Directories.hpp>
 #include <RMG-Core/Archive.hpp>
@@ -61,7 +62,79 @@ void InstallUpdateDialog::install(void)
 
     QString outputToLogLine = " >> \"" + logPath + "\" 2>&1";
 
-    if (this->filename.endsWith(".exe"))
+#ifndef _WIN32
+    if (this->filename.endsWith(QStringLiteral(".flatpak"), Qt::CaseInsensitive))
+    {
+        this->label->setText(QStringLiteral("Installing ") + this->filename + QStringLiteral("..."));
+        this->progressBar->setValue(50);
+
+        QStringList scriptLines =
+        {
+            QStringLiteral("#!/bin/sh"),
+            QStringLiteral("("),
+            QStringLiteral("   echo == Installing flatpak bundle") + outputToLogLine,
+            QStringLiteral("   flatpak install --user -y --reinstall \"") + fullFilePath + QStringLiteral("\"") + outputToLogLine,
+            QStringLiteral("   echo == Attempting to kill PID ") + appPid + outputToLogLine,
+            QStringLiteral("   kill ") + appPid + outputToLogLine,
+            QStringLiteral("   echo == Launching updated application") + outputToLogLine,
+            QStringLiteral("   flatpak run org.mariopartynetplay.RMG-MPN &") + outputToLogLine,
+            QStringLiteral(")"),
+            QStringLiteral("rm -rf \"") + this->temporaryDirectory + QStringLiteral("\""),
+        };
+        this->writeAndRunScript(scriptLines);
+        this->accept();
+        return;
+    }
+
+    if (this->filename.endsWith(QStringLiteral(".zip"), Qt::CaseInsensitive))
+    {
+        this->label->setText(QStringLiteral("Extracting ") + this->filename + QStringLiteral("..."));
+        this->progressBar->setValue(50);
+
+        QDir dir(this->temporaryDirectory);
+        if (!dir.mkdir(QStringLiteral("extract")))
+        {
+            QtMessageBox::Error(this, QStringLiteral("QDir::mkdir() Failed"), QString());
+            this->reject();
+            return;
+        }
+
+        QString extractDirectory = this->temporaryDirectory + QStringLiteral("/extract");
+        if (!CoreUnzip(fullFilePath.toStdU32String(), extractDirectory.toStdU32String()))
+        {
+            QtMessageBox::Error(this, QStringLiteral("CoreUnzip() Failed"), QString::fromStdString(CoreGetError()));
+            this->reject();
+            return;
+        }
+
+        this->label->setText(QStringLiteral("Executing update script..."));
+        this->progressBar->setValue(100);
+
+        extractDirectory = QDir::toNativeSeparators(extractDirectory);
+        const QString appBinary = appPath + QStringLiteral("/Mupen-MPN");
+
+        QStringList scriptLines =
+        {
+            QStringLiteral("#!/bin/sh"),
+            QStringLiteral("("),
+            QStringLiteral("   echo == Attempting to remove '") + fullFilePath + QStringLiteral("'") + outputToLogLine,
+            QStringLiteral("   rm -f \"") + fullFilePath + QStringLiteral("\"") + outputToLogLine,
+            QStringLiteral("   echo == Attempting to kill PID ") + appPid + outputToLogLine,
+            QStringLiteral("   kill ") + appPid + outputToLogLine,
+            QStringLiteral("   echo == Attempting to copy '") + extractDirectory + QStringLiteral("' to '") + appPath + QStringLiteral("'") + outputToLogLine,
+            QStringLiteral("   cp -a \"") + extractDirectory + QStringLiteral("/.\" \"") + appPath + QStringLiteral("/\"") + outputToLogLine,
+            QStringLiteral("   echo == Attempting to start '") + appBinary + QStringLiteral("'") + outputToLogLine,
+            QStringLiteral("   \"") + appBinary + QStringLiteral("\" &") + outputToLogLine,
+            QStringLiteral(")"),
+            QStringLiteral("rm -rf \"") + this->temporaryDirectory + QStringLiteral("\""),
+        };
+        this->writeAndRunScript(scriptLines);
+        this->accept();
+        return;
+    }
+#endif // _WIN32
+
+    if (this->filename.endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive))
     {
         this->label->setText("Executing " + this->filename + "...");
         QStringList scriptLines =
@@ -137,7 +210,11 @@ void InstallUpdateDialog::writeAndRunScript(QStringList stringList)
 {
     QString scriptPath;
     scriptPath = this->temporaryDirectory;
+#ifdef _WIN32
     scriptPath += "/update.bat";
+#else
+    scriptPath += "/update.sh";
+#endif
 
     QFile scriptFile(scriptPath);
     if (!scriptFile.open(QIODevice::WriteOnly | QIODevice::Text))
@@ -157,7 +234,11 @@ void InstallUpdateDialog::writeAndRunScript(QStringList stringList)
     scriptFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
     scriptFile.close();
 
+#ifdef _WIN32
     this->launchProcess(scriptPath, {});
+#else
+    this->launchProcess(QStringLiteral("/bin/sh"), {scriptPath});
+#endif
 }
 
 void InstallUpdateDialog::launchProcess(QString file, QStringList arguments)

@@ -20,6 +20,9 @@
 #include <QProcess>
 #include <QFile>
 
+#include <cerrno>
+#include <cstring>
+
 using namespace UserInterface::Dialog;
 using namespace Utilities;
 
@@ -72,34 +75,36 @@ void DownloadUpdateDialog::on_reply_finished(void)
     }
 
     QString filePath;
+    bool useAppImageInPlaceUpdate = false;
 
-#ifndef APPIMAGE_UPDATER
-    QTemporaryDir temporaryDir;
-    temporaryDir.setAutoRemove(false);
-    if (!temporaryDir.isValid())
-    {
-        QtMessageBox::Error(this, "Failed to create temporary directory", "");
-        this->reply->deleteLater();
-        this->reject();
-        return;
-    }
-
-    this->temporaryDirectory = temporaryDir.path();
-    filePath = temporaryDir.filePath(this->filename);
-#else
+#if defined(APPIMAGE_UPDATER) && !defined(_WIN32)
     const char* appImageEnv = std::getenv("APPIMAGE");
-    if (appImageEnv == nullptr ||
-        !QFile(appImageEnv).exists()) 
-    {
-        QtMessageBox::Error(this, "APPIMAGE variable is empty or invalid", "");
-        this->reply->deleteLater();
-        this->reject();
-        return;
-    }
+    useAppImageInPlaceUpdate =
+        appImageEnv != nullptr &&
+        QFile(appImageEnv).exists() &&
+        this->filename.endsWith(QStringLiteral(".AppImage"), Qt::CaseInsensitive);
+#endif
 
-    filePath = appImageEnv;
-    filePath += ".update";
-#endif // APPIMAGE_UPDATER
+    if (!useAppImageInPlaceUpdate)
+    {
+        QTemporaryDir temporaryDir;
+        temporaryDir.setAutoRemove(false);
+        if (!temporaryDir.isValid())
+        {
+            QtMessageBox::Error(this, "Failed to create temporary directory", "");
+            this->reply->deleteLater();
+            this->reject();
+            return;
+        }
+
+        this->temporaryDirectory = temporaryDir.path();
+        filePath = temporaryDir.filePath(this->filename);
+    }
+    else
+    {
+        filePath = QString::fromLocal8Bit(appImageEnv);
+        filePath += QStringLiteral(".update");
+    }
 
     QFile file(filePath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
@@ -111,25 +116,27 @@ void DownloadUpdateDialog::on_reply_finished(void)
     }
 
     file.write(this->reply->readAll());
-#ifdef APPIMAGE_UPDATER
-    file.setPermissions(QFile(appImageEnv).permissions());
-#endif // APPIMAGE_UPDATER
+    if (useAppImageInPlaceUpdate)
+    {
+        file.setPermissions(QFile(QString::fromLocal8Bit(appImageEnv)).permissions());
+    }
     file.close();
 
-#ifdef APPIMAGE_UPDATER
-    int ret = std::rename(filePath.toStdString().c_str(), appImageEnv);
-    if (ret != 0)
+    if (useAppImageInPlaceUpdate)
     {
-        QtMessageBox::Error(this, "std::rename() Failed", QString(strerror(errno)));
-        this->reply->deleteLater();
-        this->reject();
-        return;
-    }
+        int ret = std::rename(filePath.toStdString().c_str(), appImageEnv);
+        if (ret != 0)
+        {
+            QtMessageBox::Error(this, "std::rename() Failed", QString(strerror(errno)));
+            this->reply->deleteLater();
+            this->reject();
+            return;
+        }
 
-    QProcess process;
-    process.setProgram(appImageEnv);
-    process.startDetached();
-#endif // APPIMAGE_UPDATER
+        QProcess process;
+        process.setProgram(QString::fromLocal8Bit(appImageEnv));
+        process.startDetached();
+    }
 
     this->reply->deleteLater();
     this->accept();

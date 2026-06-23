@@ -69,6 +69,7 @@ bool matchesLinuxUpdateAsset(const QString& filename)
     }
 
     return lowerFilename.endsWith(QStringLiteral(".appimage")) ||
+           lowerFilename.endsWith(QStringLiteral(".flatpak")) ||
            lowerFilename.endsWith(QStringLiteral(".zip"));
 }
 
@@ -151,7 +152,14 @@ void UpdateDialog::accept(void)
 
     if (filenameToDownload.isEmpty())
     {
-        QtMessageBox::Error(this, "Failed to find update file");
+        const QString releasePage = jsonObject.value(QStringLiteral("html_url")).toString();
+        QString details = QStringLiteral("No update package was found for this platform in the latest release.");
+        if (!releasePage.isEmpty())
+        {
+            details += QStringLiteral("\n\nOpening the release page in your browser.");
+            QDesktopServices::openUrl(QUrl(releasePage));
+        }
+        QtMessageBox::Error(this, QStringLiteral("Failed to find update file"), details);
         QDialog::reject();
         return;
     }
