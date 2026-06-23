@@ -131,6 +131,9 @@ private:
         uint32_t peerHash);
     void pruneOldFrameSyncDataUnlocked(uint32_t oldestFrameToKeep);
     void applyTimeoutFallbackUnlocked(uint32_t frameNumber);
+    bool hasAllRemoteDataChannelsConnectedUnlocked() const;
+    bool allMissingInputsAreFromDisconnectedPeersUnlocked(
+        uint32_t frameNumber) const;
     bool isAlive() const { return !m_shutdown.load(); }
 
     Config m_config;

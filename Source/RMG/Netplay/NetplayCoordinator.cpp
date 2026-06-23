@@ -92,7 +92,7 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
     m_lockstepConfig.desyncDetectionEnabled = true;
     m_lockstepConfig.resyncEnabled = false;
     m_lockstepConfig.resyncCheckIntervalFrames = 180;
-    m_lockstepConfig.stallTimeoutMilliseconds = RMGCore::LockstepEngine::stallTimeoutForDelayFrames(6);
+    m_lockstepConfig.stallTimeoutMilliseconds = 0;
 
     qDebug() << "NetplayCoordinator created";
     UserInterface::Netplay::g_netplayCoordinator = this;
@@ -655,6 +655,34 @@ void NetplayCoordinator::applyPlayerPings(const QJsonArray& pings)
         }
     }
 
+    if (m_state == InGame && isHost()) {
+        int maxPingMs = 0;
+        for (auto it = m_playerPingMs.constBegin();
+             it != m_playerPingMs.constEnd();
+             ++it) {
+            if (it.value() > maxPingMs) {
+                maxPingMs = it.value();
+            }
+        }
+
+        if (maxPingMs > 0) {
+            m_sessionMaxPingMs = std::max(m_sessionMaxPingMs, maxPingMs);
+
+            // Dolphin-style minimum buffer: one-way latency in frames plus margin.
+            constexpr int kFrameMs = 17;
+            const int oneWayMs = (m_sessionMaxPingMs + 1) / 2;
+            const int requiredBuffer = std::min(
+                99,
+                std::max(
+                    1,
+                    (oneWayMs + kFrameMs - 1) / kFrameMs + 2));
+
+            if (requiredBuffer > m_lockstepConfig.inputDelayFrames) {
+                sendInputDelayUpdate(requiredBuffer);
+            }
+        }
+    }
+
     emit playerPingsUpdated();
 }
 
@@ -1032,6 +1060,7 @@ void NetplayCoordinator::resetEmulationSync()
     }
 
     m_sessionSyncCoreSettings = QJsonObject();
+    m_sessionMaxPingMs = 0;
 }
 
 void NetplayCoordinator::initializeLockstepEngine()
@@ -1443,8 +1472,7 @@ void NetplayCoordinator::setInputDelayFrames(int frames)
     }
 
     m_lockstepConfig.inputDelayFrames = frames;
-    m_lockstepConfig.stallTimeoutMilliseconds =
-        RMGCore::LockstepEngine::stallTimeoutForDelayFrames(frames);
+    m_lockstepConfig.stallTimeoutMilliseconds = 0;
     if (m_lockstepEngine) {
         m_lockstepEngine->setInputDelayFrames(frames);
     }
