@@ -244,7 +244,6 @@
      QJsonArray m_sessionSyncSaves;
      QJsonObject m_sessionSyncCoreSettings;
      uint32_t m_lastBroadcastFrameSync = 0;
-     int m_sessionMaxPingMs = 0;
     std::atomic<bool> m_pumpNetworkQueued{false};
      
      mutable std::recursive_mutex m_mutex;

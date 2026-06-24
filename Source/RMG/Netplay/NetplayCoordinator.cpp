@@ -661,39 +661,6 @@ void NetplayCoordinator::applyPlayerPings(const QJsonArray& pings)
         }
     }
 
-    if (m_state == InGame && isHost()) {
-        int maxPingMs = 0;
-        for (auto it = m_playerPingMs.constBegin();
-             it != m_playerPingMs.constEnd();
-             ++it) {
-            if (it.value() > maxPingMs) {
-                maxPingMs = it.value();
-            }
-        }
-
-        if (maxPingMs > 0) {
-            m_sessionMaxPingMs = std::max(m_sessionMaxPingMs, maxPingMs);
-
-            // Dolphin-style minimum buffer: one-way latency in frames plus margin.
-            constexpr int kFrameMs = 17;
-            const int oneWayMs = (m_sessionMaxPingMs + 1) / 2;
-            const int requiredBuffer = std::min(
-                99,
-                std::max(
-                    1,
-                    (oneWayMs + kFrameMs - 1) / kFrameMs + 2));
-
-            if (requiredBuffer > m_lockstepConfig.inputDelayFrames) {
-                // Ramp buffer gradually so peers are not starved mid-spike.
-                constexpr int kMaxBufferStepPerPingUpdate = 3;
-                const int nextBuffer = std::min(
-                    requiredBuffer,
-                    m_lockstepConfig.inputDelayFrames + kMaxBufferStepPerPingUpdate);
-                sendInputDelayUpdate(nextBuffer);
-            }
-        }
-    }
-
     emit playerPingsUpdated();
 }
 
@@ -1076,7 +1043,6 @@ void NetplayCoordinator::resetEmulationSync()
     }
 
     m_sessionSyncCoreSettings = QJsonObject();
-    m_sessionMaxPingMs = 0;
     m_pumpNetworkQueued.store(false, std::memory_order_relaxed);
 }
 
