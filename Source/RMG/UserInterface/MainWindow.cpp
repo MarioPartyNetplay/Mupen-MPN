@@ -1633,7 +1633,7 @@ void MainWindow::on_networkAccessManager_Finished(QNetworkReply* reply)
     }
 
     const bool usedAppImageInPlaceUpdate =
-#if defined(APPIMAGE_UPDATER) && !defined(_WIN32)
+#if defined(APPIMAGE_UPDATER) && defined(__linux__)
         std::getenv("APPIMAGE") != nullptr &&
         downloadUpdateDialog.GetTempDirectory().isEmpty() &&
         downloadUpdateDialog.GetFileName().endsWith(QStringLiteral(".AppImage"), Qt::CaseInsensitive);
