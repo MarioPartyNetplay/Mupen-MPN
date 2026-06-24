@@ -16,6 +16,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Prepare Flatpak manifest for CI
+        run: |
+          perl -0pe 's/- type: git\r?\n        url: https:\/\/github.com\/MarioPartyNetplay\/Mupen-MPN.git\r?\n        disable-submodules: true/- type: dir\n        path: ../s' \
+            Package/flatpak.yml > Package/flatpak-ci.yml
+
       - name: Setup Flatpak
         run: |
           flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
@@ -59,7 +64,7 @@ jobs:
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          manifest-path: Package/flatpak.yml
+          manifest-path: Package/flatpak-ci.yml
           bundle: MupenMPN-linux-x86_64.flatpak
           cache-key: flatpak-builder-${{ github.sha }}
 
@@ -67,7 +72,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MupenMPN-linux
-          path: MupenMPN-linux.flatpak
+          path: MupenMPN-linux-x86_64.flatpak
 
   windows:
     runs-on: windows-2022

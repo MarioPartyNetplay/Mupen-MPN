@@ -121,10 +121,7 @@ write_local_manifest() {
         exit 1
     fi
 
-    sed \
-        -e "s|type: git|type: dir|" \
-        -e "s|url: https://github.com/MarioPartyNetplay/Mupen-MPN.git|path: $toplvl_dir|" \
-        -e "/disable-submodules: true/d" \
+    perl -0pe 's/- type: git\r?\n        url: https:\/\/github.com\/MarioPartyNetplay\/Mupen-MPN.git\r?\n        disable-submodules: true/- type: dir\n        path: '"$toplvl_dir"'/s' \
         "$manifest_path" > "$local_manifest"
 
     log_kv "manifest source" "$manifest_path"
