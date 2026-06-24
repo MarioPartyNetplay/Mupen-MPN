@@ -315,14 +315,30 @@ ExternalProject_Add(SDL_GameControllerDB
 
 # libdatachannel integration (for WebRTC P2P netplay)
 if (NETPLAY)
-    include(FetchContent)
-    FetchContent_Declare(
-        enet
-        GIT_REPOSITORY https://github.com/lsalzman/enet.git
-        GIT_TAG v1.3.17
-    )
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(enet)
+
+    set(_ENET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/enet")
+    if (EXISTS "${_ENET_DIR}/CMakeLists.txt")
+        add_subdirectory(enet)
+    else()
+        find_package(PkgConfig QUIET)
+        if (PkgConfig_FOUND)
+            pkg_check_modules(LIBENET libenet)
+        endif()
+        if (LIBENET_FOUND)
+            add_library(enet INTERFACE IMPORTED GLOBAL)
+            target_include_directories(enet INTERFACE ${LIBENET_INCLUDE_DIRS})
+            target_link_libraries(enet INTERFACE ${LIBENET_LINK_LIBRARIES})
+        else()
+            include(FetchContent)
+            FetchContent_Declare(
+                enet
+                GIT_REPOSITORY https://github.com/lsalzman/enet.git
+                GIT_TAG v1.3.17
+            )
+            FetchContent_MakeAvailable(enet)
+        endif()
+    endif()
 
     set(ENET_EXTERNAL_TARGET enet PARENT_SCOPE)
 
