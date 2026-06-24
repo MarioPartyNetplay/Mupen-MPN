@@ -118,6 +118,13 @@ bool UserInterface::Netplay::advanceNetplayFrame()
     return g_netplayCoordinator->advanceFrame();
 }
 
+void UserInterface::Netplay::submitNetplayEndOfFrameSync()
+{
+    if (g_netplayCoordinator && g_netplayCoordinator->isInGame()) {
+        g_netplayCoordinator->submitEndOfFrameSync();
+    }
+}
+
 void UserInterface::Netplay::verifyNetplaySync(uint32_t romChecksum)
 {
     if (g_netplayCoordinator && g_netplayCoordinator->isInGame()) {
@@ -165,6 +172,10 @@ uint32_t UserInterface::Netplay::getNetplayFrameInput(int)
 bool UserInterface::Netplay::advanceNetplayFrame()
 {
     return true;
+}
+
+void UserInterface::Netplay::submitNetplayEndOfFrameSync()
+{
 }
 
 void UserInterface::Netplay::verifyNetplaySync(uint32_t)

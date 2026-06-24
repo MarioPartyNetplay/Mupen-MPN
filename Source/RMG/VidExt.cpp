@@ -8,6 +8,7 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "VidExt.hpp"
+#include "Netplay.hpp"
 
 #include <RMG-Core/Callback.hpp>
 #include <RMG-Core/Netplay.hpp>
@@ -433,6 +434,11 @@ static m64p_error VidExt_GLSwapBuf(void)
     OnScreenDisplayRender();
 
     (*l_OGLWidget)->SwapContextBuffers();
+
+    if (CoreIsEmbeddedNetplayActive())
+    {
+        UserInterface::Netplay::submitNetplayEndOfFrameSync();
+    }
 
     return M64ERR_SUCCESS;
 }

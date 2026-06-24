@@ -77,6 +77,8 @@
      void resetEmulationSync();
      void submitFrameInput(uint32_t controllerState);
      bool advanceFrame();
+     /** Sample CPU hash and broadcast frame sync after the emulated frame completes. */
+     void submitEndOfFrameSync();
      void verifyGameSync(uint32_t romChecksum);
  
      // Dialog & UI compatibility
@@ -203,9 +205,11 @@
      void syncLockstepPeerSessionActive();
      void initializeLockstepEngine();
      void applyPlayerPings(const QJsonArray& pings);
-     void broadcastFrameSyncIfNeeded(
+     void queueFrameSyncCheck(uint32_t frameNumber);
+     void broadcastFrameSync(
          const std::shared_ptr<RMGCore::LockstepEngine>& engine,
-         uint32_t frameNumber);
+         uint32_t frameNumber,
+         uint32_t stateHash);
      void bindWebRTCPeerSignals(const std::shared_ptr<WebRTCPeer>& peer, const QString& peerId);
      void attachExistingPeerDataChannels();
      void recoverWebRTCPeerConnections();
@@ -245,6 +249,7 @@
      QJsonArray m_sessionSyncSaves;
      QJsonObject m_sessionSyncCoreSettings;
      uint32_t m_lastBroadcastFrameSync = 0;
+    std::atomic<uint32_t> m_pendingFrameSyncFrame{0};
     std::atomic<bool> m_pumpNetworkQueued{false};
      
      mutable std::recursive_mutex m_mutex;

@@ -60,6 +60,12 @@ uint32_t getNetplayFrameInput(int playerSlot);
 bool advanceNetplayFrame();
 
 /**
+ * Sample CPU state and publish frame sync after the emulated frame completes.
+ * Called from the video extension at buffer swap (not during input polling).
+ */
+void submitNetplayEndOfFrameSync();
+
+/**
  * Verify game synchronization
  * Called periodically with ROM state checksum
  * May trigger desync recovery

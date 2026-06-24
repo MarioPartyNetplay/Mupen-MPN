@@ -582,9 +582,29 @@ bool NetplayCoordinator::advanceFrame()
     const uint32_t completedFrame = engine->getCurrentFrameNumber();
     const bool advanced = engine->advanceFrame();
     if (advanced) {
-        broadcastFrameSyncIfNeeded(engine, completedFrame);
+        queueFrameSyncCheck(completedFrame);
     }
     return advanced;
+}
+
+void NetplayCoordinator::submitEndOfFrameSync()
+{
+    const uint32_t frameNumber = m_pendingFrameSyncFrame.exchange(0, std::memory_order_acq_rel);
+    if (frameNumber == 0) {
+        return;
+    }
+
+    const auto engine = activeLockstepEngine();
+    if (!engine) {
+        return;
+    }
+
+    const uint32_t stateHash = CoreGetNetplayFrameSyncHash();
+    if (stateHash == 0) {
+        return;
+    }
+
+    broadcastFrameSync(engine, frameNumber, stateHash);
 }
 
 void NetplayCoordinator::onDesyncDetected(const QString& reason)
@@ -1075,6 +1095,7 @@ void NetplayCoordinator::resetEmulationSync()
         engine = std::move(m_lockstepEngine);
         m_currentFrameInputs.clear();
         m_lastBroadcastFrameSync = 0;
+        m_pendingFrameSyncFrame.store(0, std::memory_order_relaxed);
     }
 
     if (engine) {
@@ -1600,31 +1621,33 @@ void NetplayCoordinator::on_peerFrameSyncReceived(int slot, uint32_t frameNumber
     }
 }
 
-void NetplayCoordinator::broadcastFrameSyncIfNeeded(
-    const std::shared_ptr<RMGCore::LockstepEngine>& engine,
-    uint32_t frameNumber)
+void NetplayCoordinator::queueFrameSyncCheck(uint32_t frameNumber)
 {
-    if (!engine || frameNumber == 0) {
-        return;
-    }
-
-    // Comparing hashes while still waiting on peer input produces false desyncs
-    // during lag spikes when one side has already fallen back to last input.
-    if (engine->getPendingInputsCount() > 0) {
+    if (frameNumber == 0) {
         return;
     }
 
     // ~1 Hz at 60 FPS; compare state hashes at the same lockstep frame.
     const uint32_t syncInterval = static_cast<uint32_t>(
         std::max(60, m_lockstepConfig.resyncCheckIntervalFrames));
-    if (frameNumber == 0 ||
-        frameNumber % syncInterval != 0 ||
+    if (frameNumber % syncInterval != 0 ||
         frameNumber == m_lastBroadcastFrameSync) {
         return;
     }
 
-    const uint32_t stateHash = CoreGetNetplayFrameSyncHash();
-    if (stateHash == 0) {
+    m_pendingFrameSyncFrame.store(frameNumber, std::memory_order_release);
+}
+
+void NetplayCoordinator::broadcastFrameSync(
+    const std::shared_ptr<RMGCore::LockstepEngine>& engine,
+    uint32_t frameNumber,
+    uint32_t stateHash)
+{
+    if (!engine || frameNumber == 0 || stateHash == 0) {
+        return;
+    }
+
+    if (frameNumber == m_lastBroadcastFrameSync) {
         return;
     }
 
