@@ -5,20 +5,16 @@
 #ifndef NETPLAYHOSTREGISTRY_HPP
 #define NETPLAYHOSTREGISTRY_HPP
 
-#include "NetplayEnet.hpp"
 #include "NetplayProtocol.hpp"
 
 #include <QObject>
 #include <QHostAddress>
 #include <QUdpSocket>
 #include <QTimer>
-#include <QSet>
-
-struct _ENetHost;
 
 namespace UserInterface::Netplay {
 
-/** Registers the host with the browse server (UDP) and handles traversal hole-punch packets. */
+/** Registers the host with the browse server (UDP) for session browser listing. */
 class NetplayHostRegistry : public QObject {
     Q_OBJECT
 
@@ -32,24 +28,15 @@ public:
     void setListInBrowser(bool listInBrowser);
     void stopHosting(bool unregister = true);
 
-    /** Dolphin-style: send REGISTER/KEEP and punch from the ENet signaling socket. */
-    void attachEnetSignalingHost(ENetHost* host);
-    void detachEnetSignalingHost();
-
 signals:
     void hostRegistered(const QString& hostCode, const QString& publicAddress, int signalingPort);
     void hostRegistrationFailed(const QString& reason);
-    /** Emitted when the traversal server coordinates a joiner punch (host should connect back). */
-    void traversalConnectRequested(const QHostAddress& clientAddress, quint16 clientPort);
 
 private:
-    static void enetRegistryDatagramHandler(const QByteArray& datagram, void* userData);
-
     void sendToServer(const QByteArray& message);
     bool ensureSocketBound(QString* errorOut = nullptr);
     bool ensureServerResolved(QString* errorOut = nullptr);
     void handleServerMessage(const QByteArray& datagram);
-    void requestTraversalConnect(const QHostAddress& clientAddress, quint16 clientPort);
     void failHosting(const QString& reason);
     void resetHostState();
 
@@ -59,8 +46,6 @@ private:
     QUdpSocket m_socket;
     QTimer m_housekeepingTimer;
     QHostAddress m_serverAddress;
-    ENetHost* m_enetHost = nullptr;
-    QSet<QString> m_pendingTraversalConnectKeys;
 
     bool m_listInBrowser = false;
     uint16_t m_signalingPort = kDefaultNetplayHostingPort;

@@ -341,41 +341,25 @@ inline bool turnCredentialsAvailable()
 }
 
 enum class NetplayConnectionMode {
-    TraversalServer,
     Direct,
 };
 
 inline QString netplayConnectionModeToString(NetplayConnectionMode mode)
 {
-    switch (mode) {
-    case NetplayConnectionMode::Direct:
-        return QStringLiteral("direct");
-    case NetplayConnectionMode::TraversalServer:
-    default:
-        return QStringLiteral("traversal");
-    }
+    Q_UNUSED(mode);
+    return QStringLiteral("direct");
 }
 
 inline NetplayConnectionMode netplayConnectionModeFromString(const QString& value)
 {
-    if (value.compare(QStringLiteral("direct"), Qt::CaseInsensitive) == 0) {
-        return NetplayConnectionMode::Direct;
-    }
-    return NetplayConnectionMode::TraversalServer;
+    Q_UNUSED(value);
+    return NetplayConnectionMode::Direct;
 }
 
 inline bool sessionUsesNatTraversal(const QJsonObject& session)
 {
-    if (session.contains(QStringLiteral("use_nat_traversal"))) {
-        return session.value(QStringLiteral("use_nat_traversal")).toBool();
-    }
-
-    const QString mode = session.value(QStringLiteral("connection_mode")).toString();
-    if (!mode.isEmpty()) {
-        return netplayConnectionModeFromString(mode) == NetplayConnectionMode::TraversalServer;
-    }
-
-    return true;
+    Q_UNUSED(session);
+    return false;
 }
 
 inline QString sessionTraversalHostCode(const QJsonObject& session)
@@ -385,10 +369,6 @@ inline QString sessionTraversalHostCode(const QJsonObject& session)
 
 inline bool sessionConnectEndpoint(const QJsonObject& session, QString* addressOut, int* portOut)
 {
-    if (sessionUsesNatTraversal(session)) {
-        return false;
-    }
-
     QString address = session.value(QStringLiteral("connect_address")).toString().trimmed();
     if (address.isEmpty() || !isUsableConnectAddress(address)) {
         address = session.value(QStringLiteral("public_address")).toString().trimmed();

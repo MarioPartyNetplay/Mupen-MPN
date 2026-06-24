@@ -23,8 +23,6 @@ public:
     static TurnCredentialClient& instance();
 
     bool isConfigured() const;
-    void setConnectionReversalEnabled(bool enabled);
-    bool connectionReversalEnabled() const;
     void prefetch();
     bool ensureCredentials(int timeoutMs = 10000);
     std::vector<rtc::IceServer> stunServers() const;
@@ -45,17 +43,15 @@ private:
     std::vector<rtc::IceServer> m_turnServers;
     QDateTime m_expiresAt;
     bool m_fetchInProgress = false;
-    bool m_connectionReversalEnabled = false;
 };
 
 std::vector<rtc::IceServer> buildIceServers();
 
 inline void applyNetplayConnectionSettings(NetplayConnectionMode mode, bool useUpnp)
 {
+    Q_UNUSED(mode);
     Q_UNUSED(useUpnp);
-    TurnCredentialClient& client = TurnCredentialClient::instance();
-    client.setConnectionReversalEnabled(mode == NetplayConnectionMode::TraversalServer);
-    client.prefetch();
+    TurnCredentialClient::instance().prefetch();
 }
 
 } // namespace UserInterface::Netplay

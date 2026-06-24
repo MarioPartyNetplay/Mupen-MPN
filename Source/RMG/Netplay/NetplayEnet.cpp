@@ -3,7 +3,6 @@
  * Copyright (C) 2020-2026 Rosalie Wanders <rosalie@mailbox.org>
  */
 #include "NetplayEnet.hpp"
-#include "NetplayTraversalPunch.hpp"
 #include "NetplayProtocol.hpp"
 
 #include <QJsonDocument>
@@ -194,7 +193,6 @@ int ENET_CALLBACK netplayEnetIntercept(ENetHost* host, ENetEvent* event)
         std::memcmp(host->receivedData, kNetplayRegistryProtocol, 8) == 0) {
         const QByteArray datagram(reinterpret_cast<const char*>(host->receivedData),
                                   static_cast<int>(host->receivedDataLength));
-        handleTraversalPunchDatagram(datagram, host);
 
         const EnetSideChannelState& sideChannel = sideChannelForHost(host);
         if (sideChannel.registryHandler != nullptr) {
@@ -250,26 +248,6 @@ bool sendEnetDatagram(ENetHost* host, const QHostAddress& target, quint16 port, 
     buffer.data = const_cast<char*>(payload.constData());
     buffer.dataLength = static_cast<size_t>(payload.size());
     return enet_socket_send(host->socket, &address, &buffer, 1) >= 0;
-}
-
-void sendEnetPunchBursts(ENetHost* host, const QHostAddress& target, quint16 port, int bursts)
-{
-    if (!host || target.isNull() || port == 0) {
-        return;
-    }
-
-    static const QByteArray kPunchPayload = QByteArray(kNetplayRegistryProtocol) + "|PUNCHACK";
-    ENetAddress address;
-    if (!hostAddressToEnet(target, port, &address)) {
-        return;
-    }
-
-    ENetBuffer buffer;
-    buffer.data = const_cast<char*>(kPunchPayload.constData());
-    buffer.dataLength = static_cast<size_t>(kPunchPayload.size());
-    for (int i = 0; i < bursts; ++i) {
-        enet_socket_send(host->socket, &address, &buffer, 1);
-    }
 }
 
 bool peerIsConnected(ENetPeer* peer)
@@ -382,18 +360,6 @@ bool parseSignalingPacket(const QByteArray& data, QString* eventNameOut, QJsonAr
     }
     *argsOut = args;
     return true;
-}
-
-void sendUdpPunchBursts(QUdpSocket* socket, const QHostAddress& target, quint16 port, int bursts)
-{
-    if (!socket || target.isNull() || port == 0) {
-        return;
-    }
-
-    static const QByteArray kPunchPayload = QByteArray(kNetplayRegistryProtocol) + "|PUNCHACK";
-    for (int i = 0; i < bursts; ++i) {
-        socket->writeDatagram(kPunchPayload, target, port);
-    }
 }
 
 } // namespace UserInterface::Netplay

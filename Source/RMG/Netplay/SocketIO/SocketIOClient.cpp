@@ -103,14 +103,6 @@ SocketIOClient::SocketIOClient(const QString& serverUrl, QObject* parent)
         }
     });
 
-    m_punchTimer = new QTimer(this);
-    m_punchTimer->setInterval(100);
-    connect(m_punchTimer, &QTimer::timeout, this, [this]() {
-        if (m_connectionState == Connecting && m_useTraversalPunch && m_enetHost) {
-            sendConnectPunchBursts();
-        }
-    });
-
     m_reconnectTimer = new QTimer(this);
     m_reconnectTimer->setSingleShot(true);
     connect(m_reconnectTimer, &QTimer::timeout, this, &SocketIOClient::on_reconnectTimer);
@@ -164,9 +156,6 @@ void SocketIOClient::destroyEnetClient()
     if (m_pingTimer) {
         m_pingTimer->stop();
     }
-    if (m_punchTimer) {
-        m_punchTimer->stop();
-    }
     if (m_reconnectTimer) {
         m_reconnectTimer->stop();
     }
@@ -201,20 +190,9 @@ bool SocketIOClient::setEnetPeerAddress(ENetAddress* addressOut) const
     return enet_address_set_host(addressOut, hostBytes.constData()) == 0;
 }
 
-void SocketIOClient::sendConnectPunchBursts()
-{
-    if (!m_enetHost || m_serverAddress.isNull() || m_serverPort == 0) {
-        return;
-    }
-
-    sendEnetPunchBursts(m_enetHost, m_serverAddress, m_serverPort, 5);
-}
-
-void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpPort, bool useTraversalPunch)
+void SocketIOClient::connectToServer(const QString& playerName)
 {
     m_playerName = playerName;
-    m_savedBindUdpPort = bindUdpPort;
-    m_savedUseTraversalPunch = useTraversalPunch;
     m_intentionalDisconnect = false;
     m_awaitingReconnectAck = false;
     m_reconnectAttempts = 0;
@@ -241,42 +219,16 @@ void SocketIOClient::connectToServer(const QString& playerName, quint16 bindUdpP
     ensureEnetInitialized();
     m_connectionState = Connecting;
 
-    if (!startTransportConnect(bindUdpPort, useTraversalPunch)) {
+    if (!startTransportConnect()) {
         return;
     }
 
-    qInfo() << "Connecting to UDP signaling server" << m_serverHostname << m_serverPort
-            << "local UDP port" << (bindUdpPort > 0 ? bindUdpPort : m_enetHost->address.port)
-            << "traversal punch" << useTraversalPunch;
+    qInfo() << "Connecting to UDP signaling server" << m_serverHostname << m_serverPort;
 }
 
-bool SocketIOClient::startTransportConnect(quint16 bindUdpPort, bool useTraversalPunch)
+bool SocketIOClient::startTransportConnect()
 {
-    m_useTraversalPunch = useTraversalPunch;
-
-    if (bindUdpPort > 0) {
-        ENetAddress bindAddress;
-        bindAddress.host = ENET_HOST_ANY;
-        bindAddress.port = bindUdpPort;
-        for (int attempt = 0; attempt < 5 && !m_enetHost; ++attempt) {
-            m_enetHost = createSignalingEnetHost(&bindAddress, 1, 1, 0, 0);
-            if (!m_enetHost && attempt < 4) {
-                QThread::msleep(50);
-            }
-        }
-        if (!m_enetHost) {
-            destroyEnetClient();
-            m_connectionState = Error;
-            shutdownEnetIfIdle();
-            emit connectionError(QStringLiteral(
-                "Failed to bind traversal UDP port %1 after NAT punch — retry join").arg(bindUdpPort));
-            return false;
-        }
-    }
-
-    if (!m_enetHost) {
-        m_enetHost = createSignalingEnetHost(nullptr, 1, 1, 0, 0);
-    }
+    m_enetHost = createSignalingEnetHost(nullptr, 1, 1, 0, 0);
     if (!m_enetHost) {
         m_connectionState = Error;
         shutdownEnetIfIdle();
@@ -303,15 +255,8 @@ bool SocketIOClient::startTransportConnect(quint16 bindUdpPort, bool useTraversa
 
     applySignalingPeerTimeout(m_serverPeer);
 
-    if (m_useTraversalPunch) {
-        sendConnectPunchBursts();
-    }
-
     m_serviceTimer->start();
-    m_connectTimer->start(m_useTraversalPunch ? 25000 : kConnectTimeoutMs);
-    if (m_useTraversalPunch) {
-        m_punchTimer->start();
-    }
+    m_connectTimer->start(kConnectTimeoutMs);
 
     return true;
 }
@@ -342,9 +287,6 @@ void SocketIOClient::beginReconnect()
     }
     if (m_connectTimer) {
         m_connectTimer->stop();
-    }
-    if (m_punchTimer) {
-        m_punchTimer->stop();
     }
 
     m_connectionState = Reconnecting;
@@ -405,7 +347,7 @@ void SocketIOClient::on_reconnectTimer()
     ensureEnetInitialized();
     m_connectionState = Reconnecting;
 
-    if (!startTransportConnect(m_savedBindUdpPort, m_savedUseTraversalPunch)) {
+    if (!startTransportConnect()) {
         m_reconnectTimer->start(kReconnectIntervalMs);
     }
 }
@@ -783,9 +725,6 @@ void SocketIOClient::on_serviceTimer()
         case ENET_EVENT_TYPE_CONNECT:
             if (m_connectTimer) {
                 m_connectTimer->stop();
-            }
-            if (m_punchTimer) {
-                m_punchTimer->stop();
             }
             {
                 const bool resumeSession = (m_connectionState == Reconnecting);

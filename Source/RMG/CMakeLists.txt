@@ -162,12 +162,10 @@ if (NETPLAY)
         Netplay/SocketIO/SocketIOClient.cpp
         Netplay/SocketIO/SocketIOServer.cpp
         Netplay/NetplayEnet.cpp
-        Netplay/NetplayTraversalPunch.cpp
         Netplay/WebRTC/WebRTCPeer.cpp
         Netplay/WebRTC/TurnCredentialClient.cpp
         Netplay/NetplayUpnp.cpp
         Netplay/NetplayHostRegistry.cpp
-        Netplay/NetplayTraversalLookup.cpp
         Netplay/NetplayIndexClient.cpp
         Netplay/NetplayCoordinator.cpp
         Netplay.cpp

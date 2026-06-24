@@ -308,24 +308,7 @@ TurnCredentialClient& TurnCredentialClient::instance()
 
 bool TurnCredentialClient::isConfigured() const
 {
-    if (!turnCredentialsAvailable()) {
-        return false;
-    }
-
-    QMutexLocker locker(&m_mutex);
-    return m_connectionReversalEnabled;
-}
-
-void TurnCredentialClient::setConnectionReversalEnabled(bool enabled)
-{
-    QMutexLocker locker(&m_mutex);
-    m_connectionReversalEnabled = enabled;
-}
-
-bool TurnCredentialClient::connectionReversalEnabled() const
-{
-    QMutexLocker locker(&m_mutex);
-    return m_connectionReversalEnabled;
+    return turnCredentialsAvailable() || !qgetenv("RMG_ICE_CONFIG_FILE").isEmpty();
 }
 
 void TurnCredentialClient::prefetch()
@@ -365,15 +348,6 @@ bool TurnCredentialClient::ensureCredentials(int timeoutMs)
     }
 
     fetchCredentialsBlocking(timeoutMs);
-
-    if (connectionReversalEnabled()) {
-        QMutexLocker locker(&m_mutex);
-        if (m_turnServers.empty()) {
-            qWarning() << "TurnCredentialClient: NAT traversal requires Cloudflare TURN credentials but none are available";
-            return false;
-        }
-    }
-
     return true;
 }
 

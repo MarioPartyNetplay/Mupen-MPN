@@ -26,8 +26,8 @@ void ensureEnetInitialized();
 void shutdownEnetIfIdle();
 
 /**
- * Like enet_host_create(), but sets SO_REUSEADDR before bind so traversal punch
- * ports can be reused and the host registry can share the signaling port.
+ * Like enet_host_create(), but sets SO_REUSEADDR before bind so the host registry
+ * can share the signaling port when needed.
  */
 ENetHost* createSignalingEnetHost(const ENetAddress* address, size_t peerCount, size_t channelLimit,
                                   enet_uint32 incomingBandwidth = 0, enet_uint32 outgoingBandwidth = 0);
@@ -47,10 +47,6 @@ bool sendSignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonArr
 
 /** Parses a UDP signaling packet: [2, "event-name", payload...] */
 bool parseSignalingPacket(const QByteArray& data, QString* eventNameOut, QJsonArray* argsOut);
-
-/** Send repeated UDP datagrams to punch through cone NAT (Dolphin-style). */
-void sendUdpPunchBursts(QUdpSocket* socket, const QHostAddress& target, quint16 port, int bursts = 10);
-void sendEnetPunchBursts(ENetHost* host, const QHostAddress& target, quint16 port, int bursts = 10);
 
 bool sendEnetDatagram(ENetHost* host, const QHostAddress& target, quint16 port, const QByteArray& payload);
 

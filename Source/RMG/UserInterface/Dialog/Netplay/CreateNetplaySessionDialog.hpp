@@ -11,7 +11,6 @@
 #define CREATENETPLAYSESSIONDIALOG_HPP
 
 #include <QCheckBox>
-#include <QComboBox>
 #include <QJsonObject>
 #include <QTimerEvent>
 #include <QSpinBox>
@@ -62,7 +61,6 @@ class CreateNetplaySessionDialog : public QWidget, private Ui::CreateNetplaySess
     int hostingPort = Netplay::kDefaultNetplayHostingPort;
 
     QCheckBox* showInBrowserCheckBox = nullptr;
-    QComboBox* connectionModeComboBox = nullptr;
     QCheckBox* useUpnpCheckBox = nullptr;
     QSpinBox* hostingPortSpinBox = nullptr;
 

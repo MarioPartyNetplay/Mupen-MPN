@@ -18,7 +18,6 @@
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
 #include <QCheckBox>
-#include <QComboBox>
 #include <QNetworkDatagram>
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
@@ -132,32 +131,10 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     this->showInBrowserCheckBox->setToolTip("List this room in the public session browser.");
     this->showInBrowserCheckBox->setChecked(true);
 
-    QWidget* serverTypeRow = new QWidget(this);
-    QHBoxLayout* serverTypeLayout = new QHBoxLayout(serverTypeRow);
-    serverTypeLayout->setContentsMargins(0, 0, 0, 0);
-
-    QLabel* serverTypeLabel = new QLabel(QStringLiteral("Server type:"), this);
-    this->connectionModeComboBox = new QComboBox(this);
-    this->connectionModeComboBox->addItem(QStringLiteral("Traversal server"));
-    this->connectionModeComboBox->addItem(QStringLiteral("Direct"));
-    this->connectionModeComboBox->setCurrentIndex(0);
-    this->connectionModeComboBox->setToolTip(
-        QStringLiteral("Traversal server punches through NAT and relays game data via Cloudflare TURN. "
-                       "No port forwarding required. Direct mode needs a reachable public IP or UPnP."));
-    this->connectionModeComboBox->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-
     this->useUpnpCheckBox = new QCheckBox("Use UPnP port mapping", this);
     this->useUpnpCheckBox->setToolTip(
-        QStringLiteral("Attempt to open the hosting port on your router via UPnP. Only applies to direct connections."));
+        QStringLiteral("Attempt to open the hosting port on your router via UPnP."));
     this->useUpnpCheckBox->setChecked(false);
-    this->useUpnpCheckBox->setVisible(false);
-
-    connect(this->connectionModeComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            &CreateNetplaySessionDialog::on_connectionModeComboBox_currentIndexChanged);
-
-    serverTypeLayout->addWidget(serverTypeLabel);
-    serverTypeLayout->addWidget(this->connectionModeComboBox);
-    serverTypeLayout->addWidget(this->useUpnpCheckBox);
 
     QLabel* portLabel = new QLabel("Hosting Port:", this);
     portLabel->setObjectName(QStringLiteral("portLabel"));
@@ -173,7 +150,7 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
             this, [this](int port) { this->hostingPort = port; });
     
     portLayout->addWidget(this->showInBrowserCheckBox);
-    portLayout->addWidget(serverTypeRow);
+    portLayout->addWidget(this->useUpnpCheckBox);
     portLayout->addWidget(portLabel);
     portLayout->addWidget(this->hostingPortSpinBox);
     portLayout->setContentsMargins(0, 0, 0, 0);
@@ -287,39 +264,19 @@ void CreateNetplaySessionDialog::validateCreateButton(void)
 
 void CreateNetplaySessionDialog::updateConnectionModeUi(void)
 {
-    const bool directMode =
-        this->connectionModeComboBox != nullptr && this->connectionModeComboBox->currentIndex() == 1;
-    if (this->useUpnpCheckBox != nullptr) {
-        this->useUpnpCheckBox->setVisible(directMode);
-        if (!directMode) {
-            this->useUpnpCheckBox->setChecked(false);
-        }
-    }
-    if (this->hostingPortSpinBox != nullptr) {
-        this->hostingPortSpinBox->setVisible(directMode);
-    }
-    if (QLabel* portLabel = this->findChild<QLabel*>(QStringLiteral("portLabel"))) {
-        portLabel->setVisible(directMode);
-    }
+    Q_UNUSED(this);
 }
 
 void CreateNetplaySessionDialog::on_connectionModeComboBox_currentIndexChanged(int index)
 {
     Q_UNUSED(index);
-    this->updateConnectionModeUi();
 }
 
 void CreateNetplaySessionDialog::createSession(void)
 {
-    const Netplay::NetplayConnectionMode connectionMode =
-        this->connectionModeComboBox != nullptr && this->connectionModeComboBox->currentIndex() == 1
-        ? Netplay::NetplayConnectionMode::Direct
-        : Netplay::NetplayConnectionMode::TraversalServer;
-    const bool useUpnp =
-        connectionMode == Netplay::NetplayConnectionMode::Direct && this->useUpnpCheckBox != nullptr &&
-        this->useUpnpCheckBox->isChecked();
+    const bool useUpnp = this->useUpnpCheckBox != nullptr && this->useUpnpCheckBox->isChecked();
 
-    Netplay::applyNetplayConnectionSettings(connectionMode, useUpnp);
+    Netplay::applyNetplayConnectionSettings(Netplay::NetplayConnectionMode::Direct, useUpnp);
 
     // Start hosting a local signaling server
     QString playerName = this->nickNameLineEdit->text();
@@ -357,10 +314,10 @@ void CreateNetplaySessionDialog::createSession(void)
     json.insert("server_port", this->hostingPort);
     json.insert("public_port", this->hostingPort);
     json.insert("connect_port", this->hostingPort);
-    json.insert("use_nat_traversal", connectionMode == Netplay::NetplayConnectionMode::TraversalServer);
-    json.insert("connection_mode", Netplay::netplayConnectionModeToString(connectionMode));
+    json.insert("use_nat_traversal", false);
+    json.insert("connection_mode", Netplay::netplayConnectionModeToString(Netplay::NetplayConnectionMode::Direct));
     json.insert("use_upnp", useUpnp);
-    json.insert("use_connection_reversal", connectionMode == Netplay::NetplayConnectionMode::TraversalServer);
+    json.insert("use_connection_reversal", false);
     json.insert("show_in_browser", showInBrowser);
     json.insert("is_hosting", true);
     json.insert("slot", 0);

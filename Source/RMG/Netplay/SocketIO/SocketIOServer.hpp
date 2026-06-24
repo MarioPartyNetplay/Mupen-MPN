@@ -48,9 +48,6 @@ public:
 
     bool relayHostedWebRTCSignal(const QString& roomId, const QString& fromPlayerId, const QJsonObject& signal);
 
-    /** Host-initiated connect after traversal server coordinates hole punch (connection reversal). */
-    void attemptTraversalReversalConnect(const QHostAddress& clientAddress, quint16 clientPort);
-
     bool isRunning() const { return m_enetHost != nullptr; }
     ENetHost* enetHost() const { return m_enetHost; }
     int getPort() const;
@@ -162,7 +159,6 @@ private:
 
     QTimer* m_serviceTimer = nullptr;
     QTimer* m_pingTimer = nullptr;
-    QSet<QString> m_traversalReversalTargets;
 
     ClientConnection* getClientFromPeer(ENetPeer* peer);
     ClientConnection* getClientById(const QString& clientId);

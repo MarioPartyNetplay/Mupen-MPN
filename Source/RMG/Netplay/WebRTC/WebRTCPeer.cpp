@@ -262,14 +262,6 @@ rtc::Configuration WebRTCPeer::buildConfiguration()
     rtc::Configuration config;
     config.iceServers = buildIceServers();
     config.disableAutoNegotiation = true;
-
-    // Behind NAT, direct ICE often fails. Force Cloudflare TURN relay when traversal mode is active.
-    TurnCredentialClient& iceClient = TurnCredentialClient::instance();
-    if (iceClient.connectionReversalEnabled() && !iceClient.turnServers().empty()) {
-        config.iceTransportPolicy = rtc::TransportPolicy::Relay;
-        qInfo() << "WebRTCPeer: Forcing Cloudflare TURN relay (NAT traversal mode)";
-    }
-
     return config;
 }
 

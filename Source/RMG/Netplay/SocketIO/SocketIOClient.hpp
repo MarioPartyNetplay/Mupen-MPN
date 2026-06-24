@@ -92,7 +92,7 @@ public:
     ~SocketIOClient();
 
 
-    void connectToServer(const QString& playerName, quint16 bindUdpPort = 0, bool useTraversalPunch = false);
+    void connectToServer(const QString& playerName);
     void disconnect();
     ConnectionState getConnectionState() const;
 
@@ -188,7 +188,7 @@ private:
     void beginReconnect();
     void failReconnect();
     void sendReconnectRoom();
-    bool startTransportConnect(quint16 bindUdpPort, bool useTraversalPunch);
+    bool startTransportConnect();
     void handleSignalingPacket(const QByteArray& payload);
     void handleEvent(const QString& eventName, const QJsonArray& args);
 
@@ -203,8 +203,6 @@ private:
     void updatePlayerList(const QJsonArray& players);
     void destroyEnetClient();
 
-    void sendConnectPunchBursts();
-
     bool parseServerEndpoint(const QString& serverUrl, QHostAddress* addressOut, quint16* portOut) const;
     bool setEnetPeerAddress(ENetAddress* addressOut) const;
 
@@ -213,14 +211,12 @@ private:
     QTimer* m_serviceTimer = nullptr;
     QTimer* m_connectTimer = nullptr;
     QTimer* m_pingTimer = nullptr;
-    QTimer* m_punchTimer = nullptr;
     QTimer* m_reconnectTimer = nullptr;
 
     QString m_serverUrl;
     QString m_serverHostname;
     QHostAddress m_serverAddress;
     quint16 m_serverPort = kDefaultNetplayHostingPort;
-    bool m_useTraversalPunch = false;
     QString m_playerId;
     QString m_playerName;
     QString m_roomId;
@@ -237,8 +233,6 @@ private:
     bool m_awaitingReconnectAck = false;
     qint64 m_reconnectAckSentAtMs = 0;
     int m_reconnectAttempts = 0;
-    quint16 m_savedBindUdpPort = 0;
-    bool m_savedUseTraversalPunch = false;
 };
 
 } // namespace UserInterface::Netplay

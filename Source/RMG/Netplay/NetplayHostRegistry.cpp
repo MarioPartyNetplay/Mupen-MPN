@@ -3,7 +3,6 @@
  * Copyright (C) 2020-2026 Rosalie Wanders <rosalie@mailbox.org>
  */
 #include "NetplayHostRegistry.hpp"
-#include "NetplayTraversalPunch.hpp"
 
 #include <QDateTime>
 #include <QDebug>
@@ -55,38 +54,6 @@ NetplayHostRegistry::~NetplayHostRegistry()
 QString NetplayHostRegistry::hostCode() const
 {
     return m_hostCode;
-}
-
-void NetplayHostRegistry::attachEnetSignalingHost(ENetHost* host)
-{
-    detachEnetSignalingHost();
-    m_enetHost = host;
-    if (!m_enetHost) {
-        return;
-    }
-
-    setEnetRegistryDatagramHandler(m_enetHost, &NetplayHostRegistry::enetRegistryDatagramHandler, this);
-    qInfo() << "NetplayHostRegistry: using ENet signaling socket on port" << m_enetHost->address.port;
-}
-
-void NetplayHostRegistry::detachEnetSignalingHost()
-{
-    if (!m_enetHost) {
-        return;
-    }
-
-    setEnetRegistryDatagramHandler(m_enetHost, nullptr, nullptr);
-    m_enetHost = nullptr;
-}
-
-void NetplayHostRegistry::enetRegistryDatagramHandler(const QByteArray& datagram, void* userData)
-{
-    auto* registry = static_cast<NetplayHostRegistry*>(userData);
-    if (!registry) {
-        return;
-    }
-
-    registry->handleServerMessage(datagram);
 }
 
 void NetplayHostRegistry::startHosting(uint16_t signalingPort, bool listInBrowser)
@@ -147,8 +114,6 @@ void NetplayHostRegistry::stopHosting(bool unregister)
         sendToServer(QByteArray(kNetplayRegistryProtocol) + "|UNREGISTER|" + m_hostCode.toUtf8());
     }
 
-    detachEnetSignalingHost();
-    m_pendingTraversalConnectKeys.clear();
     resetHostState();
     m_isHosting = false;
     m_housekeepingTimer.stop();
@@ -156,10 +121,6 @@ void NetplayHostRegistry::stopHosting(bool unregister)
 
 bool NetplayHostRegistry::ensureSocketBound(QString* errorOut)
 {
-    if (m_enetHost != nullptr) {
-        return true;
-    }
-
     if (m_socket.state() == QAbstractSocket::BoundState) {
         return true;
     }
@@ -216,13 +177,6 @@ void NetplayHostRegistry::sendToServer(const QByteArray& message)
         return;
     }
 
-    if (m_enetHost != nullptr) {
-        if (!sendEnetDatagram(m_enetHost, m_serverAddress, kNetplayRegistryPort, message)) {
-            failHosting(QStringLiteral("Failed to send browse registry packet via ENet socket"));
-        }
-        return;
-    }
-
     if (m_socket.writeDatagram(message, m_serverAddress, kNetplayRegistryPort) < 0) {
         failHosting(QString("Failed to send browse registry packet: %1").arg(m_socket.errorString()));
     }
@@ -235,59 +189,14 @@ void NetplayHostRegistry::onReadyRead()
     }
 }
 
-void NetplayHostRegistry::requestTraversalConnect(const QHostAddress& clientAddress, quint16 clientPort)
-{
-    if (clientAddress.isNull() || clientPort == 0) {
-        return;
-    }
-
-    const QString endpointKey =
-        QStringLiteral("%1:%2").arg(clientAddress.toString()).arg(clientPort);
-    if (m_pendingTraversalConnectKeys.contains(endpointKey)) {
-        return;
-    }
-    m_pendingTraversalConnectKeys.insert(endpointKey);
-
-    // PUNCH packets are handled from the ENet intercept while enet_host_service is running.
-    // Calling enet_host_connect from that stack corrupts ENet state and crashes the host.
-    QTimer::singleShot(0, this, [this, clientAddress, clientPort, endpointKey]() {
-        m_pendingTraversalConnectKeys.remove(endpointKey);
-        if (!m_isHosting) {
-            return;
-        }
-        emit traversalConnectRequested(clientAddress, clientPort);
-    });
-}
-
 void NetplayHostRegistry::handleServerMessage(const QByteArray& datagram)
 {
     const QList<QByteArray> parts = splitRegistryParts(datagram);
-    if (parts.size() >= 2 && parts.at(1) == "PUNCH") {
-        QHostAddress clientAddress;
-        quint16 clientPort = 0;
-        if (parts.size() >= 4) {
-            const QString ipText = QString::fromUtf8(parts.at(2)).trimmed();
-            const int port = QString::fromUtf8(parts.at(3)).toInt();
-            if (port >= 1 && port <= 65535 && clientAddress.setAddress(ipText)) {
-                clientPort = static_cast<quint16>(port);
-                requestTraversalConnect(clientAddress, clientPort);
-            }
-        }
-    }
-
-    if (!m_enetHost && handleTraversalPunchDatagram(datagram, &m_socket)) {
-        return;
-    }
-
     if (parts.size() < 2) {
         return;
     }
 
     const QByteArray type = parts[1];
-    if (type == "PUNCH") {
-        return;
-    }
-
     if (type == "REGISTEROK" && parts.size() >= 3) {
         const QString code = normalizeTraversalCode(QString::fromUtf8(parts[2]));
         if (code.isEmpty()) {

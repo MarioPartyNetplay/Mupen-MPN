@@ -132,71 +132,11 @@ bool SocketIOServer::startServer(int port, QString* errorOut)
     return true;
 }
 
-void SocketIOServer::attemptTraversalReversalConnect(const QHostAddress& clientAddress, quint16 clientPort)
-{
-    if (!m_enetHost || clientAddress.isNull() || clientPort == 0) {
-        return;
-    }
-
-    const QString endpointKey = QStringLiteral("%1:%2").arg(clientAddress.toString()).arg(clientPort);
-    if (m_traversalReversalTargets.contains(endpointKey)) {
-        return;
-    }
-    m_traversalReversalTargets.insert(endpointKey);
-    QTimer::singleShot(30000, this, [this, endpointKey]() { m_traversalReversalTargets.remove(endpointKey); });
-
-    auto* punchTimer = new QTimer(this);
-    punchTimer->setInterval(100);
-    connect(punchTimer, &QTimer::timeout, this, [this, clientAddress, clientPort]() {
-        if (m_enetHost) {
-            sendEnetPunchBursts(m_enetHost, clientAddress, clientPort, 8);
-        }
-    });
-    punchTimer->start();
-    QTimer::singleShot(20000, punchTimer, [punchTimer]() {
-        punchTimer->stop();
-        punchTimer->deleteLater();
-    });
-
-    sendEnetPunchBursts(m_enetHost, clientAddress, clientPort, 8);
-
-    // Give the joiner time to bind its ENet socket before the host connects back.
-    QTimer::singleShot(1500, this, [this, clientAddress, clientPort]() {
-        if (!m_enetHost) {
-            return;
-        }
-
-        ENetAddress address;
-        address.port = clientPort;
-        if (clientAddress.protocol() == QAbstractSocket::IPv4Protocol) {
-            address.host = clientAddress.toIPv4Address();
-        } else {
-            const QByteArray hostBytes = clientAddress.toString().toUtf8();
-            if (enet_address_set_host(&address, hostBytes.constData()) != 0) {
-                qWarning() << "SocketIOServer: Failed to resolve traversal reversal address" << clientAddress;
-                return;
-            }
-        }
-
-        ENetPeer* peer = enet_host_connect(m_enetHost, &address, 1, 0);
-        if (!peer) {
-            qWarning() << "SocketIOServer: Failed to initiate traversal reversal connect to" << clientAddress
-                       << clientPort;
-            return;
-        }
-
-        applySignalingPeerTimeout(peer);
-        qInfo() << "SocketIOServer: Traversal reversal connect to" << clientAddress << clientPort;
-    });
-}
-
 void SocketIOServer::stopServer()
 {
     if (!m_enetHost) {
         return;
     }
-
-    m_traversalReversalTargets.clear();
 
     for (auto* client : m_clients.values()) {
         if (client && client->peer) {

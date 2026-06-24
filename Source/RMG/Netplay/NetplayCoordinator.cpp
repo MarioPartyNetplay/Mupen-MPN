@@ -9,7 +9,6 @@
  */
 #include "NetplayCoordinator.hpp"
 #include "NetplayProtocol.hpp"
-#include "NetplayTraversalLookup.hpp"
 #include "Netplay.hpp"
 #include "WebRTC/TurnCredentialClient.hpp"
 #include <RMG-Core/Netplay.hpp>
@@ -337,41 +336,14 @@ void NetplayCoordinator::connectToServer(const QString& playerName)
 void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int port, const QString& playerName,
                                                const QString& roomId)
 {
-    const NetplayConnectionMode connectionMode =
-        looksLikeTraversalCode(ipAddress.trimmed()) ? NetplayConnectionMode::TraversalServer
-                                                  : NetplayConnectionMode::Direct;
-    applyNetplayConnectionSettings(connectionMode, false);
-
-    if (connectionMode == NetplayConnectionMode::TraversalServer &&
-        !TurnCredentialClient::instance().ensureCredentials(15000)) {
-        setState(Error);
-        emit connectionError(QStringLiteral(
-            "Could not fetch Cloudflare TURN credentials from the traversal server. "
-            "Check your internet connection or try again later."));
-        return;
-    }
+    applyNetplayConnectionSettings(NetplayConnectionMode::Direct, false);
 
     m_playerName = playerName;
     m_shouldAutoJoinRoom = true;
     m_autoJoinRoomId = roomId.trimmed();
 
-    QString connectAddress = ipAddress.trimmed();
-    int connectPort = port;
-    quint16 bindUdpPort = 0;
-
-    if (looksLikeTraversalCode(connectAddress)) {
-        const TraversalLookupResult lookup = lookupTraversalHost(connectAddress);
-        if (!lookup.success) {
-            setState(Error);
-            emit connectionError(lookup.error);
-            return;
-        }
-        connectAddress = lookup.address;
-        connectPort = lookup.port;
-        bindUdpPort = lookup.localUdpPort;
-        qInfo() << "Traversal lookup resolved" << connectAddress << connectPort
-                << "local UDP port" << bindUdpPort;
-    }
+    const QString connectAddress = ipAddress.trimmed();
+    const int connectPort = port;
 
     // Recreate the signaling client with the new server endpoint
     QString serverUrl = QString("udp://%1:%2").arg(connectAddress).arg(connectPort);
@@ -388,7 +360,7 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
     
     // Now connect to the server
     setState(Connecting);
-    m_socketIO->connectToServer(playerName, bindUdpPort, bindUdpPort > 0);
+    m_socketIO->connectToServer(playerName);
 }
 
 void NetplayCoordinator::createRoom(const QString& roomName, const QString& gameId, int maxPlayers)
