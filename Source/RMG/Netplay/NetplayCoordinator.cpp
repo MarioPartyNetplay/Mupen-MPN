@@ -1068,6 +1068,7 @@ void NetplayCoordinator::resetEmulationSync()
 
     m_sessionSyncCoreSettings = QJsonObject();
     m_sessionMaxPingMs = 0;
+    m_pumpNetworkQueued.store(false, std::memory_order_relaxed);
 }
 
 void NetplayCoordinator::initializeLockstepEngine()
@@ -1077,6 +1078,7 @@ void NetplayCoordinator::initializeLockstepEngine()
         m_lockstepEngine.reset();
     }
     m_currentFrameInputs.clear();
+    m_pumpNetworkQueued.store(false, std::memory_order_relaxed);
 
     m_lockstepEngine = std::make_shared<RMGCore::LockstepEngine>(m_lockstepConfig);
 
@@ -1108,15 +1110,18 @@ void NetplayCoordinator::initializeLockstepEngine()
             return;
         }
 
-        // Never block the emulation thread on the UI thread here. A blocking pump
-        // can deadlock with VidExt/input dispatch and looks like a crash when
-        // lockstep stalls while a peer falls behind.
-        QMetaObject::invokeMethod(
-            this,
-            []() {
-                QCoreApplication::processEvents(QEventLoop::AllEvents, 2);
-            },
-            Qt::QueuedConnection);
+        // Never block the emulation thread on the UI thread here. Also keep only
+        // one queued pump in flight; otherwise lockstep stalls can flood the event
+        // queue and make the host appear frozen.
+        if (!m_pumpNetworkQueued.exchange(true, std::memory_order_acq_rel)) {
+            QMetaObject::invokeMethod(
+                this,
+                [this]() {
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 2);
+                    m_pumpNetworkQueued.store(false, std::memory_order_release);
+                },
+                Qt::QueuedConnection);
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     };
 
