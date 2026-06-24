@@ -101,6 +101,8 @@ public:
     void setLocalPlayerSlot(int slot);
     /** Unblock advanceFrame() waiters (e.g. after signaling loss). */
     void wakeInputWaiters();
+    /** Whether a remote player slot is still in the session (signaling present). */
+    void setPeerSessionActive(int slot, bool active);
     /** Fill missing peer inputs for the current frame and wake waiters. */
     void releaseCurrentFrameWait();
     /** Detach callbacks/channels and unblock any waiters (safe during teardown). */
@@ -150,6 +152,7 @@ private:
     std::map<int, uint32_t> m_lastKnownInputs;
     std::map<int, uint32_t> m_lastKnownInputFrames;
     std::map<int, uint32_t> m_lastStallCallbackFrame;
+    std::map<int, bool> m_peerSessionActive;
     std::map<uint32_t, uint32_t> m_localFrameSyncHashes;
     std::map<int, std::map<uint32_t, uint32_t>> m_pendingPeerFrameSyncHashes;
     std::unordered_set<uint64_t> m_reportedHashMismatches;

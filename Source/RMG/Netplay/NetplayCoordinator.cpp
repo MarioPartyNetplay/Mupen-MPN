@@ -91,9 +91,7 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
     m_lockstepConfig.desyncDetectionEnabled = true;
     m_lockstepConfig.resyncEnabled = false;
     m_lockstepConfig.resyncCheckIntervalFrames = 180;
-    m_lockstepConfig.stallTimeoutMilliseconds =
-        RMGCore::LockstepEngine::stallTimeoutForDelayFrames(
-            m_lockstepConfig.inputDelayFrames);
+    m_lockstepConfig.stallTimeoutMilliseconds = 0;
 
     qDebug() << "NetplayCoordinator created";
     UserInterface::Netplay::g_netplayCoordinator = this;
@@ -858,6 +856,33 @@ void NetplayCoordinator::on_socketIO_roomClosed(const QString& reason)
     emit roomClosed(reason);
 }
 
+void NetplayCoordinator::syncLockstepPeerSessionActive()
+{
+    if (!m_lockstepEngine) {
+        return;
+    }
+
+    const int numPlayers = m_lockstepConfig.numPlayers;
+    const QList<SocketIOClient::PlayerInfo> players = getPlayerList();
+
+    for (int slot = 0; slot < numPlayers; ++slot) {
+        if (slot == m_lockstepConfig.localPlayerSlot) {
+            m_lockstepEngine->setPeerSessionActive(slot, true);
+            continue;
+        }
+
+        bool active = false;
+        for (const auto& player : players) {
+            if (player.slot == slot) {
+                active = true;
+                break;
+            }
+        }
+
+        m_lockstepEngine->setPeerSessionActive(slot, active);
+    }
+}
+
 void NetplayCoordinator::on_socketIO_playersUpdated(const QList<SocketIOClient::PlayerInfo>& players)
 {
     m_cachedPlayers = players;
@@ -877,6 +902,10 @@ void NetplayCoordinator::on_socketIO_playersUpdated(const QList<SocketIOClient::
 
     if (m_state == Connected || m_state == InLobby || m_state == StartingGame) {
         setupPeerConnections(players);
+    }
+
+    if (m_state == InGame) {
+        syncLockstepPeerSessionActive();
     }
 
     emit playersUpdated(players);
@@ -1101,6 +1130,7 @@ void NetplayCoordinator::initializeLockstepEngine()
     };
 
     m_lockstepEngine->setCallbacks(callbacks);
+    syncLockstepPeerSessionActive();
     attachExistingPeerDataChannels();
 
     // --- THE BRIDGE: Connect Coordinator to Emulator Core ---
@@ -1205,7 +1235,6 @@ void NetplayCoordinator::recoverWebRTCPeerConnections()
     }
 
     for (auto it = m_peers.constBegin(); it != m_peers.constEnd(); ++it) {
-        const int slot = it.key();
         const auto& peer = it.value();
         if (!peer) {
             continue;
@@ -1218,8 +1247,6 @@ void NetplayCoordinator::recoverWebRTCPeerConnections()
 
         if (peer->isInitiator()) {
             peer->attemptRecovery();
-        } else if (state == WebRTCPeer::Failed || state == WebRTCPeer::Closed) {
-            recreatePeerConnection(slot);
         }
     }
 }
@@ -1277,16 +1304,15 @@ void NetplayCoordinator::on_webRTC_connectionFailed(const QString& peerId, const
 
     if (m_lockstepEngine) {
         m_lockstepEngine->setDataChannel(slot, nullptr);
-        // Inputs still arrive over signaling; unblock any wait on the data channel.
+        // Inputs still arrive over signaling; do not treat WebRTC loss as disconnect.
         m_lockstepEngine->wakeInputWaiters();
     }
 
     if (m_state == InGame) {
-        QTimer::singleShot(5000, this, [this, slot]() {
-            if (m_state == InGame) {
-                recreatePeerConnection(slot);
-            }
-        });
+        const auto peerIt = m_peers.find(slot);
+        if (peerIt != m_peers.end() && peerIt.value() && peerIt.value()->isInitiator()) {
+            peerIt.value()->attemptRecovery();
+        }
     }
 }
 
@@ -1460,8 +1486,7 @@ void NetplayCoordinator::setInputDelayFrames(int frames)
     }
 
     m_lockstepConfig.inputDelayFrames = frames;
-    m_lockstepConfig.stallTimeoutMilliseconds =
-        RMGCore::LockstepEngine::stallTimeoutForDelayFrames(frames);
+    m_lockstepConfig.stallTimeoutMilliseconds = 0;
     if (m_lockstepEngine) {
         m_lockstepEngine->setInputDelayFrames(frames);
         m_lockstepEngine->wakeInputWaiters();

@@ -200,6 +200,7 @@
      void setState(State newState);
      void setupPeerConnections(const QList<SocketIOClient::PlayerInfo>& players);
      void synchronizeLockstepPlayerCount();
+     void syncLockstepPeerSessionActive();
      void initializeLockstepEngine();
      void applyPlayerPings(const QJsonArray& pings);
      void broadcastFrameSyncIfNeeded(

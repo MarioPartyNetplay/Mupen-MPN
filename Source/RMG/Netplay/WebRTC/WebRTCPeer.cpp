@@ -329,10 +329,15 @@ void WebRTCPeer::bindPeerConnectionCallbacks()
         return;
     }
 
-    m_peerConnection->onLocalDescription([this](rtc::Description description) {
+    const std::shared_ptr<std::atomic<bool>> callbacksEnabled = m_callbacksEnabled;
+
+    m_peerConnection->onLocalDescription([this, callbacksEnabled](rtc::Description description) {
         const QString sdp = QString::fromStdString(std::string(description));
         const auto descriptionType = description.type();
-        dispatchToPeerThread([this, sdp, descriptionType]() {
+        dispatchToPeerThread([this, callbacksEnabled, sdp, descriptionType]() {
+            if (!callbacksEnabled || !callbacksEnabled->load()) {
+                return;
+            }
             if (descriptionType == rtc::Description::Type::Offer) {
                 emit offerCreated(sdp);
             } else if (descriptionType == rtc::Description::Type::Answer) {
@@ -341,31 +346,54 @@ void WebRTCPeer::bindPeerConnectionCallbacks()
         });
     });
 
-    m_peerConnection->onLocalCandidate([this](rtc::Candidate candidate) {
+    m_peerConnection->onLocalCandidate([this, callbacksEnabled](rtc::Candidate candidate) {
         const QString candidateSdp = QString::fromStdString(candidate.candidate());
         const int lineIndex = candidateMidToLineIndex(candidate);
-        dispatchToPeerThread([this, candidateSdp, lineIndex]() {
+        dispatchToPeerThread([this, callbacksEnabled, candidateSdp, lineIndex]() {
+            if (!callbacksEnabled || !callbacksEnabled->load()) {
+                return;
+            }
             emit iceCandidateGenerated(candidateSdp, lineIndex);
         });
     });
 
-    m_peerConnection->onDataChannel([this](std::shared_ptr<rtc::DataChannel> backendChannel) {
-        dispatchToPeerThread([this, backendChannel]() { registerDataChannel(backendChannel); });
+    m_peerConnection->onDataChannel([this, callbacksEnabled](std::shared_ptr<rtc::DataChannel> backendChannel) {
+        dispatchToPeerThread([this, callbacksEnabled, backendChannel]() {
+            if (!callbacksEnabled || !callbacksEnabled->load()) {
+                return;
+            }
+            registerDataChannel(backendChannel);
+        });
     });
 
-    m_peerConnection->onStateChange([this](rtc::PeerConnection::State state) {
+    m_peerConnection->onStateChange([this, callbacksEnabled](rtc::PeerConnection::State state) {
         const int stateValue = static_cast<int>(state);
-        dispatchToPeerThread([this, stateValue]() { handlePeerConnectionState(stateValue); });
+        dispatchToPeerThread([this, callbacksEnabled, stateValue]() {
+            if (!callbacksEnabled || !callbacksEnabled->load()) {
+                return;
+            }
+            handlePeerConnectionState(stateValue);
+        });
     });
 
-    m_peerConnection->onIceStateChange([this](rtc::PeerConnection::IceState state) {
+    m_peerConnection->onIceStateChange([this, callbacksEnabled](rtc::PeerConnection::IceState state) {
         const QString stateString = enumToString(state);
-        dispatchToPeerThread([this, stateString]() { emit iceConnectionStateChanged(stateString); });
+        dispatchToPeerThread([this, callbacksEnabled, stateString]() {
+            if (!callbacksEnabled || !callbacksEnabled->load()) {
+                return;
+            }
+            emit iceConnectionStateChanged(stateString);
+        });
     });
 
-    m_peerConnection->onGatheringStateChange([this](rtc::PeerConnection::GatheringState state) {
+    m_peerConnection->onGatheringStateChange([this, callbacksEnabled](rtc::PeerConnection::GatheringState state) {
         const QString stateString = enumToString(state);
-        dispatchToPeerThread([this, stateString]() { emit iceGatheringStateChanged(stateString); });
+        dispatchToPeerThread([this, callbacksEnabled, stateString]() {
+            if (!callbacksEnabled || !callbacksEnabled->load()) {
+                return;
+            }
+            emit iceGatheringStateChanged(stateString);
+        });
     });
 }
 

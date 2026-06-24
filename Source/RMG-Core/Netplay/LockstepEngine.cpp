@@ -75,8 +75,11 @@ LockstepEngine::LockstepEngine(const Config& config)
         m_config.inputDelayFrames = static_cast<int>(kMinInputDelayFrames);
     }
 
-    m_config.stallTimeoutMilliseconds =
-        stallTimeoutForDelayFrames(m_config.inputDelayFrames);
+    m_config.stallTimeoutMilliseconds = 0;
+
+    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
+        m_peerSessionActive[slot] = true;
+    }
 }
 
 LockstepEngine::~LockstepEngine()
@@ -345,19 +348,10 @@ bool LockstepEngine::advanceFrame()
     }
 
     if (m_config.numPlayers > 1) {
-        // Wait for real peer inputs, but fall back after a generous timeout so a
-        // lag spike cannot wedge emulation inside advanceFrame() indefinitely.
         int timeoutMs = 0;
         {
             std::lock_guard<std::recursive_mutex> lock(m_mutex);
-            if (frameNumber < 300 &&
-                !hasAllRemoteDataChannelsConnectedUnlocked()) {
-                timeoutMs = 8000;
-            } else if (m_config.stallTimeoutMilliseconds > 0) {
-                timeoutMs = m_config.stallTimeoutMilliseconds;
-            } else {
-                timeoutMs = stallTimeoutForDelayFrames(m_config.inputDelayFrames);
-            }
+            timeoutMs = computeInputWaitTimeoutMsUnlocked(frameNumber);
         }
 
         const bool ready = waitForAllInputs(frameNumber, timeoutMs);
@@ -527,17 +521,26 @@ void LockstepEngine::setInputDelayFrames(int frames)
     }
 
     m_config.inputDelayFrames = frames;
-    m_config.stallTimeoutMilliseconds = stallTimeoutForDelayFrames(frames);
+    m_config.stallTimeoutMilliseconds = 0;
     m_inputCv.notify_all();
 }
 
 int LockstepEngine::stallTimeoutForDelayFrames(int inputDelayFrames)
 {
-    if (inputDelayFrames < static_cast<int>(kMinInputDelayFrames)) {
-        inputDelayFrames = static_cast<int>(kMinInputDelayFrames);
+    (void)inputDelayFrames;
+    return 0;
+}
+
+void LockstepEngine::setPeerSessionActive(int slot, bool active)
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    if (slot < 0 || slot >= m_config.numPlayers) {
+        return;
     }
 
-    return 4000 + inputDelayFrames * 500;
+    m_peerSessionActive[slot] = active;
+    m_inputCv.notify_all();
 }
 
 void LockstepEngine::wakeInputWaiters()
@@ -917,19 +920,15 @@ bool LockstepEngine::hasReceivedBootstrapInputFromAllRemotesUnlocked() const
 int LockstepEngine::computeInputWaitTimeoutMsUnlocked(
     uint32_t frameNumber) const
 {
-    int timeoutMs = m_config.stallTimeoutMilliseconds;
-    if (timeoutMs <= 0) {
-        timeoutMs = stallTimeoutForDelayFrames(m_config.inputDelayFrames);
-    }
+    (void)frameNumber;
 
     if (!hasAllRemoteDataChannelsConnectedUnlocked() ||
         !hasReceivedBootstrapInputFromAllRemotesUnlocked()) {
-        timeoutMs = std::max(timeoutMs, 8000);
-    } else if (frameNumber < 300) {
-        timeoutMs = std::max(timeoutMs, 2000);
+        return 8000;
     }
 
-    return timeoutMs;
+    // Dolphin-style: stall on lag spikes instead of advancing with stale inputs.
+    return 0;
 }
 
 bool LockstepEngine::allMissingInputsAreFromDisconnectedPeersUnlocked(
@@ -949,10 +948,13 @@ bool LockstepEngine::allMissingInputsAreFromDisconnectedPeersUnlocked(
                 frameIt->second.playerInputs.end();
         }
 
-        if (!found &&
-            m_dataChannels[slot] &&
-            m_dataChannels[slot]->isOpen()) {
-            return false;
+        if (!found) {
+            const auto activeIt = m_peerSessionActive.find(slot);
+            const bool sessionActive =
+                activeIt != m_peerSessionActive.end() && activeIt->second;
+            if (sessionActive) {
+                return false;
+            }
         }
     }
 
@@ -1020,6 +1022,10 @@ void LockstepEngine::setNumPlayers(int numPlayers)
     m_config.numPlayers = numPlayers;
 
     m_dataChannels.resize(numPlayers);
+    m_peerSessionActive.clear();
+    for (int slot = 0; slot < numPlayers; ++slot) {
+        m_peerSessionActive[slot] = true;
+    }
 }
 
 void LockstepEngine::setLocalPlayerSlot(int slot)
