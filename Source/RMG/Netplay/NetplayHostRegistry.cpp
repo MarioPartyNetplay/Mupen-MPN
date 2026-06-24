@@ -148,6 +148,7 @@ void NetplayHostRegistry::stopHosting(bool unregister)
     }
 
     detachEnetSignalingHost();
+    m_pendingTraversalConnectKeys.clear();
     resetHostState();
     m_isHosting = false;
     m_housekeepingTimer.stop();
@@ -234,6 +235,30 @@ void NetplayHostRegistry::onReadyRead()
     }
 }
 
+void NetplayHostRegistry::requestTraversalConnect(const QHostAddress& clientAddress, quint16 clientPort)
+{
+    if (clientAddress.isNull() || clientPort == 0) {
+        return;
+    }
+
+    const QString endpointKey =
+        QStringLiteral("%1:%2").arg(clientAddress.toString()).arg(clientPort);
+    if (m_pendingTraversalConnectKeys.contains(endpointKey)) {
+        return;
+    }
+    m_pendingTraversalConnectKeys.insert(endpointKey);
+
+    // PUNCH packets are handled from the ENet intercept while enet_host_service is running.
+    // Calling enet_host_connect from that stack corrupts ENet state and crashes the host.
+    QTimer::singleShot(0, this, [this, clientAddress, clientPort, endpointKey]() {
+        m_pendingTraversalConnectKeys.remove(endpointKey);
+        if (!m_isHosting) {
+            return;
+        }
+        emit traversalConnectRequested(clientAddress, clientPort);
+    });
+}
+
 void NetplayHostRegistry::handleServerMessage(const QByteArray& datagram)
 {
     const QList<QByteArray> parts = splitRegistryParts(datagram);
@@ -245,7 +270,7 @@ void NetplayHostRegistry::handleServerMessage(const QByteArray& datagram)
             const int port = QString::fromUtf8(parts.at(3)).toInt();
             if (port >= 1 && port <= 65535 && clientAddress.setAddress(ipText)) {
                 clientPort = static_cast<quint16>(port);
-                emit traversalConnectRequested(clientAddress, clientPort);
+                requestTraversalConnect(clientAddress, clientPort);
             }
         }
     }

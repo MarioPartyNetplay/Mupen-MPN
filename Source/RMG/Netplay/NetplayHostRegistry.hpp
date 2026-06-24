@@ -12,6 +12,7 @@
 #include <QHostAddress>
 #include <QUdpSocket>
 #include <QTimer>
+#include <QSet>
 
 struct _ENetHost;
 
@@ -48,6 +49,7 @@ private:
     bool ensureSocketBound(QString* errorOut = nullptr);
     bool ensureServerResolved(QString* errorOut = nullptr);
     void handleServerMessage(const QByteArray& datagram);
+    void requestTraversalConnect(const QHostAddress& clientAddress, quint16 clientPort);
     void failHosting(const QString& reason);
     void resetHostState();
 
@@ -58,6 +60,7 @@ private:
     QTimer m_housekeepingTimer;
     QHostAddress m_serverAddress;
     ENetHost* m_enetHost = nullptr;
+    QSet<QString> m_pendingTraversalConnectKeys;
 
     bool m_listInBrowser = false;
     uint16_t m_signalingPort = kDefaultNetplayHostingPort;
