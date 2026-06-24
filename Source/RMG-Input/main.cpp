@@ -780,6 +780,58 @@ static void close_controllers(void)
     }
 }
 
+static bool profile_has_live_local_input(int control)
+{
+    if (control < 0 || control >= NUM_CONTROLLERS)
+    {
+        return false;
+    }
+
+    const InputProfile* profile = &l_InputProfiles[control];
+    if (!profile->PluggedIn)
+    {
+        return false;
+    }
+
+    if (profile->DeviceType == InputDeviceType::Keyboard
+#ifdef VRU
+        || profile->DeviceType == InputDeviceType::EmulateVRU
+#endif
+    )
+    {
+        return true;
+    }
+
+    return profile->SDLGamepad != nullptr || profile->SDLJoystick != nullptr;
+}
+
+static int resolve_embedded_netplay_local_profile(void)
+{
+    // Embedded netplay normally mirrors a single local source profile into the
+    // assigned netplay slot. Keep preferring profile 0, but fall back to any
+    // actually active profile so keyboard/GC users are not dropped.
+    if (profile_has_live_local_input(0))
+    {
+        return 0;
+    }
+
+    const int localSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
+    if (profile_has_live_local_input(localSlot))
+    {
+        return localSlot;
+    }
+
+    for (int i = 0; i < NUM_CONTROLLERS; i++)
+    {
+        if (profile_has_live_local_input(i))
+        {
+            return i;
+        }
+    }
+
+    return 0;
+}
+
 static int get_button_state(InputProfile* profile, const InputMapping* inputMapping, const bool allPressed = false)
 {
     int state = 0;
@@ -1465,14 +1517,7 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
         if (!l_EmbeddedNetplayLocalSubmitted)
         {
             BUTTONS localKeys = {};
-            int localProfile = 0;
-            const int localSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
-            if (localSlot >= 0 &&
-                localSlot < NUM_CONTROLLERS &&
-                l_InputProfiles[localSlot].PluggedIn)
-            {
-                localProfile = localSlot;
-            }
+            const int localProfile = resolve_embedded_netplay_local_profile();
             fillLocalKeys(localProfile, &localKeys);
             CoreSubmitEmbeddedNetplayFrameInput(localKeys.Value);
             l_EmbeddedNetplayLocalSubmitted = true;

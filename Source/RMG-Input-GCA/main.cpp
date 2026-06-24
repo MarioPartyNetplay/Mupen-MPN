@@ -378,6 +378,43 @@ static void fillLocalKeysFromGCState(int control, BUTTONS* keys)
     keys->Y_AXIS = static_cast<int>(modY);
 }
 
+static bool gca_port_has_live_input(int control)
+{
+    if (control < 0 || control >= NUM_CONTROLLERS)
+    {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(l_ControllerStateMutex);
+    return l_ControllerState[control].Status != 0;
+}
+
+static int resolve_embedded_netplay_local_gca_port(void)
+{
+    // Prefer the assigned local slot when that adapter port is active.
+    const int localSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
+    if (gca_port_has_live_input(localSlot))
+    {
+        return localSlot;
+    }
+
+    // Keep compatibility with setups that use adapter port 1.
+    if (gca_port_has_live_input(0))
+    {
+        return 0;
+    }
+
+    for (int i = 0; i < NUM_CONTROLLERS; i++)
+    {
+        if (gca_port_has_live_input(i))
+        {
+            return i;
+        }
+    }
+
+    return 0;
+}
+
 static void advanceEmbeddedNetplayFrameIfNeeded(void)
 {
     if (l_EmbeddedNetplayFrameAdvanced)
@@ -516,7 +553,8 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
         if (!l_EmbeddedNetplayLocalSubmitted)
         {
             BUTTONS localKeys = {};
-            fillLocalKeysFromGCState(0, &localKeys);
+            const int localPort = resolve_embedded_netplay_local_gca_port();
+            fillLocalKeysFromGCState(localPort, &localKeys);
             CoreSubmitEmbeddedNetplayFrameInput(localKeys.Value);
             l_EmbeddedNetplayLocalSubmitted = true;
             advanceEmbeddedNetplayFrameIfNeeded();
