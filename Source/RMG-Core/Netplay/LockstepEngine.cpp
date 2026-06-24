@@ -377,18 +377,19 @@ bool LockstepEngine::advanceFrame()
     }
 
     std::map<int, uint32_t> frameInputs;
+    // Snapshot the callback under the lock so shutdown() on another thread
+    // cannot destroy it between the null-check and the actual call.
+    std::function<void(uint32_t, const std::map<int, uint32_t>&)> frameReadyCb;
 
     {
         std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
         auto it = m_frameBuffer.find(frameNumber);
-
         if (it != m_frameBuffer.end()) {
             frameInputs = it->second.playerInputs;
         }
 
         m_frameReceived.clear();
-
         m_currentFrameNumber++;
 
         pruneOldFrames(
@@ -397,16 +398,15 @@ bool LockstepEngine::advanceFrame()
                 : 0);
 
         m_stats.totalFramesProcessed++;
+        frameReadyCb = m_callbacks.frameReady;  // safe copy under lock
     }
 
     if (m_shutdown.load()) {
         return false;
     }
 
-    if (m_callbacks.frameReady) {
-        m_callbacks.frameReady(
-            frameNumber,
-            frameInputs);
+    if (frameReadyCb) {
+        frameReadyCb(frameNumber, frameInputs);
     }
 
     return isAlive();
@@ -429,10 +429,14 @@ void LockstepEngine::checkDesync(uint32_t stateHash)
 
 void LockstepEngine::requestResync()
 {
-    m_stats.resyncAttempts++;
-
-    if (m_callbacks.attemptingResync) {
-        m_callbacks.attemptingResync();
+    std::function<void()> cb;
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        m_stats.resyncAttempts++;
+        cb = m_callbacks.attemptingResync;
+    }
+    if (cb) {
+        cb();
     }
 }
 
@@ -884,6 +888,11 @@ void LockstepEngine::notifyPendingCallbacks()
     std::pair<uint32_t, std::string> desyncNotification;
     bool hasDesyncNotification = false;
     bool pendingResync = false;
+    // Snapshot all callbacks under the lock – shutdown() can destroy them at
+    // any time on another thread and calling a destroyed std::function is UB.
+    std::function<void(int, uint32_t)> stallCb;
+    std::function<void(uint32_t, const std::string&)> desyncCb;
+    std::function<void()> resyncCb;
 
     {
         std::lock_guard<std::recursive_mutex> lock(m_mutex);
@@ -895,22 +904,29 @@ void LockstepEngine::notifyPendingCallbacks()
         }
         pendingResync = m_pendingResync;
         m_pendingResync = false;
+        stallCb   = m_callbacks.peerInputStalled;
+        desyncCb  = m_callbacks.desyncDetected;
+        resyncCb  = m_callbacks.attemptingResync;
     }
 
     for (const auto& [slot, stalledFrame] : stalls) {
-        if (m_callbacks.peerInputStalled) {
-            m_callbacks.peerInputStalled(slot, stalledFrame);
+        if (stallCb) {
+            stallCb(slot, stalledFrame);
         }
     }
 
-    if (hasDesyncNotification && m_callbacks.desyncDetected) {
-        m_callbacks.desyncDetected(
-            desyncNotification.first,
-            desyncNotification.second);
+    if (hasDesyncNotification && desyncCb) {
+        desyncCb(desyncNotification.first, desyncNotification.second);
     }
 
     if (pendingResync) {
-        requestResync();
+        {
+            std::lock_guard<std::recursive_mutex> lock(m_mutex);
+            m_stats.resyncAttempts++;
+        }
+        if (resyncCb) {
+            resyncCb();
+        }
     }
 }
 
@@ -1040,13 +1056,19 @@ bool LockstepEngine::waitForAllInputs(
             return true;
         }
 
-        if (m_callbacks.pumpNetwork) {
-            // Release the lock before pumping Qt/socket events. pumpNetwork runs
-            // on the UI thread and may deliver controllerInput -> submitRemoteInput,
-            // which also needs m_mutex. Holding it here deadlocks at frame 0.
-            lock.unlock();
-            m_callbacks.pumpNetwork();
-            lock.lock();
+        {
+            // Copy pumpNetwork under the lock. Another thread can call shutdown()
+            // and destroy m_callbacks between the null-check and the actual call
+            // unless we hold our own reference to the std::function.
+            auto pumpCb = m_callbacks.pumpNetwork;
+            if (pumpCb) {
+                // Release the lock before pumping Qt/socket events. pumpNetwork
+                // may deliver controllerInput -> submitRemoteInput, which also
+                // needs m_mutex. Holding it here deadlocks at frame 0.
+                lock.unlock();
+                pumpCb();
+                lock.lock();
+            }
         }
 
         if (hasDeadline &&

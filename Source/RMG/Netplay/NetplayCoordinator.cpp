@@ -701,6 +701,7 @@ bool NetplayCoordinator::isHost() const
 
 bool NetplayCoordinator::isInGame() const
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     return m_state == InGame;
 }
 
