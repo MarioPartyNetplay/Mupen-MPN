@@ -866,17 +866,18 @@ static bool profile_has_live_local_input(int control)
 
 static int resolve_embedded_netplay_local_profile(void)
 {
-    // Prefer the assigned netplay slot so keyboard/automatic profiles on the
-    // local player are not overridden by another plugged-in port profile.
+    // Embedded netplay mirrors one local physical input source into the assigned
+    // netplay slot. The input UI only treats Player 1 automatic mode as keyboard
+    // fallback, so prefer profile 0 just like local play.
+    if (profile_has_live_local_input(0))
+    {
+        return 0;
+    }
+
     const int localSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
     if (profile_has_live_local_input(localSlot))
     {
         return localSlot;
-    }
-
-    if (profile_has_live_local_input(0))
-    {
-        return 0;
     }
 
     for (int i = 0; i < NUM_CONTROLLERS; i++)
