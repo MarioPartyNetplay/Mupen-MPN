@@ -16,19 +16,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Prepare Flatpak manifest for CI
-        run: |
-          perl -0pe 's/- type: git\r?\n        url: https:\/\/github.com\/MarioPartyNetplay\/Mupen-MPN.git\r?\n        disable-submodules: true/- type: dir\n        path: ../s' \
-            Package/flatpak.yml > Package/flatpak-ci.yml
-
-      - name: Setup Flatpak
-        run: |
-          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-
-          flatpak install -y flathub \
-            org.kde.Sdk//6.8 \
-            org.kde.Platform//6.8
-
       - name: Install Build Dependencies
         run: |
           dnf install -y \
@@ -55,7 +42,21 @@ jobs:
             pulseaudio-libs-devel \
             bluez-libs-devel \
             p7zip \
-            enet-devel
+            enet-devel \
+            perl
+            
+      - name: Prepare Flatpak manifest for CI
+        run: |
+          perl -0pe 's/- type: git\r?\n        url: https:\/\/github.com\/MarioPartyNetplay\/Mupen-MPN.git\r?\n        disable-submodules: true/- type: dir\n        path: ../s' \
+            Package/flatpak.yml > Package/flatpak-ci.yml
+
+      - name: Setup Flatpak
+        run: |
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+          flatpak install -y flathub \
+            org.kde.Sdk//6.8 \
+            org.kde.Platform//6.8
 
       - name: Verify SDL3 pkg-config
         run: |
