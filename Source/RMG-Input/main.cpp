@@ -864,17 +864,63 @@ static bool profile_has_live_local_input(int control)
     return profile->SDLGamepad != nullptr || profile->SDLJoystick != nullptr;
 }
 
+static bool profile_has_keyboard_local_input(int control)
+{
+    if (control < 0 || control >= NUM_CONTROLLERS)
+    {
+        return false;
+    }
+
+    const InputProfile* profile = &l_InputProfiles[control];
+    if (!profile->PluggedIn)
+    {
+        return false;
+    }
+
+    if (profile->DeviceType == InputDeviceType::Keyboard)
+    {
+        return true;
+    }
+
+    if (profile->DeviceType == InputDeviceType::Automatic &&
+        profile->SDLGamepad == nullptr &&
+        profile->SDLJoystick == nullptr)
+    {
+        return true;
+    }
+
+    return profile_has_keyboard_bindings(profile);
+}
+
 static int resolve_embedded_netplay_local_profile(void)
 {
     // Embedded netplay mirrors one local physical input source into the assigned
     // netplay slot. The input UI only treats Player 1 automatic mode as keyboard
     // fallback, so prefer profile 0 just like local play.
-    if (profile_has_live_local_input(0))
+    if (profile_has_keyboard_local_input(0))
     {
         return 0;
     }
 
     const int localSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
+    if (profile_has_keyboard_local_input(localSlot))
+    {
+        return localSlot;
+    }
+
+    for (int i = 0; i < NUM_CONTROLLERS; i++)
+    {
+        if (profile_has_keyboard_local_input(i))
+        {
+            return i;
+        }
+    }
+
+    if (profile_has_live_local_input(0))
+    {
+        return 0;
+    }
+
     if (profile_has_live_local_input(localSlot))
     {
         return localSlot;
