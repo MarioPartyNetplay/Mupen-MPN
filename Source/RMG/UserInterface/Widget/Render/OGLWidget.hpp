@@ -70,7 +70,7 @@ class OGLWidget : public QWindow
     QWidget* widgetContainer      = nullptr;
     QOpenGLContext* openGLcontext = nullptr;
 #ifdef __APPLE__
-    AngleContext angleContext;
+    mutable AngleContext angleContext;
     int swapInterval = 0;
     int contextMajorVersion = 3;
     int contextMinorVersion = 0;
