@@ -52,13 +52,18 @@ set(RMG_CORE_SOURCES
     VidExt.cpp
     Video.cpp
     Error.cpp
-    Discord.cpp
     TurnCount.cpp
     Core.cpp
     File.cpp
     Key.cpp
     Rom.cpp
 )
+
+if (DISCORD_RPC)
+    list(APPEND RMG_CORE_SOURCES Discord.cpp)
+else(DISCORD_RPC)
+    list(APPEND RMG_CORE_SOURCES DiscordStub.cpp)
+endif(DISCORD_RPC)
 
 if (NETPLAY)
     add_definitions(-DNETPLAY -DWEBRTC_P2P)
@@ -99,14 +104,16 @@ set_source_files_properties(Version.cpp PROPERTIES
     OBJECT_DEPENDS "${RMG_CORE_VERSION_HASH_HEADER}"
 )
 
+if (DISCORD_RPC)
+    target_link_libraries(RMG-Core discord-rpc)
+    target_include_directories(RMG-Core PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../3rdParty/discord-rpc/include
+    )
+endif(DISCORD_RPC)
+
 target_link_libraries(RMG-Core
     ${MINIZIP_LIBRARIES}
     lzma
-    discord-rpc
-)
-
-target_include_directories(RMG-Core PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdParty/discord-rpc/include
 )
 
 if (NETPLAY)

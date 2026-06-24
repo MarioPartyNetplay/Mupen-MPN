@@ -178,6 +178,7 @@
      void on_socketIO_inputDelayReceived(int frames);
      void on_socketIO_emulationBeginReceived();
      void relayLocalControllerInput(quint32 sendFrameNumber, quint32 state);
+     void flushPendingControllerRelay();
      void relayLocalControllerInputBurst(
          quint32 startFrameNumber,
          quint32 endFrameNumber,
@@ -211,6 +212,7 @@
          uint32_t frameNumber,
          uint32_t stateHash);
      void bindWebRTCPeerSignals(const std::shared_ptr<WebRTCPeer>& peer, const QString& peerId);
+     void attachPeerDataChannelToLockstep(int peerSlot, const QString& label);
      void attachExistingPeerDataChannels();
      void recoverWebRTCPeerConnections();
      void recreatePeerConnection(int slot);
@@ -251,6 +253,9 @@
      uint32_t m_lastBroadcastFrameSync = 0;
     std::atomic<uint32_t> m_pendingFrameSyncFrame{0};
     std::atomic<bool> m_pumpNetworkQueued{false};
+    std::atomic<bool> m_relayInputQueued{false};
+    std::atomic<quint32> m_pendingRelayFrame{0};
+    std::atomic<quint32> m_pendingRelayState{0};
      
      mutable std::recursive_mutex m_mutex;
  };

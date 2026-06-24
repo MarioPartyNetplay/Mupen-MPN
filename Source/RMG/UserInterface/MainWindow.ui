@@ -558,7 +558,7 @@
    </action>
    <action name="action_Settings_BoardDownloader2">
     <property name="icon">
-     <iconset theme="download-cloud-line"/>
+     <iconset theme="board-downloader-mpn"/>
     </property>
     <property name="text">
      <string>Boards</string>

@@ -227,6 +227,8 @@ private:
     QString m_persistentId;
     QHash<QString, ChunkedCheatUpdate> m_pendingCheatUpdates;
     uint32_t m_lastSentFrameSync = 0;
+    uint32_t m_lastSentControllerFrame = UINT32_MAX;
+    uint32_t m_lastSentControllerState = UINT32_MAX;
     int m_lastPingMs = -1;
     QString m_reconnectToken;
     bool m_intentionalDisconnect = false;

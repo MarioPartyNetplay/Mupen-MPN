@@ -28,6 +28,12 @@ constexpr uint32_t kMinInputDelayFrames = 1;
 // Cap how many future frames we publish per emulated frame so a large buffer
 // setting does not burst hundreds of WebRTC/signaling packets at once.
 constexpr uint32_t kMaxInputPrefillPerSubmit = 8;
+// Reject remote inputs whose frame number is implausibly far ahead of the
+// current frame. In strict lockstep a peer can only ever lead by roughly the
+// input delay window, so anything beyond this is a corrupted/stale/garbage
+// packet. Without this guard, the gap-fill loop below would try to allocate
+// one std::map node per skipped frame and exhaust the heap (malloc crash).
+constexpr uint32_t kMaxFutureFrameLead = 1024;
 
 uint32_t inputFrameSlackForDelay(int inputDelayFrames)
 {
@@ -222,8 +228,8 @@ LockstepEngine::submitLocalInput(uint32_t controllerState)
         m_lastKnownInputFrames[m_config.localPlayerSlot] = sendFrame;
     }
 
-    for (const auto& [frameNumber, state] : outbound) {
-        broadcastInput(state, frameNumber);
+    if (!outbound.empty()) {
+        broadcastInput(controllerState, outbound.back().first);
     }
 
     return outbound;
@@ -249,6 +255,24 @@ void LockstepEngine::submitRemoteInput(
     if (frameNumber + inputFrameSlackForDelay(m_config.inputDelayFrames) <
         m_currentFrameNumber) {
         return;
+    }
+
+    // Drop implausibly far-future frames so the gap-fill loop below cannot be
+    // tricked into allocating a near-unbounded number of frame buffer entries.
+    if (frameNumber > m_currentFrameNumber + kMaxFutureFrameLead) {
+        return;
+    }
+
+    for (uint32_t frame = m_currentFrameNumber; frame < frameNumber; ++frame) {
+        FrameInputs& priorFrameInputs = m_frameBuffer[frame];
+        if (priorFrameInputs.playerInputs.find(fromSlot) ==
+            priorFrameInputs.playerInputs.end()) {
+            priorFrameInputs.frameNumber = frame;
+            priorFrameInputs.playerInputs[fromSlot] = controllerState;
+            if (frame == m_currentFrameNumber) {
+                m_frameReceived[fromSlot] = true;
+            }
+        }
     }
 
     FrameInputs& frameInputs = m_frameBuffer[frameNumber];
@@ -468,6 +492,20 @@ LockstepEngine::getCurrentFrameInputs() const
     return it->second.playerInputs;
 }
 
+std::map<int, uint32_t>
+LockstepEngine::getFrameInputs(uint32_t frameNumber) const
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    auto it = m_frameBuffer.find(frameNumber);
+
+    if (it == m_frameBuffer.end()) {
+        return {};
+    }
+
+    return it->second.playerInputs;
+}
+
 bool LockstepEngine::isDesynchronized() const
 {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
@@ -617,6 +655,11 @@ void LockstepEngine::onDataChannelClosed(int peerSlot)
         m_dataChannels[peerSlot] = nullptr;
     }
 
+    if (peerSlot >= 0 && peerSlot < m_config.numPlayers &&
+        peerSlot != m_config.localPlayerSlot) {
+        m_peerSessionActive[peerSlot] = false;
+    }
+
     m_inputCv.notify_all();
 }
 
@@ -701,6 +744,13 @@ void LockstepEngine::processInputPacket(
 
     if (frameNumber + inputFrameSlackForDelay(m_config.inputDelayFrames) <
         m_currentFrameNumber) {
+        return;
+    }
+
+    // Drop implausibly far-future frames; a garbage/stale frame number here
+    // would insert a frame buffer entry that never gets pruned and lets a
+    // single bad packet balloon memory use.
+    if (frameNumber > m_currentFrameNumber + kMaxFutureFrameLead) {
         return;
     }
 
@@ -966,6 +1016,18 @@ bool LockstepEngine::hasAllRemoteDataChannelsConnectedUnlocked() const
             continue;
         }
 
+        const auto activeIt = m_peerSessionActive.find(slot);
+        const bool sessionActive =
+            activeIt != m_peerSessionActive.end() && activeIt->second;
+        if (!sessionActive) {
+            continue;
+        }
+
+        // Inputs can arrive over the signaling relay when WebRTC is down.
+        if (m_lastKnownInputFrames.find(slot) != m_lastKnownInputFrames.end()) {
+            continue;
+        }
+
         if (!m_dataChannels[slot] || !m_dataChannels[slot]->isOpen()) {
             return false;
         }
@@ -989,6 +1051,23 @@ bool LockstepEngine::hasReceivedBootstrapInputFromAllRemotesUnlocked() const
     return true;
 }
 
+bool LockstepEngine::hasOpenRemoteDataChannels() const
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
+        if (slot == m_config.localPlayerSlot) {
+            continue;
+        }
+
+        if (m_dataChannels[slot] && m_dataChannels[slot]->isOpen()) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 int LockstepEngine::computeInputWaitTimeoutMsUnlocked(
     uint32_t frameNumber) const
 {
@@ -997,6 +1076,24 @@ int LockstepEngine::computeInputWaitTimeoutMsUnlocked(
     if (!hasAllRemoteDataChannelsConnectedUnlocked() ||
         !hasReceivedBootstrapInputFromAllRemotesUnlocked()) {
         return 8000;
+    }
+
+    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
+        if (slot == m_config.localPlayerSlot) {
+            continue;
+        }
+
+        const auto activeIt = m_peerSessionActive.find(slot);
+        const bool sessionActive =
+            activeIt != m_peerSessionActive.end() && activeIt->second;
+        if (!sessionActive) {
+            continue;
+        }
+
+        // WebRTC dropped but the peer is still in-session via signaling.
+        if (!m_dataChannels[slot] || !m_dataChannels[slot]->isOpen()) {
+            return 250;
+        }
     }
 
     // Dolphin-style: stall on lag spikes instead of advancing with stale inputs.

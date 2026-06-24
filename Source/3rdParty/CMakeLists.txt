@@ -7,7 +7,9 @@ find_package(Git REQUIRED)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(BUILD_EXAMPLES OFF CACHE BOOL "Build example apps" FORCE)
-add_subdirectory(discord-rpc)
+if (DISCORD_RPC)
+    add_subdirectory(discord-rpc)
+endif(DISCORD_RPC)
 
 set(M64P_CORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-core)
 if(WIN32)

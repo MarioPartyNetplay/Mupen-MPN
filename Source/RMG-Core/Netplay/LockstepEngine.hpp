@@ -91,6 +91,7 @@ public:
     /** Frame number to tag outbound packets with (current + input delay). */
     uint32_t getSendFrameNumber() const;
     std::map<int, uint32_t> getCurrentFrameInputs() const;
+    std::map<int, uint32_t> getFrameInputs(uint32_t frameNumber) const;
     bool isDesynchronized() const;
     int getPendingInputsCount() const;
     std::string getEngineStatus() const;
@@ -105,6 +106,8 @@ public:
     void setPeerSessionActive(int slot, bool active);
     /** Fill missing peer inputs for the current frame and wake waiters. */
     void releaseCurrentFrameWait();
+    /** True when at least one remote peer has an open WebRTC input channel. */
+    bool hasOpenRemoteDataChannels() const;
     /** Detach callbacks/channels and unblock any waiters (safe during teardown). */
     void shutdown();
 

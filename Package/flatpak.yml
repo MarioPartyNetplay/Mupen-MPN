@@ -69,6 +69,19 @@ modules:
               stable-only: true
               url-template: https://github.com/libusb/libusb/archive/refs/tags/v$version.tar.gz
 
+  - name: SDL3
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DSDL_SHARED=ON
+      - -DSDL_STATIC=OFF
+      - -DSDL_TEST=OFF
+      - -DSDL_TESTS=OFF
+    sources:
+      - type: archive
+        url: https://github.com/libsdl-org/SDL/releases/download/release-3.4.10/SDL3-3.4.10.tar.gz
+        sha256: 12b34280415ec8418c864408b93d008a20a6530687ee613d60bfbd20411f2785
+
   - name: RMG-MPN
     buildsystem: cmake-ninja
     post-install:
@@ -90,3 +103,6 @@ modules:
         url: https://github.com/paullouisageneau/libdatachannel.git
         commit: 9ddf88971fcc7437b2bfeef92ba5454b7de067f8
         dest: Source/3rdParty/libdatachannel
+      - type: shell
+        commands:
+          - git -C Source/3rdParty/libdatachannel submodule update --init --recursive

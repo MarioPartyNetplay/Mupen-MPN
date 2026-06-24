@@ -21,6 +21,7 @@
 #include <QThread>
 #include <QDateTime>
 #include <algorithm>
+#include <chrono>
 #include <enet/enet.h>
 
 using namespace UserInterface::Netplay;
@@ -271,6 +272,8 @@ void SocketIOClient::disconnect()
     if (m_connectionState != Disconnected) {
         m_connectionState = Disconnected;
         m_lastSentFrameSync = 0;
+        m_lastSentControllerFrame = UINT32_MAX;
+        m_lastSentControllerState = UINT32_MAX;
         m_awaitingReconnectAck = false;
         emit disconnected();
     }
@@ -461,10 +464,35 @@ void SocketIOClient::sendControllerInput(uint32_t frameNumber, uint32_t controll
         return;
     }
 
+    if (frameNumber == m_lastSentControllerFrame &&
+        controllerState == m_lastSentControllerState) {
+        return;
+    }
+
+    m_lastSentControllerFrame = frameNumber;
+    m_lastSentControllerState = controllerState;
+
     QJsonObject payload;
     payload["frame"] = static_cast<qint64>(frameNumber);
     payload["input"] = static_cast<qint64>(controllerState);
-    emitEvent("controller-input", payload);
+
+    const bool canEmit =
+        m_serverPeer &&
+        (m_connectionState == Connected ||
+         (m_connectionState == Reconnecting && isGameplaySignalingEvent(QStringLiteral("controller-input"))));
+
+    if (!canEmit || !m_serverPeer) {
+        return;
+    }
+
+    if (!sendGameplaySignalingEvent(m_serverPeer, QStringLiteral("controller-input"), payload)) {
+        static auto lastWarn = std::chrono::steady_clock::now();
+        const auto now = std::chrono::steady_clock::now();
+        if (now - lastWarn > std::chrono::seconds(2)) {
+            lastWarn = now;
+            qWarning() << "SocketIOClient: Failed to send event controller-input";
+        }
+    }
 }
 
 void SocketIOClient::sendFrameSync(uint32_t frameNumber, uint32_t stateHash)
@@ -761,6 +789,8 @@ void SocketIOClient::on_serviceTimer()
                 }
                 m_connectionState = Disconnected;
                 m_lastSentFrameSync = 0;
+        m_lastSentControllerFrame = UINT32_MAX;
+        m_lastSentControllerState = UINT32_MAX;
                 if (m_pingTimer) {
                     m_pingTimer->stop();
                 }

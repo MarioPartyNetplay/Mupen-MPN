@@ -501,42 +501,36 @@ void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
     }
 
     const auto outbound = engine->submitLocalInput(controllerState);
+    if (outbound.empty()) {
+        return;
+    }
+
+    const uint32_t latestFrame = outbound.back().first;
+    const uint32_t latestState = outbound.back().second;
 
     const Qt::ConnectionType dispatchType =
         isHostingServer()
             ? socketDispatchConnectionType(m_server.get())
             : socketDispatchConnectionType(m_socketIO.get());
 
-    if (outbound.empty()) {
-        return;
-    }
+    m_pendingRelayFrame.store(latestFrame, std::memory_order_relaxed);
+    m_pendingRelayState.store(latestState, std::memory_order_relaxed);
 
-    uint32_t startFrame = outbound.front().first;
-    uint32_t endFrame = outbound.front().first;
-    const uint32_t state = outbound.front().second;
-    for (const auto& [frameNumber, frameState] : outbound) {
-        startFrame = std::min(startFrame, frameNumber);
-        endFrame = std::max(endFrame, frameNumber);
-        (void)frameState;
-    }
-
-    if (startFrame == endFrame) {
+    if (!m_relayInputQueued.exchange(true, std::memory_order_acq_rel)) {
         QMetaObject::invokeMethod(
             this,
-            "relayLocalControllerInput",
-            dispatchType,
-            Q_ARG(quint32, startFrame),
-            Q_ARG(quint32, state));
-        return;
+            "flushPendingControllerRelay",
+            dispatchType);
     }
+}
 
-    QMetaObject::invokeMethod(
-        this,
-        "relayLocalControllerInputBurst",
-        dispatchType,
-        Q_ARG(quint32, startFrame),
-        Q_ARG(quint32, endFrame),
-        Q_ARG(quint32, state));
+void NetplayCoordinator::flushPendingControllerRelay()
+{
+    m_relayInputQueued.store(false, std::memory_order_release);
+
+    const quint32 frameNumber = m_pendingRelayFrame.load(std::memory_order_relaxed);
+    const quint32 state = m_pendingRelayState.load(std::memory_order_relaxed);
+    relayLocalControllerInput(frameNumber, state);
 }
 
 void NetplayCoordinator::relayLocalControllerInputBurst(
@@ -548,11 +542,7 @@ void NetplayCoordinator::relayLocalControllerInputBurst(
         return;
     }
 
-    for (quint32 frameNumber = startFrameNumber;
-         frameNumber <= endFrameNumber;
-         ++frameNumber) {
-        relayLocalControllerInput(frameNumber, state);
-    }
+    relayLocalControllerInput(endFrameNumber, state);
 }
 
 void NetplayCoordinator::relayLocalControllerInput(
@@ -1105,6 +1095,9 @@ void NetplayCoordinator::resetEmulationSync()
 
     m_sessionSyncCoreSettings = QJsonObject();
     m_pumpNetworkQueued.store(false, std::memory_order_relaxed);
+    m_relayInputQueued.store(false, std::memory_order_relaxed);
+    m_pendingRelayFrame.store(0, std::memory_order_relaxed);
+    m_pendingRelayState.store(0, std::memory_order_relaxed);
 }
 
 void NetplayCoordinator::initializeLockstepEngine()
@@ -1115,6 +1108,9 @@ void NetplayCoordinator::initializeLockstepEngine()
     }
     m_currentFrameInputs.clear();
     m_pumpNetworkQueued.store(false, std::memory_order_relaxed);
+    m_relayInputQueued.store(false, std::memory_order_relaxed);
+    m_pendingRelayFrame.store(0, std::memory_order_relaxed);
+    m_pendingRelayState.store(0, std::memory_order_relaxed);
 
     m_lockstepEngine = std::make_shared<RMGCore::LockstepEngine>(m_lockstepConfig);
 
@@ -1185,6 +1181,32 @@ void NetplayCoordinator::initializeLockstepEngine()
     UserInterface::Netplay::installEmbeddedNetplayCallbacks();
 }
 
+void NetplayCoordinator::attachPeerDataChannelToLockstep(int peerSlot, const QString& label)
+{
+    if (!m_lockstepEngine || peerSlot < 0) {
+        return;
+    }
+
+    const auto peerIt = m_peers.find(peerSlot);
+    if (peerIt == m_peers.end() || !peerIt.value()) {
+        return;
+    }
+
+    auto channel = peerIt.value()->getDataChannel(label);
+    if (!channel) {
+        qWarning() << "NetplayCoordinator: Failed to get data channel" << label
+                   << "for slot" << peerSlot;
+        return;
+    }
+
+    m_lockstepEngine->setDataChannel(peerSlot, channel);
+    if (peerSlot != m_lockstepConfig.localPlayerSlot) {
+        m_lockstepEngine->setPeerSessionActive(peerSlot, true);
+    }
+    qDebug() << "NetplayCoordinator: Data channel" << label
+             << "registered with LockstepEngine for slot" << peerSlot;
+}
+
 void NetplayCoordinator::attachExistingPeerDataChannels()
 {
     if (!m_lockstepEngine) {
@@ -1192,19 +1214,7 @@ void NetplayCoordinator::attachExistingPeerDataChannels()
     }
 
     for (auto it = m_peers.constBegin(); it != m_peers.constEnd(); ++it) {
-        const int slot = it.key();
-        const auto& peer = it.value();
-        if (!peer) {
-            continue;
-        }
-
-        auto channel = peer->getDataChannel(QStringLiteral("RMG-Input"));
-        if (!channel) {
-            continue;
-        }
-
-        m_lockstepEngine->setDataChannel(slot, channel);
-        qDebug() << "NetplayCoordinator: Attached existing data channel to LockstepEngine for slot" << slot;
+        attachPeerDataChannelToLockstep(it.key(), QStringLiteral("RMG-Input"));
     }
 }
 
@@ -1352,34 +1362,18 @@ void NetplayCoordinator::on_webRTC_dataChannelOpened(const QString& peerId, cons
 {
     qDebug() << "NetplayCoordinator: WebRTC data channel opened for peer" << peerId << "label:" << label;
 
-    if (!m_lockstepEngine) {
-        qWarning() << "NetplayCoordinator: LockstepEngine not initialized";
+    const int peerSlot = findPeerSlotById(peerId);
+    if (peerSlot < 0) {
         return;
     }
 
-    // Find which slot this peer is in
-    int peerSlot = -1;
-    for (int slot = 0; slot < 4; ++slot) {
-        if (m_peers.contains(slot)) {
-            auto peer = m_peers[slot];
-            if (peer && peer->getPeerId() == peerId) {
-                peerSlot = slot;
-                break;
-            }
-        }
+    if (!m_lockstepEngine) {
+        qDebug() << "NetplayCoordinator: Deferring data channel attach for slot"
+                 << peerSlot << "until LockstepEngine is initialized";
+        return;
     }
 
-    if (peerSlot >= 0 && m_peers[peerSlot]) {
-        // Get the data channel from the peer and register it with lockstep engine
-        // This allows the lockstep engine to send input data through this channel
-        auto channel = m_peers[peerSlot]->getDataChannel(label);
-        if (channel) {
-            m_lockstepEngine->setDataChannel(peerSlot, channel);
-            qDebug() << "NetplayCoordinator: Data channel" << label << "registered with LockstepEngine for slot" << peerSlot;
-        } else {
-            qWarning() << "NetplayCoordinator: Failed to get data channel" << label << "for slot" << peerSlot;
-        }
-    }
+    attachPeerDataChannelToLockstep(peerSlot, label);
 }
 
 //
@@ -1956,14 +1950,26 @@ void NetplayCoordinator::on_socketIO_inputDelayReceived(int frames)
 }
 
 uint32_t NetplayCoordinator::getSyncedInput(int slot) {
+    const auto engine = activeLockstepEngine();
+
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    
-    // NO OFFSET! The core uses 0-3 just like we do.
+
     if (slot >= 0 && slot < m_lockstepConfig.numPlayers) {
-        if (m_currentFrameInputs.count(slot)) {
-            return m_currentFrameInputs[slot];
+        const auto cached = m_currentFrameInputs.find(slot);
+        if (cached != m_currentFrameInputs.end()) {
+            return cached->second;
         }
     }
-    
-    return 0;
+
+    if (!engine || slot < 0 || slot >= m_lockstepConfig.numPlayers) {
+        return 0;
+    }
+
+    const uint32_t completedFrame =
+        engine->getCurrentFrameNumber() > 0
+            ? engine->getCurrentFrameNumber() - 1
+            : 0;
+    const auto inputs = engine->getFrameInputs(completedFrame);
+    const auto it = inputs.find(slot);
+    return it != inputs.end() ? it->second : 0;
 }

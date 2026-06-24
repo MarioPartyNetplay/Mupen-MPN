@@ -317,6 +317,30 @@ bool sendSignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonObj
     return sendSignalingPayload(peer, message);
 }
 
+bool sendGameplaySignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonObject& payload)
+{
+    if (!peerIsConnected(peer)) {
+        return false;
+    }
+
+    QJsonArray message;
+    message.append(2);
+    message.append(eventName);
+    message.append(payload);
+
+    const QByteArray encoded =
+        QJsonDocument(message).toJson(QJsonDocument::Compact);
+    ENetPacket* packet = enet_packet_create(
+        encoded.constData(),
+        static_cast<size_t>(encoded.size()),
+        ENET_PACKET_FLAG_UNSEQUENCED);
+    if (!packet) {
+        return false;
+    }
+
+    return enet_peer_send(peer, 0, packet) == 0;
+}
+
 bool sendSignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonArray& payload)
 {
     QJsonArray message;

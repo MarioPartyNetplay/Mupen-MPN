@@ -1003,6 +1003,40 @@ static int get_button_state(InputProfile* profile, const InputMapping* inputMapp
     return full_state;
 }
 
+static int get_button_state_keyboard_only(
+    const InputMapping* inputMapping,
+    const bool allPressed = false)
+{
+    int state = 0;
+    int full_state = 0;
+
+    for (int i = 0; i < inputMapping->Count; i++)
+    {
+        if (static_cast<InputType>(inputMapping->Type[i]) != InputType::Keyboard)
+        {
+            continue;
+        }
+
+        state = l_KeyboardState[inputMapping->Data[i]] ? 1 : 0;
+
+        if (allPressed && i > 0)
+        {
+            full_state &= state;
+        }
+        else
+        {
+            full_state |= state;
+        }
+
+        if (allPressed && !full_state)
+        {
+            return full_state;
+        }
+    }
+
+    return full_state;
+}
+
 // returns axis input scaled to the range [-1, 1]
 static double get_axis_state(InputProfile* profile, const InputMapping* inputMapping, const int direction, const double value, bool& useButtonMapping)
 {
@@ -1075,6 +1109,39 @@ static double get_axis_state(InputProfile* profile, const InputMapping* inputMap
     {
         return value;
     }
+}
+
+static double get_axis_state_keyboard_only(
+    const InputMapping* inputMapping,
+    const int direction,
+    const double value,
+    bool& useButtonMapping)
+{
+    double axis_state = value;
+    bool button_state = false;
+
+    for (int i = 0; i < inputMapping->Count; i++)
+    {
+        if (static_cast<InputType>(inputMapping->Type[i]) != InputType::Keyboard)
+        {
+            continue;
+        }
+
+        button_state |= l_KeyboardState[inputMapping->Data[i]];
+    }
+
+    if (button_state)
+    {
+        useButtonMapping = true;
+        return direction;
+    }
+
+    if (!useButtonMapping)
+    {
+        return axis_state;
+    }
+
+    return value;
 }
 
 // maps a value in one range to a value in another
@@ -1257,6 +1324,88 @@ static bool check_hotkeys(int Control)
 
 #undef DEFINE_HOTKEY
     return false;
+}
+
+static void fill_embedded_netplay_local_keys(int localControl, BUTTONS* outKeys)
+{
+    outKeys->Value = 0;
+
+    if (localControl < 0 || localControl >= NUM_CONTROLLERS)
+    {
+        return;
+    }
+
+    InputProfile* profile = &l_InputProfiles[localControl];
+
+    if (!profile->PluggedIn || l_IsConfigGuiOpen)
+    {
+        return;
+    }
+
+#ifdef VRU
+    if (profile->DeviceType == InputDeviceType::EmulateVRU)
+    {
+        outKeys->Value = GetVRUMicState() ? 0x0020 : 0x0000;
+        return;
+    }
+#endif // VRU
+
+    if (check_hotkeys(localControl))
+    {
+        return;
+    }
+
+    const bool keyboardOnly = profile_has_keyboard_bindings(profile);
+
+    const auto readButton = [&](const InputMapping* mapping) {
+        return keyboardOnly
+            ? get_button_state_keyboard_only(mapping)
+            : get_button_state(profile, mapping);
+    };
+
+    const auto readAxis = [&](const InputMapping* mapping, int direction, double current, bool& useButtons) {
+        return keyboardOnly
+            ? get_axis_state_keyboard_only(mapping, direction, current, useButtons)
+            : get_axis_state(profile, mapping, direction, current, useButtons);
+    };
+
+    outKeys->A_BUTTON     = readButton(&profile->Button_A);
+    outKeys->B_BUTTON     = readButton(&profile->Button_B);
+    outKeys->START_BUTTON = readButton(&profile->Button_Start);
+    outKeys->U_DPAD       = readButton(&profile->Button_DpadUp);
+    outKeys->D_DPAD       = readButton(&profile->Button_DpadDown);
+    outKeys->L_DPAD       = readButton(&profile->Button_DpadLeft);
+    outKeys->R_DPAD       = readButton(&profile->Button_DpadRight);
+    outKeys->U_CBUTTON    = readButton(&profile->Button_CButtonUp);
+    outKeys->D_CBUTTON    = readButton(&profile->Button_CButtonDown);
+    outKeys->L_CBUTTON    = readButton(&profile->Button_CButtonLeft);
+    outKeys->R_CBUTTON    = readButton(&profile->Button_CButtonRight);
+    outKeys->L_TRIG       = readButton(&profile->Button_LeftShoulder);
+    outKeys->R_TRIG       = readButton(&profile->Button_RightShoulder);
+    outKeys->Z_TRIG       = readButton(&profile->Button_ZTrigger);
+
+    double inputX = 0, inputY = 0;
+    bool useButtonMapping = false;
+    inputY = readAxis(&profile->AnalogStick_Up,    1, inputY, useButtonMapping);
+    inputY = readAxis(&profile->AnalogStick_Down, -1, inputY, useButtonMapping);
+    inputX = readAxis(&profile->AnalogStick_Left, -1, inputX, useButtonMapping);
+    inputX = readAxis(&profile->AnalogStick_Right, 1, inputX, useButtonMapping);
+
+    const double deadzone = profile->DeadzoneValue;
+    inputX = apply_deadzone(inputX, deadzone);
+    inputY = apply_deadzone(inputY, deadzone);
+
+    const double sensitivityRatio = profile->SensitivityValue;
+    const double lowerInputLimit = std::max(-1.0, -sensitivityRatio);
+    const double upperInputLimit = std::min(1.0, sensitivityRatio);
+    inputX = std::clamp(inputX * sensitivityRatio, lowerInputLimit, upperInputLimit);
+    inputY = std::clamp(inputY * sensitivityRatio, lowerInputLimit, upperInputLimit);
+
+    int octagonX = 0, octagonY = 0;
+    simulate_octagon(deadzone, inputX, inputY, octagonX, octagonY);
+
+    outKeys->X_AXIS = octagonX;
+    outKeys->Y_AXIS = octagonY;
 }
 
 static void sdl_init()
@@ -1635,7 +1784,7 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
             if (!l_IsConfigGuiOpen)
             {
                 const int localProfile = resolve_embedded_netplay_local_profile();
-                fillLocalKeys(localProfile, &localKeys);
+                fill_embedded_netplay_local_keys(localProfile, &localKeys);
             }
             CoreSubmitEmbeddedNetplayFrameInput(localKeys.Value);
             l_EmbeddedNetplayLocalSubmitted = true;
@@ -1724,10 +1873,20 @@ EXPORT void CALL RomClosed(void)
 
 EXPORT void CALL SDL_KeyDown(int keymod, int keysym)
 {
+    if (keysym < 0 || keysym >= SDL_SCANCODE_COUNT)
+    {
+        return;
+    }
+
     l_KeyboardState[keysym] = true;
 }
 
 EXPORT void CALL SDL_KeyUp(int keymod, int keysym)
 {
+    if (keysym < 0 || keysym >= SDL_SCANCODE_COUNT)
+    {
+        return;
+    }
+
     l_KeyboardState[keysym] = false;
 }

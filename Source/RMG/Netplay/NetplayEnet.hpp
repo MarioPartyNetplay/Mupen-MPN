@@ -44,6 +44,8 @@ void refreshSignalingPeerTimeout(ENetPeer* peer);
 
 bool sendSignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonObject& payload);
 bool sendSignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonArray& payload);
+/** Unsequenced delivery for high-frequency gameplay events (latest input wins). */
+bool sendGameplaySignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonObject& payload);
 
 /** Parses a UDP signaling packet: [2, "event-name", payload...] */
 bool parseSignalingPacket(const QByteArray& data, QString* eventNameOut, QJsonArray* argsOut);
