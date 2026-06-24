@@ -12,6 +12,7 @@
 #include "Directories.hpp"
 #include "RomSettings.hpp"
 #include "Emulation.hpp"
+#include "Netplay.hpp"
 #include "RomHeader.hpp"
 #include "Callback.hpp"
 #include "Settings.hpp"
@@ -345,6 +346,13 @@ static bool open_plugin_config(CorePluginType type, void* parent, bool romConfig
         error = "open_plugin_config Failed: ";
         error += get_plugin_type_name(type);
         error += " doesn't support ROM specific configuration!";
+        CoreSetError(error);
+        return false;
+    }
+
+    if (type == CorePluginType::Input && CoreIsEmbeddedNetplayActive())
+    {
+        error = "open_plugin_config Failed: input settings cannot be changed during a netplay session";
         CoreSetError(error);
         return false;
     }

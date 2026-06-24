@@ -920,8 +920,9 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     this->action_Settings_Rsp->setEnabled(CorePluginsHasConfig(CorePluginType::Rsp));
     this->action_Settings_Rsp->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_InputSettings));
-    this->action_Settings_Input->setEnabled(CorePluginsHasConfig(CorePluginType::Input));
+    this->action_Settings_Input->setEnabled(CorePluginsHasConfig(CorePluginType::Input) && !netplayRestrictions);
     this->action_Settings_Input->setShortcut(QKeySequence(keyBinding));
+    this->action_Settings_Input2->setEnabled(CorePluginsHasConfig(CorePluginType::Input) && !netplayRestrictions);
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Settings));
     this->action_Settings_Settings->setShortcut(QKeySequence(keyBinding));
 
@@ -2031,6 +2032,12 @@ void MainWindow::on_Action_Settings_Rsp(void)
 
 void MainWindow::on_Action_Settings_Input(void)
 {
+    if (UserInterface::Netplay::shouldBlockModifications())
+    {
+        this->showErrorMessage("Input settings cannot be changed during a netplay session");
+        return;
+    }
+
     CorePluginsOpenConfig(CorePluginType::Input, this);
 }
 

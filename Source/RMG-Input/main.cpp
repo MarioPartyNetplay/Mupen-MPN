@@ -780,6 +780,53 @@ static void close_controllers(void)
     }
 }
 
+static bool input_mapping_uses_keyboard(const InputMapping* mapping)
+{
+    for (int i = 0; i < mapping->Count; i++)
+    {
+        if (static_cast<InputType>(mapping->Type[i]) == InputType::Keyboard)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool profile_has_keyboard_bindings(const InputProfile* profile)
+{
+    static const InputMapping InputProfile::* mappings[] = {
+        &InputProfile::Button_A,
+        &InputProfile::Button_B,
+        &InputProfile::Button_Start,
+        &InputProfile::Button_DpadUp,
+        &InputProfile::Button_DpadDown,
+        &InputProfile::Button_DpadLeft,
+        &InputProfile::Button_DpadRight,
+        &InputProfile::Button_CButtonUp,
+        &InputProfile::Button_CButtonDown,
+        &InputProfile::Button_CButtonLeft,
+        &InputProfile::Button_CButtonRight,
+        &InputProfile::Button_LeftShoulder,
+        &InputProfile::Button_RightShoulder,
+        &InputProfile::Button_ZTrigger,
+        &InputProfile::AnalogStick_Up,
+        &InputProfile::AnalogStick_Down,
+        &InputProfile::AnalogStick_Left,
+        &InputProfile::AnalogStick_Right,
+    };
+
+    for (const auto mapping : mappings)
+    {
+        if (input_mapping_uses_keyboard(&(profile->*mapping)))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static bool profile_has_live_local_input(int control)
 {
     if (control < 0 || control >= NUM_CONTROLLERS)
@@ -802,23 +849,34 @@ static bool profile_has_live_local_input(int control)
         return true;
     }
 
+    if (profile->DeviceType == InputDeviceType::Automatic &&
+        profile->SDLGamepad == nullptr &&
+        profile->SDLJoystick == nullptr)
+    {
+        return true;
+    }
+
+    if (profile_has_keyboard_bindings(profile))
+    {
+        return true;
+    }
+
     return profile->SDLGamepad != nullptr || profile->SDLJoystick != nullptr;
 }
 
 static int resolve_embedded_netplay_local_profile(void)
 {
-    // Embedded netplay normally mirrors a single local source profile into the
-    // assigned netplay slot. Keep preferring profile 0, but fall back to any
-    // actually active profile so keyboard/GC users are not dropped.
-    if (profile_has_live_local_input(0))
-    {
-        return 0;
-    }
-
+    // Prefer the assigned netplay slot so keyboard/automatic profiles on the
+    // local player are not overridden by another plugged-in port profile.
     const int localSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
     if (profile_has_live_local_input(localSlot))
     {
         return localSlot;
+    }
+
+    if (profile_has_live_local_input(0))
+    {
+        return 0;
     }
 
     for (int i = 0; i < NUM_CONTROLLERS; i++)
@@ -827,6 +885,11 @@ static int resolve_embedded_netplay_local_profile(void)
         {
             return i;
         }
+    }
+
+    if (localSlot >= 0 && localSlot < NUM_CONTROLLERS)
+    {
+        return localSlot;
     }
 
     return 0;
@@ -1314,6 +1377,11 @@ EXPORT m64p_error CALL PluginConfigWithRomConfig(void* parent, int romConfig, Co
         return M64ERR_NOT_INIT;
     }
 
+    if (CoreIsEmbeddedNetplayActive())
+    {
+        return M64ERR_SYSTEM_FAIL;
+    }
+
     l_IsConfigGuiOpen = true;
 
     // Let the emulation thread finish any in-flight GetKeys() before closing devices.
@@ -1517,12 +1585,15 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
         if (!l_EmbeddedNetplayLocalSubmitted)
         {
             BUTTONS localKeys = {};
-            const int localProfile = resolve_embedded_netplay_local_profile();
-            fillLocalKeys(localProfile, &localKeys);
+            if (!l_IsConfigGuiOpen)
+            {
+                const int localProfile = resolve_embedded_netplay_local_profile();
+                fillLocalKeys(localProfile, &localKeys);
+            }
             CoreSubmitEmbeddedNetplayFrameInput(localKeys.Value);
             l_EmbeddedNetplayLocalSubmitted = true;
 
-            if (!l_EmbeddedNetplayFrameAdvanced)
+            if (!l_IsConfigGuiOpen && !l_EmbeddedNetplayFrameAdvanced)
             {
                 constexpr int kMaxAdvanceAttempts = 8000;
                 int attempts = 0;
