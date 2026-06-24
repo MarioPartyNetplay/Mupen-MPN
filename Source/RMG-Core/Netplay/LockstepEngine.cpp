@@ -244,7 +244,7 @@ void LockstepEngine::submitRemoteInput(
         return;
     }
 
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::unique_lock<std::recursive_mutex> lock(m_mutex);
 
     if (frameNumber + inputFrameSlackForDelay(m_config.inputDelayFrames) <
         m_currentFrameNumber) {
@@ -258,11 +258,13 @@ void LockstepEngine::submitRemoteInput(
         frameNumber <= m_currentFrameNumber) {
         m_stats.desyncDetections++;
         m_isDesynchronized = true;
-        if (m_callbacks.desyncDetected) {
-            m_callbacks.desyncDetected(
-                frameNumber,
-                "Conflicting remote input for frame " +
-                    std::to_string(frameNumber));
+        const std::string desyncReason =
+            "Conflicting remote input for frame " +
+            std::to_string(frameNumber);
+        auto desyncCallback = m_callbacks.desyncDetected;
+        lock.unlock();
+        if (desyncCallback) {
+            desyncCallback(frameNumber, desyncReason);
         }
         return;
     }
@@ -280,11 +282,10 @@ void LockstepEngine::submitRemoteInput(
 
     notifyInputProgressUnlocked(frameNumber);
 
-    if (m_callbacks.inputReceived) {
-        m_callbacks.inputReceived(
-            fromSlot,
-            frameNumber,
-            controllerState);
+    auto inputReceivedCallback = m_callbacks.inputReceived;
+    lock.unlock();
+    if (inputReceivedCallback) {
+        inputReceivedCallback(fromSlot, frameNumber, controllerState);
     }
 }
 
@@ -294,27 +295,30 @@ void LockstepEngine::recordLocalFrameSync(uint32_t frameNumber, uint32_t stateHa
         return;
     }
 
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
-    m_localFrameSyncHashes[frameNumber] = stateHash;
+        m_localFrameSyncHashes[frameNumber] = stateHash;
 
-    for (auto pendingIt = m_pendingPeerFrameSyncHashes.begin();
-         pendingIt != m_pendingPeerFrameSyncHashes.end();
-         ++pendingIt) {
-        const auto peerIt = pendingIt->second.find(frameNumber);
-        if (peerIt != pendingIt->second.end()) {
-            comparePeerFrameSyncUnlocked(
-                pendingIt->first,
-                frameNumber,
-                peerIt->second);
-            // Erase by key: comparePeerFrameSyncUnlocked may already remove
-            // the entry when hashes match, invalidating peerIt.
-            pendingIt->second.erase(frameNumber);
+        for (auto pendingIt = m_pendingPeerFrameSyncHashes.begin();
+             pendingIt != m_pendingPeerFrameSyncHashes.end();
+             ++pendingIt) {
+            const auto peerIt = pendingIt->second.find(frameNumber);
+            if (peerIt != pendingIt->second.end()) {
+                comparePeerFrameSyncUnlocked(
+                    pendingIt->first,
+                    frameNumber,
+                    peerIt->second);
+                // Erase by key: comparePeerFrameSyncUnlocked may already remove
+                // the entry when hashes match, invalidating peerIt.
+                pendingIt->second.erase(frameNumber);
+            }
         }
-    }
 
-    pruneOldFrameSyncDataUnlocked(
-        frameNumber > 120 ? frameNumber - 120 : 0);
+        pruneOldFrameSyncDataUnlocked(
+            frameNumber > 120 ? frameNumber - 120 : 0);
+    }
+    notifyPendingCallbacks();
 }
 
 void LockstepEngine::submitPeerFrameSync(
@@ -331,8 +335,11 @@ void LockstepEngine::submitPeerFrameSync(
         return;
     }
 
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    comparePeerFrameSyncUnlocked(fromSlot, frameNumber, stateHash);
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        comparePeerFrameSyncUnlocked(fromSlot, frameNumber, stateHash);
+    }
+    notifyPendingCallbacks();
 }
 
 bool LockstepEngine::advanceFrame()
@@ -360,9 +367,12 @@ bool LockstepEngine::advanceFrame()
                 return false;
             }
 
-            std::lock_guard<std::recursive_mutex> lock(m_mutex);
-            applyTimeoutFallbackUnlocked(frameNumber);
-            ++m_stats.timeoutOccurrences;
+            {
+                std::lock_guard<std::recursive_mutex> lock(m_mutex);
+                applyTimeoutFallbackUnlocked(frameNumber);
+                ++m_stats.timeoutOccurrences;
+            }
+            notifyPendingCallbacks();
         }
     }
 
@@ -408,7 +418,13 @@ void LockstepEngine::checkDesync(uint32_t stateHash)
         return;
     }
 
-    recordLocalFrameSync(m_currentFrameNumber, stateHash);
+    uint32_t frameNumber = 0;
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        frameNumber = m_currentFrameNumber;
+    }
+
+    recordLocalFrameSync(frameNumber, stateHash);
 }
 
 void LockstepEngine::requestResync()
@@ -551,9 +567,12 @@ void LockstepEngine::wakeInputWaiters()
 
 void LockstepEngine::releaseCurrentFrameWait()
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    applyTimeoutFallbackUnlocked(m_currentFrameNumber);
-    m_inputCv.notify_all();
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        applyTimeoutFallbackUnlocked(m_currentFrameNumber);
+        m_inputCv.notify_all();
+    }
+    notifyPendingCallbacks();
 }
 
 void LockstepEngine::pruneOldFrames(uint32_t oldestFrameToKeep)
@@ -669,7 +688,7 @@ void LockstepEngine::processInputPacket(
     std::memcpy(&frameNumber, packet.data(), 4);
     std::memcpy(&controllerState, packet.data() + 4, 4);
 
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::unique_lock<std::recursive_mutex> lock(m_mutex);
 
     if (fromSlot < 0 ||
         fromSlot >= m_config.numPlayers) {
@@ -690,11 +709,13 @@ void LockstepEngine::processInputPacket(
         frameNumber <= m_currentFrameNumber) {
         m_stats.desyncDetections++;
         m_isDesynchronized = true;
-        if (m_callbacks.desyncDetected) {
-            m_callbacks.desyncDetected(
-                frameNumber,
-                "Conflicting WebRTC input for frame " +
-                    std::to_string(frameNumber));
+        const std::string desyncReason =
+            "Conflicting WebRTC input for frame " +
+            std::to_string(frameNumber);
+        auto desyncCallback = m_callbacks.desyncDetected;
+        lock.unlock();
+        if (desyncCallback) {
+            desyncCallback(frameNumber, desyncReason);
         }
         return;
     }
@@ -762,24 +783,23 @@ void LockstepEngine::reportStateHashMismatchUnlocked(
     m_stats.desyncDetections++;
     m_isDesynchronized = true;
 
-    if (m_callbacks.desyncDetected) {
-        char localHex[11];
-        char peerHex[11];
-        std::snprintf(localHex, sizeof(localHex), "%08x", localHash);
-        std::snprintf(peerHex, sizeof(peerHex), "%08x", peerHash);
+    char localHex[11];
+    char peerHex[11];
+    std::snprintf(localHex, sizeof(localHex), "%08x", localHash);
+    std::snprintf(peerHex, sizeof(peerHex), "%08x", peerHash);
 
-        m_callbacks.desyncDetected(
-            frameNumber,
-            "State hash mismatch with player " +
-                std::to_string(fromSlot) +
-                " at frame " +
-                std::to_string(frameNumber) +
-                " (local=0x" + localHex +
-                ", peer=0x" + peerHex + ")");
-    }
+    m_pendingDesyncNotification = {
+        frameNumber,
+        "State hash mismatch with player " +
+            std::to_string(fromSlot) +
+            " at frame " +
+            std::to_string(frameNumber) +
+            " (local=0x" + localHex +
+            ", peer=0x" + peerHex + ")"};
+    m_hasPendingDesyncNotification = true;
 
     if (m_config.resyncEnabled) {
-        requestResync();
+        m_pendingResync = true;
     }
 }
 
@@ -850,11 +870,47 @@ void LockstepEngine::applyTimeoutFallbackUnlocked(uint32_t frameNumber)
             lastNotified == m_lastStallCallbackFrame.end() ||
             lastNotified->second + 1 != frameNumber;
 
-        if (firstStallInBurst && m_callbacks.peerInputStalled) {
-            m_callbacks.peerInputStalled(slot, frameNumber);
+        if (firstStallInBurst) {
+            m_pendingStallNotifications.emplace_back(slot, frameNumber);
         }
 
         m_lastStallCallbackFrame[slot] = frameNumber;
+    }
+}
+
+void LockstepEngine::notifyPendingCallbacks()
+{
+    std::vector<std::pair<int, uint32_t>> stalls;
+    std::pair<uint32_t, std::string> desyncNotification;
+    bool hasDesyncNotification = false;
+    bool pendingResync = false;
+
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        stalls.swap(m_pendingStallNotifications);
+        if (m_hasPendingDesyncNotification) {
+            desyncNotification = std::move(m_pendingDesyncNotification);
+            hasDesyncNotification = true;
+            m_hasPendingDesyncNotification = false;
+        }
+        pendingResync = m_pendingResync;
+        m_pendingResync = false;
+    }
+
+    for (const auto& [slot, stalledFrame] : stalls) {
+        if (m_callbacks.peerInputStalled) {
+            m_callbacks.peerInputStalled(slot, stalledFrame);
+        }
+    }
+
+    if (hasDesyncNotification && m_callbacks.desyncDetected) {
+        m_callbacks.desyncDetected(
+            desyncNotification.first,
+            desyncNotification.second);
+    }
+
+    if (pendingResync) {
+        requestResync();
     }
 }
 
@@ -979,6 +1035,8 @@ bool LockstepEngine::waitForAllInputs(
 
         if (allMissingInputsAreFromDisconnectedPeersUnlocked(frameNumber)) {
             applyTimeoutFallbackUnlocked(frameNumber);
+            lock.unlock();
+            notifyPendingCallbacks();
             return true;
         }
 

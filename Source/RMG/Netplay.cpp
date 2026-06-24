@@ -32,14 +32,23 @@ bool CoreEmbeddedAdvanceFrameCallback()
     return UserInterface::Netplay::advanceNetplayFrame();
 }
 
+} // namespace
+
+void UserInterface::Netplay::installEmbeddedNetplayCallbacks()
+{
+    CoreSetEmbeddedNetplayCallbacks(
+        CoreEmbeddedSubmitInputCallback,
+        CoreEmbeddedGetInputCallback,
+        CoreEmbeddedAdvanceFrameCallback);
+}
+
+namespace
+{
 struct CoreEmbeddedNetplayBridgeInitializer
 {
     CoreEmbeddedNetplayBridgeInitializer()
     {
-        CoreSetEmbeddedNetplayCallbacks(
-            CoreEmbeddedSubmitInputCallback,
-            CoreEmbeddedGetInputCallback,
-            CoreEmbeddedAdvanceFrameCallback);
+        UserInterface::Netplay::installEmbeddedNetplayCallbacks();
     }
 };
 
@@ -164,6 +173,11 @@ void UserInterface::Netplay::verifyNetplaySync(uint32_t)
 
 void UserInterface::Netplay::notifyNetplaySaveState(const QByteArray&)
 {
+}
+
+void UserInterface::Netplay::installEmbeddedNetplayCallbacks()
+{
+    CoreSetEmbeddedNetplayCallbacks(nullptr, nullptr, nullptr);
 }
 
 #endif // WEBRTC_P2P

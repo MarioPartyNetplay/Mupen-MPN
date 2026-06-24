@@ -71,6 +71,11 @@ void verifyNetplaySync(uint32_t romChecksum);
  */
 void notifyNetplaySaveState(const QByteArray& saveState);
 
+/**
+ * Install the core bridge callbacks used during embedded lockstep netplay.
+ */
+void installEmbeddedNetplayCallbacks();
+
 } // namespace UserInterface::Netplay
 
 #endif // NETPLAY_COORDINATOR_HPP

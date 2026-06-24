@@ -133,6 +133,7 @@ private:
         uint32_t peerHash);
     void pruneOldFrameSyncDataUnlocked(uint32_t oldestFrameToKeep);
     void applyTimeoutFallbackUnlocked(uint32_t frameNumber);
+    void notifyPendingCallbacks();
     bool hasAllRemoteDataChannelsConnectedUnlocked() const;
     bool hasReceivedBootstrapInputFromAllRemotesUnlocked() const;
     bool allMissingInputsAreFromDisconnectedPeersUnlocked(
@@ -157,6 +158,10 @@ private:
     std::map<int, std::map<uint32_t, uint32_t>> m_pendingPeerFrameSyncHashes;
     std::unordered_set<uint64_t> m_reportedHashMismatches;
     std::map<int, int> m_peerHashMismatchStreak;
+    std::vector<std::pair<int, uint32_t>> m_pendingStallNotifications;
+    std::pair<uint32_t, std::string> m_pendingDesyncNotification;
+    bool m_hasPendingDesyncNotification = false;
+    bool m_pendingResync = false;
     std::vector<std::shared_ptr<UserInterface::Netplay::WebRTCDataChannel>> m_dataChannels;
     Callbacks m_callbacks;
 };
