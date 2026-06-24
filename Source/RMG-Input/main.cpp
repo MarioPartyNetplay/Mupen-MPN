@@ -1573,9 +1573,9 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
     if (embeddedNetplay)
     {
         // Detect a new PIF poll cycle when controller indices wrap (e.g. 1 -> 0)
-        // or when the same index is polled again after the previous frame advanced.
-        if (l_EmbeddedNetplayFrameAdvanced &&
-            (l_EmbeddedNetplayLastControl < 0 || Control <= l_EmbeddedNetplayLastControl))
+        // or when the same index is polled again on the next frame.
+        if (l_EmbeddedNetplayLastControl < 0 ||
+            Control <= l_EmbeddedNetplayLastControl)
         {
             l_EmbeddedNetplayLocalSubmitted = false;
             l_EmbeddedNetplayFrameAdvanced = false;

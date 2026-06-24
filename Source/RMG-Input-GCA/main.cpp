@@ -542,8 +542,8 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
     const bool embeddedNetplay = CoreIsEmbeddedNetplayActive();
     if (embeddedNetplay)
     {
-        if (l_EmbeddedNetplayFrameAdvanced &&
-            (l_EmbeddedNetplayLastControl < 0 || Control <= l_EmbeddedNetplayLastControl))
+        if (l_EmbeddedNetplayLastControl < 0 ||
+            Control <= l_EmbeddedNetplayLastControl)
         {
             l_EmbeddedNetplayLocalSubmitted = false;
             l_EmbeddedNetplayFrameAdvanced = false;

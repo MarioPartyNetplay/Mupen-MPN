@@ -175,30 +175,43 @@ LockstepEngine::submitLocalInput(uint32_t controllerState)
             m_currentFrameNumber +
             static_cast<uint32_t>(m_config.inputDelayFrames);
 
+        const auto assignLocalInputUnlocked =
+            [&](uint32_t frame, uint32_t state) {
+                FrameInputs& frameInputs = m_frameBuffer[frame];
+                const auto existing =
+                    frameInputs.playerInputs.find(m_config.localPlayerSlot);
+
+                if (existing != frameInputs.playerInputs.end() &&
+                    existing->second == state) {
+                    return;
+                }
+
+                frameInputs.frameNumber = frame;
+                frameInputs.playerInputs[m_config.localPlayerSlot] = state;
+                outbound.emplace_back(frame, state);
+                notifyInputProgressUnlocked(frame);
+            };
+
+        // Always refresh the live send frame so per-frame keyboard/gamepad
+        // changes are not stuck on the first sample written into the buffer.
+        assignLocalInputUnlocked(sendFrame, controllerState);
+
         // Dolphin-style pad buffer: keep the delay window filled so frame 0
         // has usable input instead of waiting for the delay to elapse.
         // Prefill is spread across emulated frames so high buffer values do
         // not flood peers and drop the data channel or signaling connection.
         uint32_t prefilled = 0;
         for (uint32_t frame = m_currentFrameNumber;
-             frame <= sendFrame &&
+             frame < sendFrame &&
              prefilled < kMaxInputPrefillPerSubmit;
              ++frame) {
 
-            FrameInputs& frameInputs = m_frameBuffer[frame];
-            const auto existing =
-                frameInputs.playerInputs.find(m_config.localPlayerSlot);
-
-            if (existing != frameInputs.playerInputs.end()) {
+            if (m_frameBuffer[frame].playerInputs.find(m_config.localPlayerSlot) !=
+                m_frameBuffer[frame].playerInputs.end()) {
                 continue;
             }
 
-            frameInputs.frameNumber = frame;
-            frameInputs.playerInputs[m_config.localPlayerSlot] =
-                controllerState;
-
-            outbound.emplace_back(frame, controllerState);
-            notifyInputProgressUnlocked(frame);
+            assignLocalInputUnlocked(frame, controllerState);
             ++prefilled;
         }
 
