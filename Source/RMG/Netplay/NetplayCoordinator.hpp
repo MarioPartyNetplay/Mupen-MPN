@@ -196,6 +196,7 @@
      void on_webRTC_dataChannelOpened(const QString& peerId, const QString& label);
  
  private:
+    void clearRoomSessionState();
      void setState(State newState);
      void setupPeerConnections(const QList<SocketIOClient::PlayerInfo>& players);
      void synchronizeLockstepPlayerCount();

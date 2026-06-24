@@ -410,13 +410,40 @@ void NetplayCoordinator::joinRoom(const QString& roomId, bool asSpectator, const
 
 void NetplayCoordinator::leaveRoom()
 {
-    if (m_state != InLobby && m_state != InGame) {
+    if (m_state != InLobby &&
+        m_state != InGame &&
+        m_state != StartingGame &&
+        m_state != JoiningRoom &&
+        m_state != CreatingRoom) {
         return;
     }
 
-    m_socketIO->leaveRoom();
-    m_peers.clear();
-    setState(Connected);
+    const bool wasInGame = (m_state == InGame || m_state == StartingGame);
+    const bool hosting = isHostingServer();
+
+    if (wasInGame) {
+        resetEmulationSync();
+        emit gameEnded();
+    }
+
+    if (hosting) {
+        stopHosting();
+        clearRoomSessionState();
+        setState(Idle);
+        emit roomClosed(QStringLiteral("left"));
+        return;
+    }
+
+    if (m_socketIO && m_socketIO->getConnectionState() == SocketIOClient::Connected) {
+        m_socketIO->leaveRoom();
+    }
+
+    clearRoomSessionState();
+    if (m_socketIO && m_socketIO->getConnectionState() == SocketIOClient::Connected) {
+        setState(Connected);
+    } else {
+        setState(Idle);
+    }
 }
 
 void NetplayCoordinator::startGame(const QString& gameMode, bool resyncEnabled, const QString& romHash)
@@ -810,6 +837,11 @@ void NetplayCoordinator::on_socketIO_reconnecting()
 void NetplayCoordinator::on_socketIO_reconnected()
 {
     qInfo() << "NetplayCoordinator: Signaling connection restored";
+
+    if (m_state == Idle || m_state == Error) {
+        setState(Connected);
+    }
+
     attachExistingPeerDataChannels();
     recoverWebRTCPeerConnections();
 }
@@ -824,8 +856,7 @@ void NetplayCoordinator::on_socketIO_disconnected()
         m_lockstepEngine->releaseCurrentFrameWait();
     }
 
-    m_peers.clear();
-    m_cachedPlayers.clear();
+    clearRoomSessionState();
 
     if (wasInGame) {
         resetEmulationSync();
@@ -870,9 +901,7 @@ void NetplayCoordinator::on_socketIO_roomJoined(const QString& roomId, int slotI
 void NetplayCoordinator::on_socketIO_roomLeft()
 {
     qDebug() << "NetplayCoordinator: Room left";
-    m_peers.clear();
-    m_cachedPlayers.clear();
-    m_gameSession = GameSession();
+    clearRoomSessionState();
     setState(Connected);
     emit roomClosed("left");
 }
@@ -880,9 +909,7 @@ void NetplayCoordinator::on_socketIO_roomLeft()
 void NetplayCoordinator::on_socketIO_roomClosed(const QString& reason)
 {
     qDebug() << "NetplayCoordinator: Room closed:" << reason;
-    m_peers.clear();
-    m_cachedPlayers.clear();
-    m_gameSession = GameSession();
+    clearRoomSessionState();
     setState(Connected);
     emit roomClosed(reason);
 }
@@ -1694,6 +1721,19 @@ void NetplayCoordinator::setState(State newState)
         m_state = newState;
         emit stateChanged(m_state);
     }
+}
+
+void NetplayCoordinator::clearRoomSessionState()
+{
+    m_peers.clear();
+    m_cachedPlayers.clear();
+    m_playerPingMs.clear();
+    m_gameSession = GameSession();
+    m_autoJoinRoomData = QJsonObject();
+
+    // Immediately clear lobby UI state instead of waiting for server callbacks.
+    emit playersUpdated(QList<SocketIOClient::PlayerInfo>());
+    emit playerPingsUpdated();
 }
 
 void NetplayCoordinator::bindWebRTCPeerSignals(const std::shared_ptr<WebRTCPeer>& peer, const QString& peerId)
