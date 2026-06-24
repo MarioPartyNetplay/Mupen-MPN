@@ -81,11 +81,15 @@ WebRTCPeer::~WebRTCPeer()
 
 void WebRTCPeer::attemptRecovery()
 {
-    if (!m_peerConnection || m_connectionState == Closed || m_connectionState == Failed) {
+    if (!m_initiator || m_connectionState == Closed) {
         return;
     }
 
-    if (!m_initiator) {
+    if (m_connectionState == Failed || !m_peerConnection) {
+        qInfo() << "WebRTCPeer: Rebuilding failed peer connection for" << m_peerId;
+        rebuildPeerConnection();
+        createDataChannel(QStringLiteral("RMG-Input"));
+        createOffer();
         return;
     }
 
@@ -269,6 +273,40 @@ void WebRTCPeer::initializePeerConnection()
 {
     m_peerConnection = std::make_shared<rtc::PeerConnection>(buildConfiguration());
     bindPeerConnectionCallbacks();
+}
+
+void WebRTCPeer::rebuildPeerConnection()
+{
+    if (m_disconnectedGraceTimer) {
+        m_disconnectedGraceTimer->stop();
+    }
+
+    if (m_callbacksEnabled) {
+        m_callbacksEnabled->store(false);
+    }
+
+    for (auto it = m_dataChannels.begin(); it != m_dataChannels.end(); ++it) {
+        if (it.value()) {
+            it.value()->onBinaryMessageReceived = nullptr;
+            it.value()->onClosed = nullptr;
+            it.value()->onError = nullptr;
+            it.value()->onTextMessageReceived = nullptr;
+            it.value()->onStateChanged = nullptr;
+            it.value()->onBufferedAmountLow = nullptr;
+            it.value()->detachBackendHandlers();
+        }
+    }
+    m_dataChannels.clear();
+
+    if (m_peerConnection) {
+        m_peerConnection->close();
+        m_peerConnection.reset();
+    }
+
+    m_callbacksEnabled = std::make_shared<std::atomic<bool>>(true);
+    m_localDescriptionSent = false;
+    updateConnectionState(New);
+    initializePeerConnection();
 }
 
 void WebRTCPeer::dispatchToPeerThread(std::function<void()> action)

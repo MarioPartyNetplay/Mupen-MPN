@@ -111,6 +111,7 @@ private slots:
 private:
     static rtc::Configuration buildConfiguration();
     void initializePeerConnection();
+    void rebuildPeerConnection();
     void bindPeerConnectionCallbacks();
     void registerDataChannel(const std::shared_ptr<rtc::DataChannel>& backendChannel);
     void updateConnectionState(ConnectionState state);
