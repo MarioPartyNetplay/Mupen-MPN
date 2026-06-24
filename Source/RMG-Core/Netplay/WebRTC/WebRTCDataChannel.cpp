@@ -31,24 +31,38 @@ WebRTCDataChannel::~WebRTCDataChannel()
     onStateChanged = nullptr;
     onBufferedAmountLow = nullptr;
     detachBackendHandlers();
-    m_state = ChannelState::Closed;
+    m_state.store(ChannelState::Closed);
 }
 
 bool WebRTCDataChannel::sendBinary(const std::vector<uint8_t>& data)
 {
-    if (m_state != ChannelState::Open) {
+    if (m_state.load() != ChannelState::Open) {
         std::cerr << "WebRTCDataChannel: Cannot send - channel not open" << std::endl;
         return false;
     }
 
-    if (m_sendBinaryHandler) {
+    // Copy the handler under the lock so a concurrent setBackendHandlers()/
+    // detachBackendHandlers()/close() on the Qt thread cannot free the target
+    // while we invoke it on the emulator thread. Invoke outside the lock to
+    // avoid blocking channel teardown on a backend send.
+    SendBinaryHandler handler;
+    {
+        std::lock_guard<std::mutex> lock(m_handlerMutex);
+        handler = m_sendBinaryHandler;
+    }
+
+    if (handler) {
         try {
-            return m_sendBinaryHandler(data);
+            return handler(data);
         } catch (const std::exception& exception) {
-            notifyError(exception.what());
+            // sendBinary runs on the emulator thread; do not invoke the
+            // onError callback here since it is owned/mutated by the Qt thread.
+            std::cerr << "WebRTCDataChannel: sendBinary failed: "
+                      << exception.what() << std::endl;
             return false;
         } catch (...) {
-            notifyError("Unknown DataChannel sendBinary exception");
+            std::cerr << "WebRTCDataChannel: Unknown sendBinary exception"
+                      << std::endl;
             return false;
         }
     }
@@ -58,19 +72,27 @@ bool WebRTCDataChannel::sendBinary(const std::vector<uint8_t>& data)
 
 bool WebRTCDataChannel::sendText(const std::string& text)
 {
-    if (m_state != ChannelState::Open) {
+    if (m_state.load() != ChannelState::Open) {
         std::cerr << "WebRTCDataChannel: Cannot send - channel not open" << std::endl;
         return false;
     }
 
-    if (m_sendTextHandler) {
+    SendTextHandler handler;
+    {
+        std::lock_guard<std::mutex> lock(m_handlerMutex);
+        handler = m_sendTextHandler;
+    }
+
+    if (handler) {
         try {
-            return m_sendTextHandler(text);
+            return handler(text);
         } catch (const std::exception& exception) {
-            notifyError(exception.what());
+            std::cerr << "WebRTCDataChannel: sendText failed: "
+                      << exception.what() << std::endl;
             return false;
         } catch (...) {
-            notifyError("Unknown DataChannel sendText exception");
+            std::cerr << "WebRTCDataChannel: Unknown sendText exception"
+                      << std::endl;
             return false;
         }
     }
@@ -80,15 +102,19 @@ bool WebRTCDataChannel::sendText(const std::string& text)
 
 void WebRTCDataChannel::close()
 {
-    if (m_state == ChannelState::Closed) {
+    if (m_state.load() == ChannelState::Closed) {
         return;
     }
 
     std::cerr << "WebRTCDataChannel: Closing " << m_label << std::endl;
 
-    CloseHandler closeHandler = std::move(m_closeHandler);
-    m_sendBinaryHandler = nullptr;
-    m_sendTextHandler = nullptr;
+    CloseHandler closeHandler;
+    {
+        std::lock_guard<std::mutex> lock(m_handlerMutex);
+        closeHandler = std::move(m_closeHandler);
+        m_sendBinaryHandler = nullptr;
+        m_sendTextHandler = nullptr;
+    }
 
     if (closeHandler) {
         try {
@@ -105,6 +131,7 @@ void WebRTCDataChannel::close()
 
 void WebRTCDataChannel::detachBackendHandlers()
 {
+    std::lock_guard<std::mutex> lock(m_handlerMutex);
     m_sendBinaryHandler = nullptr;
     m_sendTextHandler = nullptr;
     m_closeHandler = nullptr;
@@ -112,40 +139,40 @@ void WebRTCDataChannel::detachBackendHandlers()
 
 void WebRTCDataChannel::open()
 {
-    if (m_state == ChannelState::Open) {
+    if (m_state.load() == ChannelState::Open) {
         return;
     }
 
-    m_state = ChannelState::Open;
+    m_state.store(ChannelState::Open);
     if (onStateChanged) {
-        onStateChanged(m_state);
+        onStateChanged(m_state.load());
     }
 }
 
 void WebRTCDataChannel::notifyOpen()
 {
-    if (m_state == ChannelState::Open) {
+    if (m_state.load() == ChannelState::Open) {
         return;
     }
 
-    m_state = ChannelState::Open;
+    m_state.store(ChannelState::Open);
     if (onStateChanged) {
-        onStateChanged(m_state);
+        onStateChanged(m_state.load());
     }
 }
 
 void WebRTCDataChannel::notifyClosed()
 {
-    if (m_state == ChannelState::Closed) {
+    if (m_state.load() == ChannelState::Closed) {
         return;
     }
 
-    m_state = ChannelState::Closed;
+    m_state.store(ChannelState::Closed);
     if (onClosed) {
         onClosed();
     }
     if (onStateChanged) {
-        onStateChanged(m_state);
+        onStateChanged(m_state.load());
     }
 }
 
@@ -158,6 +185,7 @@ void WebRTCDataChannel::notifyError(const std::string& error)
 
 void WebRTCDataChannel::setBackendHandlers(SendBinaryHandler sendBinary, SendTextHandler sendText, CloseHandler close)
 {
+    std::lock_guard<std::mutex> lock(m_handlerMutex);
     m_sendBinaryHandler = std::move(sendBinary);
     m_sendTextHandler = std::move(sendText);
     m_closeHandler = std::move(close);
@@ -165,7 +193,7 @@ void WebRTCDataChannel::setBackendHandlers(SendBinaryHandler sendBinary, SendTex
 
 WebRTCDataChannel::ChannelState WebRTCDataChannel::getState() const
 {
-    return m_state;
+    return m_state.load();
 }
 
 const std::string& WebRTCDataChannel::getLabel() const
@@ -175,7 +203,7 @@ const std::string& WebRTCDataChannel::getLabel() const
 
 bool WebRTCDataChannel::isOpen() const
 {
-    return m_state == ChannelState::Open;
+    return m_state.load() == ChannelState::Open;
 }
 
 uint64_t WebRTCDataChannel::getBufferedAmount() const

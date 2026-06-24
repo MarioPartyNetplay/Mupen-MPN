@@ -15,6 +15,8 @@
 #include <functional>
 #include <memory>
 #include <cstdint>
+#include <atomic>
+#include <mutex>
 #include "../../Library.hpp"
 
 namespace UserInterface::Netplay {
@@ -66,7 +68,16 @@ public:
 
 private:
     std::string m_label;
-    ChannelState m_state;
+    // m_state is read from the emulator thread (isOpen/sendBinary) while it is
+    // written from the Qt thread (open/notifyOpen/notifyClosed/close), so it
+    // must be atomic.
+    std::atomic<ChannelState> m_state;
+    // The backend send/close handlers are invoked from the emulator thread via
+    // sendBinary/sendText but are (re)assigned from the Qt thread when the data
+    // channel is (re)bound or closed. Guard them with a mutex; a std::function
+    // reassignment frees the old target's heap storage and racing that against
+    // a concurrent copy/invoke corrupts the heap (double free).
+    mutable std::mutex m_handlerMutex;
     SendBinaryHandler m_sendBinaryHandler;
     SendTextHandler m_sendTextHandler;
     CloseHandler m_closeHandler;
