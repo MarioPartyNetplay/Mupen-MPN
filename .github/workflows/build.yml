@@ -55,8 +55,8 @@ jobs:
           flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 
           flatpak install -y flathub \
-            org.kde.Sdk//6.8 \
-            org.kde.Platform//6.8
+            org.kde.Sdk//6.9 \
+            org.kde.Platform//6.9
 
       - name: Verify SDL3 pkg-config
         run: |
@@ -105,7 +105,6 @@ jobs:
             mingw-w64-x86_64-enet
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-kcoreaddons
             mingw-w64-x86_64-ninja
             mingw-w64-x86_64-qt6-base
             mingw-w64-x86_64-qt6-tools
