@@ -60,4 +60,7 @@ void CoreSetPrintDebugCallback(bool enabled);
 // sends message to the debug callback
 void CoreAddCallbackMessage(CoreDebugMessageType type, std::string message);
 
+// notifies listeners that a screenshot attempt finished
+void CoreNotifyScreenshotCaptured(bool success);
+
 #endif // CORE_CALLBACK_HPP

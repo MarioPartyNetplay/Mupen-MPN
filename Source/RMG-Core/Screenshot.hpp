@@ -10,7 +10,23 @@
 #ifndef CORE_SCREENSHOT_HPP
 #define CORE_SCREENSHOT_HPP
 
-// takes a screenshot
+#include <filesystem>
+#include <functional>
+
+// takes a screenshot on the next rendered frame
 bool CoreTakeScreenshot(void);
+
+// returns true when a screenshot should be captured this frame
+bool CoreConsumeScreenshotRequest(void);
+
+// builds the next screenshot file path
+std::filesystem::path CoreGetNextScreenshotPath(void);
+
+// resets screenshot numbering when a new ROM is opened
+void CoreResetScreenshotCounter(void);
+
+// registers whether the frontend should capture screenshots from the render surface
+using CoreScreenshotBackendAvailableFunc = std::function<bool()>;
+void CoreRegisterScreenshotBackend(CoreScreenshotBackendAvailableFunc func);
 
 #endif // CORE_SCREENSHOT_HPP

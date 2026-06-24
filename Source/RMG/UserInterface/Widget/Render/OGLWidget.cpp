@@ -24,9 +24,143 @@
 #include <RMG-Core/Video.hpp>
 #include <RMG-Core/Callback.hpp>
 
+#include <QOpenGLFunctions>
+
+#include <algorithm>
+#include <cstring>
 #include <string>
+#include <vector>
 
 using namespace UserInterface::Widget;
+
+namespace
+{
+
+constexpr int kScreenshotBorderThreshold = 4;
+
+bool isBorderPixel(const std::uint8_t* pixel)
+{
+    return pixel[0] <= kScreenshotBorderThreshold &&
+           pixel[1] <= kScreenshotBorderThreshold &&
+           pixel[2] <= kScreenshotBorderThreshold;
+}
+
+bool cropScreenshotBorders(const std::vector<std::uint8_t>& source, int sourceWidth, int sourceHeight,
+                           std::vector<std::uint8_t>& destination, int& destinationWidth, int& destinationHeight)
+{
+    if (sourceWidth <= 0 || sourceHeight <= 0 || source.empty())
+    {
+        return false;
+    }
+
+    int top = 0;
+    int bottom = sourceHeight - 1;
+    int left = 0;
+    int right = sourceWidth - 1;
+
+    while (top <= bottom)
+    {
+        bool rowIsBorder = true;
+        for (int x = 0; x < sourceWidth; ++x)
+        {
+            if (!isBorderPixel(&source[(top * sourceWidth + x) * 3]))
+            {
+                rowIsBorder = false;
+                break;
+            }
+        }
+
+        if (!rowIsBorder)
+        {
+            break;
+        }
+
+        ++top;
+    }
+
+    while (bottom >= top)
+    {
+        bool rowIsBorder = true;
+        for (int x = 0; x < sourceWidth; ++x)
+        {
+            if (!isBorderPixel(&source[(bottom * sourceWidth + x) * 3]))
+            {
+                rowIsBorder = false;
+                break;
+            }
+        }
+
+        if (!rowIsBorder)
+        {
+            break;
+        }
+
+        --bottom;
+    }
+
+    while (left <= right)
+    {
+        bool columnIsBorder = true;
+        for (int y = top; y <= bottom; ++y)
+        {
+            if (!isBorderPixel(&source[(y * sourceWidth + left) * 3]))
+            {
+                columnIsBorder = false;
+                break;
+            }
+        }
+
+        if (!columnIsBorder)
+        {
+            break;
+        }
+
+        ++left;
+    }
+
+    while (right >= left)
+    {
+        bool columnIsBorder = true;
+        for (int y = top; y <= bottom; ++y)
+        {
+            if (!isBorderPixel(&source[(y * sourceWidth + right) * 3]))
+            {
+                columnIsBorder = false;
+                break;
+            }
+        }
+
+        if (!columnIsBorder)
+        {
+            break;
+        }
+
+        --right;
+    }
+
+    if (top > bottom || left > right)
+    {
+        destination = source;
+        destinationWidth = sourceWidth;
+        destinationHeight = sourceHeight;
+        return true;
+    }
+
+    destinationWidth = right - left + 1;
+    destinationHeight = bottom - top + 1;
+    destination.resize(static_cast<size_t>(destinationWidth * destinationHeight * 3));
+
+    for (int y = 0; y < destinationHeight; ++y)
+    {
+        std::memcpy(&destination[static_cast<size_t>(y * destinationWidth * 3)],
+                    &source[static_cast<size_t>(((top + y) * sourceWidth + left) * 3)],
+                    static_cast<size_t>(destinationWidth * 3));
+    }
+
+    return true;
+}
+
+} // namespace
 
 OGLWidget::OGLWidget(QWidget *parent)
 {
@@ -244,6 +378,102 @@ std::uint32_t OGLWidget::DefaultFramebufferObject() const
         return 0;
     }
     return this->openGLcontext->defaultFramebufferObject();
+#endif
+}
+
+bool OGLWidget::CaptureScreenshot(std::vector<std::uint8_t>& rgbData, int& width, int& height) const
+{
+    const int captureWidth  = this->width;
+    const int captureHeight = this->height;
+
+    if (captureWidth <= 0 || captureHeight <= 0)
+    {
+        return false;
+    }
+
+#ifndef __APPLE__
+    if (this->openGLcontext == nullptr || !this->openGLcontext->isValid())
+    {
+        return false;
+    }
+
+    if (!this->openGLcontext->makeCurrent(const_cast<OGLWidget*>(this)))
+    {
+        return false;
+    }
+
+    QOpenGLFunctions* glFunctions = this->openGLcontext->functions();
+    if (glFunctions == nullptr)
+    {
+        return false;
+    }
+
+    using ReadBufferFn = void (*)(unsigned int);
+    const auto glReadBuffer = reinterpret_cast<ReadBufferFn>(this->openGLcontext->getProcAddress("glReadBuffer"));
+
+    std::vector<std::uint8_t> fullBuffer(static_cast<size_t>(captureWidth * captureHeight * 3));
+
+    const std::uint32_t framebuffer = this->DefaultFramebufferObject();
+    if (framebuffer != 0)
+    {
+        glFunctions->glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+        if (glReadBuffer != nullptr)
+        {
+            glReadBuffer(GL_COLOR_ATTACHMENT0);
+        }
+    }
+    else
+    {
+        glFunctions->glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        if (glReadBuffer != nullptr)
+        {
+            glReadBuffer(GL_BACK);
+        }
+    }
+
+    glFunctions->glReadPixels(0, 0, captureWidth, captureHeight, GL_RGB, GL_UNSIGNED_BYTE, fullBuffer.data());
+    glFunctions->glFinish();
+
+    return cropScreenshotBorders(fullBuffer, captureWidth, captureHeight, rgbData, width, height);
+#else
+    if (!this->angleContext.isValid() || !this->angleContext.makeCurrent(const_cast<OGLWidget*>(this)))
+    {
+        return false;
+    }
+
+    using BindFramebufferFn = void (*)(unsigned int, unsigned int);
+    using ReadBufferFn = void (*)(unsigned int);
+    using ReadPixelsFn = void (*)(int, int, int, int, unsigned int, unsigned int, void*);
+    using FinishFn = void (*)();
+
+    const auto glBindFramebuffer = reinterpret_cast<BindFramebufferFn>(this->angleContext.getProcAddress("glBindFramebuffer"));
+    const auto glReadBuffer = reinterpret_cast<ReadBufferFn>(this->angleContext.getProcAddress("glReadBuffer"));
+    const auto glReadPixels = reinterpret_cast<ReadPixelsFn>(this->angleContext.getProcAddress("glReadPixels"));
+    const auto glFinish = reinterpret_cast<FinishFn>(this->angleContext.getProcAddress("glFinish"));
+
+    if (glBindFramebuffer == nullptr || glReadBuffer == nullptr || glReadPixels == nullptr || glFinish == nullptr)
+    {
+        return false;
+    }
+
+    std::vector<std::uint8_t> fullBuffer(static_cast<size_t>(captureWidth * captureHeight * 3));
+
+    const std::uint32_t framebuffer = this->DefaultFramebufferObject();
+    if (framebuffer != 0)
+    {
+        glBindFramebuffer(0x8CA8, framebuffer);
+        glReadBuffer(0x8CE0);
+    }
+    else
+    {
+        glBindFramebuffer(0x8CA8, 0);
+        glReadBuffer(0x0405);
+    }
+
+    glReadPixels(0, 0, captureWidth, captureHeight, 0x1907, 0x1401, fullBuffer.data());
+    glFinish();
+
+    return cropScreenshotBorders(fullBuffer, captureWidth, captureHeight, rgbData, width, height);
 #endif
 }
 

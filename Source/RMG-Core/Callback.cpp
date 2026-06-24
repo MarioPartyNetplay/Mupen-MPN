@@ -117,3 +117,13 @@ CORE_EXPORT void CoreAddCallbackMessage(CoreDebugMessageType type, std::string m
 {
     CoreDebugCallback(const_cast<char*>("[GUI]   "), static_cast<int>(type), message.c_str());
 }
+
+CORE_EXPORT void CoreNotifyScreenshotCaptured(bool success)
+{
+    if (!l_SetupCallbacks)
+    {
+        return;
+    }
+
+    l_StateCallbackFunc(CoreStateCallbackType::ScreenshotCaptured, success ? 1 : 0);
+}

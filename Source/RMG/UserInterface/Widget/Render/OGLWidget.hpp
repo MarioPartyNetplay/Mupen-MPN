@@ -18,6 +18,9 @@
 #include <QSurfaceFormat>
 #include <QWidget>
 
+#include <cstdint>
+#include <vector>
+
 #ifdef __APPLE__
 #include "AngleContext.hpp"
 #endif
@@ -49,6 +52,8 @@ class OGLWidget : public QWindow
     void SwapContextBuffers();
     void* GetProcAddress(const char* name) const;
     std::uint32_t DefaultFramebufferObject() const;
+
+    bool CaptureScreenshot(std::vector<std::uint8_t>& rgbData, int& width, int& height) const;
 
     void SetHideCursor(bool hide);
 

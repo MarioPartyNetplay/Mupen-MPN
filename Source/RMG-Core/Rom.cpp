@@ -10,6 +10,7 @@
 #define CORE_INTERNAL
 #include "CachedRomHeaderAndSettings.hpp"
 #include "MediaLoader.hpp"
+#include "Screenshot.hpp"
 #include "Directories.hpp"
 #include "RomSettings.hpp"
 #include "m64p/Api.hpp"
@@ -147,6 +148,7 @@ CORE_EXPORT bool CoreOpenRom(std::filesystem::path file)
 
     if (l_HasRomOpen)
     {
+        CoreResetScreenshotCounter();
         // store ROM path
         l_RomPath = file;
         // store default ROM settings

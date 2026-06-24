@@ -11,6 +11,7 @@
 
 #include <RMG-Core/Callback.hpp>
 #include <RMG-Core/Netplay.hpp>
+#include <RMG-Core/Screenshot.hpp>
 #include <RMG-Core/VidExt.hpp>
 #include <RMG-Core/Video.hpp>
 
@@ -19,8 +20,12 @@
 #include <QVulkanInstance>
 #include <QOpenGLContext>
 #include <QApplication>
+#include <QImage>
 #include <QThread>
 #include <QScreen>
+
+#include <cstdint>
+#include <vector>
 
 //
 // Local Variables
@@ -379,6 +384,38 @@ static m64p_error VidExt_GLGetAttr(m64p_GLattr Attr, int *pValue)
     return M64ERR_SUCCESS;
 }
 
+static bool VidExt_CaptureScreenshot(const std::filesystem::path& path)
+{
+    std::vector<std::uint8_t> rgbData;
+    int width  = 0;
+    int height = 0;
+
+    if (!(*l_OGLWidget)->CaptureScreenshot(rgbData, width, height))
+    {
+        return false;
+    }
+
+    QImage image(rgbData.data(), width, height, width * 3, QImage::Format_RGB888);
+    return image.mirrored(false, true).save(QString::fromStdString(path.string()), "PNG");
+}
+
+static void VidExt_TryCaptureScreenshot(void)
+{
+    if (!CoreConsumeScreenshotRequest())
+    {
+        return;
+    }
+
+    const std::filesystem::path path = CoreGetNextScreenshotPath();
+    if (path.empty())
+    {
+        CoreNotifyScreenshotCaptured(false);
+        return;
+    }
+
+    CoreNotifyScreenshotCaptured(VidExt_CaptureScreenshot(path));
+}
+
 static m64p_error VidExt_GLSwapBuf(void)
 {
     if (l_RenderMode != M64P_RENDER_OPENGL)
@@ -390,6 +427,8 @@ static m64p_error VidExt_GLSwapBuf(void)
     {
         return M64ERR_UNSUPPORTED;
     }
+
+    VidExt_TryCaptureScreenshot();
 
     OnScreenDisplayRender();
 
@@ -525,6 +564,11 @@ bool SetupVidExt(Thread::EmulationThread* emuThread, UserInterface::MainWindow* 
     l_MainWindow   = mainWindow;
     l_OGLWidget    = oglWidget;
     l_VulkanWidget = vulkanWidget;
+
+    CoreRegisterScreenshotBackend([]()
+    {
+        return l_OpenGLInitialized && l_RenderMode == M64P_RENDER_OPENGL;
+    });
 
     m64p_video_extension_functions vidext_funcs;
 
