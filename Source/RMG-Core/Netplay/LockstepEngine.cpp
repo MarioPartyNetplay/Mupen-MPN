@@ -251,7 +251,8 @@ void LockstepEngine::submitRemoteInput(
     FrameInputs& frameInputs = m_frameBuffer[frameNumber];
     const auto existing = frameInputs.playerInputs.find(fromSlot);
     if (existing != frameInputs.playerInputs.end() &&
-        existing->second != controllerState) {
+        existing->second != controllerState &&
+        frameNumber <= m_currentFrameNumber) {
         m_stats.desyncDetections++;
         m_isDesynchronized = true;
         if (m_callbacks.desyncDetected) {
@@ -682,7 +683,8 @@ void LockstepEngine::processInputPacket(
 
     const auto existing = frameInputs.playerInputs.find(fromSlot);
     if (existing != frameInputs.playerInputs.end() &&
-        existing->second != controllerState) {
+        existing->second != controllerState &&
+        frameNumber <= m_currentFrameNumber) {
         m_stats.desyncDetections++;
         m_isDesynchronized = true;
         if (m_callbacks.desyncDetected) {

@@ -170,6 +170,11 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
                     totalPlayers = std::max(totalPlayers, m_server->getConnectedClientCount() + 1);
                 }
                 totalPlayers = std::max(totalPlayers, static_cast<int>(m_cachedPlayers.size()));
+                for (const auto& player : m_cachedPlayers) {
+                    if (player.slot >= 0) {
+                        totalPlayers = std::max(totalPlayers, player.slot + 1);
+                    }
+                }
                 if (totalPlayers > 4) {
                     totalPlayers = 4;
                 }
@@ -1050,6 +1055,11 @@ void NetplayCoordinator::synchronizeLockstepPlayerCount()
     }
 
     numPlayers = std::max(numPlayers, static_cast<int>(m_cachedPlayers.size()));
+    for (const auto& player : m_cachedPlayers) {
+        if (player.slot >= 0) {
+            numPlayers = std::max(numPlayers, player.slot + 1);
+        }
+    }
     if (numPlayers > 4) {
         numPlayers = 4;
     }
