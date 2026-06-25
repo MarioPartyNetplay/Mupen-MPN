@@ -35,6 +35,7 @@
 #include <RMG-Core/Error.hpp>
 #include <RMG-Core/Directories.hpp>
 #include <RMG-Core/Settings.hpp>
+#include <RMG-Core/Plugins.hpp>
 #include <RMG-Core/CachedRomHeaderAndSettings.hpp>
 #include <QTimer>
 #include <QTimerEvent>
@@ -1222,6 +1223,47 @@ void NetplaySessionDialog::on_sendPushButton_clicked(void)
     QString message = this->chatLineEdit->text();
     this->coordinator->sendChatMessage(message);
     this->chatLineEdit->clear();
+}
+
+void NetplaySessionDialog::openInputConfiguration(void)
+{
+    if (this->romFile.isEmpty() || !QFileInfo::exists(this->romFile))
+    {
+        QMessageBox::warning(this, tr("Configure Input"), tr("No ROM is available for this session."));
+        return;
+    }
+
+    int playerSlot = this->sessionSlot;
+    if (this->coordinator)
+    {
+        const int coordinatorSlot = this->coordinator->getGameSession().localSlot;
+        if (coordinatorSlot >= 0)
+        {
+            playerSlot = coordinatorSlot;
+        }
+    }
+
+    if (CoreIsEmbeddedNetplayActive())
+    {
+        playerSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
+    }
+
+    if (playerSlot < 0)
+    {
+        playerSlot = 0;
+    }
+
+    CoreSetInputConfigInitialTab(playerSlot);
+
+    if (!CorePluginsOpenROMConfig(CorePluginType::Input, this, this->romFile.toStdU32String()))
+    {
+        QMessageBox::warning(this, tr("Configure Input"), QString::fromStdString(CoreGetError()));
+    }
+}
+
+void NetplaySessionDialog::on_configureInputPushButton_clicked(void)
+{
+    this->openInputConfiguration();
 }
 
 void NetplaySessionDialog::on_buttonBox_clicked(QAbstractButton* button)

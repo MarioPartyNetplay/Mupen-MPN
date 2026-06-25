@@ -63,6 +63,12 @@ bool CorePluginsHasROMConfig(CorePluginType type);
 // used plugin of given type
 bool CorePluginsOpenROMConfig(CorePluginType type, void* parent = nullptr, std::filesystem::path file = "");
 
+// selects which controller tab to show when the input plugin config opens (-1 = default)
+void CoreSetInputConfigInitialTab(int tab);
+
+// returns and clears the tab selected by CoreSetInputConfigInitialTab (-1 if unset)
+int CoreTakeInputConfigInitialTab(void);
+
 // attaches all used plugins
 bool CoreAttachPlugins(void);
 

@@ -1573,11 +1573,6 @@ EXPORT m64p_error CALL PluginConfigWithRomConfig(void* parent, int romConfig, Co
         return M64ERR_NOT_INIT;
     }
 
-    if (CoreIsEmbeddedNetplayActive())
-    {
-        return M64ERR_SYSTEM_FAIL;
-    }
-
     l_IsConfigGuiOpen = true;
 
     // Let the emulation thread finish any in-flight GetKeys() before closing devices.

@@ -79,6 +79,7 @@ private:
     bool isLocalSessionHost(void) const;
     void applyHostOnlyControlsVisibility(void);
     void setLayoutWidgetsVisible(QLayout* layout, bool visible);
+    void openInputConfiguration(void);
 
 private slots:
     void on_netplay_connected();
@@ -93,6 +94,7 @@ private slots:
     void on_coordinator_motdReceived(const QString& message);
     void on_chatLineEdit_textChanged(const QString& text);
     void on_sendPushButton_clicked(void);
+    void on_configureInputPushButton_clicked(void);
     
     void on_buttonBox_clicked(QAbstractButton* button);
     void accept(void) Q_DECL_OVERRIDE;

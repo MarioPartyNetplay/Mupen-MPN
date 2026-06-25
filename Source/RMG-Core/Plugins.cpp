@@ -36,6 +36,7 @@
 static m64p::PluginApi l_Plugins[5];
 static std::string     l_PluginFiles[5];
 static char l_PluginContext[5][20];
+static int l_InputConfigInitialTab = -1;
 
 //
 // Local Functions
@@ -350,13 +351,6 @@ static bool open_plugin_config(CorePluginType type, void* parent, bool romConfig
         return false;
     }
 
-    if (type == CorePluginType::Input && CoreIsEmbeddedNetplayActive())
-    {
-        error = "open_plugin_config Failed: input settings cannot be changed during a netplay session";
-        CoreSetError(error);
-        return false;
-    }
-
     // try to pause emulation,
     // when emulation is running
     // and try to resume afterwards
@@ -555,6 +549,18 @@ CORE_EXPORT bool CorePluginsHasROMConfig(CorePluginType type)
 CORE_EXPORT bool CorePluginsOpenROMConfig(CorePluginType type, void* parent, std::filesystem::path file)
 {
     return open_plugin_config(type, parent, true, file);
+}
+
+CORE_EXPORT void CoreSetInputConfigInitialTab(int tab)
+{
+    l_InputConfigInitialTab = tab;
+}
+
+CORE_EXPORT int CoreTakeInputConfigInitialTab(void)
+{
+    const int tab = l_InputConfigInitialTab;
+    l_InputConfigInitialTab = -1;
+    return tab;
 }
 
 CORE_EXPORT bool CoreAttachPlugins(void)

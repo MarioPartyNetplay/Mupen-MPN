@@ -13,6 +13,8 @@
 #include "main.hpp"
 
 #include <RMG-Core/Core.hpp>
+#include <RMG-Core/Netplay.hpp>
+#include <RMG-Core/Plugins.hpp>
 #include <RMG-Core/m64p/api/m64p_types.h>
 
 #include <SDL3/SDL.h>
@@ -86,6 +88,16 @@ MainDialog::MainDialog(QWidget* parent, Thread::SDLThread* sdlThread, bool romCo
     this->inputPollTimer = new QTimer(this);
     connect(this->inputPollTimer, &QTimer::timeout, this, &MainDialog::on_InputPollTimer_triggered);
     this->inputPollTimer->start(50);
+
+    int initialTab = CoreTakeInputConfigInitialTab();
+    if (initialTab < 0 && CoreIsEmbeddedNetplayActive())
+    {
+        initialTab = CoreGetEmbeddedNetplayLocalPlayerSlot();
+    }
+    if (initialTab >= 0 && initialTab < this->tabWidget->count())
+    {
+        this->tabWidget->setCurrentIndex(initialTab);
+    }
 }
 
 MainDialog::~MainDialog()
