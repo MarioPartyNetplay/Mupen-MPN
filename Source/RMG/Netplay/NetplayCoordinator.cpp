@@ -594,7 +594,19 @@ void NetplayCoordinator::submitEndOfFrameSync()
         return;
     }
 
-    broadcastFrameSync(engine, frameNumber, stateHash);
+    // broadcastFrameSync touches Qt networking objects; run it on the coordinator
+    // thread so we never race UI-thread teardown with the render thread.
+    if (QThread::currentThread() == thread()) {
+        broadcastFrameSync(engine, frameNumber, stateHash);
+        return;
+    }
+
+    QMetaObject::invokeMethod(
+        this,
+        [this, engine, frameNumber, stateHash]() {
+            broadcastFrameSync(engine, frameNumber, stateHash);
+        },
+        Qt::QueuedConnection);
 }
 
 void NetplayCoordinator::onDesyncDetected(const QString& reason)
@@ -1102,6 +1114,12 @@ void NetplayCoordinator::resetEmulationSync()
 
 void NetplayCoordinator::initializeLockstepEngine()
 {
+    // The emulator thread reads m_lockstepEngine/m_currentFrameInputs under
+    // m_mutex (activeLockstepEngine()/getSyncedInput()). Reassigning the
+    // shared_ptr and clearing the map here without the lock is a data race that
+    // corrupts the shared_ptr control block / map nodes (heap double-free).
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
     if (m_lockstepEngine) {
         m_lockstepEngine->shutdown();
         m_lockstepEngine.reset();
@@ -1625,9 +1643,13 @@ void NetplayCoordinator::queueFrameSyncCheck(uint32_t frameNumber)
     // ~1 Hz at 60 FPS; compare state hashes at the same lockstep frame.
     const uint32_t syncInterval = static_cast<uint32_t>(
         std::max(60, m_lockstepConfig.resyncCheckIntervalFrames));
-    if (frameNumber % syncInterval != 0 ||
-        frameNumber == m_lastBroadcastFrameSync) {
-        return;
+
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        if (frameNumber % syncInterval != 0 ||
+            frameNumber == m_lastBroadcastFrameSync) {
+            return;
+        }
     }
 
     m_pendingFrameSyncFrame.store(frameNumber, std::memory_order_release);
@@ -1642,11 +1664,14 @@ void NetplayCoordinator::broadcastFrameSync(
         return;
     }
 
-    if (frameNumber == m_lastBroadcastFrameSync) {
-        return;
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        if (frameNumber == m_lastBroadcastFrameSync) {
+            return;
+        }
+        m_lastBroadcastFrameSync = frameNumber;
     }
 
-    m_lastBroadcastFrameSync = frameNumber;
     engine->recordLocalFrameSync(frameNumber, stateHash);
 
     if (isHostingServer()) {
@@ -1728,6 +1753,11 @@ void NetplayCoordinator::setState(State newState)
 
 void NetplayCoordinator::clearRoomSessionState()
 {
+    for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
+        if (it.value()) {
+            it.value()->close();
+        }
+    }
     m_peers.clear();
     m_cachedPlayers.clear();
     m_playerPingMs.clear();

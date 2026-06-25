@@ -28,8 +28,26 @@ option(USE_CCACHE       "Enables usage of ccache when ccache has been found" ON)
 option(NO_ASM           "Disables the usage of assembly in the mupen64plus-core" OFF)
 option(USE_ANGRYLION    "Enables building angrylion-rdp-plus which uses a non-GPL compliant license" OFF)
 option(DISCORD_RPC      "Enables Discord Rich Presence support" ON)
+option(ENABLE_ASAN      "Build with AddressSanitizer (catches double-free/use-after-free)" OFF)
+option(ENABLE_TSAN      "Build with ThreadSanitizer (catches data races)" OFF)
 
 project(RMG)
+
+# Sanitizer builds: instrument every target defined below. Use to capture the
+# exact allocation/free (ASan) or racing accesses (TSan) behind heap-corruption
+# crashes. ASan and TSan are mutually exclusive.
+if (ENABLE_ASAN AND ENABLE_TSAN)
+    message(FATAL_ERROR "ENABLE_ASAN and ENABLE_TSAN cannot be enabled at the same time")
+endif()
+if (ENABLE_ASAN)
+    message(STATUS "AddressSanitizer enabled")
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address)
+elseif (ENABLE_TSAN)
+    message(STATUS "ThreadSanitizer enabled")
+    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=thread)
+endif()
 
 if(APPLE)
     enable_language(OBJC OBJCXX)

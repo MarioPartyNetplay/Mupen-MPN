@@ -69,6 +69,7 @@ void NetplayHostRegistry::startHosting(uint16_t signalingPort, bool listInBrowse
     m_hostRegisterAttempts = 0;
     m_nextHostRegisterMs = 0;
     m_nextHostKeepMs = 0;
+    m_registrationAbandoned = false;
 
     if (!m_housekeepingTimer.isActive()) {
         m_housekeepingTimer.start();
@@ -91,6 +92,7 @@ void NetplayHostRegistry::resumeHosting(const QString& hostCode, uint16_t signal
     m_hostRegisterAttempts = 0;
     m_nextHostRegisterMs = 0;
     m_nextHostKeepMs = 0;
+    m_registrationAbandoned = false;
 
     if (!m_housekeepingTimer.isActive()) {
         m_housekeepingTimer.start();
@@ -173,11 +175,17 @@ void NetplayHostRegistry::sendToServer(const QByteArray& message)
 {
     QString error;
     if (!ensureSocketBound(&error) || !ensureServerResolved(&error)) {
+        if (m_hostRegisterAttempts >= kMaxHostRegisterAttempts) {
+            m_registrationAbandoned = true;
+        }
         failHosting(error);
         return;
     }
 
     if (m_socket.writeDatagram(message, m_serverAddress, kNetplayRegistryPort) < 0) {
+        if (m_hostRegisterAttempts >= kMaxHostRegisterAttempts) {
+            m_registrationAbandoned = true;
+        }
         failHosting(QString("Failed to send browse registry packet: %1").arg(m_socket.errorString()));
     }
 }
@@ -230,7 +238,7 @@ void NetplayHostRegistry::handleServerMessage(const QByteArray& datagram)
 
 void NetplayHostRegistry::onHousekeepingTimer()
 {
-    if (!m_isHosting) {
+    if (!m_isHosting || m_registrationAbandoned) {
         return;
     }
 
@@ -239,6 +247,7 @@ void NetplayHostRegistry::onHousekeepingTimer()
     if (m_hostCode.isEmpty()) {
         if (m_nextHostRegisterMs == 0 || now >= m_nextHostRegisterMs) {
             if (m_hostRegisterAttempts >= kMaxHostRegisterAttempts) {
+                m_registrationAbandoned = true;
                 failHosting("Failed to register with the browse server");
                 return;
             }
@@ -276,6 +285,7 @@ void NetplayHostRegistry::resetHostState()
     m_hostRegisterAttempts = 0;
     m_nextHostRegisterMs = 0;
     m_nextHostKeepMs = 0;
+    m_registrationAbandoned = false;
 }
 
 } // namespace UserInterface::Netplay

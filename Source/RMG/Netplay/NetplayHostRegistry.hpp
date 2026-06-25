@@ -54,6 +54,7 @@ private:
     qint64 m_nextHostRegisterMs = 0;
     qint64 m_nextHostKeepMs = 0;
     bool m_isHosting = false;
+    bool m_registrationAbandoned = false;
 };
 
 } // namespace UserInterface::Netplay

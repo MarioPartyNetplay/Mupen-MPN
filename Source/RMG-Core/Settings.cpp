@@ -20,6 +20,7 @@
 #include "m64p/api/m64p_types.h"
 
 #include <algorithm>
+#include <mutex>
 #include <sstream>
 #include <variant>
 
@@ -50,6 +51,8 @@ struct l_Setting
 static m64p_handle              l_sectionHandle = nullptr;
 static std::vector<std::string> l_sectionList;
 static std::vector<std::string> l_keyList;
+/** Guards l_sectionHandle, l_sectionList, l_keyList and mupen config API calls. */
+static std::recursive_mutex     l_configMutex;
 
 //
 // Local Functions
@@ -1437,6 +1440,8 @@ static void config_listsections_callback(void*, const char* section)
 
 static bool config_section_exists(const std::string& section)
 {
+    std::lock_guard<std::recursive_mutex> lock(l_configMutex);
+
     std::string error;
     m64p_error ret;
 
@@ -1494,6 +1499,8 @@ static void config_listkeys_callback(void*, const char* key, m64p_type)
 
 static bool config_key_exists(const std::string& section, const std::string& key)
 {
+    std::lock_guard<std::recursive_mutex> lock(l_configMutex);
+
     std::string error;
     m64p_error ret;
 
@@ -1523,6 +1530,8 @@ static bool config_key_exists(const std::string& section, const std::string& key
 
 static bool config_option_set(const std::string& section, const std::string& key, m64p_type type, void *value)
 {
+    std::lock_guard<std::recursive_mutex> lock(l_configMutex);
+
     std::string error;
     m64p_error ret;
 
@@ -1549,6 +1558,8 @@ static bool config_option_set(const std::string& section, const std::string& key
 
 static bool config_option_get(const std::string& section, const std::string& key, m64p_type type, void *value, int size)
 {
+    std::lock_guard<std::recursive_mutex> lock(l_configMutex);
+
     std::string error;
     m64p_error ret;
 
@@ -1582,6 +1593,8 @@ static bool config_option_get(const std::string& section, const std::string& key
 
 static bool config_option_default_set(const std::string& section, const std::string& key, m64p_type type, void *value, const char* description)
 {
+    std::lock_guard<std::recursive_mutex> lock(l_configMutex);
+
     std::string error;
     m64p_error ret;
 
