@@ -15,6 +15,7 @@
 #include "Library.hpp"
 
 #include <iostream>
+#include <mutex>
 
 //
 // Local Structs
@@ -36,6 +37,7 @@ static std::function<void(enum CoreDebugMessageType, std::string, std::string)> 
 static std::function<void(enum CoreStateCallbackType, int)> l_StateCallbackFunc;
 static bool l_PrintCallbacks = false;
 static std::vector<l_DebugCallbackMessage> l_PendingCallbacks;
+static std::mutex l_callbackMutex;
 
 
 //
@@ -47,13 +49,22 @@ void CoreDebugCallback(void* context, int level, const char* message)
     std::string contextString(static_cast<char*>(context));
     std::string messageString(message);
 
-    if (!l_SetupCallbacks)
+    std::function<void(enum CoreDebugMessageType, std::string, std::string)> debugCallback;
+    bool setupCallbacks = false;
+    bool printCallbacks = false;
     {
-        l_PendingCallbacks.push_back({contextString, level, message});
-        return;
+        std::lock_guard<std::mutex> lock(l_callbackMutex);
+        setupCallbacks = l_SetupCallbacks;
+        if (!setupCallbacks)
+        {
+            l_PendingCallbacks.push_back({contextString, level, message});
+            return;
+        }
+        printCallbacks = l_PrintCallbacks;
+        debugCallback = l_DebugCallbackFunc;
     }
 
-    if (l_PrintCallbacks)
+    if (printCallbacks)
     {
         std::cout << contextString << messageString << std::endl;
     }
@@ -68,14 +79,22 @@ void CoreDebugCallback(void* context, int level, const char* message)
         messageString = CoreConvertStringEncoding(message, CoreStringEncoding::Shift_JIS);
     }
 
-    l_DebugCallbackFunc((CoreDebugMessageType)level, contextString, messageString);
+    if (debugCallback)
+    {
+        debugCallback((CoreDebugMessageType)level, contextString, messageString);
+    }
 }
 
 void CoreStateCallback(void*, m64p_core_param param, int value)
 {
-    if (!l_SetupCallbacks)
+    std::function<void(enum CoreStateCallbackType, int)> stateCallback;
     {
-        return;
+        std::lock_guard<std::mutex> lock(l_callbackMutex);
+        if (!l_SetupCallbacks)
+        {
+            return;
+        }
+        stateCallback = l_StateCallbackFunc;
     }
 
     if (param == static_cast<m64p_core_param>(CoreStateCallbackType::Frame))
@@ -84,7 +103,10 @@ void CoreStateCallback(void*, m64p_core_param param, int value)
         CoreDiscordUpdateFrame(value);
     }
 
-    l_StateCallbackFunc((CoreStateCallbackType)param, value);
+    if (stateCallback)
+    {
+        stateCallback((CoreStateCallbackType)param, value);
+    }
 }
 
 //
@@ -94,16 +116,20 @@ void CoreStateCallback(void*, m64p_core_param param, int value)
 CORE_EXPORT bool CoreSetupCallbacks(std::function<void(enum CoreDebugMessageType, std::string, std::string)> debugCallbackFunc,
                         std::function<void(enum CoreStateCallbackType, int)> stateCallbackFunc)
 {
-    l_DebugCallbackFunc = debugCallbackFunc;
-    l_StateCallbackFunc = stateCallbackFunc;
-    l_SetupCallbacks = true;
+    std::vector<l_DebugCallbackMessage> pendingCallbacks;
+    {
+        std::lock_guard<std::mutex> lock(l_callbackMutex);
+        l_DebugCallbackFunc = std::move(debugCallbackFunc);
+        l_StateCallbackFunc = std::move(stateCallbackFunc);
+        l_SetupCallbacks = true;
+        pendingCallbacks.swap(l_PendingCallbacks);
+    }
     
     // send pending messages
-    for (const auto& callback : l_PendingCallbacks)
+    for (const auto& callback : pendingCallbacks)
     {
         CoreDebugCallback(const_cast<char*>(callback.Context.c_str()), callback.Level, callback.Message.c_str());
     }
-    l_PendingCallbacks.clear();
 
     return true;
 }
@@ -120,10 +146,18 @@ CORE_EXPORT void CoreAddCallbackMessage(CoreDebugMessageType type, std::string m
 
 CORE_EXPORT void CoreNotifyScreenshotCaptured(bool success)
 {
-    if (!l_SetupCallbacks)
+    std::function<void(enum CoreStateCallbackType, int)> stateCallback;
     {
-        return;
+        std::lock_guard<std::mutex> lock(l_callbackMutex);
+        if (!l_SetupCallbacks)
+        {
+            return;
+        }
+        stateCallback = l_StateCallbackFunc;
     }
 
-    l_StateCallbackFunc(CoreStateCallbackType::ScreenshotCaptured, success ? 1 : 0);
+    if (stateCallback)
+    {
+        stateCallback(CoreStateCallbackType::ScreenshotCaptured, success ? 1 : 0);
+    }
 }

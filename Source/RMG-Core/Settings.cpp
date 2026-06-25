@@ -1738,6 +1738,8 @@ static bool string_to_string_list(const std::string& string, std::vector<std::st
 
 CORE_EXPORT bool CoreSettingsSave(void)
 {
+    std::lock_guard<std::recursive_mutex> lock(l_configMutex);
+
     std::string error;
     m64p_error ret;
 
@@ -1885,6 +1887,8 @@ CORE_EXPORT bool CoreSettingsSectionExists(std::string section)
 
 CORE_EXPORT bool CoreSettingsRevertSection(std::string section)
 {
+    std::lock_guard<std::recursive_mutex> lock(l_configMutex);
+
     std::string error;
     m64p_error ret;
 
@@ -1906,6 +1910,8 @@ CORE_EXPORT bool CoreSettingsRevertSection(std::string section)
 
 CORE_EXPORT bool CoreSettingsDeleteSection(std::string section)
 {
+    std::lock_guard<std::recursive_mutex> lock(l_configMutex);
+
     std::string error;
     m64p_error ret;
 

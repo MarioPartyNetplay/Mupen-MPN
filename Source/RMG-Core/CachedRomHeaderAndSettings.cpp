@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <mutex>
 #include <vector>
 
 //
@@ -60,6 +61,7 @@ struct l_CacheEntry
 
 static bool                      l_CacheEntriesChanged = false;
 static std::vector<l_CacheEntry> l_CacheEntries;
+static std::recursive_mutex        l_CacheMutex;
 
 //
 // Internal Functions
@@ -149,6 +151,8 @@ static void add_invalid_cache_entry(const std::filesystem::path& file)
 
 CORE_EXPORT void CoreReadRomHeaderAndSettingsCache(void)
 {
+    std::lock_guard<std::recursive_mutex> lock(l_CacheMutex);
+
     std::ifstream inputStream;
     char magicBuf[sizeof(CACHE_FILE_MAGIC)];
     wchar_t fileNameBuf[CORE_DIR_MAX_LEN];
@@ -260,6 +264,8 @@ CORE_EXPORT void CoreReadRomHeaderAndSettingsCache(void)
 
 CORE_EXPORT bool CoreSaveRomHeaderAndSettingsCache(void)
 {
+    std::lock_guard<std::recursive_mutex> lock(l_CacheMutex);
+
     std::ofstream outputStream;
     wchar_t fileNameBuf[CORE_DIR_MAX_LEN];
     char headerNameBuf[ROMHEADER_NAME_LEN];
@@ -371,6 +377,8 @@ CORE_EXPORT bool CoreSaveRomHeaderAndSettingsCache(void)
 
 CORE_EXPORT bool CoreGetCachedRomHeaderAndSettings(std::filesystem::path file, CoreRomType* type, CoreRomHeader* header, CoreRomSettings* defaultSettings, CoreRomSettings* settings)
 {
+    std::lock_guard<std::recursive_mutex> lock(l_CacheMutex);
+
     bool ret = false;
     auto iter = get_cache_entry_iter(file);
     if (iter == l_CacheEntries.end())
@@ -450,6 +458,8 @@ CORE_EXPORT bool CoreGetCachedRomHeaderAndSettings(std::filesystem::path file, C
 
 CORE_EXPORT bool CoreUpdateCachedRomHeaderAndSettings(std::filesystem::path file, CoreRomType type, CoreRomHeader header, CoreRomSettings defaultSettings, CoreRomSettings settings)
 {
+    std::lock_guard<std::recursive_mutex> lock(l_CacheMutex);
+
     l_CacheEntry cachedEntry;
 
     // try to find existing entry with same filename,
@@ -482,6 +492,8 @@ CORE_EXPORT bool CoreUpdateCachedRomHeaderAndSettings(std::filesystem::path file
 
 CORE_EXPORT bool CoreUpdateCachedRomHeaderAndSettings(std::filesystem::path file)
 {
+    std::lock_guard<std::recursive_mutex> lock(l_CacheMutex);
+
     CoreRomType type;
     CoreRomHeader header;
     CoreRomSettings defaultSettings;
@@ -509,6 +521,8 @@ CORE_EXPORT bool CoreUpdateCachedRomHeaderAndSettings(std::filesystem::path file
 
 CORE_EXPORT bool CoreClearRomHeaderAndSettingsCache(void)
 {
+    std::lock_guard<std::recursive_mutex> lock(l_CacheMutex);
+
     l_CacheEntries.clear();
     l_CacheEntriesChanged = true;
     return true;
