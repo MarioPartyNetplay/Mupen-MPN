@@ -48,11 +48,6 @@ QUrl projectIconUrl(int projectId)
     return QUrl(boardDownloaderApiBaseUrl() + QStringLiteral("/project/%1/icon").arg(projectId));
 }
 
-constexpr int boardDownloaderDefaultPageSize(void)
-{
-    return 25;
-}
-
 std::optional<PartyPlannerCliInfo> resolvePartyPlannerCli(void)
 {
     const QDir extrasDirectory(

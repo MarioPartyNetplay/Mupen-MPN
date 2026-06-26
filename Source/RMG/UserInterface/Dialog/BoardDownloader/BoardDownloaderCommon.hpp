@@ -49,7 +49,11 @@ struct PartyPlannerCliInfo
 QString boardDownloaderApiBaseUrl(void);
 QUrl projectIconUrl(int projectId);
 
-constexpr int boardDownloaderDefaultPageSize(void);
+constexpr inline int boardDownloaderDefaultPageSize(void)
+{
+    return 25;
+}
+
 std::optional<PartyPlannerCliInfo> resolvePartyPlannerCli(void);
 
 bool isMarioParty1(const CoreRomHeader& header, const CoreRomSettings& settings);
