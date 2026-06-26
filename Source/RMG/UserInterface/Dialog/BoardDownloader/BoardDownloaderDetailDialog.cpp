@@ -14,6 +14,7 @@
 
 #include <QEventLoop>
 #include <QFileDialog>
+#include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -26,8 +27,10 @@
 #include <QProcess>
 #include <QRegularExpression>
 #include <QTemporaryFile>
+#include <QUrlQuery>
 
 #include <algorithm>
+#include <optional>
 
 using namespace UserInterface::Dialog;
 using namespace Utilities;
@@ -201,6 +204,144 @@ QString partyPlannerPatchWarnings(const QString& cliOutput)
     return warnings.join(QStringLiteral("\n"));
 }
 
+struct BoardVersionFile
+{
+    QString fileName;
+    QString downloadUrl;
+    QString fileSize;
+    QString subFileId;
+};
+
+QList<BoardVersionFile> parseVersionFiles(const QJsonObject& versionObject)
+{
+    const QJsonArray filesArray = versionObject.value(QStringLiteral("files")).toArray();
+    if (!filesArray.isEmpty())
+    {
+        QList<BoardVersionFile> files;
+        files.reserve(filesArray.size());
+        for (const QJsonValue& value : filesArray)
+        {
+            const QJsonObject fileObject = value.toObject();
+            BoardVersionFile file;
+            file.fileName = fileObject.value(QStringLiteral("file_name")).toString();
+            file.fileSize = fileObject.value(QStringLiteral("file_size")).toString();
+            file.downloadUrl = fileObject.value(QStringLiteral("download_link")).toString();
+            file.subFileId = fileObject.value(QStringLiteral("sub_file_id")).toVariant().toString();
+            if (!file.fileName.isEmpty())
+            {
+                files.push_back(file);
+            }
+        }
+        return files;
+    }
+
+    BoardVersionFile file;
+    file.fileName = versionObject.value(QStringLiteral("file_name")).toString(QStringLiteral("board.json"));
+    file.downloadUrl = versionObject.value(QStringLiteral("download_link")).toString();
+    return {file};
+}
+
+bool versionFilesNeedMetadata(const QList<BoardVersionFile>& files)
+{
+    return std::all_of(files.begin(), files.end(), [](const BoardVersionFile& file) {
+        return file.downloadUrl.isEmpty();
+    });
+}
+
+QString resolveBoardFileDownloadUrl(int projectId,
+                                    const QJsonObject& versionObject,
+                                    const BoardVersionFile& file,
+                                    QString& error)
+{
+    if (!file.downloadUrl.isEmpty())
+    {
+        return file.downloadUrl;
+    }
+
+    const QString fileId = versionObject.value(QStringLiteral("file_id")).toVariant().toString();
+    if (fileId.isEmpty())
+    {
+        return {};
+    }
+
+    QUrl metadataUrl(boardDownloaderApiBaseUrl() +
+                     QStringLiteral("/project/%1/files/%2").arg(projectId).arg(fileId));
+    if (!file.subFileId.isEmpty())
+    {
+        QUrlQuery query;
+        query.addQueryItem(QStringLiteral("file"), file.subFileId);
+        metadataUrl.setQuery(query);
+    }
+
+    const QByteArray metadataData = blockingNetworkGet(metadataUrl, error);
+    if (metadataData.isEmpty())
+    {
+        return {};
+    }
+
+    const QJsonObject metadataObject = QJsonDocument::fromJson(metadataData).object();
+
+    if (!file.subFileId.isEmpty())
+    {
+        const QJsonArray filesArray = metadataObject.value(QStringLiteral("files")).toArray();
+        for (const QJsonValue& value : filesArray)
+        {
+            const QJsonObject fileObject = value.toObject();
+            if (fileObject.value(QStringLiteral("sub_file_id")).toVariant().toString() == file.subFileId)
+            {
+                return fileObject.value(QStringLiteral("download_link")).toString();
+            }
+        }
+    }
+
+    return metadataObject.value(QStringLiteral("download_link")).toString();
+}
+
+bool pickBoardVersionFile(QWidget* parent, const QList<BoardVersionFile>& files, BoardVersionFile& selected)
+{
+    if (files.isEmpty())
+    {
+        return false;
+    }
+
+    if (files.size() == 1)
+    {
+        selected = files.first();
+        return true;
+    }
+
+    QStringList labels;
+    labels.reserve(files.size());
+    for (const BoardVersionFile& file : files)
+    {
+        if (file.fileSize.isEmpty())
+        {
+            labels.push_back(file.fileName);
+        }
+        else
+        {
+            labels.push_back(QStringLiteral("%1 (%2)").arg(file.fileName, file.fileSize));
+        }
+    }
+
+    bool accepted = false;
+    const QString choice = QInputDialog::getItem(parent,
+                                                 QStringLiteral("Select Board File"),
+                                                 QStringLiteral("This version includes multiple board files:"),
+                                                 labels,
+                                                 0,
+                                                 false,
+                                                 &accepted);
+    if (!accepted || choice.isEmpty())
+    {
+        return false;
+    }
+
+    const int index = labels.indexOf(choice);
+    selected = files.at(index >= 0 ? index : 0);
+    return true;
+}
+
 } // namespace
 
 BoardDownloaderDetailDialog::BoardDownloaderDetailDialog(QWidget* parent, int projectId, const QJsonObject& details, const QPixmap& icon)
@@ -305,13 +446,12 @@ bool BoardDownloaderDetailDialog::downloadLatestBoardFile(QString& localPath, QS
                right.value(QStringLiteral("release_date")).toString();
     });
 
-    const QJsonObject latestVersion = versions.first();
-    remoteFileName = latestVersion.value(QStringLiteral("file_name")).toString(QStringLiteral("board.json"));
+    QJsonObject versionData = versions.first();
+    QList<BoardVersionFile> versionFiles = parseVersionFiles(versionData);
 
-    QString downloadUrl = latestVersion.value(QStringLiteral("download_link")).toString();
-    if (downloadUrl.isEmpty())
+    if (versionFilesNeedMetadata(versionFiles))
     {
-        const QString fileId = latestVersion.value(QStringLiteral("file_id")).toVariant().toString();
+        const QString fileId = versionData.value(QStringLiteral("file_id")).toVariant().toString();
         if (fileId.isEmpty())
         {
             QtMessageBox::Error(this, QStringLiteral("Latest board version is missing a download link"), QString());
@@ -327,12 +467,22 @@ bool BoardDownloaderDetailDialog::downloadLatestBoardFile(QString& localPath, QS
             return false;
         }
 
-        downloadUrl = QJsonDocument::fromJson(metadataData).object().value(QStringLiteral("download_link")).toString();
+        versionData = QJsonDocument::fromJson(metadataData).object();
+        versionFiles = parseVersionFiles(versionData);
     }
 
+    BoardVersionFile selectedFile;
+    if (!pickBoardVersionFile(this, versionFiles, selectedFile))
+    {
+        return false;
+    }
+
+    remoteFileName = selectedFile.fileName.isEmpty() ? QStringLiteral("board.json") : selectedFile.fileName;
+
+    const QString downloadUrl = resolveBoardFileDownloadUrl(this->projectId, versionData, selectedFile, error);
     if (downloadUrl.isEmpty())
     {
-        QtMessageBox::Error(this, QStringLiteral("Board version did not include a download link"), QString());
+        QtMessageBox::Error(this, QStringLiteral("Board version did not include a download link"), error);
         return false;
     }
 
