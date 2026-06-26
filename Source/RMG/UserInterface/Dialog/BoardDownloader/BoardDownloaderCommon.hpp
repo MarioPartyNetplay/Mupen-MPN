@@ -12,6 +12,7 @@
 
 #include <QJsonObject>
 #include <QString>
+#include <QUrl>
 #include <QWidget>
 
 #include <RMG-Core/RomHeader.hpp>
@@ -46,6 +47,9 @@ struct PartyPlannerCliInfo
 };
 
 QString boardDownloaderApiBaseUrl(void);
+QUrl projectIconUrl(int projectId);
+
+constexpr int boardDownloaderDefaultPageSize(void);
 std::optional<PartyPlannerCliInfo> resolvePartyPlannerCli(void);
 
 bool isMarioParty1(const CoreRomHeader& header, const CoreRomSettings& settings);

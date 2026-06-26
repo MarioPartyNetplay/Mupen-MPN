@@ -58,6 +58,9 @@ class BoardDownloaderDialog : public QDialog, private Ui::BoardDownloaderDialog
     bool isLoadingProject = false;
     quint64 loadSessionId = 0;
     quint64 activeSessionId = 0;
+    QString currentSearchTerm;
+    int listOffset = 0;
+    int lastPageResultCount = 0;
 
     bool isStaleSession(quint64 sessionId) const;
     bool isCanceledReply(QNetworkReply* reply) const;
@@ -67,6 +70,7 @@ class BoardDownloaderDialog : public QDialog, private Ui::BoardDownloaderDialog
     void abortActiveRequests(void);
     void loadTopProjects(void);
     void loadSearchProjects(const QString& searchTerm);
+    void loadCurrentPage(void);
     void beginProjectListRequest(const QUrl& url, const QString& loadingText);
     void handleProjectListReply(QNetworkReply* reply, quint64 sessionId);
     void queueProjectDetails(const QJsonArray& results, quint64 sessionId);
@@ -82,14 +86,15 @@ class BoardDownloaderDialog : public QDialog, private Ui::BoardDownloaderDialog
                                    const QString& author,
                                    quint64 sessionId);
     void fetchProjectGameId(int projectId, const QString& projectName, const QJsonObject& details, quint64 sessionId);
-    void fetchProjectIcon(int projectId, const QJsonObject& details, quint64 sessionId);
-    void handleProjectIconReply(QNetworkReply* reply, int projectId, const QJsonObject& details, quint64 sessionId);
+    void fetchProjectIcon(int projectId, quint64 sessionId);
+    void handleProjectIconReply(QNetworkReply* reply, int projectId, quint64 sessionId);
     void finishCurrentProjectLoad(void);
     void updateListItem(const ProjectEntry& entry);
     int resolvedGameId(const ProjectEntry& entry) const;
     bool passesGameFilter(const ProjectEntry& entry) const;
     void refreshResultsList(void);
     void updateStatusLabel(void);
+    void updatePaginationControls(bool loading = false);
     void openProjectDetails(int projectId);
     QString projectListText(const ProjectEntry& entry) const;
     QIcon projectListIcon(const ProjectEntry& entry) const;
@@ -97,6 +102,8 @@ class BoardDownloaderDialog : public QDialog, private Ui::BoardDownloaderDialog
   private slots:
     void on_searchButton_clicked(void);
     void on_searchLineEdit_returnPressed(void);
+    void on_prevPageButton_clicked(void);
+    void on_nextPageButton_clicked(void);
     void on_gameFilterComboBox_currentIndexChanged(int index);
     void on_resultsListWidget_itemDoubleClicked(void);
     void on_romPatched(void);

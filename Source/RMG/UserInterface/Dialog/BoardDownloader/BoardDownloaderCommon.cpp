@@ -43,6 +43,16 @@ QString boardDownloaderApiBaseUrl(void)
     return QStringLiteral("https://ppapi.tabs.gay");
 }
 
+QUrl projectIconUrl(int projectId)
+{
+    return QUrl(boardDownloaderApiBaseUrl() + QStringLiteral("/project/%1/icon").arg(projectId));
+}
+
+constexpr int boardDownloaderDefaultPageSize(void)
+{
+    return 25;
+}
+
 std::optional<PartyPlannerCliInfo> resolvePartyPlannerCli(void)
 {
     const QDir extrasDirectory(

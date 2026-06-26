@@ -87,9 +87,6 @@ BoardDownloaderDialog::BoardDownloaderDialog(QWidget* parent) : QDialog(parent)
     this->setWindowIcon(QIcon::fromTheme("download-cloud-line", QIcon(":Resource/RMG.png")));
     this->networkManager = new QNetworkAccessManager(this);
 
-    connect(this->resultsListWidget, &QListWidget::itemDoubleClicked,
-            this, &BoardDownloaderDialog::on_resultsListWidget_itemDoubleClicked);
-
     this->loadTopProjects();
 }
 
@@ -149,22 +146,52 @@ void BoardDownloaderDialog::setLoading(bool loading)
 {
     this->searchButton->setEnabled(!loading);
     this->searchLineEdit->setEnabled(!loading);
+    this->updatePaginationControls(loading);
 }
 
 void BoardDownloaderDialog::loadTopProjects(void)
 {
-    this->beginProjectListRequest(QUrl(boardDownloaderApiBaseUrl() + QStringLiteral("/project/top")),
-                                  QStringLiteral("Loading top boards..."));
+    this->currentSearchTerm.clear();
+    this->listOffset = 0;
+    this->loadCurrentPage();
 }
 
 void BoardDownloaderDialog::loadSearchProjects(const QString& searchTerm)
 {
-    QUrl url(boardDownloaderApiBaseUrl() + QStringLiteral("/project/search"));
-    QUrlQuery query;
-    query.addQueryItem(QStringLiteral("searchTerm"), searchTerm);
+    this->currentSearchTerm = searchTerm;
+    this->listOffset = 0;
+    this->loadCurrentPage();
+}
+
+void BoardDownloaderDialog::loadCurrentPage(void)
+{
+    QUrl url;
+    QString loadingText;
+
+    if (this->currentSearchTerm.isEmpty())
+    {
+        url = QUrl(boardDownloaderApiBaseUrl() + QStringLiteral("/project/top"));
+        loadingText = QStringLiteral("Loading top boards...");
+    }
+    else
+    {
+        url = QUrl(boardDownloaderApiBaseUrl() + QStringLiteral("/project/search"));
+        QUrlQuery searchQuery;
+        searchQuery.addQueryItem(QStringLiteral("searchTerm"), this->currentSearchTerm);
+        url.setQuery(searchQuery);
+        loadingText = QStringLiteral("Searching for \"%1\"...").arg(this->currentSearchTerm);
+    }
+
+    QUrlQuery query(url);
+    if (query.isEmpty())
+    {
+        query = QUrlQuery();
+    }
+    query.addQueryItem(QStringLiteral("max"), QString::number(boardDownloaderDefaultPageSize()));
+    query.addQueryItem(QStringLiteral("offset"), QString::number(this->listOffset));
     url.setQuery(query);
 
-    this->beginProjectListRequest(url, QStringLiteral("Searching for \"%1\"...").arg(searchTerm));
+    this->beginProjectListRequest(url, loadingText);
 }
 
 void BoardDownloaderDialog::beginProjectListRequest(const QUrl& url, const QString& loadingText)
@@ -226,10 +253,14 @@ void BoardDownloaderDialog::handleProjectListReply(QNetworkReply* reply, quint64
 
     if (results.isEmpty())
     {
+        this->lastPageResultCount = 0;
+        this->updatePaginationControls();
         this->statusLabel->setText(QStringLiteral("No projects found."));
         return;
     }
 
+    this->lastPageResultCount = results.size();
+    this->updatePaginationControls();
     this->queueProjectDetails(results, sessionId);
 }
 
@@ -423,7 +454,7 @@ void BoardDownloaderDialog::handleProjectDetailsReply(QNetworkReply* reply,
         return;
     }
 
-    this->fetchProjectIcon(projectId, details, sessionId);
+    this->fetchProjectIcon(projectId, sessionId);
 }
 
 void BoardDownloaderDialog::fetchProjectGameId(int projectId, const QString& projectName, const QJsonObject& details, quint64 sessionId)
@@ -498,38 +529,30 @@ void BoardDownloaderDialog::fetchProjectGameId(int projectId, const QString& pro
             }
         }
 
-        this->fetchProjectIcon(projectId, updatedDetails, sessionId);
+        this->fetchProjectIcon(projectId, sessionId);
     });
 }
 
-void BoardDownloaderDialog::fetchProjectIcon(int projectId, const QJsonObject& details, quint64 sessionId)
+void BoardDownloaderDialog::fetchProjectIcon(int projectId, quint64 sessionId)
 {
     if (this->isStaleSession(sessionId))
     {
         return;
     }
 
-    const QString iconUrl = details.value(QStringLiteral("icon")).toString();
-    if (iconUrl.isEmpty())
-    {
-        this->handleProjectIconReply(nullptr, projectId, details, sessionId);
-        return;
-    }
-
-    const QUrl iconRequestUrl(iconUrl);
+    const QUrl iconRequestUrl = projectIconUrl(projectId);
     QNetworkRequest request(iconRequestUrl);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
 
     QNetworkReply* reply = this->networkManager->get(request);
     this->activeIconReply = reply;
-    connect(reply, &QNetworkReply::finished, this, [this, sessionId, projectId, details, reply]() {
-        this->handleProjectIconReply(reply, projectId, details, sessionId);
+    connect(reply, &QNetworkReply::finished, this, [this, sessionId, projectId, reply]() {
+        this->handleProjectIconReply(reply, projectId, sessionId);
     });
 }
 
-void BoardDownloaderDialog::handleProjectIconReply(QNetworkReply* reply, int projectId, const QJsonObject& details, quint64 sessionId)
+void BoardDownloaderDialog::handleProjectIconReply(QNetworkReply* reply, int projectId, quint64 sessionId)
 {
-    Q_UNUSED(details);
 
     if (this->isStaleSession(sessionId))
     {
@@ -689,6 +712,29 @@ void BoardDownloaderDialog::refreshResultsList(void)
     }
 }
 
+void BoardDownloaderDialog::updatePaginationControls(bool loading)
+{
+    const int pageSize = boardDownloaderDefaultPageSize();
+    const int pageNumber = this->listOffset / pageSize + 1;
+    const int rangeStart = this->lastPageResultCount > 0 ? this->listOffset + 1 : 0;
+    const int rangeEnd = this->listOffset + this->lastPageResultCount;
+
+    if (this->lastPageResultCount > 0)
+    {
+        this->paginationLabel->setText(QStringLiteral("Page %1  (%2–%3)")
+                                           .arg(pageNumber)
+                                           .arg(rangeStart)
+                                           .arg(rangeEnd));
+    }
+    else
+    {
+        this->paginationLabel->setText(QStringLiteral("Page %1").arg(pageNumber));
+    }
+
+    this->prevPageButton->setEnabled(!loading && this->listOffset > 0);
+    this->nextPageButton->setEnabled(!loading && this->lastPageResultCount >= pageSize);
+}
+
 void BoardDownloaderDialog::updateStatusLabel(void)
 {
     if (this->isLoadingProject && this->loadQueueIndex < this->loadQueue.size())
@@ -756,6 +802,24 @@ void BoardDownloaderDialog::on_searchButton_clicked(void)
 void BoardDownloaderDialog::on_searchLineEdit_returnPressed(void)
 {
     this->on_searchButton_clicked();
+}
+
+void BoardDownloaderDialog::on_prevPageButton_clicked(void)
+{
+    const int pageSize = boardDownloaderDefaultPageSize();
+    if (this->listOffset < pageSize)
+    {
+        return;
+    }
+
+    this->listOffset -= pageSize;
+    this->loadCurrentPage();
+}
+
+void BoardDownloaderDialog::on_nextPageButton_clicked(void)
+{
+    this->listOffset += boardDownloaderDefaultPageSize();
+    this->loadCurrentPage();
 }
 
 void BoardDownloaderDialog::on_gameFilterComboBox_currentIndexChanged(int index)
