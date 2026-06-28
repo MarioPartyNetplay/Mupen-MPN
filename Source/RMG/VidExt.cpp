@@ -28,6 +28,10 @@
 #include <cstdint>
 #include <vector>
 
+#if defined(__SSE2__) || defined(_M_AMD64) || defined(_M_X64)
+#include <immintrin.h>
+#endif
+
 //
 // Local Variables
 //
@@ -434,6 +438,21 @@ static m64p_error VidExt_GLSwapBuf(void)
     OnScreenDisplayRender();
 
     (*l_OGLWidget)->SwapContextBuffers();
+
+    // After the OpenGL buffer swap, ANGLE/Metal on macOS may have written FTZ (bit 15)
+    // and/or DAZ (bit 6) into the calling thread's MXCSR register as part of its own
+    // internal SSE2 code.  Those bits persist across function calls, so any N64 FPU
+    // helper (add_d, mul_d, …) executed by the dynarec after this point would see a
+    // contaminated MXCSR, causing denormal results to differ from Windows where the
+    // same GL swap leaves MXCSR unchanged.  Clear both bits unconditionally here; the
+    // dynarec will re-apply FTZ via update_x86_rounding_mode at the next CTC1.
+#if defined(__SSE2__) || defined(_M_AMD64) || defined(_M_X64)
+    {
+        unsigned int mxcsr = _mm_getcsr();
+        mxcsr &= ~0x8040u; // clear FTZ (bit 15) and DAZ (bit 6)
+        _mm_setcsr(mxcsr);
+    }
+#endif
 
     if (CoreIsEmbeddedNetplayActive())
     {
