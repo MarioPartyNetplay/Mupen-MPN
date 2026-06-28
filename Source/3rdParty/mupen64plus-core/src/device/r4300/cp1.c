@@ -132,11 +132,13 @@ void update_x86_rounding_mode(struct cp1* cp1)
     uint32_t fcr31 = *r4300_cp1_fcr31(cp1);
 
 #ifdef OSAL_SSE
-    uint32_t flush_mode;
-    if (fcr31 & 2)
-        flush_mode = (fcr31 & FCR31_FS_BIT) ? _MM_FLUSH_ZERO_OFF : _MM_FLUSH_ZERO_ON;
-    else
-        flush_mode = _MM_FLUSH_ZERO_ON;
+    /* FCR31 bit 24 (FS) enables flushing subnormals to zero.
+     * Previously this tested bit 1 (the high bit of the 2-bit rounding-mode
+     * field) which is unrelated to the FS flag, and the ternary was inverted,
+     * causing FTZ to be set ON by default (RM=nearest) on all platforms while
+     * toggling it incorrectly when the game used round-toward-±inf.
+     * The correct mapping is: FS=1 → FTZ ON, FS=0 → FTZ OFF. */
+    uint32_t flush_mode = (fcr31 & FCR31_FS_BIT) ? _MM_FLUSH_ZERO_ON : _MM_FLUSH_ZERO_OFF;
 
     if (flush_mode != cp1->flush_mode)
     {
