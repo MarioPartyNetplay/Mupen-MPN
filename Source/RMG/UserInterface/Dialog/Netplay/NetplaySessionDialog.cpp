@@ -205,8 +205,12 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     this->romFile = sessionJson.value("rom_path").toString();
 
     {
-        Netplay::applyNetplayConnectionSettings(Netplay::NetplayConnectionMode::Direct,
-                                                sessionJson.value("use_upnp").toBool(false));
+        const bool useUpnp = sessionJson.value("use_upnp").toBool(false);
+        const Netplay::NetplayConnectionMode mode =
+            Netplay::sessionUsesNatTraversal(sessionJson)
+                ? Netplay::NetplayConnectionMode::NatTraversal
+                : Netplay::NetplayConnectionMode::Direct;
+        Netplay::applyNetplayConnectionSettings(mode, useUpnp);
     }
 
     this->sessionSlot = sessionJson.value("slot").toInt(sessionJson.value("slotIndex").toInt(-1));
@@ -218,6 +222,7 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     {
         const int hostingPort = sessionJson.value("server_port").toInt(Netplay::kDefaultNetplayHostingPort);
         const bool showInBrowser = sessionJson.value("show_in_browser").toBool(false);
+        const bool useNatTraversal = Netplay::sessionUsesNatTraversal(sessionJson);
         QString connectAddress = sessionJson.value("connect_address").toString(
             sessionJson.value("public_address").toString());
         if (connectAddress.isEmpty()) {
@@ -242,6 +247,9 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
                     this, [](const QString& reason) {
                 qWarning() << "Failed to update session index:" << reason;
             });
+        }
+
+        if (useNatTraversal) {
             this->beginHostBrowserRegistration(static_cast<uint16_t>(hostingPort), showInBrowser);
         } else {
             this->fetchPublicIpAddress();
@@ -587,10 +595,25 @@ void NetplaySessionDialog::updateConnectInfoDisplay(void)
         return;
     }
 
-    const QString publicAddress = this->sessionJson.value("public_address").toString();
-    const int publicPort = this->sessionJson.value("public_port")
-                               .toInt(this->sessionJson.value("server_port")
+    const bool useNatTraversal = Netplay::sessionUsesNatTraversal(this->sessionJson);
+    const QString hostCode = this->sessionJson.value(QStringLiteral("host_code")).toString();
+    const QString publicAddress = this->sessionJson.value(QStringLiteral("public_address")).toString();
+    const int publicPort = this->sessionJson.value(QStringLiteral("public_port"))
+                               .toInt(this->sessionJson.value(QStringLiteral("server_port"))
                                           .toInt(Netplay::kDefaultNetplayHostingPort));
+
+    if (useNatTraversal) {
+        if (publicIpLabel) {
+            publicIpLabel->setText(QStringLiteral("Host code"));
+        }
+
+        if (hostCode.isEmpty()) {
+            publicIpEdit->setText(QStringLiteral("Registering..."));
+        } else {
+            publicIpEdit->setText(hostCode);
+        }
+        return;
+    }
 
     if (publicIpLabel) {
         publicIpLabel->setText(QStringLiteral("Connect"));

@@ -29,6 +29,7 @@
 #include <QSharedPointer>
 #include <QDateTime>
 #include <QTimer>
+#include <QComboBox>
 
 #include <RMG-Core/Settings.hpp>
 #include <RMG-Core/Rom.hpp>
@@ -41,13 +42,6 @@ using namespace UserInterface::Dialog;
 using namespace Utilities;
 
 namespace {
-
-Netplay::NetplayConnectionMode connectionModeForJoin(const QJsonObject& indexSession, const QString& address)
-{
-    Q_UNUSED(indexSession);
-    Q_UNUSED(address);
-    return Netplay::NetplayConnectionMode::Direct;
-}
 
 QString firstNonEmpty(std::initializer_list<QString> values)
 {
@@ -170,7 +164,18 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
 {
     this->setupUi(this);
 
-    this->ipAddressLineEdit->setPlaceholderText("IP address or IP:Port");
+    if (this->connectionModeComboBox) {
+        this->connectionModeComboBox->setItemData(
+            0, static_cast<int>(Netplay::NetplayConnectionMode::Direct));
+        this->connectionModeComboBox->setItemData(
+            1, static_cast<int>(Netplay::NetplayConnectionMode::NatTraversal));
+        this->connectionModeComboBox->setCurrentIndex(
+            Netplay::netplayConnectionModeComboIndex(Netplay::NetplayConnectionMode::NatTraversal));
+        connect(this->connectionModeComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+                &NetplaySessionBrowserDialog::on_connectionModeComboBox_currentIndexChanged);
+    }
+
+    this->updateJoinConnectionModeUi();
 
     QRegularExpression re("^[a-zA-Z0-9 _-]{1,16}$");
     this->nickNameLineEdit->setValidator(new QRegularExpressionValidator(re, this));
@@ -291,7 +296,87 @@ bool NetplaySessionBrowserDialog::validate(void) const
         return true;
     }
 
-    return !this->ipAddressLineEdit->text().trimmed().isEmpty();
+    const QString manualInput = this->ipAddressLineEdit->text().trimmed();
+    if (manualInput.isEmpty()) {
+        return false;
+    }
+
+    if (this->selectedJoinConnectionMode() == Netplay::NetplayConnectionMode::NatTraversal) {
+        return Netplay::looksLikeTraversalCode(manualInput);
+    }
+
+    QString addressPart = manualInput;
+    const int colonIndex = manualInput.lastIndexOf(':');
+    if (colonIndex != -1) {
+        addressPart = manualInput.left(colonIndex);
+    }
+
+    return Netplay::looksLikeIpAddress(addressPart) ||
+           addressPart.compare(QStringLiteral("localhost"), Qt::CaseInsensitive) == 0;
+}
+
+Netplay::NetplayConnectionMode NetplaySessionBrowserDialog::selectedJoinConnectionMode(void) const
+{
+    if (!this->connectionModeComboBox) {
+        return Netplay::NetplayConnectionMode::NatTraversal;
+    }
+
+    const QVariant data = this->connectionModeComboBox->currentData();
+    if (data.isValid()) {
+        return static_cast<Netplay::NetplayConnectionMode>(data.toInt());
+    }
+
+    return Netplay::netplayConnectionModeFromComboIndex(this->connectionModeComboBox->currentIndex());
+}
+
+Netplay::NetplayConnectionMode NetplaySessionBrowserDialog::resolveBrowserJoinMode(
+    const QJsonObject& indexSession) const
+{
+    Q_UNUSED(indexSession);
+    return this->selectedJoinConnectionMode();
+}
+
+void NetplaySessionBrowserDialog::updateJoinConnectionModeUi(void)
+{
+    const Netplay::NetplayConnectionMode mode = this->selectedJoinConnectionMode();
+    const bool traversalMode = mode == Netplay::NetplayConnectionMode::NatTraversal;
+    const bool browserSelected =
+        this->sessionBrowserWidget && this->sessionBrowserWidget->IsCurrentSessionValid();
+    const bool showManualConnect = !browserSelected;
+
+    if (this->ipLabel) {
+        this->ipLabel->setVisible(showManualConnect);
+        if (showManualConnect) {
+            this->ipLabel->setText(traversalMode ? QStringLiteral("Host code")
+                                                   : QStringLiteral("Direct connect"));
+        }
+    }
+
+    if (this->ipAddressLineEdit) {
+        this->ipAddressLineEdit->setVisible(showManualConnect);
+        if (showManualConnect) {
+            this->ipAddressLineEdit->setPlaceholderText(
+                traversalMode ? QStringLiteral("7-character host code (e.g. 0A1B2C3)")
+                              : QStringLiteral("IP address or IP:Port"));
+        }
+    }
+
+    if (this->connectionModeComboBox) {
+        this->connectionModeComboBox->setToolTip(
+            traversalMode
+                ? QStringLiteral("Join using a host code via the NAT traversal server.")
+                : QStringLiteral("Join using the host's public IP address and port."));
+    }
+}
+
+void NetplaySessionBrowserDialog::on_connectionModeComboBox_currentIndexChanged(int index)
+{
+    Q_UNUSED(index);
+    if (this->ipAddressLineEdit) {
+        this->ipAddressLineEdit->clear();
+    }
+    this->updateJoinConnectionModeUi();
+    this->validateJoinButton();
 }
 
 void NetplaySessionBrowserDialog::validateJoinButton(void)
@@ -317,6 +402,7 @@ void NetplaySessionBrowserDialog::on_refreshPushButton_clicked(void)
 void NetplaySessionBrowserDialog::on_sessionBrowserWidget_OnSessionChanged(bool valid)
 {
     Q_UNUSED(valid);
+    this->updateJoinConnectionModeUi();
     this->validateJoinButton();
 }
 
@@ -502,10 +588,9 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
     sessionJson.insert("public_address", this->targetAddress);
     sessionJson.insert("public_port", this->targetPort);
     sessionJson.insert("rom_path", romPath);
-    const Netplay::NetplayConnectionMode mode =
-        connectionModeForJoin(this->pendingIndexSession, this->targetAddress);
+    const Netplay::NetplayConnectionMode mode = this->m_activeJoinMode;
     sessionJson.insert("connection_mode", Netplay::netplayConnectionModeToString(mode));
-    sessionJson.insert("use_nat_traversal", false);
+    sessionJson.insert("use_nat_traversal", mode == Netplay::NetplayConnectionMode::NatTraversal);
     sessionJson.insert("use_connection_reversal", false);
     const QString hostCode = Netplay::sessionTraversalHostCode(this->pendingIndexSession);
     if (!hostCode.isEmpty()) {
@@ -519,10 +604,40 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
     emit this->sessionAccepted();
 }
 
+void NetplaySessionBrowserDialog::connectViaTraversal(const QString& hostCode, const QString& roomId)
+{
+    const QString normalizedCode = Netplay::normalizeTraversalCode(hostCode);
+    if (normalizedCode.isEmpty()) {
+        finishJoinFailure(QStringLiteral("Invalid host code"));
+        return;
+    }
+
+    Netplay::applyNetplayConnectionSettings(Netplay::NetplayConnectionMode::NatTraversal, false);
+    this->m_activeJoinMode = Netplay::NetplayConnectionMode::NatTraversal;
+
+    if (!this->traversalClient) {
+        this->traversalClient = std::make_unique<Netplay::NetplayTraversalClient>(this);
+        connect(this->traversalClient.get(), &Netplay::NetplayTraversalClient::lookupSucceeded, this,
+                [this](const QString& address, int port) {
+            this->connectToResolvedHost(address, port, this->joinRoomId);
+        });
+        connect(this->traversalClient.get(), &Netplay::NetplayTraversalClient::lookupFailed, this,
+                [this](const QString& reason) {
+            finishJoinFailure(reason);
+        });
+    }
+
+    this->joinRoomId = roomId;
+    this->joinRetryActive = true;
+    this->joinDeadlineMs = QDateTime::currentMSecsSinceEpoch() + 30000;
+    this->isWaitingForConnection = true;
+    this->traversalClient->lookupHost(normalizedCode);
+}
+
 void NetplaySessionBrowserDialog::connectToResolvedHost(const QString& address, int port, const QString& roomId)
 {
-    const Netplay::NetplayConnectionMode mode = connectionModeForJoin(this->pendingIndexSession, address);
-    Netplay::applyNetplayConnectionSettings(mode, false);
+    this->m_activeJoinMode = Netplay::NetplayConnectionMode::Direct;
+    Netplay::applyNetplayConnectionSettings(this->m_activeJoinMode, false);
     beginJoinConnect(address, port, roomId);
 }
 
@@ -568,8 +683,8 @@ void NetplaySessionBrowserDialog::submit(void)
     NetplaySessionData selectedSession;
     if (this->sessionBrowserWidget->GetCurrentSession(selectedSession))
     {
-        if (selectedSession.Address.isEmpty()) {
-            QtMessageBox::Error(this, "Invalid Session", "Selected session has no connect address.");
+        if (selectedSession.Address.isEmpty() && selectedSession.HostCode.isEmpty()) {
+            QtMessageBox::Error(this, "Invalid Session", "Selected session has no connect address or host code.");
             return;
         }
 
@@ -600,9 +715,49 @@ void NetplaySessionBrowserDialog::submit(void)
                 if (Netplay::sessionConnectEndpoint(this->pendingIndexSession, &address, &connectPort)) {
                     // prefer indexed direct endpoint when available
                 }
+
+                const Netplay::NetplayConnectionMode mode = this->resolveBrowserJoinMode(this->pendingIndexSession);
+                if (mode == Netplay::NetplayConnectionMode::NatTraversal) {
+                    const QString traversalCode = !selectedSession.HostCode.isEmpty()
+                        ? selectedSession.HostCode
+                        : Netplay::sessionTraversalHostCode(this->pendingIndexSession);
+                    if (!traversalCode.isEmpty()) {
+                        this->connectViaTraversal(traversalCode, roomId);
+                        this->validateJoinButton();
+                        return;
+                    }
+
+                    if (!address.isEmpty()) {
+                        QtMessageBox::Error(this, "Traversal Unavailable",
+                                            "This session has no host code for NAT traversal. "
+                                            "Switch to Direct connection or pick another room.");
+                        this->validateJoinButton();
+                        return;
+                    }
+                }
+
+                if (address.isEmpty()) {
+                    QtMessageBox::Error(this, "Invalid Session",
+                                        "Selected session has no connect address for direct join.");
+                    this->validateJoinButton();
+                    return;
+                }
+
                 this->connectToResolvedHost(address, connectPort, roomId);
                 this->validateJoinButton();
             });
+            return;
+        }
+
+        if (!selectedSession.HostCode.isEmpty() &&
+            this->selectedJoinConnectionMode() == Netplay::NetplayConnectionMode::NatTraversal) {
+            this->connectViaTraversal(selectedSession.HostCode);
+            return;
+        }
+
+        if (selectedSession.Address.isEmpty()) {
+            QtMessageBox::Error(this, "Invalid Session",
+                                "Selected session has no connect address for direct join.");
             return;
         }
 
@@ -612,7 +767,21 @@ void NetplaySessionBrowserDialog::submit(void)
 
     QString addressInput = this->ipAddressLineEdit->text().trimmed();
     if (addressInput.isEmpty()) {
-        addressInput = "localhost";
+        QtMessageBox::Error(this, "Connect Required",
+                            this->selectedJoinConnectionMode() == Netplay::NetplayConnectionMode::NatTraversal
+                                ? QStringLiteral("Enter a host code to join.")
+                                : QStringLiteral("Enter an IP address to join."));
+        return;
+    }
+
+    if (this->selectedJoinConnectionMode() == Netplay::NetplayConnectionMode::NatTraversal) {
+        if (!Netplay::looksLikeTraversalCode(addressInput)) {
+            QtMessageBox::Error(this, "Invalid Host Code",
+                                "Enter a valid 7-character host code for NAT traversal.");
+            return;
+        }
+        this->connectViaTraversal(addressInput);
+        return;
     }
 
     QString addressPart = addressInput;

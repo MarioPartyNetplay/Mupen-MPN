@@ -59,11 +59,36 @@
     </widget>
    </item>
    <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_connection">
+     <item>
+      <widget class="QLabel" name="connectionModeLabel">
+       <property name="text">
+        <string>Connection</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="connectionModeComboBox">
+       <item>
+        <property name="text">
+         <string>Direct Connection</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Traversal Server</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
     <layout class="QHBoxLayout" name="horizontalLayout_ip">
      <item>
       <widget class="QLabel" name="ipLabel">
        <property name="text">
-        <string>Direct connect</string>
+        <string>Connect</string>
        </property>
       </widget>
      </item>

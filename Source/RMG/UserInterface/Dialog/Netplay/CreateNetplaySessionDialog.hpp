@@ -11,12 +11,12 @@
 #define CREATENETPLAYSESSIONDIALOG_HPP
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QJsonObject>
 #include <QTimerEvent>
 #include <QSpinBox>
 #include <QUdpSocket>
 #include <QWidget>
-#include <QString>
 
 #include "ui_CreateNetplaySessionDialog.h"
 #include "Netplay/NetplayProtocol.hpp"
@@ -63,6 +63,8 @@ class CreateNetplaySessionDialog : public QWidget, private Ui::CreateNetplaySess
     QCheckBox* showInBrowserCheckBox = nullptr;
     QCheckBox* useUpnpCheckBox = nullptr;
     QSpinBox* hostingPortSpinBox = nullptr;
+    QComboBox* connectionModeComboBox = nullptr;
+    QWidget* directOptionsWidget = nullptr;
 
   	QJsonObject sessionJson;
     QString sessionFile;
@@ -75,6 +77,7 @@ class CreateNetplaySessionDialog : public QWidget, private Ui::CreateNetplaySess
 
     bool validate(void) const;
     void validateCreateButton(void);
+    Netplay::NetplayConnectionMode selectedConnectionMode(void) const;
 
     void createSession(void);
     void finalizeSession(void);

@@ -12,11 +12,12 @@
 
 #include <QJsonObject>
 #include <QWidget>
-#include <QString>
+#include <memory>
 
 #include "ui_NetplaySessionBrowserDialog.h"
 #include "Netplay/NetplayProtocol.hpp"
 #include "Netplay/NetplayCoordinator.hpp"
+#include "Netplay/NetplayTraversalClient.hpp"
 
 #include <RMG-Core/RomSettings.hpp>
 
@@ -66,10 +67,17 @@ class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBr
     qint64 joinDeadlineMs = 0;
     QString joinRoomId;
 
+    std::unique_ptr<Netplay::NetplayTraversalClient> traversalClient;
+    Netplay::NetplayConnectionMode m_activeJoinMode = Netplay::NetplayConnectionMode::Direct;
+
     QString showROMDialog(QString name, QString md5);
 
     bool validate(void) const;
     void validateJoinButton(void);
+    void updateJoinConnectionModeUi(void);
+    Netplay::NetplayConnectionMode selectedJoinConnectionMode(void) const;
+    Netplay::NetplayConnectionMode resolveBrowserJoinMode(const QJsonObject& indexSession) const;
+    void connectViaTraversal(const QString& hostCode, const QString& roomId = QString());
     void connectToResolvedHost(const QString& address, int port, const QString& roomId = QString());
     void beginJoinConnect(const QString& address, int port, const QString& roomId = QString());
     void attemptJoinConnect();
@@ -80,6 +88,7 @@ class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBr
     void on_refreshPushButton_clicked(void);
     void onRoomsReplyFinished(QNetworkReply* reply);
     void on_sessionBrowserWidget_OnSessionChanged(bool valid);
+    void on_connectionModeComboBox_currentIndexChanged(int index);
     void onCoordinatorConnected(void);
     void onCoordinatorConnectionError(const QString& error);
     void onCoordinatorRoomJoined(const QString& roomId, int slot);
