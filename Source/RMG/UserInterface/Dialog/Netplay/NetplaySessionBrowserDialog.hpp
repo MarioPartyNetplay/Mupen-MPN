@@ -17,7 +17,6 @@
 #include "ui_NetplaySessionBrowserDialog.h"
 #include "Netplay/NetplayProtocol.hpp"
 #include "Netplay/NetplayCoordinator.hpp"
-#include "Netplay/NetplayTraversalClient.hpp"
 
 #include <RMG-Core/RomSettings.hpp>
 
@@ -67,8 +66,8 @@ class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBr
     qint64 joinDeadlineMs = 0;
     QString joinRoomId;
 
-    std::unique_ptr<Netplay::NetplayTraversalClient> traversalClient;
     Netplay::NetplayConnectionMode m_activeJoinMode = Netplay::NetplayConnectionMode::Direct;
+    QString m_activeTraversalHostCode;
 
     QString showROMDialog(QString name, QString md5);
 

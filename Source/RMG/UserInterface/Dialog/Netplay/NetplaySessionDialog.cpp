@@ -551,6 +551,12 @@ void NetplaySessionDialog::beginHostBrowserRegistration(uint16_t hostingPort, bo
 {
     this->hostRegistry = std::make_unique<Netplay::NetplayHostRegistry>(this);
 
+    if (this->coordinator && this->coordinator->isHostingServer()) {
+        if (SocketIOServer* server = this->coordinator->getHostingServer()) {
+            this->hostRegistry->setSignalingEnetHost(server->enetHost());
+        }
+    }
+
     connect(this->hostRegistry.get(), &Netplay::NetplayHostRegistry::hostRegistered,
             this, [this, hostingPort](const QString& hostCode, const QString& publicAddress, int signalingPort) {
         Q_UNUSED(signalingPort);

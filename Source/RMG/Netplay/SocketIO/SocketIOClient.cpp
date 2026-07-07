@@ -191,6 +191,74 @@ bool SocketIOClient::setEnetPeerAddress(ENetAddress* addressOut) const
     return enet_address_set_host(addressOut, hostBytes.constData()) == 0;
 }
 
+bool SocketIOClient::ensureSignalingHostCreated()
+{
+    if (m_enetHost) {
+        return true;
+    }
+
+    ensureEnetInitialized();
+    m_enetHost = createSignalingEnetHost(nullptr, 1, 1, 0, 0);
+    if (!m_enetHost) {
+        shutdownEnetIfIdle();
+        return false;
+    }
+
+    if (!m_serviceTimer->isActive()) {
+        m_serviceTimer->start();
+    }
+
+    return true;
+}
+
+bool SocketIOClient::connectSignalingHostTo(const QHostAddress& address, quint16 port, const QString& playerName)
+{
+    m_playerName = playerName;
+    m_intentionalDisconnect = false;
+    m_awaitingReconnectAck = false;
+    m_reconnectAttempts = 0;
+    if (m_reconnectTimer) {
+        m_reconnectTimer->stop();
+    }
+
+    if (!ensureSignalingHostCreated()) {
+        m_connectionState = Error;
+        emit connectionError(QStringLiteral("Failed to create UDP signaling client"));
+        return false;
+    }
+
+    m_serverAddress = address;
+    m_serverPort = port;
+    m_serverHostname = address.toString();
+    if (m_serverHostname.compare(QStringLiteral("localhost"), Qt::CaseInsensitive) == 0) {
+        m_serverHostname = QStringLiteral("127.0.0.1");
+    }
+
+    m_serverUrl = QStringLiteral("udp://%1:%2").arg(m_serverHostname).arg(m_serverPort);
+    m_connectionState = Connecting;
+
+    ENetAddress enetAddress;
+    if (!setEnetPeerAddress(&enetAddress)) {
+        m_connectionState = Error;
+        emit connectionError(QStringLiteral("Failed to resolve signaling server address: %1")
+                                 .arg(m_serverAddress.toString()));
+        return false;
+    }
+
+    m_serverPeer = enet_host_connect(m_enetHost, &enetAddress, 1, 0);
+    if (!m_serverPeer) {
+        m_connectionState = Error;
+        emit connectionError(QStringLiteral("Failed to initiate UDP signaling connection"));
+        return false;
+    }
+
+    applySignalingPeerTimeout(m_serverPeer);
+    m_connectTimer->start(kConnectTimeoutMs);
+
+    qInfo() << "Connecting to UDP signaling server" << m_serverHostname << m_serverPort;
+    return true;
+}
+
 void SocketIOClient::connectToServer(const QString& playerName)
 {
     m_playerName = playerName;
@@ -229,10 +297,8 @@ void SocketIOClient::connectToServer(const QString& playerName)
 
 bool SocketIOClient::startTransportConnect()
 {
-    m_enetHost = createSignalingEnetHost(nullptr, 1, 1, 0, 0);
-    if (!m_enetHost) {
+    if (!ensureSignalingHostCreated()) {
         m_connectionState = Error;
-        shutdownEnetIfIdle();
         emit connectionError(QStringLiteral("Failed to create UDP signaling client"));
         return false;
     }

@@ -33,6 +33,11 @@ QList<QByteArray> splitTraversalParts(QByteArray datagram)
     return datagram.split('|');
 }
 
+QByteArray traversalPunchPayload()
+{
+    return QByteArray(kNetplayRegistryProtocol) + "|PUNCH|";
+}
+
 } // namespace
 
 void sendTraversalPunchBurst(QUdpSocket& socket, const QHostAddress& target, quint16 port)
@@ -41,9 +46,21 @@ void sendTraversalPunchBurst(QUdpSocket& socket, const QHostAddress& target, qui
         return;
     }
 
-    const QByteArray payload = QByteArray(kNetplayRegistryProtocol) + "|PUNCH|";
+    const QByteArray payload = traversalPunchPayload();
     for (int i = 0; i < kPunchPacketsPerBurst; ++i) {
         socket.writeDatagram(payload, target, port);
+    }
+}
+
+void sendTraversalPunchBurst(ENetHost* host, const QHostAddress& target, quint16 port)
+{
+    if (!host || target.isNull() || port == 0) {
+        return;
+    }
+
+    const QByteArray payload = traversalPunchPayload();
+    for (int i = 0; i < kPunchPacketsPerBurst; ++i) {
+        sendEnetDatagram(host, target, port, payload);
     }
 }
 
@@ -62,6 +79,11 @@ NetplayTraversalClient::NetplayTraversalClient(QObject* parent)
 NetplayTraversalClient::~NetplayTraversalClient()
 {
     cancel();
+}
+
+void NetplayTraversalClient::setEnetHost(ENetHost* enetHost)
+{
+    m_enetHost = enetHost;
 }
 
 void NetplayTraversalClient::lookupHost(const QString& hostCode)
@@ -84,15 +106,38 @@ void NetplayTraversalClient::lookupHost(const QString& hostCode)
         return;
     }
 
+    if (m_enetHost) {
+        setEnetRegistryDatagramHandler(m_enetHost, &NetplayTraversalClient::enetRegistryDatagramHandler, this);
+    }
+
     m_lookupTimeoutTimer.start(kLookupTimeoutMs);
     sendLookup();
+}
+
+void NetplayTraversalClient::continuePunchingHost(const QString& address, int port)
+{
+    if (address.isEmpty() || port < 1024 || port > 65535) {
+        return;
+    }
+
+    m_resolvedAddress = address;
+    m_resolvedPort = port;
+    startPunching(address, port);
 }
 
 void NetplayTraversalClient::cancel()
 {
     m_lookupTimeoutTimer.stop();
     m_punchTimer.stop();
+    clearEnetHandler();
     resetState();
+}
+
+void NetplayTraversalClient::clearEnetHandler()
+{
+    if (m_enetHost) {
+        setEnetRegistryDatagramHandler(m_enetHost, nullptr, nullptr);
+    }
 }
 
 void NetplayTraversalClient::resetState()
@@ -106,8 +151,20 @@ void NetplayTraversalClient::resetState()
     m_lookupAttempts = 0;
 }
 
+void NetplayTraversalClient::enetRegistryDatagramHandler(const QByteArray& datagram, void* userData)
+{
+    auto* self = static_cast<NetplayTraversalClient*>(userData);
+    if (self) {
+        self->handleServerMessage(datagram);
+    }
+}
+
 bool NetplayTraversalClient::ensureSocketBound(QString* errorOut)
 {
+    if (m_enetHost) {
+        return true;
+    }
+
     if (m_socket.state() == QAbstractSocket::BoundState) {
         return true;
     }
@@ -165,6 +222,13 @@ void NetplayTraversalClient::sendToServer(const QByteArray& message)
         return;
     }
 
+    if (m_enetHost) {
+        if (!sendEnetDatagram(m_enetHost, m_serverAddress, kNetplayRegistryPort, message)) {
+            finishLookupFailure(QStringLiteral("Failed to send traversal lookup packet via signaling socket"));
+        }
+        return;
+    }
+
     if (m_socket.writeDatagram(message, m_serverAddress, kNetplayRegistryPort) < 0) {
         finishLookupFailure(QStringLiteral("Failed to send traversal lookup packet: %1").arg(m_socket.errorString()));
     }
@@ -215,7 +279,9 @@ void NetplayTraversalClient::handleServerMessage(const QByteArray& datagram)
         m_lookupFinished = true;
         m_lookupTimeoutTimer.stop();
 
-        qInfo() << "NetplayTraversalClient: LOOKUPOK" << code << "->" << address << port;
+        qInfo() << "NetplayTraversalClient: LOOKUPOK" << code << "->" << address << port
+                << (m_enetHost ? "(via ENet signaling socket)" : "(via standalone UDP socket)");
+        startPunching(address, port);
         emit lookupSucceeded(address, port);
         return;
     }
@@ -265,7 +331,11 @@ void NetplayTraversalClient::sendPunchBurst()
         return;
     }
 
-    sendTraversalPunchBurst(m_socket, target, static_cast<quint16>(m_punchPort));
+    if (m_enetHost) {
+        sendTraversalPunchBurst(m_enetHost, target, static_cast<quint16>(m_punchPort));
+    } else {
+        sendTraversalPunchBurst(m_socket, target, static_cast<quint16>(m_punchPort));
+    }
 }
 
 void NetplayTraversalClient::onLookupTimeout()
@@ -300,6 +370,7 @@ void NetplayTraversalClient::finishLookupFailure(const QString& reason)
 
     m_lookupFinished = true;
     m_lookupTimeoutTimer.stop();
+    clearEnetHandler();
     qWarning() << "NetplayTraversalClient:" << reason;
     emit lookupFailed(reason);
 }

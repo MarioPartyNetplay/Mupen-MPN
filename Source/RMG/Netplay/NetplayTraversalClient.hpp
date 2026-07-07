@@ -5,12 +5,15 @@
 #ifndef NETPLAYTRAVERSALCLIENT_HPP
 #define NETPLAYTRAVERSALCLIENT_HPP
 
+#include "NetplayEnet.hpp"
 #include "NetplayProtocol.hpp"
 
 #include <QObject>
 #include <QHostAddress>
 #include <QUdpSocket>
 #include <QTimer>
+
+struct _ENetHost;
 
 namespace UserInterface::Netplay {
 
@@ -22,15 +25,24 @@ public:
     explicit NetplayTraversalClient(QObject* parent = nullptr);
     ~NetplayTraversalClient() override;
 
+    /** When set, LOOKUP/PUNCH use the ENet signaling socket (required for NAT hole punch). */
+    void setEnetHost(ENetHost* enetHost);
+
     void lookupHost(const QString& hostCode);
     void cancel();
+
+    /** Keep punching the resolved host while the signaling connection is retrying. */
+    void continuePunchingHost(const QString& address, int port);
 
 signals:
     void lookupSucceeded(const QString& address, int port);
     void lookupFailed(const QString& reason);
 
 private:
+    static void enetRegistryDatagramHandler(const QByteArray& datagram, void* userData);
+
     void resetState();
+    void clearEnetHandler();
     bool ensureSocketBound(QString* errorOut = nullptr);
     bool ensureServerResolved(QString* errorOut = nullptr);
     void sendToServer(const QByteArray& message);
@@ -44,6 +56,7 @@ private:
     void onLookupTimeout();
     void onPunchTimer();
 
+    ENetHost* m_enetHost = nullptr;
     QUdpSocket m_socket;
     QTimer m_lookupTimeoutTimer;
     QTimer m_punchTimer;
@@ -60,6 +73,7 @@ private:
 
 /** Sends repeated UDP packets to a peer endpoint to open a NAT mapping. */
 void sendTraversalPunchBurst(QUdpSocket& socket, const QHostAddress& target, quint16 port);
+void sendTraversalPunchBurst(ENetHost* host, const QHostAddress& target, quint16 port);
 
 } // namespace UserInterface::Netplay
 

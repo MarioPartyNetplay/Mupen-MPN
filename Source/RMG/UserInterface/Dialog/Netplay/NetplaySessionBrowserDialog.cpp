@@ -612,31 +612,23 @@ void NetplaySessionBrowserDialog::connectViaTraversal(const QString& hostCode, c
         return;
     }
 
-    Netplay::applyNetplayConnectionSettings(Netplay::NetplayConnectionMode::NatTraversal, false);
     this->m_activeJoinMode = Netplay::NetplayConnectionMode::NatTraversal;
-
-    if (!this->traversalClient) {
-        this->traversalClient = std::make_unique<Netplay::NetplayTraversalClient>(this);
-        connect(this->traversalClient.get(), &Netplay::NetplayTraversalClient::lookupSucceeded, this,
-                [this](const QString& address, int port) {
-            this->connectToResolvedHost(address, port, this->joinRoomId);
-        });
-        connect(this->traversalClient.get(), &Netplay::NetplayTraversalClient::lookupFailed, this,
-                [this](const QString& reason) {
-            finishJoinFailure(reason);
-        });
-    }
-
+    this->m_activeTraversalHostCode = normalizedCode;
     this->joinRoomId = roomId;
     this->joinRetryActive = true;
     this->joinDeadlineMs = QDateTime::currentMSecsSinceEpoch() + 30000;
     this->isWaitingForConnection = true;
-    this->traversalClient->lookupHost(normalizedCode);
+
+    this->coordinator->connectViaNatTraversal(
+        normalizedCode,
+        this->nickNameLineEdit->text(),
+        roomId);
 }
 
 void NetplaySessionBrowserDialog::connectToResolvedHost(const QString& address, int port, const QString& roomId)
 {
     this->m_activeJoinMode = Netplay::NetplayConnectionMode::Direct;
+    this->m_activeTraversalHostCode.clear();
     Netplay::applyNetplayConnectionSettings(this->m_activeJoinMode, false);
     beginJoinConnect(address, port, roomId);
 }
@@ -660,6 +652,15 @@ void NetplaySessionBrowserDialog::attemptJoinConnect()
 
     if (QDateTime::currentMSecsSinceEpoch() >= this->joinDeadlineMs) {
         finishJoinFailure(QStringLiteral("Timed out while connecting to host"));
+        return;
+    }
+
+    if (this->m_activeJoinMode == Netplay::NetplayConnectionMode::NatTraversal &&
+        !this->m_activeTraversalHostCode.isEmpty()) {
+        this->coordinator->connectViaNatTraversal(
+            this->m_activeTraversalHostCode,
+            this->nickNameLineEdit->text(),
+            this->joinRoomId);
         return;
     }
 

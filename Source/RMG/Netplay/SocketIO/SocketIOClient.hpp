@@ -96,6 +96,14 @@ public:
     void disconnect();
     ConnectionState getConnectionState() const;
 
+    /** Create the UDP signaling socket without connecting (for NAT traversal LOOKUP). */
+    bool ensureSignalingHostCreated();
+
+    /** Connect an existing signaling host to the resolved host endpoint. */
+    bool connectSignalingHostTo(const QHostAddress& address, quint16 port, const QString& playerName);
+
+    ENetHost* signalingHost() const { return m_enetHost; }
+
     void openRoom(const QString& roomName, const QString& gameId, int maxPlayers = 4);
     void joinRoom(const QString& roomId, bool asSpectator = false);
     void leaveRoom();
