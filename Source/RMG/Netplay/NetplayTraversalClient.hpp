@@ -25,7 +25,7 @@ public:
     explicit NetplayTraversalClient(QObject* parent = nullptr);
     ~NetplayTraversalClient() override;
 
-    /** When set, LOOKUP/PUNCH use the ENet signaling socket (required for NAT hole punch). */
+    /** When set, hole punch bursts use the ENet signaling socket (same port as netplay). */
     void setEnetHost(ENetHost* enetHost);
 
     void lookupHost(const QString& hostCode);
@@ -39,10 +39,7 @@ signals:
     void lookupFailed(const QString& reason);
 
 private:
-    static void enetRegistryDatagramHandler(const QByteArray& datagram, void* userData);
-
     void resetState();
-    void clearEnetHandler();
     bool ensureSocketBound(QString* errorOut = nullptr);
     bool ensureServerResolved(QString* errorOut = nullptr);
     void sendToServer(const QByteArray& message);

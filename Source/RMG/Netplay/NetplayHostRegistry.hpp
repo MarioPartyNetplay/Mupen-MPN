@@ -27,7 +27,7 @@ public:
 
     QString hostCode() const;
 
-    /** Share the ENet signaling socket so traversal/register uses the same UDP port as netplay. */
+    /** ENet signaling socket used only for NAT hole punch bursts (same port as netplay). */
     void setSignalingEnetHost(ENetHost* enetHost);
 
     void startHosting(uint16_t signalingPort, bool listInBrowser);
@@ -40,20 +40,17 @@ signals:
     void hostRegistrationFailed(const QString& reason);
 
 private:
-    static void enetRegistryDatagramHandler(const QByteArray& datagram, void* userData);
-
     void sendToServer(const QByteArray& message);
     bool ensureSocketBound(QString* errorOut = nullptr);
     bool ensureServerResolved(QString* errorOut = nullptr);
     void handleServerMessage(const QByteArray& datagram);
     void failHosting(const QString& reason);
     void resetHostState();
-    void clearEnetHandler();
 
     void onReadyRead();
     void onHousekeepingTimer();
 
-    ENetHost* m_enetHost = nullptr;
+    ENetHost* m_punchEnetHost = nullptr;
     QUdpSocket m_socket;
     QTimer m_housekeepingTimer;
     QHostAddress m_serverAddress;

@@ -54,25 +54,7 @@ NetplayHostRegistry::~NetplayHostRegistry()
 
 void NetplayHostRegistry::setSignalingEnetHost(ENetHost* enetHost)
 {
-    m_enetHost = enetHost;
-    if (m_enetHost && m_isHosting) {
-        setEnetRegistryDatagramHandler(m_enetHost, &NetplayHostRegistry::enetRegistryDatagramHandler, this);
-    }
-}
-
-void NetplayHostRegistry::clearEnetHandler()
-{
-    if (m_enetHost) {
-        setEnetRegistryDatagramHandler(m_enetHost, nullptr, nullptr);
-    }
-}
-
-void NetplayHostRegistry::enetRegistryDatagramHandler(const QByteArray& datagram, void* userData)
-{
-    auto* self = static_cast<NetplayHostRegistry*>(userData);
-    if (self) {
-        self->handleServerMessage(datagram);
-    }
+    m_punchEnetHost = enetHost;
 }
 
 QString NetplayHostRegistry::hostCode() const
@@ -99,10 +81,6 @@ void NetplayHostRegistry::startHosting(uint16_t signalingPort, bool listInBrowse
         m_housekeepingTimer.start();
     }
 
-    if (m_enetHost) {
-        setEnetRegistryDatagramHandler(m_enetHost, &NetplayHostRegistry::enetRegistryDatagramHandler, this);
-    }
-
     onHousekeepingTimer();
 }
 
@@ -126,10 +104,6 @@ void NetplayHostRegistry::resumeHosting(const QString& hostCode, uint16_t signal
         m_housekeepingTimer.start();
     }
 
-    if (m_enetHost) {
-        setEnetRegistryDatagramHandler(m_enetHost, &NetplayHostRegistry::enetRegistryDatagramHandler, this);
-    }
-
     onHousekeepingTimer();
 }
 
@@ -148,7 +122,6 @@ void NetplayHostRegistry::stopHosting(bool unregister)
         sendToServer(QByteArray(kNetplayRegistryProtocol) + "|UNREGISTER|" + m_hostCode.toUtf8());
     }
 
-    clearEnetHandler();
     resetHostState();
     m_isHosting = false;
     m_housekeepingTimer.stop();
@@ -156,10 +129,6 @@ void NetplayHostRegistry::stopHosting(bool unregister)
 
 bool NetplayHostRegistry::ensureSocketBound(QString* errorOut)
 {
-    if (m_enetHost) {
-        return true;
-    }
-
     if (m_socket.state() == QAbstractSocket::BoundState) {
         return true;
     }
@@ -216,16 +185,6 @@ void NetplayHostRegistry::sendToServer(const QByteArray& message)
             m_registrationAbandoned = true;
         }
         failHosting(error);
-        return;
-    }
-
-    if (m_enetHost) {
-        if (!sendEnetDatagram(m_enetHost, m_serverAddress, kNetplayRegistryPort, message)) {
-            if (m_hostRegisterAttempts >= kMaxHostRegisterAttempts) {
-                m_registrationAbandoned = true;
-            }
-            failHosting(QStringLiteral("Failed to send browse registry packet via signaling socket"));
-        }
         return;
     }
 
@@ -295,8 +254,8 @@ void NetplayHostRegistry::handleServerMessage(const QByteArray& datagram)
         }
 
         qDebug() << "NetplayHostRegistry: punching" << punchAddress << punchPort;
-        if (m_enetHost) {
-            sendTraversalPunchBurst(m_enetHost, target, static_cast<quint16>(punchPort));
+        if (m_punchEnetHost) {
+            sendTraversalPunchBurst(m_punchEnetHost, target, static_cast<quint16>(punchPort));
         } else {
             sendTraversalPunchBurst(m_socket, target, static_cast<quint16>(punchPort));
         }
