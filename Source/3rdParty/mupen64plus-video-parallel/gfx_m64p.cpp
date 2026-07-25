@@ -325,6 +325,18 @@ EXPORT int CALL RomOpen(void)
         window_vsync   = 0; // force disable vsync during netplay
         vk_ssreadbacks = 0; // can cause desyncs
     }
+    else
+    {
+        /* Embedded/lockstep netplay never initializes classic ConfigReceiveNetplayConfig.
+         * When the core has RandomizeInterrupt forced off (netplay determinism),
+         * also disable superscaled RDRAM readbacks — they desync lockstep peers. */
+        m64p_handle coreConfig = NULL;
+        if (ConfigOpenSection("Core", &coreConfig) == M64ERR_SUCCESS &&
+            !ConfigGetParamBool(coreConfig, "RandomizeInterrupt"))
+        {
+            vk_ssreadbacks = 0;
+        }
+    }
 
     plugin_init();
 

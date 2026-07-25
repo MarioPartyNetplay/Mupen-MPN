@@ -1539,10 +1539,11 @@ void NetplayCoordinator::sendSaveSync(const QJsonArray& saveFiles)
 
     if (isHostingServer()) {
         if (m_server && !m_gameSession.roomId.isEmpty()) {
-            if (!saveFiles.isEmpty()) {
-                m_server->broadcastSaveSync(m_gameSession.roomId, saveFiles);
-            } else {
-                qDebug() << "NetplayCoordinator: No save files found to sync for this ROM";
+            // Always broadcast (including empty) so clients can finish prep
+            // instead of waiting on the watchdog and falling back to local configs.
+            m_server->broadcastSaveSync(m_gameSession.roomId, saveFiles);
+            if (saveFiles.isEmpty()) {
+                qDebug() << "NetplayCoordinator: Broadcasting empty save-sync for this ROM";
             }
         }
         return;
@@ -1560,6 +1561,13 @@ void NetplayCoordinator::sendCoreSettingsSync(const QJsonObject& coreSettings)
     }
 
     m_sessionSyncCoreSettings = coreSettings;
+
+    // Host and clients must share one apply path for SiDmaDuration / CountPerOp /
+    // RandomizeInterrupt so PI/SI interrupt timing cannot diverge.
+    CoreNetplaySyncSettings settings;
+    if (coreSettingsFromJson(coreSettings, settings)) {
+        CoreSetNetplaySyncSettings(settings);
+    }
 
     if (isHostingServer()) {
         if (m_server && !m_gameSession.roomId.isEmpty()) {
@@ -1632,10 +1640,6 @@ void NetplayCoordinator::on_socketIO_saveSyncReceived(const QJsonArray& saveFile
 
 void NetplayCoordinator::on_socketIO_coreSettingsSyncReceived(const QJsonObject& coreSettings)
 {
-    if (isHostingServer()) {
-        return;
-    }
-
     m_sessionSyncCoreSettings = coreSettings;
 
     CoreNetplaySyncSettings settings;

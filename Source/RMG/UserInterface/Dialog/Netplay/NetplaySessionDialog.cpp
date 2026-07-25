@@ -900,8 +900,39 @@ void NetplaySessionDialog::ensureClientSessionPrepComplete(void)
         return;
     }
 
-    this->m_sessionSavesApplied = true;
-    this->m_sessionCoreSettingsApplied = true;
+    // Host always broadcasts save-sync (possibly empty). If it still hasn't
+    // arrived, treat saves as applied so an empty host library cannot stall
+    // forever — but never invent core timing settings from local config.
+    if (!this->m_sessionSavesApplied) {
+        qWarning() << "NetplaySessionDialog: save-sync timed out; continuing without host saves";
+        this->m_sessionSavesApplied = true;
+    }
+
+    if (!this->m_sessionCoreSettingsApplied) {
+        constexpr int kMaxCoreSettingsSyncRetries = 3;
+        this->m_clientSessionPrepRetries++;
+
+        if (this->m_clientSessionPrepRetries <= kMaxCoreSettingsSyncRetries &&
+            this->m_pendingGameStart &&
+            this->m_clientSessionPrepWatchdogTimerId == -1) {
+            qWarning() << "NetplaySessionDialog: core-settings-sync missing; waiting for host"
+                       << "(attempt" << this->m_clientSessionPrepRetries
+                       << "of" << kMaxCoreSettingsSyncRetries << ")";
+            this->m_clientSessionPrepWatchdogTimerId = this->startTimer(5000);
+            return;
+        }
+
+        qWarning() << "NetplaySessionDialog: core-settings-sync never received; aborting start "
+                      "to avoid PI/SI timing desync from mismatched local configs";
+        this->m_pendingGameStart = false;
+        QtMessageBox::Error(
+            this,
+            "Netplay Sync Failed",
+            "Timed out waiting for the host's core timing settings "
+            "(SiDmaDuration / CountPerOp / RandomizeInterrupt). "
+            "Cancel and rejoin, or have the host restart the session.");
+        return;
+    }
 }
 
 void NetplaySessionDialog::tryCompletePendingGameStart(void)
@@ -1002,9 +1033,19 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
     if (this->isLocalSessionHost()) {
         this->m_sessionSavesApplied = true;
         this->m_sessionCoreSettingsApplied = true;
+        // Clients reset their prep flags on game-started; re-broadcast after a
+        // short delay so SiDmaDuration / CountPerOp / saves are not missed.
+        QTimer::singleShot(150, this, [this]() {
+            if (this->m_sessionShutdown || !this->isLocalSessionHost()) {
+                return;
+            }
+            this->syncHostSessionState();
+        });
     } else {
         this->m_sessionSavesApplied = false;
-        this->m_sessionCoreSettingsApplied = false;
+        // Keep host timing settings if they already arrived during lobby sync.
+        this->m_sessionCoreSettingsApplied = CoreHasNetplaySyncSettings();
+        this->m_clientSessionPrepRetries = 0;
         this->m_clientSessionPrepWatchdogTimerId = this->startTimer(3000);
     }
 

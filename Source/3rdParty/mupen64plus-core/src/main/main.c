@@ -1650,19 +1650,22 @@ m64p_error main_run(void)
             break;
     }
 
-    /* Seed MPK ID gen using current time */
-    uint64_t mpk_seed = !netplay_is_init() ? (uint64_t)time(NULL) : 0;
-    l_mpk_idgen = xoshiro256pp_seed(mpk_seed);
-
-    /* take the r4300 emulator mode from the config file at this point and cache it in a global variable */
-    emumode = ConfigGetParamInt(g_CoreConfig, "R4300Emulator");
-
     /* set some other core parameters based on the config file values */
     savestates_set_autoinc_slot(ConfigGetParamBool(g_CoreConfig, "AutoStateSlotIncrement"));
     savestates_select_slot(ConfigGetParamInt(g_CoreConfig, "CurrentStateSlot"));
     no_compiled_jump = ConfigGetParamBool(g_CoreConfig, "NoCompiledJump");
-    //We disable any randomness for netplay
+    /* Disable PI/SI interrupt jitter for classic netplay, and whenever the host
+     * (or embedded lockstep) has already forced RandomizeInterrupt off. */
     randomize_interrupt = !netplay_is_init() ? ConfigGetParamBool(g_CoreConfig, "RandomizeInterrupt") : 0;
+
+    /* Seed MPK ID gen. Use a fixed seed whenever timing must be deterministic
+     * (classic netplay or RandomizeInterrupt disabled) so newly created .mpk
+     * serials match across peers. */
+    uint64_t mpk_seed = (!netplay_is_init() && randomize_interrupt) ? (uint64_t)time(NULL) : 0;
+    l_mpk_idgen = xoshiro256pp_seed(mpk_seed);
+
+    /* take the r4300 emulator mode from the config file at this point and cache it in a global variable */
+    emumode = ConfigGetParamInt(g_CoreConfig, "R4300Emulator");
     count_per_op = ConfigGetParamInt(g_CoreConfig, "CountPerOp");
     count_per_op_denom_pot = ConfigGetParamInt(g_CoreConfig, "CountPerOpDenomPot");
 
