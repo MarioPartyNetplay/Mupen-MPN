@@ -228,8 +228,10 @@ LockstepEngine::submitLocalInput(uint32_t controllerState)
         m_lastKnownInputFrames[m_config.localPlayerSlot] = sendFrame;
     }
 
-    if (!outbound.empty()) {
-        broadcastInput(controllerState, outbound.back().first);
+    // Send every outbound frame. Dropping intermediates and relying on
+    // receiver gap-fill invents inputs and desyncs when buttons change.
+    for (const auto& [frame, state] : outbound) {
+        broadcastInput(state, frame);
     }
 
     return outbound;
@@ -263,12 +265,23 @@ void LockstepEngine::submitRemoteInput(
         return;
     }
 
+    // Fill gaps with the peer's last known input (hold), never the newly
+    // arrived future sample. Using the future sample invents button presses
+    // on skipped frames and desyncs against the sender's real history.
+    const uint32_t gapFillState = [&]() -> uint32_t {
+        const auto lastKnown = m_lastKnownInputs.find(fromSlot);
+        if (lastKnown != m_lastKnownInputs.end()) {
+            return lastKnown->second;
+        }
+        return controllerState;
+    }();
+
     for (uint32_t frame = m_currentFrameNumber; frame < frameNumber; ++frame) {
         FrameInputs& priorFrameInputs = m_frameBuffer[frame];
         if (priorFrameInputs.playerInputs.find(fromSlot) ==
             priorFrameInputs.playerInputs.end()) {
             priorFrameInputs.frameNumber = frame;
-            priorFrameInputs.playerInputs[fromSlot] = controllerState;
+            priorFrameInputs.playerInputs[fromSlot] = gapFillState;
             if (frame == m_currentFrameNumber) {
                 m_frameReceived[fromSlot] = true;
             }
@@ -504,6 +517,42 @@ LockstepEngine::getFrameInputs(uint32_t frameNumber) const
     }
 
     return it->second.playerInputs;
+}
+
+bool LockstepEngine::hasAllRemoteInputsForFrame(uint32_t frameNumber) const
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return hasAllInputsForFrameUnlocked(frameNumber);
+}
+
+std::vector<std::pair<uint32_t, uint32_t>>
+LockstepEngine::copyLocalBufferedInputs() const
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    std::vector<std::pair<uint32_t, uint32_t>> localInputs;
+    localInputs.reserve(m_frameBuffer.size());
+
+    for (const auto& [frame, frameInputs] : m_frameBuffer) {
+        const auto it = frameInputs.playerInputs.find(m_config.localPlayerSlot);
+        if (it != frameInputs.playerInputs.end()) {
+            localInputs.emplace_back(frame, it->second);
+        }
+    }
+
+    return localInputs;
+}
+
+void LockstepEngine::rebroadcastLocalBufferedInputs()
+{
+    if (!isAlive()) {
+        return;
+    }
+
+    const auto localInputs = copyLocalBufferedInputs();
+    for (const auto& [frame, state] : localInputs) {
+        broadcastInput(state, frame);
+    }
 }
 
 bool LockstepEngine::isDesynchronized() const
@@ -754,6 +803,26 @@ void LockstepEngine::processInputPacket(
         return;
     }
 
+    const uint32_t gapFillState = [&]() -> uint32_t {
+        const auto lastKnown = m_lastKnownInputs.find(fromSlot);
+        if (lastKnown != m_lastKnownInputs.end()) {
+            return lastKnown->second;
+        }
+        return controllerState;
+    }();
+
+    for (uint32_t frame = m_currentFrameNumber; frame < frameNumber; ++frame) {
+        FrameInputs& priorFrameInputs = m_frameBuffer[frame];
+        if (priorFrameInputs.playerInputs.find(fromSlot) ==
+            priorFrameInputs.playerInputs.end()) {
+            priorFrameInputs.frameNumber = frame;
+            priorFrameInputs.playerInputs[fromSlot] = gapFillState;
+            if (frame == m_currentFrameNumber) {
+                m_frameReceived[fromSlot] = true;
+            }
+        }
+    }
+
     FrameInputs& frameInputs =
         m_frameBuffer[frameNumber];
 
@@ -993,6 +1062,13 @@ bool LockstepEngine::hasAllInputsForFrameUnlocked(
             continue;
         }
 
+        const auto activeIt = m_peerSessionActive.find(slot);
+        const bool sessionActive =
+            activeIt != m_peerSessionActive.end() && activeIt->second;
+        if (!sessionActive) {
+            continue;
+        }
+
         bool found = false;
 
         if (frameIt != m_frameBuffer.end()) {
@@ -1078,25 +1154,10 @@ int LockstepEngine::computeInputWaitTimeoutMsUnlocked(
         return 8000;
     }
 
-    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
-        if (slot == m_config.localPlayerSlot) {
-            continue;
-        }
-
-        const auto activeIt = m_peerSessionActive.find(slot);
-        const bool sessionActive =
-            activeIt != m_peerSessionActive.end() && activeIt->second;
-        if (!sessionActive) {
-            continue;
-        }
-
-        // WebRTC dropped but the peer is still in-session via signaling.
-        if (!m_dataChannels[slot] || !m_dataChannels[slot]->isOpen()) {
-            return 250;
-        }
-    }
-
-    // Dolphin-style: stall on lag spikes instead of advancing with stale inputs.
+    // Dolphin-style: wait indefinitely for peer inputs while they remain in
+    // session. A short timeout that advances with last-known input is what
+    // turns a lag spike / WebRTC drop into a hard state desync — signaling
+    // can still deliver the real frame inputs if we keep waiting.
     return 0;
 }
 

@@ -92,6 +92,12 @@ public:
     uint32_t getSendFrameNumber() const;
     std::map<int, uint32_t> getCurrentFrameInputs() const;
     std::map<int, uint32_t> getFrameInputs(uint32_t frameNumber) const;
+    /** True when every remote session peer has input buffered for frameNumber. */
+    bool hasAllRemoteInputsForFrame(uint32_t frameNumber) const;
+    /** Snapshot of locally authored (frame, state) entries still in the buffer. */
+    std::vector<std::pair<uint32_t, uint32_t>> copyLocalBufferedInputs() const;
+    /** Resend every locally buffered input over WebRTC data channels. */
+    void rebroadcastLocalBufferedInputs();
     bool isDesynchronized() const;
     int getPendingInputsCount() const;
     std::string getEngineStatus() const;
