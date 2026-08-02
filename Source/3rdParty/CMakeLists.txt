@@ -337,7 +337,7 @@ if (NETPLAY)
             FetchContent_Declare(
                 enet
                 GIT_REPOSITORY https://github.com/lsalzman/enet.git
-                GIT_TAG v1.3.17
+                GIT_TAG v1.3.18
             )
             FetchContent_MakeAvailable(enet)
             FetchContent_GetProperties(enet SOURCE_DIR _ENET_FETCH_DIR)
