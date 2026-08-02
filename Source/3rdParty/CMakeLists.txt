@@ -320,6 +320,9 @@ if (NETPLAY)
     set(_ENET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/enet")
     if (EXISTS "${_ENET_DIR}/CMakeLists.txt")
         add_subdirectory(enet)
+        # enet 1.3.x only calls include_directories(); that does not propagate to
+        # dependents linking the target, so <enet/enet.h> would be missing.
+        target_include_directories(enet PUBLIC "$<BUILD_INTERFACE:${_ENET_DIR}/include>")
     else()
         find_package(PkgConfig QUIET)
         if (PkgConfig_FOUND)
@@ -337,6 +340,10 @@ if (NETPLAY)
                 GIT_TAG v1.3.17
             )
             FetchContent_MakeAvailable(enet)
+            FetchContent_GetProperties(enet SOURCE_DIR _ENET_FETCH_DIR)
+            if (TARGET enet AND _ENET_FETCH_DIR)
+                target_include_directories(enet PUBLIC "$<BUILD_INTERFACE:${_ENET_FETCH_DIR}/include>")
+            endif()
         endif()
     endif()
 
