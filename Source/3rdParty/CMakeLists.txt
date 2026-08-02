@@ -372,6 +372,18 @@ if (NETPLAY)
     if (NOT (WIN32 AND MINGW))
         list(APPEND LIBDATACHANNEL_CMAKE_ARGS -DBUILD_SHARED_LIBS=OFF)
     endif()
+
+    set(_LIBDATACHANNEL_BINDIR "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel")
+    set(_LIBDATACHANNEL_A "${_LIBDATACHANNEL_BINDIR}/libdatachannel.a")
+    set(_LIBDATACHANNEL_LIB "${_LIBDATACHANNEL_BINDIR}/libdatachannel.lib")
+    set(_LIBDATACHANNEL_DLL_A "${_LIBDATACHANNEL_BINDIR}/libdatachannel.dll.a")
+    set(_LIBDATACHANNEL_DLL "${_LIBDATACHANNEL_BINDIR}/libdatachannel.dll")
+    # Bundled static deps produced by the ExternalProject (must be BUILD_BYPRODUCTS
+    # or Ninja has no rule when RMG-Core links these paths).
+    set(_LIBJUICE_A "${_LIBDATACHANNEL_BINDIR}/deps/libjuice/libjuice.a")
+    set(_LIBUSRSCTP_A "${_LIBDATACHANNEL_BINDIR}/deps/usrsctp/usrsctplib/libusrsctp.a")
+    set(_LIBJUICE_LIB "${_LIBDATACHANNEL_BINDIR}/deps/libjuice/juice.lib")
+    set(_LIBUSRSCTP_LIB "${_LIBDATACHANNEL_BINDIR}/deps/usrsctp/usrsctplib/usrsctp.lib")
     
     ExternalProject_Add(libdatachannel
         SOURCE_DIR ${LIBDATACHANNEL_DIR}
@@ -381,13 +393,17 @@ if (NETPLAY)
         BUILD_IN_SOURCE False
         BUILD_ALWAYS False
         CMAKE_ARGS ${LIBDATACHANNEL_CMAKE_ARGS}
-        BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/libdatachannel
+        BINARY_DIR ${_LIBDATACHANNEL_BINDIR}
         
-        BUILD_BYPRODUCTS 
-            ${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.a
-            ${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.lib
-            ${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.dll.a
-            ${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.dll
+        BUILD_BYPRODUCTS
+            ${_LIBDATACHANNEL_A}
+            ${_LIBDATACHANNEL_LIB}
+            ${_LIBDATACHANNEL_DLL_A}
+            ${_LIBDATACHANNEL_DLL}
+            ${_LIBJUICE_A}
+            ${_LIBUSRSCTP_A}
+            ${_LIBJUICE_LIB}
+            ${_LIBUSRSCTP_LIB}
     )
     
     # Create imported library target for linking
@@ -398,17 +414,17 @@ if (NETPLAY)
     if (WIN32 AND MINGW)
         # MinGW uses .dll.a for import libraries
         set_target_properties(libdatachannel_external PROPERTIES
-            IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.dll.a"
+            IMPORTED_LOCATION "${_LIBDATACHANNEL_DLL_A}"
         )
     elseif (WIN32)
         # MSVC uses .lib
         set_target_properties(libdatachannel_external PROPERTIES
-            IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.lib"
+            IMPORTED_LOCATION "${_LIBDATACHANNEL_LIB}"
         )
     else()
         # Unix-like systems use .a
         set_target_properties(libdatachannel_external PROPERTIES
-            IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.a"
+            IMPORTED_LOCATION "${_LIBDATACHANNEL_A}"
         )
     endif()
     
@@ -430,12 +446,19 @@ if (NETPLAY)
                 IMPORTED_LINK_INTERFACE_LANGUAGES C
                 IMPORTED_LOCATION "${SRTP_LIBRARIES}")
         endif()
+        if (WIN32)
+            set(_LIBDATACHANNEL_JUICE_LIB "${_LIBJUICE_LIB}")
+            set(_LIBDATACHANNEL_USRSCTP_LIB "${_LIBUSRSCTP_LIB}")
+        else()
+            set(_LIBDATACHANNEL_JUICE_LIB "${_LIBJUICE_A}")
+            set(_LIBDATACHANNEL_USRSCTP_LIB "${_LIBUSRSCTP_A}")
+        endif()
         set(_LIBDATACHANNEL_DEPS
             OpenSSL::SSL
             libSRTP::srtp2
             Threads::Threads
-            "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/deps/libjuice/libjuice.a"
-            "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/deps/usrsctp/usrsctplib/libusrsctp.a"
+            "${_LIBDATACHANNEL_JUICE_LIB}"
+            "${_LIBDATACHANNEL_USRSCTP_LIB}"
         )
         set_target_properties(libdatachannel_external PROPERTIES
             INTERFACE_LINK_LIBRARIES "${_LIBDATACHANNEL_DEPS}"
@@ -483,10 +506,10 @@ if (NETPLAY)
     set(LIBDATACHANNEL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libdatachannel/include" PARENT_SCOPE)
     
     if (WIN32 AND MINGW)
-        set(LIBDATACHANNEL_LIBRARIES "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.dll.a" PARENT_SCOPE)
+        set(LIBDATACHANNEL_LIBRARIES "${_LIBDATACHANNEL_DLL_A}" PARENT_SCOPE)
     elseif (WIN32)
-        set(LIBDATACHANNEL_LIBRARIES "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.lib" PARENT_SCOPE)
+        set(LIBDATACHANNEL_LIBRARIES "${_LIBDATACHANNEL_LIB}" PARENT_SCOPE)
     else()
-        set(LIBDATACHANNEL_LIBRARIES "${CMAKE_CURRENT_BINARY_DIR}/libdatachannel/libdatachannel.a" PARENT_SCOPE)
+        set(LIBDATACHANNEL_LIBRARIES "${_LIBDATACHANNEL_A}" PARENT_SCOPE)
     endif()
 endif(NETPLAY)
