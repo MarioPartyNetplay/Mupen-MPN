@@ -383,8 +383,11 @@ std::uint32_t OGLWidget::DefaultFramebufferObject() const
 
 bool OGLWidget::CaptureScreenshot(std::vector<std::uint8_t>& rgbData, int& width, int& height) const
 {
-    const int captureWidth  = this->width;
-    const int captureHeight = this->height;
+    // Prefer the last size actually applied to the video plugin. During resize,
+    // this->width/height can update ~100ms before the framebuffer does, and
+    // glReadPixels with an oversized rect can crash the driver.
+    int captureWidth  = this->appliedWidth > 0 ? this->appliedWidth : this->width;
+    int captureHeight = this->appliedHeight > 0 ? this->appliedHeight : this->height;
 
     if (captureWidth <= 0 || captureHeight <= 0)
     {
@@ -409,9 +412,20 @@ bool OGLWidget::CaptureScreenshot(std::vector<std::uint8_t>& rgbData, int& width
     }
 
     using ReadBufferFn = void (*)(unsigned int);
+    using GetErrorFn = unsigned int (*)();
     const auto glReadBuffer = reinterpret_cast<ReadBufferFn>(this->openGLcontext->getProcAddress("glReadBuffer"));
+    const auto glGetError = reinterpret_cast<GetErrorFn>(this->openGLcontext->getProcAddress("glGetError"));
 
-    std::vector<std::uint8_t> fullBuffer(static_cast<size_t>(captureWidth * captureHeight * 3));
+    // Clamp to the active viewport when available so we never read past the FB.
+    GLint viewport[4] = {0, 0, 0, 0};
+    glFunctions->glGetIntegerv(GL_VIEWPORT, viewport);
+    if (viewport[2] > 0 && viewport[3] > 0)
+    {
+        captureWidth  = std::min(captureWidth, static_cast<int>(viewport[2]));
+        captureHeight = std::min(captureHeight, static_cast<int>(viewport[3]));
+    }
+
+    std::vector<std::uint8_t> fullBuffer(static_cast<size_t>(captureWidth) * static_cast<size_t>(captureHeight) * 3u);
 
     const std::uint32_t framebuffer = this->DefaultFramebufferObject();
     if (framebuffer != 0)
@@ -431,8 +445,20 @@ bool OGLWidget::CaptureScreenshot(std::vector<std::uint8_t>& rgbData, int& width
         }
     }
 
+    if (glGetError != nullptr)
+    {
+        while (glGetError() != GL_NO_ERROR)
+        {
+        }
+    }
+
     glFunctions->glReadPixels(0, 0, captureWidth, captureHeight, GL_RGB, GL_UNSIGNED_BYTE, fullBuffer.data());
     glFunctions->glFinish();
+
+    if (glGetError != nullptr && glGetError() != GL_NO_ERROR)
+    {
+        return false;
+    }
 
     return cropScreenshotBorders(fullBuffer, captureWidth, captureHeight, rgbData, width, height);
 #else
@@ -441,37 +467,59 @@ bool OGLWidget::CaptureScreenshot(std::vector<std::uint8_t>& rgbData, int& width
         return false;
     }
 
+    int surfaceWidth  = 0;
+    int surfaceHeight = 0;
+    if (this->angleContext.querySurfaceSize(surfaceWidth, surfaceHeight))
+    {
+        captureWidth  = surfaceWidth;
+        captureHeight = surfaceHeight;
+    }
+
     using BindFramebufferFn = void (*)(unsigned int, unsigned int);
     using ReadBufferFn = void (*)(unsigned int);
     using ReadPixelsFn = void (*)(int, int, int, int, unsigned int, unsigned int, void*);
     using FinishFn = void (*)();
+    using GetErrorFn = unsigned int (*)();
 
     const auto glBindFramebuffer = reinterpret_cast<BindFramebufferFn>(this->angleContext.getProcAddress("glBindFramebuffer"));
     const auto glReadBuffer = reinterpret_cast<ReadBufferFn>(this->angleContext.getProcAddress("glReadBuffer"));
     const auto glReadPixels = reinterpret_cast<ReadPixelsFn>(this->angleContext.getProcAddress("glReadPixels"));
     const auto glFinish = reinterpret_cast<FinishFn>(this->angleContext.getProcAddress("glFinish"));
+    const auto glGetError = reinterpret_cast<GetErrorFn>(this->angleContext.getProcAddress("glGetError"));
 
     if (glBindFramebuffer == nullptr || glReadBuffer == nullptr || glReadPixels == nullptr || glFinish == nullptr)
     {
         return false;
     }
 
-    std::vector<std::uint8_t> fullBuffer(static_cast<size_t>(captureWidth * captureHeight * 3));
+    std::vector<std::uint8_t> fullBuffer(static_cast<size_t>(captureWidth) * static_cast<size_t>(captureHeight) * 3u);
 
     const std::uint32_t framebuffer = this->DefaultFramebufferObject();
     if (framebuffer != 0)
     {
-        glBindFramebuffer(0x8CA8, framebuffer);
-        glReadBuffer(0x8CE0);
+        glBindFramebuffer(0x8CA8, framebuffer); // GL_READ_FRAMEBUFFER
+        glReadBuffer(0x8CE0);                  // GL_COLOR_ATTACHMENT0
     }
     else
     {
         glBindFramebuffer(0x8CA8, 0);
-        glReadBuffer(0x0405);
+        glReadBuffer(0x0405); // GL_BACK
     }
 
-    glReadPixels(0, 0, captureWidth, captureHeight, 0x1907, 0x1401, fullBuffer.data());
+    if (glGetError != nullptr)
+    {
+        while (glGetError() != 0)
+        {
+        }
+    }
+
+    glReadPixels(0, 0, captureWidth, captureHeight, 0x1907, 0x1401, fullBuffer.data()); // GL_RGB, GL_UNSIGNED_BYTE
     glFinish();
+
+    if (glGetError != nullptr && glGetError() != 0)
+    {
+        return false;
+    }
 
     return cropScreenshotBorders(fullBuffer, captureWidth, captureHeight, rgbData, width, height);
 #endif

@@ -395,13 +395,30 @@ static bool VidExt_CaptureScreenshot(const std::filesystem::path& path)
     int width  = 0;
     int height = 0;
 
+    if (l_OGLWidget == nullptr || *l_OGLWidget == nullptr)
+    {
+        return false;
+    }
+
     if (!(*l_OGLWidget)->CaptureScreenshot(rgbData, width, height))
     {
         return false;
     }
 
-    QImage image(rgbData.data(), width, height, width * 3, QImage::Format_RGB888);
-    return image.mirrored(false, true).save(QString::fromStdString(path.string()), "PNG");
+    if (width <= 0 || height <= 0 ||
+        rgbData.size() < static_cast<size_t>(width) * static_cast<size_t>(height) * 3u)
+    {
+        return false;
+    }
+
+    // Deep-copy so PNG encode does not depend on the temporary capture buffer layout.
+    const QImage image(rgbData.data(), width, height, width * 3, QImage::Format_RGB888);
+    if (image.isNull())
+    {
+        return false;
+    }
+
+    return image.copy().mirrored(false, true).save(QString::fromStdString(path.string()), "PNG");
 }
 
 static void VidExt_TryCaptureScreenshot(void)

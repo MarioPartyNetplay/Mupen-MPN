@@ -69,7 +69,10 @@ static void configureMetalLayer(CAMetalLayer* metalLayer, QWindow* window)
     }
 
     metalLayer.contentsScale   = devicePixelRatio;
-    metalLayer.framebufferOnly = YES;
+    // Screenshots use glReadPixels on the default framebuffer. With
+    // framebufferOnly=YES, Metal allocates display-only textures and
+    // readback can assert/crash ("texture must not be a framebufferOnly texture").
+    metalLayer.framebufferOnly = NO;
     metalLayer.drawableSize    = CGSizeMake(width, height);
 }
 
@@ -484,6 +487,34 @@ void* AngleContext::getProcAddress(const char* name) const
 std::uint32_t AngleContext::defaultFramebufferObject() const
 {
     return 0;
+}
+
+bool AngleContext::querySurfaceSize(int& width, int& height) const
+{
+    EGLDisplay eglDisplay = static_cast<EGLDisplay>(this->display);
+    EGLSurface eglSurface = static_cast<EGLSurface>(this->surface);
+
+    if (eglDisplay == EGL_NO_DISPLAY || eglSurface == EGL_NO_SURFACE)
+    {
+        return false;
+    }
+
+    EGLint surfaceWidth  = 0;
+    EGLint surfaceHeight = 0;
+    if (!eglQuerySurface(eglDisplay, eglSurface, EGL_WIDTH, &surfaceWidth) ||
+        !eglQuerySurface(eglDisplay, eglSurface, EGL_HEIGHT, &surfaceHeight))
+    {
+        return false;
+    }
+
+    if (surfaceWidth <= 0 || surfaceHeight <= 0)
+    {
+        return false;
+    }
+
+    width  = static_cast<int>(surfaceWidth);
+    height = static_cast<int>(surfaceHeight);
+    return true;
 }
 
 void AngleContext::moveToThread(QThread* thread)

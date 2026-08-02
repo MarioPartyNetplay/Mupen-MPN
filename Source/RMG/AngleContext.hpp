@@ -31,6 +31,7 @@ public:
     void swapBuffers(QWindow* window);
     void* getProcAddress(const char* name) const;
     std::uint32_t defaultFramebufferObject() const;
+    bool querySurfaceSize(int& width, int& height) const;
 
     void moveToThread(QThread* thread);
 
