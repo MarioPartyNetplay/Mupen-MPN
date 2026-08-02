@@ -319,7 +319,11 @@ if (NETPLAY)
 
     set(_ENET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/enet")
     if (EXISTS "${_ENET_DIR}/CMakeLists.txt")
+        # enet 1.3.18+ installs to lib/static; skip that — we only link it statically.
+        set(_ENET_SKIP_INSTALL_RULES "${CMAKE_SKIP_INSTALL_RULES}")
+        set(CMAKE_SKIP_INSTALL_RULES TRUE)
         add_subdirectory(enet)
+        set(CMAKE_SKIP_INSTALL_RULES "${_ENET_SKIP_INSTALL_RULES}")
         # enet 1.3.x only calls include_directories(); that does not propagate to
         # dependents linking the target, so <enet/enet.h> would be missing.
         target_include_directories(enet PUBLIC "$<BUILD_INTERFACE:${_ENET_DIR}/include>")
@@ -339,7 +343,10 @@ if (NETPLAY)
                 GIT_REPOSITORY https://github.com/lsalzman/enet.git
                 GIT_TAG v1.3.18
             )
+            set(_ENET_SKIP_INSTALL_RULES "${CMAKE_SKIP_INSTALL_RULES}")
+            set(CMAKE_SKIP_INSTALL_RULES TRUE)
             FetchContent_MakeAvailable(enet)
+            set(CMAKE_SKIP_INSTALL_RULES "${_ENET_SKIP_INSTALL_RULES}")
             FetchContent_GetProperties(enet SOURCE_DIR _ENET_FETCH_DIR)
             if (TARGET enet AND _ENET_FETCH_DIR)
                 target_include_directories(enet PUBLIC "$<BUILD_INTERFACE:${_ENET_FETCH_DIR}/include>")
