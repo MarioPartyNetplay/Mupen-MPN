@@ -39,6 +39,9 @@ modules:
           - GLOBIGNORE=contrib && rm -rf *
           - GLOBIGNORE=contrib/minizip && rm -rf contrib/*
           - rm -f contrib/minizip/Makefile
+          # zlib 1.3.2 ioapi.h includes ints.h, but Makefile.am omits it from
+          # installed headers (madler/zlib#1164).
+          - grep -q 'ints\.h' contrib/minizip/Makefile.am || sed -i '/crypt\.h \\/a\      ints.h \\' contrib/minizip/Makefile.am
           - autoreconf -fiv contrib/minizip
 
   - name: hidapi
