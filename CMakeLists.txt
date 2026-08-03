@@ -18,7 +18,7 @@ if(APPLE AND (NOT CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET VER
 endif()
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Minimum policy version" FORCE)
-set(PORTABLE_INSTALL ON CACHE BOOL "Portable Installation" FORCE)
+option(PORTABLE_INSTALL "Portable Installation" ON)
 option(UPDATER          "Enables updater" ${WIN32})
 option(APPIMAGE_UPDATER "Enables AppImage updater" OFF)
 option(KCA_DRAG_DROP    "Enables drag and drop using KCoreAddons" OFF) # https://bugreports.qt.io/browse/QTBUG-91357
@@ -255,14 +255,17 @@ install(FILES ${MUPEN64PLUS_PLUGIN_GFX_GLIDEN64_DATA}
 )
 
 if (INSTALL_DESKTOP_FILE)
-    install(FILES Package/org.marioparty.mupen.desktop
+    install(FILES Package/com.github.Rosalie241.RMG.desktop
         DESTINATION ${DESKTOP_INSTALL_PATH}
+        RENAME org.marioparty.mupen.desktop
     )
-    install(FILES Package/org.marioparty.mupen.svg
+    install(FILES Package/com.github.Rosalie241.RMG.svg
         DESTINATION ${ICON_INSTALL_PATH}
+        RENAME org.marioparty.mupen.svg
     )
-    install(FILES Package/org.marioparty.mupen.metainfo.xml
+    install(FILES Package/com.github.Rosalie241.RMG.metainfo.xml
         DESTINATION ${METAINFO_INSTALL_PATH}
+        RENAME org.marioparty.mupen.metainfo.xml
     )
 endif(INSTALL_DESKTOP_FILE)
 

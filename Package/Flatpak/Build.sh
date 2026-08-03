@@ -5,10 +5,13 @@
 #   ./Package/Flatpak/Build.sh [output.flatpak]
 #
 # Environment overrides:
-#   FLATPAK_BUILD_DIR   build directory (default: /tmp/flatpak-build-dir)
+#   FLATPAK_BUILD_DIR   build directory (default: <repo>/.flatpak-build)
 #   FLATPAK_STATE_DIR   flatpak-builder state (default: <repo>/.flatpak-builder)
-#   FLATPAK_REPO_DIR    flatpak repo path (default: /tmp/flatpak-repo)
+#   FLATPAK_REPO_DIR    flatpak repo path (default: <repo>/.flatpak-repo)
 #   FLATPAK_LOG_FILE    log file path (default: <repo>/flatpak-build.log)
+#
+# build/state/repo dirs must share a filesystem. Defaults stay under the repo
+# because /tmp is often a separate tmpfs on Linux.
 
 set -euo pipefail
 
@@ -19,10 +22,10 @@ toplvl_dir="$(realpath "$script_dir/../..")"
 manifest_path="$script_dir/../flatpak.yml"
 log_file="${FLATPAK_LOG_FILE:-$toplvl_dir/flatpak-build.log}"
 bundle_output="${1:-$toplvl_dir/MupenMPN-linux.flatpak}"
-build_dir="${FLATPAK_BUILD_DIR:-/tmp/flatpak-build-dir}"
+build_dir="${FLATPAK_BUILD_DIR:-$toplvl_dir/.flatpak-build}"
 state_dir="${FLATPAK_STATE_DIR:-$toplvl_dir/.flatpak-builder}"
-repo_dir="${FLATPAK_REPO_DIR:-/tmp/flatpak-repo}"
-local_manifest="$(mktemp /tmp/flatpak-local.XXXXXX.yml)"
+repo_dir="${FLATPAK_REPO_DIR:-$toplvl_dir/.flatpak-repo}"
+local_manifest="$(mktemp "$toplvl_dir/.flatpak-local.XXXXXX.yml")"
 app_id="org.mariopartynetplay.RMG-MPN"
 
 cleanup() {
@@ -121,14 +124,48 @@ write_local_manifest() {
         exit 1
     fi
 
-    perl -0pe 's/- type: git\r?\n        url: https:\/\/github.com\/MarioPartyNetplay\/Mupen-MPN.git\r?\n        disable-submodules: true/- type: dir\n        path: '"$toplvl_dir"'/s' \
-        "$manifest_path" > "$local_manifest"
+    # Swap the remote git checkout for the local tree, then clear vendored
+    # paths that the manifest overlays (local submodules leave a .git file
+    # that conflicts with flatpak-builder's git source checkout).
+    FLATPAK_LOCAL_SOURCE="$toplvl_dir" python3 - "$manifest_path" "$local_manifest" <<'PY'
+import os, pathlib, re, sys
+
+src, dst = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+text = src.read_text()
+pattern = (
+    r"- type: git\r?\n"
+    r"        url: https://github\.com/MarioPartyNetplay/Mupen-MPN\.git\r?\n"
+    r"        disable-submodules: true"
+)
+# Skip local build/cache dirs so host artifacts do not contaminate the build.
+replacement = (
+    "- type: dir\n"
+    f"        path: {os.environ['FLATPAK_LOCAL_SOURCE']}\n"
+    "        skip:\n"
+    "          - .flatpak-build\n"
+    "          - .flatpak-builder\n"
+    "          - .flatpak-repo\n"
+    "          - Build\n"
+    "          - Bin\n"
+    "      - type: shell\n"
+    "        commands:\n"
+    "          - rm -rf Source/3rdParty/libdatachannel Source/3rdParty/enet"
+)
+new_text, count = re.subn(pattern, replacement, text, count=1)
+if count != 1:
+    raise SystemExit(f"failed to rewrite RMG-MPN source (matches={count})")
+dst.write_text(new_text)
+PY
 
     log_kv "manifest source" "$manifest_path"
     log_kv "local manifest" "$local_manifest"
     log_kv "source tree" "$toplvl_dir"
     log "RMG-MPN sources section:"
-    awk '/name: RMG-MPN/,/^  - name:|^modules:/ { print }' "$local_manifest" | tee -a "$log_file"
+    awk '
+        /^  - name: RMG-MPN/ { printing=1 }
+        printing && /^  - name:/ && !/^  - name: RMG-MPN/ { exit }
+        printing { print }
+    ' "$local_manifest" | tee -a "$log_file"
 }
 
 collect_environment() {

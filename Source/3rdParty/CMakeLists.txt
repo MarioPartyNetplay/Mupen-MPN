@@ -324,6 +324,12 @@ if (NETPLAY)
         set(CMAKE_SKIP_INSTALL_RULES TRUE)
         add_subdirectory(enet)
         set(CMAKE_SKIP_INSTALL_RULES "${_ENET_SKIP_INSTALL_RULES}")
+        # CMAKE_SKIP_INSTALL_RULES still leaves a parent include() of
+        # enet/cmake_install.cmake; provide a no-op so `cmake --install` works.
+        if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/enet/cmake_install.cmake")
+            file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/enet/cmake_install.cmake"
+                "# Install rules intentionally skipped for bundled enet\n")
+        endif()
         # enet 1.3.x only calls include_directories(); that does not propagate to
         # dependents linking the target, so <enet/enet.h> would be missing.
         target_include_directories(enet PUBLIC "$<BUILD_INTERFACE:${_ENET_DIR}/include>")
@@ -347,7 +353,11 @@ if (NETPLAY)
             set(CMAKE_SKIP_INSTALL_RULES TRUE)
             FetchContent_MakeAvailable(enet)
             set(CMAKE_SKIP_INSTALL_RULES "${_ENET_SKIP_INSTALL_RULES}")
-            FetchContent_GetProperties(enet SOURCE_DIR _ENET_FETCH_DIR)
+            FetchContent_GetProperties(enet SOURCE_DIR _ENET_FETCH_DIR BINARY_DIR _ENET_FETCH_BIN)
+            if (DEFINED _ENET_FETCH_BIN AND NOT EXISTS "${_ENET_FETCH_BIN}/cmake_install.cmake")
+                file(WRITE "${_ENET_FETCH_BIN}/cmake_install.cmake"
+                    "# Install rules intentionally skipped for bundled enet\n")
+            endif()
             if (TARGET enet AND _ENET_FETCH_DIR)
                 target_include_directories(enet PUBLIC "$<BUILD_INTERFACE:${_ENET_FETCH_DIR}/include>")
             endif()

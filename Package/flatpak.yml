@@ -84,10 +84,25 @@ modules:
   - name: RMG-MPN
     buildsystem: cmake-ninja
     post-install:
-      - desktop-file-edit --set-key=Exec --set-value='/app/bin/Mupen-MPN'
-        /app/share/applications/com.github.Rosalie241.RMG-MPN.desktop
+      # Flatpak only exports desktop/icon/metainfo files that match app-id.
+      - mv /app/share/applications/org.marioparty.mupen.desktop
+        /app/share/applications/org.mariopartynetplay.RMG-MPN.desktop
+      - mv /app/share/icons/hicolor/scalable/apps/org.marioparty.mupen.svg
+        /app/share/icons/hicolor/scalable/apps/org.mariopartynetplay.RMG-MPN.svg
+      - mv /app/share/metainfo/org.marioparty.mupen.metainfo.xml
+        /app/share/metainfo/org.mariopartynetplay.RMG-MPN.metainfo.xml
+      - desktop-file-edit --set-key=Exec --set-value='/app/bin/Mupen-MPN %f'
+        /app/share/applications/org.mariopartynetplay.RMG-MPN.desktop
+      - desktop-file-edit --set-key=TryExec --set-value='Mupen-MPN'
+        /app/share/applications/org.mariopartynetplay.RMG-MPN.desktop
+      - desktop-file-edit --set-key=Icon --set-value='org.mariopartynetplay.RMG-MPN'
+        /app/share/applications/org.mariopartynetplay.RMG-MPN.desktop
       - desktop-file-edit --set-key=Name --set-value='Mupen MPN'
-        /app/share/applications/com.github.Rosalie241.RMG-MPN.desktop 
+        /app/share/applications/org.mariopartynetplay.RMG-MPN.desktop
+      - sed -i
+        -e 's|<id>org.marioparty.mupen</id>|<id>org.mariopartynetplay.RMG-MPN</id>|'
+        -e 's|org.marioparty.mupen.desktop|org.mariopartynetplay.RMG-MPN.desktop|'
+        /app/share/metainfo/org.mariopartynetplay.RMG-MPN.metainfo.xml
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
       - -DPORTABLE_INSTALL=OFF
