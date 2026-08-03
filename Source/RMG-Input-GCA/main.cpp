@@ -42,6 +42,9 @@
 
 #define GCA_COMMAND_POLL 0x13
 
+#define GCA_IS_WAVEBIRD_MASK 1 << 5
+#define GCA_IS_WIRED_GC_CONTROLLER_MASK 1 << 4
+
 //
 // Local Structures
 //
@@ -592,16 +595,13 @@ EXPORT void CALL InitiateControllers(CONTROL_INFO ControlInfo)
         if (embeddedNetplay)
         {
             ControlInfo.Controls[i].Present = 1;
-            if (i != 0)
-            {
-                ControlInfo.Controls[i].Plugin = PLUGIN_NONE;
-                ControlInfo.Controls[i].RawData = 0;
-                ControlInfo.Controls[i].Type = CONT_TYPE_STANDARD;
-            }
+            ControlInfo.Controls[i].Plugin = (i == 0) ? PLUGIN_MEMPAK : PLUGIN_NONE;
+            ControlInfo.Controls[i].RawData = 0;
+            ControlInfo.Controls[i].Type = CONT_TYPE_STANDARD;
         }
         else
         {
-            ControlInfo.Controls[i].Present = (state.Status > 0) ? 1 : 0;
+            ControlInfo.Controls[i].Present = state.Status & (GCA_IS_WAVEBIRD_MASK | GCA_IS_WIRED_GC_CONTROLLER_MASK) ? 1 : 0;
         }
     }
     l_ControllerStateMutex.unlock();

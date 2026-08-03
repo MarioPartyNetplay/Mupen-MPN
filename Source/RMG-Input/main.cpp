@@ -823,6 +823,11 @@ static bool profile_has_keyboard_bindings(const InputProfile* profile)
     return false;
 }
 
+static bool profile_has_open_pad(const InputProfile* profile)
+{
+    return profile->SDLGamepad != nullptr || profile->SDLJoystick != nullptr;
+}
+
 static bool profile_has_live_local_input(int control)
 {
     if (control < 0 || control >= NUM_CONTROLLERS)
@@ -845,19 +850,12 @@ static bool profile_has_live_local_input(int control)
         return true;
     }
 
-    if (profile->DeviceType == InputDeviceType::Automatic &&
-        profile->SDLGamepad == nullptr &&
-        profile->SDLJoystick == nullptr)
+    if (profile->DeviceType == InputDeviceType::Automatic && !profile_has_open_pad(profile))
     {
         return true;
     }
 
-    if (profile_has_keyboard_bindings(profile))
-    {
-        return true;
-    }
-
-    return profile->SDLGamepad != nullptr || profile->SDLJoystick != nullptr;
+    return profile_has_open_pad(profile);
 }
 
 static bool profile_has_keyboard_local_input(int control)
@@ -873,35 +871,66 @@ static bool profile_has_keyboard_local_input(int control)
         return false;
     }
 
+    // Only treat the profile as keyboard-driven when that is the selected device
+    // (or Automatic with no pad attached). Leftover keyboard bindings on a pad
+    // profile must not force keyboard-only netplay reads.
     if (profile->DeviceType == InputDeviceType::Keyboard)
     {
         return true;
     }
 
-    if (profile->DeviceType == InputDeviceType::Automatic &&
-        profile->SDLGamepad == nullptr &&
-        profile->SDLJoystick == nullptr)
+    if (profile->DeviceType == InputDeviceType::Automatic && !profile_has_open_pad(profile))
     {
         return true;
     }
 
-    return profile_has_keyboard_bindings(profile);
+    return false;
+}
+
+static bool profile_has_live_pad_input(int control)
+{
+    if (control < 0 || control >= NUM_CONTROLLERS)
+    {
+        return false;
+    }
+
+    const InputProfile* profile = &l_InputProfiles[control];
+    return profile->PluggedIn && profile_has_open_pad(profile);
 }
 
 static int resolve_embedded_netplay_local_profile(void)
 {
-    // Embedded netplay mirrors one local physical input source into the assigned
-    // netplay slot. The input UI only treats Player 1 automatic mode as keyboard
-    // fallback, so prefer profile 0 just like local play.
-    if (profile_has_keyboard_local_input(0))
+    // Mirror one local physical source into the assigned netplay slot.
+    // Prefer an open gamepad/joystick over keyboard so Automatic/pad setups
+    // are not forced into keyboard-only reads.
+    const int localSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
+
+    if (profile_has_live_pad_input(localSlot))
+    {
+        return localSlot;
+    }
+
+    if (profile_has_live_pad_input(0))
     {
         return 0;
     }
 
-    const int localSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
+    for (int i = 0; i < NUM_CONTROLLERS; i++)
+    {
+        if (profile_has_live_pad_input(i))
+        {
+            return i;
+        }
+    }
+
     if (profile_has_keyboard_local_input(localSlot))
     {
         return localSlot;
+    }
+
+    if (profile_has_keyboard_local_input(0))
+    {
+        return 0;
     }
 
     for (int i = 0; i < NUM_CONTROLLERS; i++)
@@ -912,14 +941,14 @@ static int resolve_embedded_netplay_local_profile(void)
         }
     }
 
-    if (profile_has_live_local_input(0))
-    {
-        return 0;
-    }
-
     if (profile_has_live_local_input(localSlot))
     {
         return localSlot;
+    }
+
+    if (profile_has_live_local_input(0))
+    {
+        return 0;
     }
 
     for (int i = 0; i < NUM_CONTROLLERS; i++)
@@ -1351,7 +1380,12 @@ static void fill_embedded_netplay_local_keys(int localControl, BUTTONS* outKeys)
         return;
     }
 
-    const bool keyboardOnly = profile_has_keyboard_bindings(profile);
+    // Keyboard-only reads are for keyboard/Automatic-without-pad profiles.
+    // Pad profiles often retain leftover keyboard bindings; those must not
+    // disable SDL gamepad/joystick sampling during netplay.
+    const bool keyboardOnly =
+        profile->DeviceType == InputDeviceType::Keyboard ||
+        (profile->DeviceType == InputDeviceType::Automatic && !profile_has_open_pad(profile));
 
     const auto readButton = [&](const InputMapping* mapping) {
         return keyboardOnly

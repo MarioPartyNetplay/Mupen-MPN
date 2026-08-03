@@ -245,6 +245,36 @@ CORE_EXPORT bool CoreAdvanceEmbeddedNetplayFrame()
     return true;
 }
 
+// C ABI for plugins that cannot link RMG-Core as C++ (e.g. raphnetraw).
+extern "C" {
+
+CORE_EXPORT int RMG_Netplay_IsActive(void)
+{
+    return CoreIsEmbeddedNetplayActive() ? 1 : 0;
+}
+
+CORE_EXPORT int RMG_Netplay_LocalSlot(void)
+{
+    return CoreGetEmbeddedNetplayLocalPlayerSlot();
+}
+
+CORE_EXPORT void RMG_Netplay_SubmitInput(unsigned int controllerState)
+{
+    CoreSubmitEmbeddedNetplayFrameInput(controllerState);
+}
+
+CORE_EXPORT unsigned int RMG_Netplay_GetInput(int playerSlot)
+{
+    return CoreGetEmbeddedNetplayFrameInput(playerSlot);
+}
+
+CORE_EXPORT int RMG_Netplay_AdvanceFrame(void)
+{
+    return CoreAdvanceEmbeddedNetplayFrame() ? 1 : 0;
+}
+
+} // extern "C"
+
 CORE_EXPORT bool CoreBuildNetplaySyncSettings(std::filesystem::path romPath, CoreNetplaySyncSettings& out)
 {
     CoreRomType type = {};

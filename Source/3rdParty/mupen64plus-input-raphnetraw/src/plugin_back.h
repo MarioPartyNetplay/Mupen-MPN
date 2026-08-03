@@ -17,6 +17,8 @@ int pb_readController(int Control, unsigned char *Command);
 int pb_controllerCommand(int Control, unsigned char *Command);
 int pb_romOpen(void);
 int pb_romClosed(void);
+/** Poll N64-format buttons for an adapter channel. Returns 0 on success. */
+int pb_pollControllerButtons(int Control, unsigned int *buttons);
 
 #endif // _plugin_back_h__
 

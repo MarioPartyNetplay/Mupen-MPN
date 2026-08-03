@@ -47,6 +47,19 @@ void CoreSubmitEmbeddedNetplayFrameInput(uint32_t controllerState);
 uint32_t CoreGetEmbeddedNetplayFrameInput(int playerSlot);
 bool CoreAdvanceEmbeddedNetplayFrame();
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+/* Stable C ABI for input plugins that resolve symbols dynamically. */
+int RMG_Netplay_IsActive(void);
+int RMG_Netplay_LocalSlot(void);
+void RMG_Netplay_SubmitInput(unsigned int controllerState);
+unsigned int RMG_Netplay_GetInput(int playerSlot);
+int RMG_Netplay_AdvanceFrame(void);
+#ifdef __cplusplus
+}
+#endif
+
 // core timing settings synced from host (matches classic mupen64plus netplay fields)
 struct CoreNetplaySyncSettings
 {

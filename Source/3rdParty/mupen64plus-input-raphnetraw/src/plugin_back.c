@@ -477,3 +477,38 @@ int pb_readController(int Control, unsigned char *Command)
 
 	return 0;
 }
+
+int pb_pollControllerButtons(int Control, unsigned int *buttons)
+{
+	struct rawChannel *channel;
+	unsigned char tx = 0x01; /* N64 controller read */
+	unsigned char rx[8] = {0};
+	int n;
+
+	if (!buttons || Control < 0 || Control >= g_n_channels) {
+		return -1;
+	}
+
+	channel = &g_channels[Control];
+	if (!channel->adapter || !channel->adapter->handle) {
+		return -1;
+	}
+
+	n = gcn64lib_rawSiCommand(
+		channel->adapter->handle,
+		(unsigned char)channel->chn,
+		&tx,
+		1,
+		rx,
+		sizeof(rx));
+	if (n < 4) {
+		return -1;
+	}
+
+	/* Standard N64 controller reply is little-endian BUTTONS.Value */
+	*buttons = (unsigned int)rx[0]
+		| ((unsigned int)rx[1] << 8)
+		| ((unsigned int)rx[2] << 16)
+		| ((unsigned int)rx[3] << 24);
+	return 0;
+}

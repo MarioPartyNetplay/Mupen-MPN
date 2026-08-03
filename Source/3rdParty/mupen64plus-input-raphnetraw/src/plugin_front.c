@@ -39,6 +39,11 @@
 #include <string.h>
 #include <math.h>
 
+#ifdef __linux__
+#include <dlfcn.h>
+#include <unistd.h>
+#endif
+
 #define M64P_PLUGIN_PROTOTYPES 1
 #include "config.h"
 #include "m64p_common.h"
@@ -68,6 +73,101 @@ static int emu2adap_portmap[MAX_CONTROLLERS] = { 0, 1, 2, 3 };
 
 #define EMU_2_ADAP_PORT(a)	((a) == -1 ? -1 : emu2adap_portmap[a])
 
+/* Embedded netplay C ABI resolved from libRMG-Core at runtime. */
+typedef int (*rmg_netplay_is_active_fn)(void);
+typedef int (*rmg_netplay_local_slot_fn)(void);
+typedef void (*rmg_netplay_submit_input_fn)(unsigned int);
+typedef unsigned int (*rmg_netplay_get_input_fn)(int);
+typedef int (*rmg_netplay_advance_frame_fn)(void);
+
+static rmg_netplay_is_active_fn l_NetplayIsActive = NULL;
+static rmg_netplay_local_slot_fn l_NetplayLocalSlot = NULL;
+static rmg_netplay_submit_input_fn l_NetplaySubmitInput = NULL;
+static rmg_netplay_get_input_fn l_NetplayGetInput = NULL;
+static rmg_netplay_advance_frame_fn l_NetplayAdvanceFrame = NULL;
+static int l_NetplayResolved = 0;
+static int l_NetplayControllers = 0;
+static int l_EmbeddedNetplayLastControl = -1;
+static int l_EmbeddedNetplayLocalSubmitted = 0;
+static int l_EmbeddedNetplayFrameAdvanced = 0;
+static unsigned int l_EmbeddedNetplaySyncedState[MAX_CONTROLLERS];
+
+static void resolve_netplay_api(void)
+{
+	if (l_NetplayResolved) {
+		return;
+	}
+	l_NetplayResolved = 1;
+
+#ifdef __linux__
+	l_NetplayIsActive = (rmg_netplay_is_active_fn)dlsym(RTLD_DEFAULT, "RMG_Netplay_IsActive");
+	l_NetplayLocalSlot = (rmg_netplay_local_slot_fn)dlsym(RTLD_DEFAULT, "RMG_Netplay_LocalSlot");
+	l_NetplaySubmitInput = (rmg_netplay_submit_input_fn)dlsym(RTLD_DEFAULT, "RMG_Netplay_SubmitInput");
+	l_NetplayGetInput = (rmg_netplay_get_input_fn)dlsym(RTLD_DEFAULT, "RMG_Netplay_GetInput");
+	l_NetplayAdvanceFrame = (rmg_netplay_advance_frame_fn)dlsym(RTLD_DEFAULT, "RMG_Netplay_AdvanceFrame");
+#endif
+}
+
+static int netplay_active(void)
+{
+	resolve_netplay_api();
+	return l_NetplayIsActive && l_NetplayIsActive() &&
+		l_NetplaySubmitInput && l_NetplayGetInput && l_NetplayAdvanceFrame;
+}
+
+static int resolve_local_adapter_port(void)
+{
+	int localSlot = 0;
+	unsigned int buttons = 0;
+
+	if (l_NetplayLocalSlot) {
+		localSlot = l_NetplayLocalSlot();
+	}
+	if (localSlot < 0) {
+		localSlot = 0;
+	}
+	if (localSlot >= MAX_CONTROLLERS) {
+		localSlot = MAX_CONTROLLERS - 1;
+	}
+
+	if (pb_pollControllerButtons(EMU_2_ADAP_PORT(localSlot), &buttons) == 0) {
+		return localSlot;
+	}
+	if (pb_pollControllerButtons(EMU_2_ADAP_PORT(0), &buttons) == 0) {
+		return 0;
+	}
+	return localSlot;
+}
+
+static void advance_embedded_netplay_frame(void)
+{
+	int attempts = 0;
+	int advanced;
+
+	if (l_EmbeddedNetplayFrameAdvanced || !l_NetplayAdvanceFrame) {
+		return;
+	}
+
+	advanced = l_NetplayAdvanceFrame();
+	while (!advanced && attempts < 8000) {
+		if (!netplay_active()) {
+			break;
+		}
+#ifdef __linux__
+		usleep(1000);
+#endif
+		advanced = l_NetplayAdvanceFrame();
+		attempts++;
+	}
+
+	if (advanced && l_NetplayGetInput) {
+		int i;
+		for (i = 0; i < MAX_CONTROLLERS; i++) {
+			l_EmbeddedNetplaySyncedState[i] = l_NetplayGetInput(i);
+		}
+		l_EmbeddedNetplayFrameAdvanced = 1;
+	}
+}
 #if 0
 /* definitions of pointers to Core config functions */
 ptr_ConfigOpenSection      ConfigOpenSection = NULL;
@@ -239,8 +339,10 @@ EXPORT m64p_error CALL PluginGetVersion(m64p_plugin_type *PluginType, int *Plugi
 EXPORT void CALL InitiateControllers(CONTROL_INFO ControlInfo)
 {
     int i, n_controllers, adap_port;
+	const int embeddedNetplay = netplay_active();
 
 	n_controllers = pb_scanControllers();
+	l_NetplayControllers = n_controllers;
 
 	if (n_controllers <= 0) {
     	DebugMessage(PB_MSG_ERROR, "No adapters detected\n");
@@ -250,7 +352,13 @@ EXPORT void CALL InitiateControllers(CONTROL_INFO ControlInfo)
 	for (i=0; i<MAX_CONTROLLERS; i++) {
 		adap_port = EMU_2_ADAP_PORT(i);
 
-		if (adap_port < n_controllers) {
+		if (embeddedNetplay) {
+			/* Lockstep netplay needs GetKeys + BUTTONS, not raw SI. */
+			ControlInfo.Controls[i].Present = 1;
+			ControlInfo.Controls[i].RawData = 0;
+			ControlInfo.Controls[i].Plugin = (i == 0) ? PLUGIN_MEMPAK : PLUGIN_NONE;
+			ControlInfo.Controls[i].Type = CONT_TYPE_STANDARD;
+		} else if (adap_port < n_controllers) {
 			ControlInfo.Controls[i].RawData = 1;
 
 			/* Setting this is currently required or we
@@ -285,16 +393,49 @@ EXPORT void CALL InitiateControllers(CONTROL_INFO ControlInfo)
 *******************************************************************/
 EXPORT void CALL ReadController(int Control, unsigned char *Command)
 {
+	if (netplay_active()) {
+		return;
+	}
 	pb_readController(EMU_2_ADAP_PORT(Control), Command);
 }
 
 EXPORT void CALL ControllerCommand(int Control, unsigned char *Command)
 {
+	if (netplay_active()) {
+		return;
+	}
 	pb_controllerCommand(EMU_2_ADAP_PORT(Control), Command);
 }
 
 EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
 {
+	if (!Keys || Control < 0 || Control >= MAX_CONTROLLERS) {
+		return;
+	}
+
+	Keys->Value = 0;
+
+	if (!netplay_active()) {
+		return;
+	}
+
+	if (l_EmbeddedNetplayLastControl < 0 ||
+		Control <= l_EmbeddedNetplayLastControl) {
+		l_EmbeddedNetplayLocalSubmitted = 0;
+		l_EmbeddedNetplayFrameAdvanced = 0;
+	}
+	l_EmbeddedNetplayLastControl = Control;
+
+	if (!l_EmbeddedNetplayLocalSubmitted) {
+		unsigned int localButtons = 0;
+		const int localPort = resolve_local_adapter_port();
+		pb_pollControllerButtons(EMU_2_ADAP_PORT(localPort), &localButtons);
+		l_NetplaySubmitInput(localButtons);
+		l_EmbeddedNetplayLocalSubmitted = 1;
+		advance_embedded_netplay_frame();
+	}
+
+	Keys->Value = l_EmbeddedNetplaySyncedState[Control];
 }
 
 EXPORT void CALL RomClosed(void)
@@ -304,6 +445,13 @@ EXPORT void CALL RomClosed(void)
 
 EXPORT int CALL RomOpen(void)
 {
+	int i;
+	l_EmbeddedNetplayLocalSubmitted = 0;
+	l_EmbeddedNetplayFrameAdvanced = 0;
+	l_EmbeddedNetplayLastControl = -1;
+	for (i = 0; i < MAX_CONTROLLERS; i++) {
+		l_EmbeddedNetplaySyncedState[i] = 0;
+	}
 	pb_romOpen();
 	return 1;
 }
