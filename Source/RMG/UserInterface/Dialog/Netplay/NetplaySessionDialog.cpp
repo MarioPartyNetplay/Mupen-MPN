@@ -10,6 +10,7 @@
 #include "UserInterface/Dialog/Cheats/CheatsCommon.hpp"
 #include "UserInterface/Dialog/Cheats/CheatsDialog.hpp"
 #include "Utilities/QtMessageBox.hpp"
+#include "Utilities/QtKeyToSdl3Key.hpp"
 #include "OnScreenDisplay.hpp"
 #include "NetplaySessionDialog.hpp"
 #include "Netplay/NetplayProtocol.hpp"
@@ -25,8 +26,15 @@
 #include <QMessageBox>
 #include <QShowEvent>
 #include <QAbstractButton>
+#include <QAbstractSpinBox>
+#include <QApplication>
+#include <QComboBox>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QKeyEvent>
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QTextEdit>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -37,6 +45,8 @@
 #include <RMG-Core/Settings.hpp>
 #include <RMG-Core/Plugins.hpp>
 #include <RMG-Core/CachedRomHeaderAndSettings.hpp>
+#include <RMG-Core/Emulation.hpp>
+#include <RMG-Core/Key.hpp>
 #include <QTimer>
 #include <QTimerEvent>
 #include <RMG-Core/Netplay.hpp>
@@ -197,6 +207,12 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     this->setupUi(this);
     this->setWindowIcon(QIcon(":Resource/RMG.png"));
     this->setWindowFlags(this->windowFlags() | Qt::WindowMinimizeButtonHint);
+
+    // Session dialog stays open during play and would otherwise steal keyboard
+    // focus from the render window. Forward keys to the core unless the user
+    // is typing in chat (or editing another text field).
+    qApp->installEventFilter(this);
+    this->chatLineEdit->setFocusPolicy(Qt::ClickFocus);
 
     // Parse session JSON
     QJsonDocument sessionDoc = QJsonDocument::fromJson(sessionFile.toUtf8());
@@ -511,6 +527,7 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
 
 NetplaySessionDialog::~NetplaySessionDialog(void)
 {
+    qApp->removeEventFilter(this);
     this->shutdownSession();
 }
 
@@ -1479,4 +1496,76 @@ void NetplaySessionDialog::on_coordinator_stateChanged(Netplay::NetplayCoordinat
     this->chatLineEdit->setEnabled(active);
     this->sendPushButton->setEnabled(active && !this->chatLineEdit->text().isEmpty());
     this->publishHostSessionIndex(state == Netplay::NetplayCoordinator::InGame);
+
+    if (state == Netplay::NetplayCoordinator::InGame) {
+        // Prefer game focus; chat remains usable via click.
+        this->chatLineEdit->clearFocus();
+        if (QWidget* parentWindow = this->parentWidget()) {
+            parentWindow->raise();
+            parentWindow->activateWindow();
+            parentWindow->setFocus(Qt::OtherFocusReason);
+        }
+    }
+}
+
+bool NetplaySessionDialog::isKeyboardCaptureWidget(QWidget* widget) const
+{
+    if (widget == nullptr) {
+        return false;
+    }
+
+    if (widget == this->chatLineEdit ||
+        qobject_cast<QLineEdit*>(widget) != nullptr ||
+        qobject_cast<QTextEdit*>(widget) != nullptr ||
+        qobject_cast<QPlainTextEdit*>(widget) != nullptr ||
+        qobject_cast<QAbstractSpinBox*>(widget) != nullptr ||
+        qobject_cast<QComboBox*>(widget) != nullptr) {
+        return true;
+    }
+
+    // Editable combo boxes focus an internal line edit.
+    if (widget->parentWidget() != nullptr &&
+        qobject_cast<QComboBox*>(widget->parentWidget()) != nullptr) {
+        return true;
+    }
+
+    return false;
+}
+
+bool NetplaySessionDialog::eventFilter(QObject* object, QEvent* event)
+{
+    Q_UNUSED(object);
+
+    if (event->type() != QEvent::KeyPress && event->type() != QEvent::KeyRelease) {
+        return QDialog::eventFilter(object, event);
+    }
+
+    if (!CoreIsEmulationRunning()) {
+        return QDialog::eventFilter(object, event);
+    }
+
+    // Only intercept keys while this dialog (or one of its children) holds focus.
+    // MainWindow's own EventFilter already handles the render window path.
+    QWidget* focusWidget = QApplication::focusWidget();
+    if (focusWidget == nullptr || !this->isAncestorOf(focusWidget)) {
+        if (QApplication::activeWindow() != this) {
+            return QDialog::eventFilter(object, event);
+        }
+    }
+
+    if (this->isKeyboardCaptureWidget(focusWidget)) {
+        return QDialog::eventFilter(object, event);
+    }
+
+    auto* keyEvent = static_cast<QKeyEvent*>(event);
+    const int key = Utilities::QtKeyToSdl3Key(keyEvent->key());
+    const int mod = Utilities::QtModKeyToSdl3ModKey(keyEvent->modifiers());
+
+    if (event->type() == QEvent::KeyPress) {
+        CoreSetKeyDown(key, mod);
+    } else {
+        CoreSetKeyUp(key, mod);
+    }
+
+    return true;
 }

@@ -2221,6 +2221,16 @@ void MainWindow::on_Emulation_Started(void)
 
     this->ui_MessageBoxList.clear();
     this->ui_DebugCallbackErrors.clear();
+
+#ifdef NETPLAY
+    // Render widget is created later in on_VidExt_Init; raise the main window
+    // now so the netplay session dialog does not remain the active window.
+    if (this->netplaySessionDialog != nullptr)
+    {
+        this->raise();
+        this->activateWindow();
+    }
+#endif // NETPLAY
 }
 
 void MainWindow::on_Emulation_Finished(bool ret, QString error)
@@ -2499,6 +2509,32 @@ void MainWindow::on_VidExt_Init(VidExtRenderMode renderMode)
 
         this->ui_Widgets->addWidget(this->ui_Widget_Vulkan->GetWidget());
     }
+
+#ifdef NETPLAY
+    // Render widget is created here (after Emulation_Started). Grab keyboard
+    // focus so netplay session/chat UI does not keep eating key events.
+    if (this->netplaySessionDialog != nullptr)
+    {
+        this->raise();
+        this->activateWindow();
+
+        QWidget* renderWidget = nullptr;
+        if (this->ui_Widget_OpenGL != nullptr)
+        {
+            renderWidget = this->ui_Widget_OpenGL->GetWidget();
+        }
+        else if (this->ui_Widget_Vulkan != nullptr)
+        {
+            renderWidget = this->ui_Widget_Vulkan->GetWidget();
+        }
+
+        if (renderWidget != nullptr)
+        {
+            renderWidget->setFocusPolicy(Qt::StrongFocus);
+            renderWidget->setFocus(Qt::OtherFocusReason);
+        }
+    }
+#endif // NETPLAY
 
     this->updateUI(true, false);
 }

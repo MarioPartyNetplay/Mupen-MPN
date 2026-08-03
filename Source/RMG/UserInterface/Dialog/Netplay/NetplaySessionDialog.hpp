@@ -16,6 +16,7 @@
 #include <memory>
 
 #include <QCloseEvent>
+#include <QEvent>
 
 #include <QNetworkAccessManager>
 
@@ -105,6 +106,10 @@ protected:
     void closeEvent(QCloseEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void timerEvent(QTimerEvent* event) override;
+    bool eventFilter(QObject* object, QEvent* event) override;
+
+private:
+    bool isKeyboardCaptureWidget(QWidget* widget) const;
 
   signals:
     void OnPlayGame(QString file, QString address, int port, int player);
