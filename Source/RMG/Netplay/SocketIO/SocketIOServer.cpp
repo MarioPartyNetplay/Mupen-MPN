@@ -58,7 +58,10 @@ void SocketIOServer::rebuildLobbySlots(SignalingRoom& room)
         }
 
         player->slotIndex = slotIndex;
-        player->playerId = QString("p%1").arg(slotIndex);
+        // Keep a stable signaling/WebRTC identity across port remaps.
+        if (player->playerId.isEmpty()) {
+            player->playerId = player->id;
+        }
         room.players[slotIndex] = player;
         ++slotIndex;
     }
@@ -201,13 +204,14 @@ void SocketIOServer::createInitialRoom(const QString& roomId, const QString& hos
     hostClient->name = hostName;
     hostClient->roomId = roomId;
     hostClient->slotIndex = 0;
-    hostClient->playerId = "p0";
+    hostClient->playerId = "host";
     hostClient->peer = nullptr;
     room.lobbyOrder.append(hostClient);
     rebuildLobbySlots(room);
-    
+
     m_rooms[roomId] = room;
     qInfo() << "SocketIOServer: Created initial room" << roomId << "for host" << hostName;
+    broadcastRoomUpdate(roomId);
 }
 
 void SocketIOServer::handle_JoinRoom(ENetPeer* socket, const QJsonObject& msg)
@@ -249,6 +253,9 @@ void SocketIOServer::handle_JoinRoom(ENetPeer* socket, const QJsonObject& msg)
     }
 
     client->roomId = roomId;
+    if (client->playerId.isEmpty()) {
+        client->playerId = client->id;
+    }
     room->lobbyOrder.append(client);
     rebuildLobbySlots(*room);
 
@@ -982,6 +989,8 @@ void SocketIOServer::handleEvent(ENetPeer* socket, const QJsonArray& args)
             handle_LeaveRoom(socket, data);
         else if (eventName == "claim-slot")
             handle_ClaimSlot(socket, data);
+        else if (eventName == "reorder-players")
+            handle_ReorderPlayers(socket, data);
         else if (eventName == "set-name")
             handle_SetName(socket, data);
         else if (eventName == "webrtc-signal")
@@ -1038,25 +1047,26 @@ void SocketIOServer::handle_OpenRoom(ENetPeer* socket, const QJsonObject& msg)
     room.maxPlayers = msg["maxPlayers"].toInt(4);
     room.started = false;
 
-    // Host takes slot 0
+    // Host takes first lobby order entry (controller port assigned by rebuild).
     client->roomId = roomId;
-    client->slotIndex = 0;
-    client->playerId = QString("p%1").arg(0);
-    room.players[0] = client;
+    client->playerId = client->id;
+    room.lobbyOrder.append(client);
+    rebuildLobbySlots(room);
 
     m_rooms[roomId] = room;
 
     // Send room created response
     QJsonObject response;
     response["roomId"] = roomId;
-    response["slotIndex"] = 0;
-    response["playerId"] = "p0";
+    response["slotIndex"] = client->slotIndex;
+    response["playerId"] = client->playerId;
     sendReconnectToken(client);
     response["reconnectToken"] = client->reconnectToken;
     emitToClient(client->id, "room-created", response);
 
     qInfo() << "Room created:" << roomId << "by" << client->id;
     emit roomCreated(roomId);
+    broadcastRoomUpdate(roomId);
 }
 
 void SocketIOServer::handle_LeaveRoom(ENetPeer* socket, const QJsonObject& msg)
@@ -1094,12 +1104,82 @@ void SocketIOServer::handle_LeaveRoom(ENetPeer* socket, const QJsonObject& msg)
 
 void SocketIOServer::handle_ClaimSlot(ENetPeer* socket, const QJsonObject& msg)
 {
-    ClientConnection* client = getClientFromPeer(socket);
-    if (!client || client->roomId.isEmpty())
-        return;
-
-    // Lobby controller ports are fixed to join order.
     Q_UNUSED(msg);
+    // Port remapping is done via reorder-players (host drag-and-drop).
+    ClientConnection* client = getClientFromPeer(socket);
+    if (!client || client->roomId.isEmpty()) {
+        return;
+    }
+}
+
+bool SocketIOServer::reorderLobbyPlayers(const QString& roomId, const QStringList& clientIds)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room || room->started) {
+        return false;
+    }
+
+    if (clientIds.isEmpty() || clientIds.size() != room->lobbyOrder.size()) {
+        return false;
+    }
+
+    QHash<QString, ClientConnection*> byId;
+    for (auto* player : room->lobbyOrder) {
+        if (player) {
+            byId.insert(player->id, player);
+        }
+    }
+
+    QList<ClientConnection*> newOrder;
+    newOrder.reserve(clientIds.size());
+    for (const QString& clientId : clientIds) {
+        auto it = byId.find(clientId);
+        if (it == byId.end()) {
+            return false;
+        }
+        newOrder.append(it.value());
+        byId.erase(it);
+    }
+
+    if (!byId.isEmpty()) {
+        return false;
+    }
+
+    room->lobbyOrder = newOrder;
+    rebuildLobbySlots(*room);
+    broadcastRoomUpdate(roomId);
+    qInfo() << "SocketIOServer: Reordered lobby players in room" << roomId << clientIds;
+    return true;
+}
+
+void SocketIOServer::handle_ReorderPlayers(ENetPeer* socket, const QJsonObject& msg)
+{
+    ClientConnection* client = getClientFromPeer(socket);
+    if (!client || client->roomId.isEmpty()) {
+        return;
+    }
+
+    SignalingRoom* room = getRoomById(client->roomId);
+    if (!room || room->started) {
+        return;
+    }
+
+    // Only the room host may remap controller ports.
+    if (client->id != room->hostId) {
+        return;
+    }
+
+    QStringList clientIds;
+    const QJsonArray order = msg.value(QStringLiteral("order")).toArray();
+    for (const QJsonValue& value : order) {
+        const QString id = value.toString().trimmed();
+        if (id.isEmpty()) {
+            return;
+        }
+        clientIds.append(id);
+    }
+
+    reorderLobbyPlayers(client->roomId, clientIds);
 }
 
 void SocketIOServer::handle_SetName(ENetPeer* socket, const QJsonObject& msg)
@@ -1498,21 +1578,17 @@ void SocketIOServer::broadcastRoomPlayerPings(const QString& roomId)
     }
 
     QJsonArray pings;
-    {
-        QJsonObject hostPing;
-        hostPing.insert(QStringLiteral("slot"), 0);
-        hostPing.insert(QStringLiteral("ms"), 0);
-        pings.append(hostPing);
-    }
-
     for (auto* player : room->lobbyOrder) {
-        if (!player || player->slotIndex <= 0) {
+        if (!player || player->slotIndex < 0) {
             continue;
         }
 
         QJsonObject entry;
         entry.insert(QStringLiteral("slot"), player->slotIndex);
-        entry.insert(QStringLiteral("ms"), player->lastPingMs);
+        // Embedded host has no ENet RTT; report 0 ms for the local host client.
+        const int pingMs =
+            (player->id == room->hostId || player->peer == nullptr) ? 0 : player->lastPingMs;
+        entry.insert(QStringLiteral("ms"), pingMs);
         pings.append(entry);
     }
 

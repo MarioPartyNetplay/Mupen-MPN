@@ -32,6 +32,8 @@ public:
     void stopServer();
 
     void createInitialRoom(const QString& roomId, const QString& hostName, const QString& gameName = "Unknown");
+    /** Host-only lobby remap of controller ports. clientIds is the full lobby order. */
+    bool reorderLobbyPlayers(const QString& roomId, const QStringList& clientIds);
 
     bool startHostedGame(const QString& roomId, const QString& mode, bool resyncEnabled, const QString& romHash,
                          const QJsonArray& cheats = QJsonArray(), const QJsonArray& saveFiles = QJsonArray());
@@ -133,6 +135,7 @@ private:
     void handle_ReconnectRoom(ENetPeer* peer, const QJsonObject& msg);
     void handle_LeaveRoom(ENetPeer* peer, const QJsonObject& msg);
     void handle_ClaimSlot(ENetPeer* peer, const QJsonObject& msg);
+    void handle_ReorderPlayers(ENetPeer* peer, const QJsonObject& msg);
     void handle_SetName(ENetPeer* peer, const QJsonObject& msg);
     void handle_WebRTCSignal(ENetPeer* peer, const QJsonObject& msg);
     void handle_StartGame(ENetPeer* peer, const QJsonObject& msg);

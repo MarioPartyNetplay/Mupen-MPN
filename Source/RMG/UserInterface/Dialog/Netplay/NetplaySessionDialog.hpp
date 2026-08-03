@@ -63,6 +63,7 @@ private:
     int m_clientSessionPrepRetries = 0;
 
     QList<Netplay::SocketIOClient::PlayerInfo> m_cachedPlayers;
+    bool m_updatingPlayerList = false;
 
     void syncHostSessionState(void);
     void beginHostBrowserRegistration(uint16_t hostingPort, bool listInBrowser);
@@ -96,7 +97,7 @@ private slots:
     void on_coordinator_motdReceived(const QString& message);
     void on_chatLineEdit_textChanged(const QString& text);
     void on_sendPushButton_clicked(void);
-    void on_configureInputPushButton_clicked(void);
+    void on_playerListRowsMoved(void);
     
     void on_buttonBox_clicked(QAbstractButton* button);
     void accept(void) Q_DECL_OVERRIDE;

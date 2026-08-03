@@ -486,6 +486,22 @@ void SocketIOClient::claimSlot(int slot)
     emitEvent("claim-slot", payload);
 }
 
+void SocketIOClient::reorderPlayers(const QStringList& clientIds)
+{
+    if (m_connectionState != Connected || clientIds.isEmpty()) {
+        return;
+    }
+
+    QJsonArray order;
+    for (const QString& clientId : clientIds) {
+        order.append(clientId);
+    }
+
+    QJsonObject payload;
+    payload[QStringLiteral("order")] = order;
+    emitEvent("reorder-players", payload);
+}
+
 void SocketIOClient::startGame(const QString& mode, bool resyncEnabled, const QString& romHash)
 {
     if (m_connectionState != Connected) {
@@ -958,6 +974,10 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
             p.id = pObj["playerId"].toString();
             if (p.id.isEmpty()) {
                 p.id = pObj["id"].toString();
+            }
+            p.clientId = pObj["clientId"].toString();
+            if (p.clientId.isEmpty()) {
+                p.clientId = p.id;
             }
             p.name = pObj["name"].toString();
             p.slot = pObj["slotIndex"].toInt(pObj["slot"].toInt(-1));

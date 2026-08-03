@@ -105,8 +105,10 @@
      int getInputDelayFrames() const;
      void sendInputDelayUpdate(int frames);
 
-    void sendEmulationPauseUpdate(bool paused);
-    void sendEmulationReady();
+     void sendEmulationPauseUpdate(bool paused);
+     void sendEmulationReady();
+     /** Host-only lobby remap of N64 controller ports via player clientId order. */
+     bool reorderLobbyPlayers(const QStringList& clientIds);
  
      // State Queries
      State getCurrentState() const;
@@ -248,6 +250,7 @@
      std::shared_ptr<RMGCore::LockstepEngine> m_lockstepEngine;
      QMap<int, std::shared_ptr<WebRTCPeer>> m_peers;
      QString m_playerId;
+     bool m_isRoomHost = false;
 
      // State data
      State m_state;

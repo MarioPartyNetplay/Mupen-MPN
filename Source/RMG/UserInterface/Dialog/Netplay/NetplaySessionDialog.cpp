@@ -26,6 +26,8 @@
 #include <QMessageBox>
 #include <QShowEvent>
 #include <QAbstractButton>
+#include <QAbstractItemModel>
+#include <QAbstractItemView>
 #include <QAbstractSpinBox>
 #include <QApplication>
 #include <QComboBox>
@@ -33,7 +35,9 @@
 #include <QJsonArray>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QPlainTextEdit>
+#include <QSet>
 #include <QTextEdit>
 #include <QDir>
 #include <QFile>
@@ -59,12 +63,18 @@ using namespace Utilities;
 
 namespace {
 
-QString formatPlayerListLabel(const QString& name, int pingMs)
+constexpr int kPlayerClientIdRole = Qt::UserRole;
+constexpr int kPlayerSlotRole = Qt::UserRole + 1;
+constexpr int kPlayerIdRole = Qt::UserRole + 2;
+constexpr int kPlayerNameRole = Qt::UserRole + 3;
+
+QString formatPlayerListLabel(int portIndex, const QString& name, int pingMs)
 {
+    const QString portLabel = QStringLiteral("P%1").arg(portIndex + 1);
     if (pingMs < 0) {
-        return QStringLiteral("%1 (0 ms)").arg(name);
+        return QStringLiteral("%1 — %2 (0 ms)").arg(portLabel, name);
     }
-    return QStringLiteral("%1 (%2 ms)").arg(name).arg(pingMs);
+    return QStringLiteral("%1 — %2 (%3 ms)").arg(portLabel, name).arg(pingMs);
 }
 
 const QStringList& netplaySaveExtensions()
@@ -214,6 +224,11 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     qApp->installEventFilter(this);
     this->chatLineEdit->setFocusPolicy(Qt::ClickFocus);
 
+    connect(this->listWidget->model(), &QAbstractItemModel::rowsMoved, this,
+            [this](const QModelIndex&, int, int, const QModelIndex&, int) {
+                this->on_playerListRowsMoved();
+            });
+
     // Parse session JSON
     QJsonDocument sessionDoc = QJsonDocument::fromJson(sessionFile.toUtf8());
     QJsonObject sessionJson = sessionDoc.object();
@@ -234,7 +249,7 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
         this->sessionSlot = this->coordinator->getGameSession().localSlot;
     }
 
-    if (this->sessionSlot == 0)
+    if (this->sessionJson.value("is_hosting").toBool(false) || this->isLocalSessionHost())
     {
         const int hostingPort = sessionJson.value("server_port").toInt(Netplay::kDefaultNetplayHostingPort);
         const bool showInBrowser = sessionJson.value("show_in_browser").toBool(false);
@@ -357,7 +372,7 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     });
     
     // Auto-enable pre-toggled cheats for host
-    if (this->sessionSlot == 0)
+    if (this->isLocalSessionHost())
     {
         this->syncHostSessionState();
     }
@@ -514,6 +529,8 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
         Netplay::SocketIOClient::PlayerInfo hostPlayer;
         hostPlayer.name = sessionJson.value("player_name").toString("Host");
         hostPlayer.slot = 0;
+        hostPlayer.clientId = QStringLiteral("host");
+        hostPlayer.id = QStringLiteral("host");
         hostPlayer.isReady = true;
         this->on_coordinator_playersUpdated({hostPlayer});
     }
@@ -687,20 +704,10 @@ bool NetplaySessionDialog::isLocalSessionHost(void) const
         return true;
     }
 
-    const int jsonSlot = sessionJson.value("slot").toInt(sessionJson.value("slotIndex").toInt(-1));
-    if (jsonSlot >= 0) {
-        return jsonSlot == 0;
-    }
-
-    if (this->sessionSlot >= 0) {
-        return this->sessionSlot == 0;
-    }
-
     if (this->coordinator) {
-        if (this->coordinator->isHostingServer()) {
+        if (this->coordinator->isHostingServer() || this->coordinator->isHost()) {
             return true;
         }
-        return this->coordinator->isHost();
     }
 
     return false;
@@ -742,6 +749,18 @@ void NetplaySessionDialog::applyHostOnlyControlsVisibility(void)
         this->verticalLayout_3->setStretch(1, 1);
     }
 
+    const bool canReorder =
+        isHost && this->coordinator && !this->coordinator->isInGame();
+    this->listWidget->setDragEnabled(canReorder);
+    this->listWidget->setAcceptDrops(canReorder);
+    this->listWidget->setDropIndicatorShown(canReorder);
+    this->listWidget->setDefaultDropAction(Qt::MoveAction);
+    this->listWidget->setDragDropMode(
+        canReorder ? QAbstractItemView::InternalMove : QAbstractItemView::NoDragDrop);
+    this->listWidget->setToolTip(
+        canReorder ? QStringLiteral("Drag players to choose who is P1–P4")
+                   : QString());
+
     if (isHost) {
         this->buttonBox->setStandardButtons(QDialogButtonBox::Cancel | QDialogButtonBox::Ok |
                                             QDialogButtonBox::RestoreDefaults);
@@ -763,7 +782,7 @@ bool NetplaySessionDialog::getCheats(std::vector<CoreCheat>& cheats, QJsonArray&
     QJsonObject sessionJson = sessionDoc.object();
 
     cheatsArray = sessionJson.value("cheats").toArray();
-    if (cheatsArray.isEmpty() && this->sessionSlot == 0)
+    if (cheatsArray.isEmpty() && this->isLocalSessionHost())
     {
         // Host falls back to locally enabled cheats until the first sync.
         cheatsArray = buildEnabledCheatsSnapshot(this->romFile);
@@ -839,6 +858,9 @@ void NetplaySessionDialog::on_coordinator_playersUpdated(
     const QList<Netplay::SocketIOClient::PlayerInfo>& players)
 {
     this->m_cachedPlayers = players;
+    if (this->coordinator) {
+        this->sessionSlot = this->coordinator->getGameSession().localSlot;
+    }
     this->refreshPlayersListWidget();
 }
 
@@ -849,20 +871,51 @@ void NetplaySessionDialog::refreshPlayersListWidget(void)
         players = this->coordinator->getPlayerList();
     }
 
+    // Deduplicate by stable client identity, then by controller port.
+    {
+        QList<Netplay::SocketIOClient::PlayerInfo> uniquePlayers;
+        QSet<QString> seenIds;
+        QSet<int> seenSlots;
+        uniquePlayers.reserve(players.size());
+        for (const auto& player : players) {
+            const QString identity =
+                !player.clientId.isEmpty()
+                    ? player.clientId
+                    : (!player.id.isEmpty() ? player.id : player.name);
+            if (!identity.isEmpty()) {
+                if (seenIds.contains(identity)) {
+                    continue;
+                }
+                seenIds.insert(identity);
+            }
+            if (player.slot >= 0) {
+                if (seenSlots.contains(player.slot)) {
+                    continue;
+                }
+                seenSlots.insert(player.slot);
+            }
+            uniquePlayers.append(player);
+        }
+        players = uniquePlayers;
+    }
+
     if (this->isLocalSessionHost()) {
         bool hasHost = false;
         for (const auto& player : players) {
-            if (player.slot == 0) {
+            if (player.clientId == QStringLiteral("host") ||
+                player.id == QStringLiteral("host")) {
                 hasHost = true;
                 break;
             }
         }
-        if (!hasHost) {
+        if (!hasHost && players.isEmpty()) {
             Netplay::SocketIOClient::PlayerInfo hostPlayer;
             hostPlayer.name = this->sessionJson.value("player_name").toString("Host");
-            hostPlayer.slot = 0;
+            hostPlayer.slot = this->sessionSlot >= 0 ? this->sessionSlot : 0;
+            hostPlayer.clientId = QStringLiteral("host");
+            hostPlayer.id = QStringLiteral("host");
             hostPlayer.isReady = true;
-            players.prepend(hostPlayer);
+            players.append(hostPlayer);
         }
     }
 
@@ -872,6 +925,7 @@ void NetplaySessionDialog::refreshPlayersListWidget(void)
                   return left.slot < right.slot;
               });
 
+    this->m_updatingPlayerList = true;
     this->listWidget->clear();
 
     const bool isHost = this->isLocalSessionHost();
@@ -892,23 +946,65 @@ void NetplaySessionDialog::refreshPlayersListWidget(void)
         const int pingMs =
             this->coordinator ? this->coordinator->getPlayerPing(player.slot) : -1;
         QListWidgetItem* item = new QListWidgetItem();
-        item->setText(formatPlayerListLabel(player.name, pingMs));
-        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
+        item->setText(formatPlayerListLabel(player.slot, player.name, pingMs));
+        item->setData(kPlayerClientIdRole, player.clientId.isEmpty() ? player.id : player.clientId);
+        item->setData(kPlayerSlotRole, player.slot);
+        item->setData(kPlayerIdRole, player.id);
+        item->setData(kPlayerNameRole, player.name);
+        Qt::ItemFlags flags = Qt::ItemIsEnabled | Qt::ItemIsDropEnabled;
+        if (isHost) {
+            flags |= Qt::ItemIsSelectable | Qt::ItemIsDragEnabled;
+        }
+        item->setFlags(flags);
         this->listWidget->addItem(item);
+    }
 
-        if (player.slot == 0 && isHost) {
-            if (startButton) {
-                startButton->setEnabled(true);
-            }
-            if (cheatsButton) {
-                cheatsButton->setEnabled(true);
-            }
+    if (isHost && !players.isEmpty()) {
+        if (startButton) {
+            startButton->setEnabled(true);
+        }
+        if (cheatsButton) {
+            cheatsButton->setEnabled(true);
         }
     }
+
+    this->m_updatingPlayerList = false;
 
     if (isHost && players.size() > 1) {
         this->syncHostSessionState();
     }
+}
+
+void NetplaySessionDialog::on_playerListRowsMoved(void)
+{
+    if (this->m_updatingPlayerList || !this->isLocalSessionHost() || !this->coordinator) {
+        return;
+    }
+    if (this->coordinator->isInGame()) {
+        return;
+    }
+
+    QStringList clientIds;
+    clientIds.reserve(this->listWidget->count());
+    for (int row = 0; row < this->listWidget->count(); ++row) {
+        QListWidgetItem* item = this->listWidget->item(row);
+        if (!item) {
+            continue;
+        }
+        const QString clientId = item->data(kPlayerClientIdRole).toString();
+        if (clientId.isEmpty()) {
+            return;
+        }
+        clientIds.append(clientId);
+
+        // Optimistic local port labels while the server confirms the remap.
+        const QString displayName = item->data(kPlayerNameRole).toString();
+        const int pingMs = this->coordinator->getPlayerPing(item->data(kPlayerSlotRole).toInt());
+        item->setText(formatPlayerListLabel(row, displayName, pingMs));
+        item->setData(kPlayerSlotRole, row);
+    }
+
+    this->coordinator->reorderLobbyPlayers(clientIds);
 }
 
 void NetplaySessionDialog::ensureClientSessionPrepComplete(void)
@@ -1196,7 +1292,7 @@ void NetplaySessionDialog::syncHostSessionState(void)
 
 void NetplaySessionDialog::publishHostSessionIndex(bool started)
 {
-    if (!this->indexClient || this->sessionSlot != 0) {
+    if (!this->indexClient || !this->isLocalSessionHost()) {
         return;
     }
 
@@ -1358,11 +1454,6 @@ void NetplaySessionDialog::openInputConfiguration(void)
     }
 }
 
-void NetplaySessionDialog::on_configureInputPushButton_clicked(void)
-{
-    this->openInputConfiguration();
-}
-
 void NetplaySessionDialog::on_buttonBox_clicked(QAbstractButton* button)
 {
     QPushButton* pushButton = (QPushButton*)button;
@@ -1496,6 +1587,7 @@ void NetplaySessionDialog::on_coordinator_stateChanged(Netplay::NetplayCoordinat
     this->chatLineEdit->setEnabled(active);
     this->sendPushButton->setEnabled(active && !this->chatLineEdit->text().isEmpty());
     this->publishHostSessionIndex(state == Netplay::NetplayCoordinator::InGame);
+    this->applyHostOnlyControlsVisibility();
 
     if (state == Netplay::NetplayCoordinator::InGame) {
         // Prefer game focus; chat remains usable via click.

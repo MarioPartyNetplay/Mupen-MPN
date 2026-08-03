@@ -51,7 +51,7 @@ QUrl projectIconUrl(int projectId);
 
 constexpr inline int boardDownloaderDefaultPageSize(void)
 {
-    return 25;
+    return 50;
 }
 
 std::optional<PartyPlannerCliInfo> resolvePartyPlannerCli(void);

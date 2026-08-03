@@ -57,6 +57,7 @@ public:
 
     struct PlayerInfo {
         QString id;
+        QString clientId;
         QString name;
         int slot;
         bool isSpectator;
@@ -109,6 +110,8 @@ public:
     void leaveRoom();
     void setPlayerName(const QString& name);
     void claimSlot(int slot);
+    /** Host-only: remap controller ports by full lobby clientId order. */
+    void reorderPlayers(const QStringList& clientIds);
 
     void startGame(const QString& mode, bool resyncEnabled, const QString& romHash);
     void endGame();

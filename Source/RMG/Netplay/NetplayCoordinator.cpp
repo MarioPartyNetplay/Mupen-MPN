@@ -215,11 +215,27 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
                     QJsonObject obj = value.toObject();
                     SocketIOClient::PlayerInfo p;
                     p.id = obj["playerId"].toString();
+                    if (p.id.isEmpty()) {
+                        p.id = obj["id"].toString();
+                    }
+                    p.clientId = obj["clientId"].toString();
+                    if (p.clientId.isEmpty()) {
+                        p.clientId = p.id;
+                    }
                     p.name = obj["name"].toString();
                     p.slot = obj["slotIndex"].toInt(obj["slot"].toInt(-1));
                     p.isSpectator = false;
                     p.isReady = true;
                     players.append(p);
+
+                    // Host identity is clientId "host", not necessarily controller port 0.
+                    if (p.clientId == QStringLiteral("host") || p.id == QStringLiteral("host")) {
+                        m_gameSession.localSlot = p.slot;
+                        m_lockstepConfig.localPlayerSlot = p.slot;
+                        if (m_lockstepEngine) {
+                            m_lockstepEngine->setLocalPlayerSlot(p.slot);
+                        }
+                    }
                 }
 
                 m_cachedPlayers = players;
@@ -309,6 +325,8 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
     m_gameSession.numPlayers = 1;
     m_lockstepConfig.localPlayerSlot = 0;
     m_lockstepConfig.numPlayers = 1;
+    m_isRoomHost = true;
+    m_playerId = QStringLiteral("host");
 
     // Hosting is active as soon as server is up; room-created callback moves us to InLobby.
     setState(Connected);
@@ -818,9 +836,30 @@ void NetplayCoordinator::applyPlayerPings(const QJsonArray& pings)
 
 bool NetplayCoordinator::isHost() const
 {
-    // Owner is determined by who initiated room creation
-    // This could be tracked in m_gameSession if needed
-    return m_gameSession.localSlot == 0;
+    // Room host is independent of controller port (P1/P2 can be remapped).
+    return isHostingServer() || m_isRoomHost;
+}
+
+bool NetplayCoordinator::reorderLobbyPlayers(const QStringList& clientIds)
+{
+    if (!isHost() || clientIds.isEmpty()) {
+        return false;
+    }
+
+    if (m_state != InLobby && m_state != Connected) {
+        return false;
+    }
+
+    if (isHostingServer() && m_server && !m_gameSession.roomId.isEmpty()) {
+        return m_server->reorderLobbyPlayers(m_gameSession.roomId, clientIds);
+    }
+
+    if (m_socketIO) {
+        m_socketIO->reorderPlayers(clientIds);
+        return true;
+    }
+
+    return false;
 }
 
 bool NetplayCoordinator::isInGame() const
@@ -980,6 +1019,7 @@ void NetplayCoordinator::on_socketIO_roomCreated(const QString& roomId)
     m_gameSession.roomId = roomId;
     m_gameSession.localSlot = 0;
     m_lockstepConfig.localPlayerSlot = 0;
+    m_isRoomHost = true;
     setState(InLobby);
     emit roomCreated(roomId, 0);
 }
@@ -988,6 +1028,7 @@ void NetplayCoordinator::on_socketIO_roomJoined(const QString& roomId, int slotI
 {
     qDebug() << "NetplayCoordinator: Room joined" << roomId << "slot:" << slotIndex;
     m_gameSession.roomId = roomId;
+    m_isRoomHost = false;
     if (slotIndex >= 0) {
         m_gameSession.localSlot = slotIndex;
         m_lockstepConfig.localPlayerSlot = slotIndex;
@@ -1044,16 +1085,23 @@ void NetplayCoordinator::on_socketIO_playersUpdated(const QList<SocketIOClient::
     m_cachedPlayers = players;
     synchronizeLockstepPlayerCount();
 
+    const QString localPlayerId = m_socketIO ? m_socketIO->getPlayerId() : m_playerId;
     for (const auto& player : players) {
-        if (player.id == m_socketIO->getPlayerId()) {
-            m_gameSession.localSlot = player.slot;
-            m_lockstepConfig.localPlayerSlot = player.slot;
-
-            if (m_lockstepEngine) {
-                m_lockstepEngine->setLocalPlayerSlot(player.slot);
-            }
-            break;
+        const bool isSelf =
+            (!localPlayerId.isEmpty() &&
+             (player.id == localPlayerId || player.clientId == localPlayerId)) ||
+            (m_isRoomHost &&
+             (player.clientId == QStringLiteral("host") || player.id == QStringLiteral("host")));
+        if (!isSelf) {
+            continue;
         }
+
+        m_gameSession.localSlot = player.slot;
+        m_lockstepConfig.localPlayerSlot = player.slot;
+        if (m_lockstepEngine) {
+            m_lockstepEngine->setLocalPlayerSlot(player.slot);
+        }
+        break;
     }
 
     if (m_state == Connected || m_state == InLobby || m_state == StartingGame) {
@@ -2018,6 +2066,7 @@ void NetplayCoordinator::clearRoomSessionState()
     m_cachedPlayers.clear();
     m_playerPingMs.clear();
     m_gameSession = GameSession();
+    m_isRoomHost = false;
     m_autoJoinRoomData = QJsonObject();
 
     // Immediately clear lobby UI state instead of waiting for server callbacks.
@@ -2118,6 +2167,27 @@ void NetplayCoordinator::setupPeerConnections(const QList<SocketIOClient::Player
 
     if (!TurnCredentialClient::instance().ensureCredentials(15000)) {
         qWarning() << "NetplayCoordinator: Cloudflare TURN credentials unavailable; WebRTC may fail behind NAT";
+    }
+
+    QMap<int, QString> desiredPeers;
+    for (const auto& player : players) {
+        if (player.slot < 0 || player.slot == m_gameSession.localSlot) {
+            continue;
+        }
+        desiredPeers.insert(player.slot, player.id);
+    }
+
+    // Drop peers whose controller-port mapping no longer matches (lobby remaps).
+    for (auto it = m_peers.begin(); it != m_peers.end();) {
+        const QString expectedId = desiredPeers.value(it.key());
+        if (expectedId.isEmpty() || !it.value() || it.value()->getPeerId() != expectedId) {
+            if (it.value()) {
+                it.value()->close();
+            }
+            it = m_peers.erase(it);
+        } else {
+            ++it;
+        }
     }
 
     for (const auto& player : players) {
