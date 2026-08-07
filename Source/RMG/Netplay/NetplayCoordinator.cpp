@@ -18,6 +18,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QDebug>
+#include <QHash>
 #include <QThread>
 #include <QCoreApplication>
 #include <QEventLoop>
@@ -194,7 +195,10 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
 
                 m_gameSession.numPlayers = totalPlayers;
                 m_lockstepConfig.numPlayers = totalPlayers;
-                m_lockstepConfig.localPlayerSlot = 0;
+                // Preserve remapped host controller port (not always P1).
+                if (m_gameSession.localSlot >= 0) {
+                    m_lockstepConfig.localPlayerSlot = m_gameSession.localSlot;
+                }
 
                 setupPeerConnections(this->m_cachedPlayers);
                 emit gameStarted(m_gameSession);
@@ -1913,33 +1917,23 @@ void NetplayCoordinator::setupPeerConnections(const QList<SocketIOClient::Player
         qWarning() << "NetplayCoordinator: Cloudflare TURN credentials unavailable; WebRTC may fail behind NAT";
     }
 
-    QMap<int, QString> desiredPeers;
+    // Preserve existing WebRTC sessions across controller-port remaps. Peers are
+    // identified by stable playerId; m_peers is only keyed by the current slot.
+    QHash<QString, std::shared_ptr<WebRTCPeer>> peersById;
+    for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
+        if (it.value()) {
+            peersById.insert(it.value()->getPeerId(), it.value());
+        }
+    }
+    m_peers.clear();
+
     for (const auto& player : players) {
-        if (player.slot < 0 || player.slot == m_gameSession.localSlot) {
+        if (player.slot < 0 || player.slot == m_gameSession.localSlot || player.id.isEmpty()) {
             continue;
         }
-        desiredPeers.insert(player.slot, player.id);
-    }
 
-    // Drop peers whose controller-port mapping no longer matches (lobby remaps).
-    for (auto it = m_peers.begin(); it != m_peers.end();) {
-        const QString expectedId = desiredPeers.value(it.key());
-        if (expectedId.isEmpty() || !it.value() || it.value()->getPeerId() != expectedId) {
-            if (it.value()) {
-                it.value()->close();
-            }
-            it = m_peers.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
-    for (const auto& player : players) {
-        if (player.slot == m_gameSession.localSlot) {
-            continue; // Skip self
-        }
-
-        if (m_peers.contains(player.slot) && m_peers[player.slot]) {
+        if (auto existing = peersById.take(player.id)) {
+            m_peers.insert(player.slot, existing);
             continue;
         }
 
@@ -1953,6 +1947,13 @@ void NetplayCoordinator::setupPeerConnections(const QList<SocketIOClient::Player
             // We create the data channel and the offer
             peer->createDataChannel("RMG-Input");
             createPeerOffer(player.slot);
+        }
+    }
+
+    // Close peers for players who left the lobby.
+    for (auto it = peersById.begin(); it != peersById.end(); ++it) {
+        if (it.value()) {
+            it.value()->close();
         }
     }
 }

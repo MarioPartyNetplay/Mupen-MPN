@@ -789,15 +789,16 @@ void SocketIOServer::removeClientFromRoom(ClientConnection* client)
     }
 
     room->lobbyOrder.removeAll(client);
-    if (client->slotIndex >= 0 && client->slotIndex < 4) {
-        room->players.remove(client->slotIndex);
-    }
-
+    // Compact controller ports so remaining players never keep stale/gapped slots.
+    rebuildLobbySlots(*room);
     broadcastRoomUpdate(roomId);
 
     if (room->hostId == clientId) {
         m_rooms.remove(roomId);
     }
+
+    client->roomId.clear();
+    client->slotIndex = -1;
 
     emit playerLeft(roomId, clientId);
 }
@@ -1021,15 +1022,10 @@ void SocketIOServer::handle_OpenRoom(ENetPeer* socket, const QJsonObject& msg)
     if (!client)
         return;
 
-    // Leave existing room if any
+    // Leave existing room if any (also rebuilds slots for remaining players).
     if (!client->roomId.isEmpty())
     {
-        SignalingRoom* room = getRoomById(client->roomId);
-        if (room && client->slotIndex >= 0)
-        {
-            room->players.remove(client->slotIndex);
-            broadcastRoomUpdate(client->roomId);
-        }
+        removeClientFromRoom(client);
     }
 
     // Create new room
@@ -1116,29 +1112,42 @@ bool SocketIOServer::reorderLobbyPlayers(const QString& roomId, const QStringLis
         return false;
     }
 
-    if (clientIds.isEmpty() || clientIds.size() != room->lobbyOrder.size()) {
+    if (clientIds.isEmpty()) {
         return false;
     }
 
-    QHash<QString, ClientConnection*> byId;
+    QHash<QString, ClientConnection*> byLookup;
     for (auto* player : room->lobbyOrder) {
-        if (player) {
-            byId.insert(player->id, player);
+        if (!player) {
+            continue;
+        }
+        byLookup.insert(player->id, player);
+        if (!player->playerId.isEmpty() && player->playerId != player->id) {
+            byLookup.insert(player->playerId, player);
         }
     }
 
     QList<ClientConnection*> newOrder;
-    newOrder.reserve(clientIds.size());
+    QSet<ClientConnection*> placed;
+    newOrder.reserve(room->lobbyOrder.size());
     for (const QString& clientId : clientIds) {
-        auto it = byId.find(clientId);
-        if (it == byId.end()) {
-            return false;
+        auto it = byLookup.find(clientId);
+        if (it == byLookup.end() || placed.contains(it.value())) {
+            continue;
         }
         newOrder.append(it.value());
-        byId.erase(it);
+        placed.insert(it.value());
     }
 
-    if (!byId.isEmpty()) {
+    // Keep any lobby members the UI omitted (e.g. reconnect-grace ghosts) at the end.
+    for (auto* player : room->lobbyOrder) {
+        if (player && !placed.contains(player)) {
+            newOrder.append(player);
+            placed.insert(player);
+        }
+    }
+
+    if (newOrder.isEmpty() || newOrder.size() != room->lobbyOrder.size()) {
         return false;
     }
 

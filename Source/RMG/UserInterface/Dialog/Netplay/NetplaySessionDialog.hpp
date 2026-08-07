@@ -62,6 +62,7 @@ private:
     int m_clientSessionPrepWatchdogTimerId = -1;
 
     QList<Netplay::SocketIOClient::PlayerInfo> m_cachedPlayers;
+    QStringList m_publishedSessionPlayerIds;
     bool m_updatingPlayerList = false;
 
     void syncHostSessionState(void);

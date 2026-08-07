@@ -282,8 +282,26 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     // Connect coordinator signals
     connect(this->coordinator, &Netplay::NetplayCoordinator::playersUpdated, this,
             [this](const QList<Netplay::SocketIOClient::PlayerInfo>& players) {
+        const QStringList previousIds = this->m_publishedSessionPlayerIds;
         this->on_coordinator_playersUpdated(players);
-        this->publishHostSessionIndex(this->coordinator->isInGame());
+
+        // Only republish the browse index when lobby membership changes.
+        // Port remaps (reorder) must not hammer the session index / NAT server.
+        QStringList currentIds;
+        currentIds.reserve(players.size());
+        for (const auto& player : players) {
+            const QString id =
+                !player.id.isEmpty() ? player.id
+                                     : (!player.clientId.isEmpty() ? player.clientId : player.name);
+            if (!id.isEmpty()) {
+                currentIds.append(id);
+            }
+        }
+        std::sort(currentIds.begin(), currentIds.end());
+        if (currentIds != previousIds) {
+            this->m_publishedSessionPlayerIds = currentIds;
+            this->publishHostSessionIndex(this->coordinator->isInGame());
+        }
     });
     connect(this->coordinator, &Netplay::NetplayCoordinator::playerPingsUpdated,
             this, &NetplaySessionDialog::refreshPlayersListWidget);
@@ -842,11 +860,11 @@ void NetplaySessionDialog::refreshPlayersListWidget(void)
         players = this->coordinator->getPlayerList();
     }
 
-    // Deduplicate by stable client identity, then by controller port.
+    // Deduplicate by stable client identity only. Slot-based dedup can drop a
+    // real player when the server briefly has non-contiguous/stale slots.
     {
         QList<Netplay::SocketIOClient::PlayerInfo> uniquePlayers;
         QSet<QString> seenIds;
-        QSet<int> seenSlots;
         uniquePlayers.reserve(players.size());
         for (const auto& player : players) {
             const QString identity =
@@ -858,12 +876,6 @@ void NetplaySessionDialog::refreshPlayersListWidget(void)
                     continue;
                 }
                 seenIds.insert(identity);
-            }
-            if (player.slot >= 0) {
-                if (seenSlots.contains(player.slot)) {
-                    continue;
-                }
-                seenSlots.insert(player.slot);
             }
             uniquePlayers.append(player);
         }
@@ -940,10 +952,6 @@ void NetplaySessionDialog::refreshPlayersListWidget(void)
     }
 
     this->m_updatingPlayerList = false;
-
-    if (isHost && players.size() > 1) {
-        this->syncHostSessionState();
-    }
 }
 
 void NetplaySessionDialog::on_playerListRowsMoved(void)
@@ -964,18 +972,30 @@ void NetplaySessionDialog::on_playerListRowsMoved(void)
         }
         const QString clientId = item->data(kPlayerClientIdRole).toString();
         if (clientId.isEmpty()) {
+            // Incomplete list — refresh from server cache instead of partial remap.
+            this->refreshPlayersListWidget();
             return;
         }
         clientIds.append(clientId);
+    }
 
-        // Optimistic local port labels while the server confirms the remap.
+    if (!this->coordinator->reorderLobbyPlayers(clientIds)) {
+        // Server rejected the remap; restore labels from cached authoritative order.
+        this->refreshPlayersListWidget();
+        return;
+    }
+
+    // Optimistic local port labels while the server confirms the remap.
+    for (int row = 0; row < this->listWidget->count(); ++row) {
+        QListWidgetItem* item = this->listWidget->item(row);
+        if (!item) {
+            continue;
+        }
         const QString displayName = item->data(kPlayerNameRole).toString();
         const int pingMs = this->coordinator->getPlayerPing(item->data(kPlayerSlotRole).toInt());
         item->setText(formatPlayerListLabel(row, displayName, pingMs));
         item->setData(kPlayerSlotRole, row);
     }
-
-    this->coordinator->reorderLobbyPlayers(clientIds);
 }
 
 void NetplaySessionDialog::ensureClientSessionPrepComplete(void)
