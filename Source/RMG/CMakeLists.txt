@@ -166,7 +166,6 @@ if (NETPLAY)
         Netplay/WebRTC/TurnCredentialClient.cpp
         Netplay/NetplayUpnp.cpp
         Netplay/NetplayHostRegistry.cpp
-        Netplay/NetplayTraversalClient.cpp
         Netplay/NetplayIndexClient.cpp
         Netplay/NetplayCoordinator.cpp
         Netplay.cpp

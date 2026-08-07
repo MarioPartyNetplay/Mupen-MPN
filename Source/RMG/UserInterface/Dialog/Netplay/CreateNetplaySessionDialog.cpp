@@ -29,10 +29,8 @@
 #include <QJsonArray>
 #include <QSpinBox>
 #include <QLabel>
-#include <QComboBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QSizePolicy>
 #include <QUrlQuery>
 #include <QFileInfo>
 #include <QFile>
@@ -125,29 +123,7 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
         passwordLabel->hide();
     }
 
-    // Connection mode at the top; other hosting options below the game list
-    QLabel* connectionModeLabel = new QLabel(QStringLiteral("Connection:"), this);
-    this->connectionModeComboBox = new QComboBox(this);
-    this->connectionModeComboBox->addItem(
-        Netplay::netplayConnectionModeLabel(Netplay::NetplayConnectionMode::Direct),
-        static_cast<int>(Netplay::NetplayConnectionMode::Direct));
-    this->connectionModeComboBox->addItem(
-        Netplay::netplayConnectionModeLabel(Netplay::NetplayConnectionMode::NatTraversal),
-        static_cast<int>(Netplay::NetplayConnectionMode::NatTraversal));
-    this->connectionModeComboBox->setCurrentIndex(
-        Netplay::netplayConnectionModeComboIndex(Netplay::NetplayConnectionMode::NatTraversal));
-    this->connectionModeComboBox->setToolTip(
-        QStringLiteral("Direct: share your IP and port. NAT Traversal: register a host code with the "
-                       "traversal server for guests behind NAT."));
-    connect(this->connectionModeComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            &CreateNetplaySessionDialog::on_connectionModeComboBox_currentIndexChanged);
-
-    QWidget* connectionWidget = new QWidget(this);
-    QHBoxLayout* connectionRow = new QHBoxLayout(connectionWidget);
-    connectionRow->addWidget(connectionModeLabel);
-    connectionRow->addWidget(this->connectionModeComboBox, 1);
-    connectionRow->setContentsMargins(0, 0, 0, 0);
-
+    // Add hosting / connection UI at the top (above nickname)
     QWidget* portWidget = new QWidget(this);
     QVBoxLayout* portLayout = new QVBoxLayout(portWidget);
 
@@ -169,37 +145,19 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     this->hostingPortSpinBox->setMaximum(65535);
     this->hostingPortSpinBox->setValue(Netplay::kDefaultNetplayHostingPort);
     this->hostingPortSpinBox->setToolTip("Valid ports: 1024-65535. Forward this port on your router for WAN play.");
-
+    
     connect(this->hostingPortSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [this](int port) { this->hostingPort = port; });
-
+    
     portLayout->addWidget(this->showInBrowserCheckBox);
-
-    this->directOptionsWidget = new QWidget(this);
-    QHBoxLayout* portRow = new QHBoxLayout(this->directOptionsWidget);
-    portRow->setContentsMargins(0, 0, 0, 0);
-    portRow->addWidget(this->useUpnpCheckBox);
-    portRow->addStretch();
-    portRow->addWidget(portLabel);
-    portRow->addWidget(this->hostingPortSpinBox);
-    portLayout->addWidget(this->directOptionsWidget);
-
-    portLayout->setContentsMargins(0, 8, 0, 0);
-    portLayout->setSpacing(6);
-
+    portLayout->addWidget(this->useUpnpCheckBox);
+    portLayout->addWidget(portLabel);
+    portLayout->addWidget(this->hostingPortSpinBox);
+    portLayout->setContentsMargins(0, 0, 0, 0);
+    
     QVBoxLayout* mainLayout = qobject_cast<QVBoxLayout*>(this->layout());
     if (mainLayout) {
-        if (this->romListWidget) {
-            this->romListWidget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-            const int romIndex = mainLayout->indexOf(this->romListWidget);
-            if (romIndex >= 0) {
-                mainLayout->insertWidget(romIndex, connectionWidget);
-                mainLayout->setStretch(romIndex + 1, 1);
-            }
-        } else {
-            mainLayout->insertWidget(0, connectionWidget);
-        }
-        mainLayout->addWidget(portWidget);
+        mainLayout->insertWidget(0, portWidget);
     }
     
     // add data to widget
@@ -306,45 +264,19 @@ void CreateNetplaySessionDialog::validateCreateButton(void)
 
 void CreateNetplaySessionDialog::updateConnectionModeUi(void)
 {
-    const Netplay::NetplayConnectionMode mode = this->selectedConnectionMode();
-    const bool directMode = mode == Netplay::NetplayConnectionMode::Direct;
-
-    if (this->directOptionsWidget) {
-        this->directOptionsWidget->setVisible(directMode);
-    }
-
-    if (this->useUpnpCheckBox) {
-        this->useUpnpCheckBox->setEnabled(directMode);
-        if (!directMode) {
-            this->useUpnpCheckBox->setChecked(false);
-        }
-    }
-}
-
-Netplay::NetplayConnectionMode CreateNetplaySessionDialog::selectedConnectionMode(void) const
-{
-    if (!this->connectionModeComboBox) {
-        return Netplay::NetplayConnectionMode::NatTraversal;
-    }
-
-    return Netplay::netplayConnectionModeFromComboIndex(this->connectionModeComboBox->currentIndex());
+    Q_UNUSED(this);
 }
 
 void CreateNetplaySessionDialog::on_connectionModeComboBox_currentIndexChanged(int index)
 {
     Q_UNUSED(index);
-    this->updateConnectionModeUi();
 }
 
 void CreateNetplaySessionDialog::createSession(void)
 {
-    const Netplay::NetplayConnectionMode connectionMode = this->selectedConnectionMode();
-    const bool useNatTraversal = connectionMode == Netplay::NetplayConnectionMode::NatTraversal;
-    const bool useUpnp =
-        useNatTraversal ? false
-                        : (this->useUpnpCheckBox != nullptr && this->useUpnpCheckBox->isChecked());
+    const bool useUpnp = this->useUpnpCheckBox != nullptr && this->useUpnpCheckBox->isChecked();
 
-    Netplay::applyNetplayConnectionSettings(connectionMode, useUpnp);
+    Netplay::applyNetplayConnectionSettings(Netplay::NetplayConnectionMode::Direct, useUpnp);
 
     // Start hosting a local signaling server
     QString playerName = this->nickNameLineEdit->text();
@@ -382,8 +314,8 @@ void CreateNetplaySessionDialog::createSession(void)
     json.insert("server_port", this->hostingPort);
     json.insert("public_port", this->hostingPort);
     json.insert("connect_port", this->hostingPort);
-    json.insert("use_nat_traversal", useNatTraversal);
-    json.insert("connection_mode", Netplay::netplayConnectionModeToString(connectionMode));
+    json.insert("use_nat_traversal", false);
+    json.insert("connection_mode", Netplay::netplayConnectionModeToString(Netplay::NetplayConnectionMode::Direct));
     json.insert("use_upnp", useUpnp);
     json.insert("use_connection_reversal", false);
     json.insert("show_in_browser", showInBrowser);
@@ -443,9 +375,6 @@ void CreateNetplaySessionDialog::toggleUI(bool enable, bool enableCreateButton)
     }
     if (this->hostingPortSpinBox) {
         this->hostingPortSpinBox->setEnabled(enable);
-    }
-    if (this->connectionModeComboBox) {
-        this->connectionModeComboBox->setEnabled(enable);
     }
 }
 

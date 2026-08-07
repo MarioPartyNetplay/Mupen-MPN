@@ -3,7 +3,6 @@
  * Copyright (C) 2020-2026 Rosalie Wanders <rosalie@mailbox.org>
  */
 #include "NetplayHostRegistry.hpp"
-#include "NetplayTraversalClient.hpp"
 
 #include <QDateTime>
 #include <QDebug>
@@ -50,11 +49,6 @@ NetplayHostRegistry::NetplayHostRegistry(QObject* parent)
 NetplayHostRegistry::~NetplayHostRegistry()
 {
     stopHosting(true);
-}
-
-void NetplayHostRegistry::setSignalingEnetHost(ENetHost* enetHost)
-{
-    m_punchEnetHost = enetHost;
 }
 
 QString NetplayHostRegistry::hostCode() const
@@ -239,26 +233,6 @@ void NetplayHostRegistry::handleServerMessage(const QByteArray& datagram)
 
     if (type == "ERR" && parts.size() >= 3) {
         failHosting("Browse server error: " + QString::fromUtf8(parts[2]));
-    }
-
-    if (type == "PUNCH" && parts.size() >= 4) {
-        const QString punchAddress = QString::fromUtf8(parts[2]).trimmed();
-        const int punchPort = QString::fromUtf8(parts[3]).toInt();
-        if (punchAddress.isEmpty() || punchPort < 1 || punchPort > 65535) {
-            return;
-        }
-
-        QHostAddress target;
-        if (!target.setAddress(punchAddress)) {
-            return;
-        }
-
-        qDebug() << "NetplayHostRegistry: punching" << punchAddress << punchPort;
-        if (m_punchEnetHost) {
-            sendTraversalPunchBurst(m_punchEnetHost, target, static_cast<quint16>(punchPort));
-        } else {
-            sendTraversalPunchBurst(m_socket, target, static_cast<quint16>(punchPort));
-        }
     }
 }
 

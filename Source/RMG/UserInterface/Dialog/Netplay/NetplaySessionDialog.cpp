@@ -236,12 +236,8 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     this->romFile = sessionJson.value("rom_path").toString();
 
     {
-        const bool useUpnp = sessionJson.value("use_upnp").toBool(false);
-        const Netplay::NetplayConnectionMode mode =
-            Netplay::sessionUsesNatTraversal(sessionJson)
-                ? Netplay::NetplayConnectionMode::NatTraversal
-                : Netplay::NetplayConnectionMode::Direct;
-        Netplay::applyNetplayConnectionSettings(mode, useUpnp);
+        Netplay::applyNetplayConnectionSettings(Netplay::NetplayConnectionMode::Direct,
+                                                sessionJson.value("use_upnp").toBool(false));
     }
 
     this->sessionSlot = sessionJson.value("slot").toInt(sessionJson.value("slotIndex").toInt(-1));
@@ -253,7 +249,6 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     {
         const int hostingPort = sessionJson.value("server_port").toInt(Netplay::kDefaultNetplayHostingPort);
         const bool showInBrowser = sessionJson.value("show_in_browser").toBool(false);
-        const bool useNatTraversal = Netplay::sessionUsesNatTraversal(sessionJson);
         QString connectAddress = sessionJson.value("connect_address").toString(
             sessionJson.value("public_address").toString());
         if (connectAddress.isEmpty()) {
@@ -278,9 +273,6 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
                     this, [](const QString& reason) {
                 qWarning() << "Failed to update session index:" << reason;
             });
-        }
-
-        if (useNatTraversal) {
             this->beginHostBrowserRegistration(static_cast<uint16_t>(hostingPort), showInBrowser);
         } else {
             this->fetchPublicIpAddress();
@@ -585,12 +577,6 @@ void NetplaySessionDialog::beginHostBrowserRegistration(uint16_t hostingPort, bo
 {
     this->hostRegistry = std::make_unique<Netplay::NetplayHostRegistry>(this);
 
-    if (this->coordinator && this->coordinator->isHostingServer()) {
-        if (SocketIOServer* server = this->coordinator->getHostingServer()) {
-            this->hostRegistry->setSignalingEnetHost(server->enetHost());
-        }
-    }
-
     connect(this->hostRegistry.get(), &Netplay::NetplayHostRegistry::hostRegistered,
             this, [this, hostingPort](const QString& hostCode, const QString& publicAddress, int signalingPort) {
         Q_UNUSED(signalingPort);
@@ -635,25 +621,10 @@ void NetplaySessionDialog::updateConnectInfoDisplay(void)
         return;
     }
 
-    const bool useNatTraversal = Netplay::sessionUsesNatTraversal(this->sessionJson);
-    const QString hostCode = this->sessionJson.value(QStringLiteral("host_code")).toString();
-    const QString publicAddress = this->sessionJson.value(QStringLiteral("public_address")).toString();
-    const int publicPort = this->sessionJson.value(QStringLiteral("public_port"))
-                               .toInt(this->sessionJson.value(QStringLiteral("server_port"))
+    const QString publicAddress = this->sessionJson.value("public_address").toString();
+    const int publicPort = this->sessionJson.value("public_port")
+                               .toInt(this->sessionJson.value("server_port")
                                           .toInt(Netplay::kDefaultNetplayHostingPort));
-
-    if (useNatTraversal) {
-        if (publicIpLabel) {
-            publicIpLabel->setText(QStringLiteral("Host code"));
-        }
-
-        if (hostCode.isEmpty()) {
-            publicIpEdit->setText(QStringLiteral("Registering..."));
-        } else {
-            publicIpEdit->setText(hostCode);
-        }
-        return;
-    }
 
     if (publicIpLabel) {
         publicIpLabel->setText(QStringLiteral("Connect"));
@@ -1013,39 +984,8 @@ void NetplaySessionDialog::ensureClientSessionPrepComplete(void)
         return;
     }
 
-    // Host always broadcasts save-sync (possibly empty). If it still hasn't
-    // arrived, treat saves as applied so an empty host library cannot stall
-    // forever — but never invent core timing settings from local config.
-    if (!this->m_sessionSavesApplied) {
-        qWarning() << "NetplaySessionDialog: save-sync timed out; continuing without host saves";
-        this->m_sessionSavesApplied = true;
-    }
-
-    if (!this->m_sessionCoreSettingsApplied) {
-        constexpr int kMaxCoreSettingsSyncRetries = 3;
-        this->m_clientSessionPrepRetries++;
-
-        if (this->m_clientSessionPrepRetries <= kMaxCoreSettingsSyncRetries &&
-            this->m_pendingGameStart &&
-            this->m_clientSessionPrepWatchdogTimerId == -1) {
-            qWarning() << "NetplaySessionDialog: core-settings-sync missing; waiting for host"
-                       << "(attempt" << this->m_clientSessionPrepRetries
-                       << "of" << kMaxCoreSettingsSyncRetries << ")";
-            this->m_clientSessionPrepWatchdogTimerId = this->startTimer(5000);
-            return;
-        }
-
-        qWarning() << "NetplaySessionDialog: core-settings-sync never received; aborting start "
-                      "to avoid PI/SI timing desync from mismatched local configs";
-        this->m_pendingGameStart = false;
-        QtMessageBox::Error(
-            this,
-            "Netplay Sync Failed",
-            "Timed out waiting for the host's core timing settings "
-            "(SiDmaDuration / CountPerOp / RandomizeInterrupt). "
-            "Cancel and rejoin, or have the host restart the session.");
-        return;
-    }
+    this->m_sessionSavesApplied = true;
+    this->m_sessionCoreSettingsApplied = true;
 }
 
 void NetplaySessionDialog::tryCompletePendingGameStart(void)
@@ -1146,19 +1086,9 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
     if (this->isLocalSessionHost()) {
         this->m_sessionSavesApplied = true;
         this->m_sessionCoreSettingsApplied = true;
-        // Clients reset their prep flags on game-started; re-broadcast after a
-        // short delay so SiDmaDuration / CountPerOp / saves are not missed.
-        QTimer::singleShot(150, this, [this]() {
-            if (this->m_sessionShutdown || !this->isLocalSessionHost()) {
-                return;
-            }
-            this->syncHostSessionState();
-        });
     } else {
         this->m_sessionSavesApplied = false;
-        // Keep host timing settings if they already arrived during lobby sync.
-        this->m_sessionCoreSettingsApplied = CoreHasNetplaySyncSettings();
-        this->m_clientSessionPrepRetries = 0;
+        this->m_sessionCoreSettingsApplied = false;
         this->m_clientSessionPrepWatchdogTimerId = this->startTimer(3000);
     }
 

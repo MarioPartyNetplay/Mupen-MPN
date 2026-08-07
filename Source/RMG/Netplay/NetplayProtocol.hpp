@@ -342,27 +342,24 @@ inline bool turnCredentialsAvailable()
 
 enum class NetplayConnectionMode {
     Direct,
-    NatTraversal,
 };
 
 inline QString netplayConnectionModeToString(NetplayConnectionMode mode)
 {
-    switch (mode) {
-    case NetplayConnectionMode::NatTraversal:
-        return QStringLiteral("nat_traversal");
-    case NetplayConnectionMode::Direct:
-    default:
-        return QStringLiteral("direct");
-    }
+    Q_UNUSED(mode);
+    return QStringLiteral("direct");
 }
 
 inline NetplayConnectionMode netplayConnectionModeFromString(const QString& value)
 {
-    if (value.compare(QStringLiteral("nat_traversal"), Qt::CaseInsensitive) == 0 ||
-        value.compare(QStringLiteral("traversal"), Qt::CaseInsensitive) == 0) {
-        return NetplayConnectionMode::NatTraversal;
-    }
+    Q_UNUSED(value);
     return NetplayConnectionMode::Direct;
+}
+
+inline bool sessionUsesNatTraversal(const QJsonObject& session)
+{
+    Q_UNUSED(session);
+    return false;
 }
 
 inline QString sessionTraversalHostCode(const QJsonObject& session)
@@ -395,68 +392,6 @@ inline bool sessionConnectEndpoint(const QJsonObject& session, QString* addressO
         *portOut = port;
     }
     return true;
-}
-
-inline bool sessionUsesNatTraversal(const QJsonObject& session)
-{
-    if (session.value(QStringLiteral("use_nat_traversal")).toBool(false)) {
-        return true;
-    }
-
-    if (netplayConnectionModeFromString(session.value(QStringLiteral("connection_mode")).toString()) ==
-        NetplayConnectionMode::NatTraversal) {
-        return true;
-    }
-
-    const QString hostCode = sessionTraversalHostCode(session);
-    if (!hostCode.isEmpty()) {
-        QString address;
-        int port = 0;
-        if (!sessionConnectEndpoint(session, &address, &port)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-inline NetplayConnectionMode preferredJoinConnectionMode(const QJsonObject& session, const QString& address)
-{
-    if (sessionUsesNatTraversal(session)) {
-        return NetplayConnectionMode::NatTraversal;
-    }
-
-    const QString hostCode = sessionTraversalHostCode(session);
-    if (!hostCode.isEmpty()) {
-        return NetplayConnectionMode::NatTraversal;
-    }
-
-    if (!address.isEmpty() && isUsableConnectAddress(address)) {
-        return NetplayConnectionMode::Direct;
-    }
-
-    return NetplayConnectionMode::Direct;
-}
-
-inline QString netplayConnectionModeLabel(NetplayConnectionMode mode)
-{
-    switch (mode) {
-    case NetplayConnectionMode::NatTraversal:
-        return QStringLiteral("Traversal Server");
-    case NetplayConnectionMode::Direct:
-    default:
-        return QStringLiteral("Direct Connection");
-    }
-}
-
-inline int netplayConnectionModeComboIndex(NetplayConnectionMode mode)
-{
-    return mode == NetplayConnectionMode::NatTraversal ? 1 : 0;
-}
-
-inline NetplayConnectionMode netplayConnectionModeFromComboIndex(int index)
-{
-    return index == 1 ? NetplayConnectionMode::NatTraversal : NetplayConnectionMode::Direct;
 }
 
 } // namespace UserInterface::Netplay

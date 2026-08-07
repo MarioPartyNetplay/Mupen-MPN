@@ -9,7 +9,6 @@
  #include "SocketIO/SocketIOClient.hpp"
  #include "SocketIO/SocketIOServer.hpp"
  #include "WebRTC/WebRTCPeer.hpp"
- #include "NetplayTraversalClient.hpp"
  
  #include <RMG-Core/Netplay/LockstepEngine.hpp>
  #include <QString>
@@ -67,9 +66,6 @@
      void connectToServer(const QString& playerName);
      void connectToDirectIPServer(const QString& ipAddress, int port, const QString& playerName,
                                   const QString& roomId = QString());
-     void connectViaNatTraversal(const QString& hostCode, const QString& playerName,
-                                 const QString& roomId = QString());
-     void cancelNatTraversal();
      void createRoom(const QString& roomName, const QString& gameId = "ssb64", int maxPlayers = 4);
      void joinRoom(const QString& roomId, bool asSpectator = false, const QString& password = "");
      void leaveRoom();
@@ -233,7 +229,6 @@
      // Internal components
      std::unique_ptr<SocketIOClient> m_socketIO;
      std::unique_ptr<SocketIOServer> m_server;
-     std::unique_ptr<NetplayTraversalClient> m_traversalClient;
      QString m_lastHostingError;
      std::shared_ptr<RMGCore::LockstepEngine> m_lockstepEngine;
      QMap<int, std::shared_ptr<WebRTCPeer>> m_peers;

@@ -60,7 +60,6 @@ private:
     int m_pendingPlayerSlot = 0;
     int m_lastDisplayedBufferDelay = -1;
     int m_clientSessionPrepWatchdogTimerId = -1;
-    int m_clientSessionPrepRetries = 0;
 
     QList<Netplay::SocketIOClient::PlayerInfo> m_cachedPlayers;
     bool m_updatingPlayerList = false;

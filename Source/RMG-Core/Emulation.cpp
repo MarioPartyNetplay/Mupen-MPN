@@ -236,30 +236,6 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
         return false;
     }
 
-    // Apply netplay-determinism settings before plugins attach so video/input
-    // RomOpen paths see the same PI/SI timing and RDP flags as every peer.
-    if (embeddedNetplay)
-    {
-        CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
-        if (CoreHasNetplaySyncSettings())
-        {
-            CoreApplyNetplaySyncedCoreSettings();
-        }
-
-        // Parallel-RDP superscaled RDRAM readbacks are a known desync source;
-        // classic netplay disables them via ConfigReceiveNetplayConfig, but
-        // embedded lockstep never initializes that path.
-        if (m64p::Config.IsHooked())
-        {
-            m64p_handle videoParallel = nullptr;
-            if (m64p::Config.OpenSection("Video-Parallel", &videoParallel) == M64ERR_SUCCESS)
-            {
-                int disabled = 0;
-                m64p::Config.SetParameter(videoParallel, "SuperscaledReads", M64TYPE_BOOL, &disabled);
-            }
-        }
-    }
-
     if (!CoreAttachPlugins())
     {
         CoreApplyPluginSettings();

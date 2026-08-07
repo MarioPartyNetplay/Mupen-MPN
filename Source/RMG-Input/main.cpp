@@ -451,18 +451,22 @@ static void apply_controller_profiles(void)
 
         // In embedded netplay, all controller ports should appear present to the ROM.
         // Port 0 remains the local physical controller; the assigned netplay slot is carried in synced frame data.
-        // Force identical pak types on every peer (P1 mempak, others none) so SI
-        // status responses cannot diverge from local ControllerPak preferences.
         if (embeddedNetplay)
         {
             l_ControlInfo.Controls[i].Present = 1;
-            l_ControlInfo.Controls[i].Plugin = (i == 0) ? PLUGIN_MEMPAK : PLUGIN_NONE;
-            l_ControlInfo.Controls[i].RawData = 0;
-            l_ControlInfo.Controls[i].Type = CONT_TYPE_STANDARD;
-            continue;
+            if (i != 0)
+            {
+                l_ControlInfo.Controls[i].Plugin = PLUGIN_NONE;
+                l_ControlInfo.Controls[i].RawData = 0;
+                l_ControlInfo.Controls[i].Type = CONT_TYPE_STANDARD;
+                continue;
+            }
+        }
+        else
+        {
+            l_ControlInfo.Controls[i].Present = profile->PluggedIn ? 1 : 0;
         }
 
-        l_ControlInfo.Controls[i].Present = profile->PluggedIn ? 1 : 0;
         l_ControlInfo.Controls[i].Plugin  = emulateVRU ? PLUGIN_NONE : plugin;
         l_ControlInfo.Controls[i].RawData = 0;
         l_ControlInfo.Controls[i].Type    = emulateVRU ? CONT_TYPE_VRU : CONT_TYPE_STANDARD;

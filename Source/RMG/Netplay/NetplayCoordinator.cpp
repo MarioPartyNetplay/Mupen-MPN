@@ -119,8 +119,6 @@ NetplayCoordinator::~NetplayCoordinator()
 
     stopHosting();
     
-    cancelNatTraversal();
-
     if (m_socketIO && m_socketIO->getConnectionState() == SocketIOClient::Connected) {
         m_socketIO->disconnect();
     }
@@ -370,7 +368,6 @@ void NetplayCoordinator::connectToServer(const QString& playerName)
 void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int port, const QString& playerName,
                                                const QString& roomId)
 {
-    cancelNatTraversal();
     applyNetplayConnectionSettings(NetplayConnectionMode::Direct, false);
 
     m_playerName = playerName;
@@ -396,79 +393,6 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
     // Now connect to the server
     setState(Connecting);
     m_socketIO->connectToServer(playerName);
-}
-
-void NetplayCoordinator::cancelNatTraversal()
-{
-    if (m_traversalClient) {
-        m_traversalClient->cancel();
-        m_traversalClient.reset();
-    }
-}
-
-void NetplayCoordinator::connectViaNatTraversal(const QString& hostCode, const QString& playerName,
-                                                const QString& roomId)
-{
-    cancelNatTraversal();
-    applyNetplayConnectionSettings(NetplayConnectionMode::NatTraversal, false);
-
-    m_playerName = playerName;
-    m_shouldAutoJoinRoom = true;
-    m_autoJoinRoomId = roomId.trimmed();
-
-    if (m_socketIO && m_socketIO->getConnectionState() != SocketIOClient::Disconnected) {
-        m_socketIO->disconnect();
-    }
-
-    m_socketIO = std::make_unique<SocketIOClient>(QString(), this);
-    connectSocketIOClientSignals(m_socketIO.get());
-
-    if (!m_socketIO->ensureSignalingHostCreated()) {
-        setState(Error);
-        emit connectionError(QStringLiteral("Failed to create UDP signaling client for NAT traversal"));
-        return;
-    }
-
-    m_traversalClient = std::make_unique<NetplayTraversalClient>(this);
-    m_traversalClient->setEnetHost(m_socketIO->signalingHost());
-
-    connect(m_traversalClient.get(), &NetplayTraversalClient::lookupSucceeded, this,
-            [this, playerName](const QString& address, int port) {
-        if (!m_socketIO) {
-            return;
-        }
-
-        QHostAddress hostAddress;
-        if (!hostAddress.setAddress(address)) {
-            setState(Error);
-            emit connectionError(QStringLiteral("Traversal server returned an invalid host address"));
-            cancelNatTraversal();
-            return;
-        }
-
-        qInfo() << "NetplayCoordinator: NAT traversal resolved host" << address << port;
-        setState(Connecting);
-
-        if (!m_socketIO->connectSignalingHostTo(hostAddress, static_cast<quint16>(port), playerName)) {
-            setState(Error);
-            cancelNatTraversal();
-            return;
-        }
-
-        if (m_traversalClient) {
-            m_traversalClient->continuePunchingHost(address, port);
-        }
-    });
-
-    connect(m_traversalClient.get(), &NetplayTraversalClient::lookupFailed, this,
-            [this](const QString& reason) {
-        setState(Error);
-        emit connectionError(reason);
-        cancelNatTraversal();
-    });
-
-    setState(Connecting);
-    m_traversalClient->lookupHost(hostCode);
 }
 
 void NetplayCoordinator::createRoom(const QString& roomName, const QString& gameId, int maxPlayers)
@@ -902,7 +826,6 @@ void NetplayCoordinator::connectSocketIOClientSignals(SocketIOClient* client)
 void NetplayCoordinator::on_socketIO_connected()
 {
     qDebug() << "NetplayCoordinator: Socket.IO connected";
-    cancelNatTraversal();
     setState(Connected);
 
     // Set player name now that we're connected
@@ -1587,11 +1510,10 @@ void NetplayCoordinator::sendSaveSync(const QJsonArray& saveFiles)
 
     if (isHostingServer()) {
         if (m_server && !m_gameSession.roomId.isEmpty()) {
-            // Always broadcast (including empty) so clients can finish prep
-            // instead of waiting on the watchdog and falling back to local configs.
-            m_server->broadcastSaveSync(m_gameSession.roomId, saveFiles);
-            if (saveFiles.isEmpty()) {
-                qDebug() << "NetplayCoordinator: Broadcasting empty save-sync for this ROM";
+            if (!saveFiles.isEmpty()) {
+                m_server->broadcastSaveSync(m_gameSession.roomId, saveFiles);
+            } else {
+                qDebug() << "NetplayCoordinator: No save files found to sync for this ROM";
             }
         }
         return;
@@ -1609,13 +1531,6 @@ void NetplayCoordinator::sendCoreSettingsSync(const QJsonObject& coreSettings)
     }
 
     m_sessionSyncCoreSettings = coreSettings;
-
-    // Host and clients must share one apply path for SiDmaDuration / CountPerOp /
-    // RandomizeInterrupt so PI/SI interrupt timing cannot diverge.
-    CoreNetplaySyncSettings settings;
-    if (coreSettingsFromJson(coreSettings, settings)) {
-        CoreSetNetplaySyncSettings(settings);
-    }
 
     if (isHostingServer()) {
         if (m_server && !m_gameSession.roomId.isEmpty()) {
@@ -1688,6 +1603,10 @@ void NetplayCoordinator::on_socketIO_saveSyncReceived(const QJsonArray& saveFile
 
 void NetplayCoordinator::on_socketIO_coreSettingsSyncReceived(const QJsonObject& coreSettings)
 {
+    if (isHostingServer()) {
+        return;
+    }
+
     m_sessionSyncCoreSettings = coreSettings;
 
     CoreNetplaySyncSettings settings;

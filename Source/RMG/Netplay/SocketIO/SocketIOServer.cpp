@@ -572,8 +572,6 @@ void SocketIOServer::broadcastSaveSync(const QString& roomId, const QJsonArray& 
         return;
     }
 
-    room->activeSaves = saveFiles;
-
     QJsonObject payload;
     payload["files"] = saveFiles;
     emitToConnectedRoomClients(roomId, "save-sync", payload);
@@ -838,8 +836,7 @@ void SocketIOServer::sendRoomCatchUp(const QString& roomId, ClientConnection* cl
             }
         }
     }
-    // Always push save-sync (even when empty) so late joiners finish session prep.
-    {
+    if (!room->activeSaves.isEmpty()) {
         QJsonObject savePayload;
         savePayload["files"] = room->activeSaves;
         emitToClient(client->id, "save-sync", savePayload);

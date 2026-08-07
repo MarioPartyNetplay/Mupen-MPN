@@ -5,15 +5,12 @@
 #ifndef NETPLAYHOSTREGISTRY_HPP
 #define NETPLAYHOSTREGISTRY_HPP
 
-#include "NetplayEnet.hpp"
 #include "NetplayProtocol.hpp"
 
 #include <QObject>
 #include <QHostAddress>
 #include <QUdpSocket>
 #include <QTimer>
-
-struct _ENetHost;
 
 namespace UserInterface::Netplay {
 
@@ -26,10 +23,6 @@ public:
     ~NetplayHostRegistry() override;
 
     QString hostCode() const;
-
-    /** ENet signaling socket used only for NAT hole punch bursts (same port as netplay). */
-    void setSignalingEnetHost(ENetHost* enetHost);
-
     void startHosting(uint16_t signalingPort, bool listInBrowser);
     void resumeHosting(const QString& hostCode, uint16_t signalingPort, bool listInBrowser);
     void setListInBrowser(bool listInBrowser);
@@ -50,7 +43,6 @@ private:
     void onReadyRead();
     void onHousekeepingTimer();
 
-    ENetHost* m_punchEnetHost = nullptr;
     QUdpSocket m_socket;
     QTimer m_housekeepingTimer;
     QHostAddress m_serverAddress;

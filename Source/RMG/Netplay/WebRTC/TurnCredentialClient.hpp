@@ -49,11 +49,9 @@ std::vector<rtc::IceServer> buildIceServers();
 
 inline void applyNetplayConnectionSettings(NetplayConnectionMode mode, bool useUpnp)
 {
+    Q_UNUSED(mode);
     Q_UNUSED(useUpnp);
     TurnCredentialClient::instance().prefetch();
-    if (mode == NetplayConnectionMode::NatTraversal) {
-        TurnCredentialClient::instance().ensureCredentials(15000);
-    }
 }
 
 } // namespace UserInterface::Netplay
