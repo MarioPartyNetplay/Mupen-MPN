@@ -21,10 +21,8 @@
 #include <QThread>
 #include <QCoreApplication>
 #include <QEventLoop>
-#include <QTimer>
 #include <QUuid>
-#include <algorithm>
-#include <chrono>
+#include <QTimer>
 #include <thread>
 
 using namespace UserInterface::Netplay;
@@ -256,7 +254,6 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
 
             const auto engine = activeLockstepEngine();
             if (!engine) {
-                bufferEarlyRemoteInput(slot, frameNumber, controllerState);
                 return;
             }
 
@@ -602,23 +599,16 @@ void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
         return;
     }
 
+    const uint32_t latestFrame = outbound.back().first;
+    const uint32_t latestState = outbound.back().second;
+
     const Qt::ConnectionType dispatchType =
         isHostingServer()
             ? socketDispatchConnectionType(m_server.get())
             : socketDispatchConnectionType(m_socketIO.get());
 
-    {
-        std::lock_guard<std::mutex> lock(m_relayQueueMutex);
-        for (const auto& [frame, state] : outbound) {
-            if (!m_pendingRelayQueue.empty() &&
-                m_pendingRelayQueue.back().first == frame) {
-                // Same delay-slot frame refreshed with a newer sample.
-                m_pendingRelayQueue.back().second = state;
-                continue;
-            }
-            m_pendingRelayQueue.emplace_back(frame, state);
-        }
-    }
+    m_pendingRelayFrame.store(latestFrame, std::memory_order_relaxed);
+    m_pendingRelayState.store(latestState, std::memory_order_relaxed);
 
     if (!m_relayInputQueued.exchange(true, std::memory_order_acq_rel)) {
         QMetaObject::invokeMethod(
@@ -630,44 +620,11 @@ void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
 
 void NetplayCoordinator::flushPendingControllerRelay()
 {
-    std::vector<std::pair<quint32, quint32>> batch;
-    {
-        std::lock_guard<std::mutex> lock(m_relayQueueMutex);
-        batch.swap(m_pendingRelayQueue);
-    }
+    m_relayInputQueued.store(false, std::memory_order_release);
 
-    for (const auto& [frameNumber, state] : batch) {
-        relayLocalControllerInput(frameNumber, state);
-    }
-
-    bool reschedule = false;
-    {
-        std::lock_guard<std::mutex> lock(m_relayQueueMutex);
-        if (m_pendingRelayQueue.empty()) {
-            m_relayInputQueued.store(false, std::memory_order_release);
-            // Race: a submit may have enqueued after we observed empty but
-            // before clearing the flag (or after). Re-arm if needed.
-            if (!m_pendingRelayQueue.empty() &&
-                !m_relayInputQueued.exchange(true, std::memory_order_acq_rel)) {
-                reschedule = true;
-            }
-        } else if (!m_relayInputQueued.exchange(true, std::memory_order_acq_rel)) {
-            reschedule = true;
-        }
-    }
-
-    if (!reschedule) {
-        return;
-    }
-
-    const Qt::ConnectionType dispatchType =
-        isHostingServer()
-            ? socketDispatchConnectionType(m_server.get())
-            : socketDispatchConnectionType(m_socketIO.get());
-    QMetaObject::invokeMethod(
-        this,
-        "flushPendingControllerRelay",
-        dispatchType);
+    const quint32 frameNumber = m_pendingRelayFrame.load(std::memory_order_relaxed);
+    const quint32 state = m_pendingRelayState.load(std::memory_order_relaxed);
+    relayLocalControllerInput(frameNumber, state);
 }
 
 void NetplayCoordinator::relayLocalControllerInputBurst(
@@ -679,10 +636,7 @@ void NetplayCoordinator::relayLocalControllerInputBurst(
         return;
     }
 
-    // Send every frame in the burst so receivers never invent gap-fill inputs.
-    for (quint32 frame = startFrameNumber; frame <= endFrameNumber; ++frame) {
-        relayLocalControllerInput(frame, state);
-    }
+    relayLocalControllerInput(endFrameNumber, state);
 }
 
 void NetplayCoordinator::relayLocalControllerInput(
@@ -1254,124 +1208,6 @@ void NetplayCoordinator::beginEmulationSync()
     setState(InGame);
 }
 
-bool NetplayCoordinator::synchronizeLockstepFrameZero(int timeoutMilliseconds)
-{
-    const auto engine = activeLockstepEngine();
-    if (!engine) {
-        return false;
-    }
-
-    flushEarlyRemoteInputs(engine);
-
-    // Seed the local delay window with neutral input and publish it before the
-    // ROM boots. Peers that create their engines slightly later still land on
-    // the same frame-0 baseline instead of inventing fallback zeros.
-    const auto seeded = engine->submitLocalInput(0);
-    for (const auto& [frame, state] : seeded) {
-        relayLocalControllerInput(frame, state);
-    }
-    rebroadcastLocalInputBuffer(engine);
-
-    if (timeoutMilliseconds < 1000) {
-        timeoutMilliseconds = 1000;
-    }
-
-    const auto deadline =
-        std::chrono::steady_clock::now() +
-        std::chrono::milliseconds(timeoutMilliseconds);
-    auto lastBroadcast = std::chrono::steady_clock::now();
-
-    while (!engine->hasAllRemoteInputsForFrame(0)) {
-        if (m_state != InGame && m_state != StartingGame) {
-            return false;
-        }
-
-        if (std::chrono::steady_clock::now() >= deadline) {
-            qWarning() << "NetplayCoordinator: Timed out waiting for peers to"
-                       << "reach lockstep frame 0";
-            return false;
-        }
-
-        const auto now = std::chrono::steady_clock::now();
-        if (now - lastBroadcast >= std::chrono::milliseconds(100)) {
-            rebroadcastLocalInputBuffer(engine);
-            lastBroadcast = now;
-        }
-
-        // Deliver signaling / WebRTC input while we wait on the UI thread.
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        flushEarlyRemoteInputs(engine);
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-
-    qInfo() << "NetplayCoordinator: Lockstep frame 0 synchronized with"
-            << m_lockstepConfig.numPlayers << "players";
-    return true;
-}
-
-void NetplayCoordinator::bufferEarlyRemoteInput(
-    int slot,
-    uint32_t frameNumber,
-    uint32_t controllerState)
-{
-    if (slot < 0 || slot == m_gameSession.localSlot) {
-        return;
-    }
-
-    std::lock_guard<std::mutex> lock(m_earlyRemoteInputMutex);
-    constexpr size_t kMaxEarlyRemoteInputs = 512;
-    if (m_earlyRemoteInputs.size() >= kMaxEarlyRemoteInputs) {
-        m_earlyRemoteInputs.erase(
-            m_earlyRemoteInputs.begin(),
-            m_earlyRemoteInputs.begin() +
-                static_cast<std::ptrdiff_t>(kMaxEarlyRemoteInputs / 4));
-    }
-
-    m_earlyRemoteInputs.push_back({slot, frameNumber, controllerState});
-}
-
-void NetplayCoordinator::flushEarlyRemoteInputs(
-    const std::shared_ptr<RMGCore::LockstepEngine>& engine)
-{
-    if (!engine) {
-        return;
-    }
-
-    std::vector<EarlyRemoteInput> pending;
-    {
-        std::lock_guard<std::mutex> lock(m_earlyRemoteInputMutex);
-        pending.swap(m_earlyRemoteInputs);
-    }
-
-    for (const auto& input : pending) {
-        if (input.slot < 0 || input.slot >= m_lockstepConfig.numPlayers) {
-            continue;
-        }
-        if (input.slot == m_lockstepConfig.localPlayerSlot) {
-            continue;
-        }
-        engine->submitRemoteInput(
-            input.slot,
-            input.frameNumber,
-            input.controllerState);
-    }
-}
-
-void NetplayCoordinator::rebroadcastLocalInputBuffer(
-    const std::shared_ptr<RMGCore::LockstepEngine>& engine)
-{
-    if (!engine) {
-        return;
-    }
-
-    engine->rebroadcastLocalBufferedInputs();
-
-    const auto localInputs = engine->copyLocalBufferedInputs();
-    for (const auto& [frame, state] : localInputs) {
-        relayLocalControllerInput(frame, state);
-    }
-}
-
 void NetplayCoordinator::resetEmulationSync()
 {
     CoreSetEmbeddedNetplayState(false, 0);
@@ -1396,15 +1232,9 @@ void NetplayCoordinator::resetEmulationSync()
 
     m_sessionSyncCoreSettings = QJsonObject();
     m_pumpNetworkQueued.store(false, std::memory_order_relaxed);
-    {
-        std::lock_guard<std::mutex> lock(m_relayQueueMutex);
-        m_pendingRelayQueue.clear();
-        m_relayInputQueued.store(false, std::memory_order_relaxed);
-    }
-    {
-        std::lock_guard<std::mutex> lock(m_earlyRemoteInputMutex);
-        m_earlyRemoteInputs.clear();
-    }
+    m_relayInputQueued.store(false, std::memory_order_relaxed);
+    m_pendingRelayFrame.store(0, std::memory_order_relaxed);
+    m_pendingRelayState.store(0, std::memory_order_relaxed);
 }
 
 void NetplayCoordinator::initializeLockstepEngine()
@@ -1421,11 +1251,9 @@ void NetplayCoordinator::initializeLockstepEngine()
     }
     m_currentFrameInputs.clear();
     m_pumpNetworkQueued.store(false, std::memory_order_relaxed);
-    {
-        std::lock_guard<std::mutex> lock(m_relayQueueMutex);
-        m_pendingRelayQueue.clear();
-        m_relayInputQueued.store(false, std::memory_order_relaxed);
-    }
+    m_relayInputQueued.store(false, std::memory_order_relaxed);
+    m_pendingRelayFrame.store(0, std::memory_order_relaxed);
+    m_pendingRelayState.store(0, std::memory_order_relaxed);
 
     m_lockstepEngine = std::make_shared<RMGCore::LockstepEngine>(m_lockstepConfig);
 
@@ -1900,9 +1728,6 @@ void NetplayCoordinator::on_socketIO_controllerInputReceived(int slot, uint32_t 
 {
     const auto engine = activeLockstepEngine();
     if (!engine) {
-        // Peers often publish their frame-0 window before every client has
-        // finished beginEmulationSync(); keep those packets for flush.
-        bufferEarlyRemoteInput(slot, frameNumber, controllerState);
         return;
     }
 

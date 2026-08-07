@@ -1108,16 +1108,6 @@ void NetplaySessionDialog::tryStartPendingGame(void)
     this->applyCheats();
     if (this->coordinator) {
         this->coordinator->beginEmulationSync();
-        if (!this->coordinator->synchronizeLockstepFrameZero()) {
-            this->m_pendingGameStart = true;
-            QtMessageBox::Error(
-                this,
-                "Netplay Sync Failed",
-                "Timed out waiting for all players to reach lockstep frame 0. "
-                "Cancel and restart the session.");
-            this->coordinator->resetEmulationSync();
-            return;
-        }
     }
     emit OnPlayGame(romFile, "", 0, selectedSlot);
 }

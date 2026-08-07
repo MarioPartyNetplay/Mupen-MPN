@@ -20,8 +20,6 @@
  #include <memory>
  #include <mutex>
 #include <atomic>
-#include <utility>
-#include <vector>
  
  namespace UserInterface::Netplay {
  
@@ -80,11 +78,6 @@
  
      // Game Input & Emulation
      void beginEmulationSync();
-     /**
-      * Exchange frame-0 / input-delay window inputs with every peer before the
-      * ROM boots so lockstep does not start from dropped early packets.
-      */
-     bool synchronizeLockstepFrameZero(int timeoutMilliseconds = 15000);
      void resetEmulationSync();
      void submitFrameInput(uint32_t controllerState);
      bool advanceFrame();
@@ -196,11 +189,6 @@
          quint32 startFrameNumber,
          quint32 endFrameNumber,
          quint32 state);
-     void bufferEarlyRemoteInput(int slot, uint32_t frameNumber, uint32_t controllerState);
-     void flushEarlyRemoteInputs(
-         const std::shared_ptr<RMGCore::LockstepEngine>& engine);
-     void rebroadcastLocalInputBuffer(
-         const std::shared_ptr<RMGCore::LockstepEngine>& engine);
      void on_socketIO_emulationPauseReceived(bool paused);
      void on_peerFrameSyncReceived(int slot, uint32_t frameNumber, uint32_t stateHash);
 
@@ -274,15 +262,8 @@
     std::atomic<uint32_t> m_pendingFrameSyncFrame{0};
     std::atomic<bool> m_pumpNetworkQueued{false};
     std::atomic<bool> m_relayInputQueued{false};
-    std::mutex m_relayQueueMutex;
-    std::vector<std::pair<quint32, quint32>> m_pendingRelayQueue;
-    struct EarlyRemoteInput {
-        int slot = -1;
-        uint32_t frameNumber = 0;
-        uint32_t controllerState = 0;
-    };
-    std::mutex m_earlyRemoteInputMutex;
-    std::vector<EarlyRemoteInput> m_earlyRemoteInputs;
+    std::atomic<quint32> m_pendingRelayFrame{0};
+    std::atomic<quint32> m_pendingRelayState{0};
      
      mutable std::recursive_mutex m_mutex;
  };
