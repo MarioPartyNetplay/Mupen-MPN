@@ -33,6 +33,7 @@ typedef SOCKET socket_t;
 #else
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -73,6 +74,13 @@ typedef int socket_t;
 #define MAX_TURN_RESPONSE 32768
 #define DEFAULT_TURN_CREDENTIAL_TTL_SEC 86400
 #define TURN_CACHE_REFRESH_SKEW_SEC 300
+#define TURN_FETCH_TIMEOUT_SEC 5
+#define TURN_REFRESH_BACKOFF_SEC 30
+#define HTTP_CLIENT_TIMEOUT_SEC 2
+#define HTTP_LISTEN_BACKLOG 128
+#define MAX_UDP_DRAIN_PER_TICK 64
+#define MAX_HTTP_ACCEPT_PER_TICK 8
+#define EVENT_LOOP_IDLE_SEC 1
 
 #ifdef WITH_LIBCURL
 #include <curl/curl.h>
@@ -105,10 +113,54 @@ static char g_turn_cache[MAX_TURN_RESPONSE];
 static size_t g_turn_cache_len = 0;
 static uint64_t g_turn_cache_expires = 0;
 static int g_turn_credential_ttl_sec = DEFAULT_TURN_CREDENTIAL_TTL_SEC;
+static uint64_t g_turn_next_refresh_attempt = 0;
 
 static uint64_t now_seconds(void)
 {
     return (uint64_t)time(NULL);
+}
+
+static int socket_set_nonblocking(socket_t sock, int enabled)
+{
+#ifdef _WIN32
+    u_long mode = enabled ? 1UL : 0UL;
+    return ioctlsocket(sock, FIONBIO, &mode) == 0 ? 0 : -1;
+#else
+    int flags = fcntl(sock, F_GETFL, 0);
+    if (flags < 0) {
+        return -1;
+    }
+    if (enabled) {
+        flags |= O_NONBLOCK;
+    } else {
+        flags &= ~O_NONBLOCK;
+    }
+    return fcntl(sock, F_SETFL, flags) == 0 ? 0 : -1;
+#endif
+}
+
+static void socket_set_io_timeout(socket_t sock, int timeout_sec)
+{
+#ifdef _WIN32
+    DWORD timeout_ms = (DWORD)timeout_sec * 1000UL;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout_ms, sizeof(timeout_ms));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout_ms, sizeof(timeout_ms));
+#else
+    struct timeval tv;
+    tv.tv_sec = timeout_sec;
+    tv.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+#endif
+}
+
+static int socket_would_block(void)
+{
+#ifdef _WIN32
+    return socket_errno == WSAEWOULDBLOCK;
+#else
+    return socket_errno == EAGAIN || socket_errno == EWOULDBLOCK;
+#endif
 }
 
 static void send_reply(socket_t sock, const struct sockaddr* addr, socklen_t addr_len, const char* message)
@@ -708,13 +760,26 @@ static void handle_udp(socket_t sock, const char* buffer, int length, const stru
             if (parse_host_code(parts[2], &code)) {
                 host_entry_t* entry = find_host(code);
                 if (entry != NULL) {
-                    entry->last_seen = now_seconds();
-                    if (part_count >= 4) {
+                    const uint64_t now = now_seconds();
+                    entry->last_seen = now;
+                    /* Client sends KEEP|code|port|list. Older clients used KEEP|code|list. */
+                    if (part_count >= 5) {
+                        entry->list_in_browser = (strcmp(parts[4], "0") != 0);
+                    } else if (part_count >= 4) {
                         entry->list_in_browser = (strcmp(parts[3], "0") != 0);
-                        if (!entry->list_in_browser) {
-                            char session_key[MAX_KEY_LEN];
-                            snprintf(session_key, sizeof(session_key), "session/%s", parts[2]);
-                            index_del(session_key);
+                    }
+                    if (!entry->list_in_browser) {
+                        char session_key[MAX_KEY_LEN];
+                        snprintf(session_key, sizeof(session_key), "session/%s", parts[2]);
+                        index_del(session_key);
+                    } else {
+                        /* KEEP also renews session index TTL so idle lobbies stay browsable. */
+                        char session_key[MAX_KEY_LEN];
+                        index_entry_t* session;
+                        snprintf(session_key, sizeof(session_key), "session/%s", parts[2]);
+                        session = find_index(session_key);
+                        if (session != NULL) {
+                            session->last_seen = now;
                         }
                     }
                 }
@@ -744,24 +809,6 @@ static void handle_udp(socket_t sock, const char* buffer, int length, const stru
     }
 
     if (strcmp(parts[0], INDEX_PROTOCOL) == 0) {
-        /* Diagnostic log for incoming index requests: show length and hex of first bytes */
-        {
-            char ip_text[INET_ADDRSTRLEN];
-            struct in_addr caddr = client->sin_addr;
-            const char* ip_string = inet_ntop(AF_INET, &caddr, ip_text, sizeof(ip_text));
-            if (!ip_string) ip_string = "0.0.0.0";
-            /* length is the original datagram length available in this scope */
-            printf("[idx] RX from %s:%u len=%d data=", ip_string, (unsigned)ntohs(client->sin_port), length);
-            for (int i = 0; i < length && i < 64; ++i) {
-                unsigned char b = (unsigned char)message[i];
-                printf("%02X", b);
-            }
-            if (length > 64) {
-                printf("...");
-            }
-            printf("\n");
-        }
-
         prune_index();
         if (strcmp(parts[1], "SET") == 0 && part_count >= 4) {
             const char* value = field_after_key(message, "SET", parts[2]);
@@ -1559,7 +1606,8 @@ static int turn_fetch_cloudflare_credentials(char* out, size_t out_size, size_t*
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, turn_curl_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)TURN_FETCH_TIMEOUT_SEC);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "RMG-NAT-Traversal-Server/1.0");
 
     CURLcode result = curl_easy_perform(curl);
@@ -1589,19 +1637,44 @@ static int turn_credentials_are_fresh(uint64_t now)
     return g_turn_cache_len > 0 && g_turn_cache_expires > now + TURN_CACHE_REFRESH_SKEW_SEC;
 }
 
+static int turn_credentials_are_usable(uint64_t now)
+{
+    /* Serve through the credential TTL; refresh happens off the request path. */
+    return g_turn_cache_len > 0 && g_turn_cache_expires > now;
+}
+
 static int turn_refresh_credentials(uint64_t now)
 {
     size_t fetched_len = 0;
 
     if (!turn_fetch_cloudflare_credentials(g_turn_cache, sizeof(g_turn_cache), &fetched_len)) {
+        g_turn_next_refresh_attempt = now + TURN_REFRESH_BACKOFF_SEC;
         return 0;
     }
 
     g_turn_cache_len = fetched_len;
     g_turn_cache_expires = now + (uint64_t)g_turn_credential_ttl_sec;
+    g_turn_next_refresh_attempt = 0;
     printf("[turn] refreshed Cloudflare ICE credentials (%zu bytes, ttl %d sec)\n", g_turn_cache_len,
            g_turn_credential_ttl_sec);
     return 1;
+}
+
+static void turn_maybe_refresh_idle(void)
+{
+    const uint64_t now = now_seconds();
+
+    if (!turn_is_configured()) {
+        return;
+    }
+    if (turn_credentials_are_fresh(now)) {
+        return;
+    }
+    if (now < g_turn_next_refresh_attempt) {
+        return;
+    }
+
+    (void)turn_refresh_credentials(now);
 }
 
 #endif /* WITH_LIBCURL */
@@ -1617,14 +1690,24 @@ static void http_reply_turn_ice_servers(socket_t client)
         return;
     }
 
-    if (!turn_credentials_are_fresh(now) && !turn_refresh_credentials(now)) {
-        if (g_turn_cache_len > 0) {
-            /* Serve stale credentials if refresh failed but we still have a cache. */
-        } else {
+    /* Never block the lobby event loop on Cloudflare when we can still serve cache. */
+    if (!turn_credentials_are_usable(now)) {
+        if (g_turn_cache_len == 0 && now >= g_turn_next_refresh_attempt) {
+            if (!turn_refresh_credentials(now)) {
+                http_reply_json(client, 502, "Bad Gateway",
+                                "{\"error\":\"Failed to fetch Cloudflare TURN credentials\"}");
+                return;
+            }
+        } else if (g_turn_cache_len == 0) {
             http_reply_json(client, 502, "Bad Gateway",
                             "{\"error\":\"Failed to fetch Cloudflare TURN credentials\"}");
             return;
+        } else {
+            /* Expired cache: keep serving while idle refresh catches up. */
+            g_turn_next_refresh_attempt = 0;
         }
+    } else if (!turn_credentials_are_fresh(now)) {
+        g_turn_next_refresh_attempt = 0;
     }
 
     {
@@ -1887,6 +1970,10 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    if (socket_set_nonblocking(udp_sock, 1) != 0) {
+        fprintf(stderr, "warning: failed to set UDP non-blocking; KEEP drain may stall under load\n");
+    }
+
     if (http_enabled) {
         struct sockaddr_in http_addr;
         http_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -1898,7 +1985,10 @@ int main(int argc, char** argv)
             http_addr.sin_port = htons((uint16_t)http_port);
             inet_pton(AF_INET, bind_host, &http_addr.sin_addr);
             if (bind(http_sock, (struct sockaddr*)&http_addr, sizeof(http_addr)) == 0 &&
-                listen(http_sock, 8) == 0) {
+                listen(http_sock, HTTP_LISTEN_BACKLOG) == 0) {
+                if (socket_set_nonblocking(http_sock, 1) != 0) {
+                    fprintf(stderr, "warning: failed to set HTTP listen non-blocking\n");
+                }
                 printf("HTTP index on http://%s:%d/\n", bind_host, http_port);
             } else {
                 fprintf(stderr, "http bind failed, continuing without HTTP\n");
@@ -1911,6 +2001,9 @@ int main(int argc, char** argv)
 #ifdef WITH_LIBCURL
     if (curl_global_init(CURL_GLOBAL_DEFAULT) != 0) {
         fprintf(stderr, "warning: libcurl init failed; /turn/ice-servers will be unavailable\n");
+    } else {
+        /* Warm TURN cache before serving clients so request handling stays non-blocking. */
+        turn_maybe_refresh_idle();
     }
 #endif
 
@@ -1919,6 +2012,8 @@ int main(int argc, char** argv)
     for (;;) {
         fd_set readfds;
         socket_t max_fd = udp_sock;
+        struct timeval timeout;
+        int ready;
 
         FD_ZERO(&readfds);
         FD_SET(udp_sock, &readfds);
@@ -1929,26 +2024,62 @@ int main(int argc, char** argv)
             }
         }
 
-        if (select((int)max_fd + 1, &readfds, NULL, NULL, NULL) <= 0) {
+        timeout.tv_sec = EVENT_LOOP_IDLE_SEC;
+        timeout.tv_usec = 0;
+        ready = select((int)max_fd + 1, &readfds, NULL, NULL, &timeout);
+        if (ready < 0) {
             continue;
         }
 
+        if (ready == 0) {
+            prune_hosts();
+            prune_index();
+#ifdef WITH_LIBCURL
+            turn_maybe_refresh_idle();
+#endif
+            continue;
+        }
+
+        /* Drain UDP first so host KEEP heartbeats are never starved by HTTP/TURN. */
         if (FD_ISSET(udp_sock, &readfds)) {
-            char buffer[MAX_UDP_PACKET];
-            struct sockaddr_in client;
-            socklen_t client_len = sizeof(client);
-            int received =
-                recvfrom(udp_sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr*)&client, &client_len);
-            if (received > 0) {
-                handle_udp(udp_sock, buffer, received, &client, client_len);
+            for (int i = 0; i < MAX_UDP_DRAIN_PER_TICK; ++i) {
+                char buffer[MAX_UDP_PACKET];
+                struct sockaddr_in client;
+                socklen_t client_len = sizeof(client);
+                int received =
+                    recvfrom(udp_sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr*)&client, &client_len);
+                if (received > 0) {
+                    handle_udp(udp_sock, buffer, received, &client, client_len);
+                    continue;
+                }
+                if (received < 0 && socket_would_block()) {
+                    break;
+                }
+                break;
             }
         }
 
+#ifdef WITH_LIBCURL
+        /* Refresh after KEEP drain so Cloudflare latency cannot drop host registrations. */
+        turn_maybe_refresh_idle();
+#endif
+
         if (http_sock != SOCKET_INVALID && FD_ISSET(http_sock, &readfds)) {
-            struct sockaddr_in client;
-            socklen_t client_len = sizeof(client);
-            socket_t client_sock = accept(http_sock, (struct sockaddr*)&client, &client_len);
-            if (client_sock != SOCKET_INVALID) {
+            for (int i = 0; i < MAX_HTTP_ACCEPT_PER_TICK; ++i) {
+                struct sockaddr_in client;
+                socklen_t client_len = sizeof(client);
+                socket_t client_sock = accept(http_sock, (struct sockaddr*)&client, &client_len);
+                if (client_sock == SOCKET_INVALID) {
+                    if (socket_would_block()) {
+                        break;
+                    }
+                    break;
+                }
+
+                /* Accepted sockets must be blocking with a short I/O deadline. */
+                (void)socket_set_nonblocking(client_sock, 0);
+                socket_set_io_timeout(client_sock, HTTP_CLIENT_TIMEOUT_SEC);
+
                 char peer_ip[INET_ADDRSTRLEN];
                 if (inet_ntop(AF_INET, &client.sin_addr, peer_ip, sizeof(peer_ip)) == NULL) {
                     strncpy(peer_ip, "0.0.0.0", sizeof(peer_ip));
