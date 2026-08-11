@@ -25,6 +25,8 @@ namespace {
 
 constexpr uint32_t kMinInputFrameSlack = 8;
 constexpr uint32_t kMinInputDelayFrames = 1;
+// N64 netplay advances at ~60 VI/s; use this when converting ms to frames.
+constexpr int kNetplayFrameMs = 17;
 // Cap how many future frames we publish per emulated frame so a large buffer
 // setting does not burst hundreds of WebRTC/signaling packets at once.
 constexpr uint32_t kMaxInputPrefillPerSubmit = 8;
@@ -81,7 +83,10 @@ LockstepEngine::LockstepEngine(const Config& config)
         m_config.inputDelayFrames = static_cast<int>(kMinInputDelayFrames);
     }
 
-    m_config.stallTimeoutMilliseconds = 0;
+    if (m_config.stallTimeoutMilliseconds <= 0) {
+        m_config.stallTimeoutMilliseconds =
+            stallTimeoutForDelayFrames(m_config.inputDelayFrames);
+    }
 
     for (int slot = 0; slot < m_config.numPlayers; ++slot) {
         m_peerSessionActive[slot] = true;
@@ -228,8 +233,8 @@ LockstepEngine::submitLocalInput(uint32_t controllerState)
         m_lastKnownInputFrames[m_config.localPlayerSlot] = sendFrame;
     }
 
-    if (!outbound.empty()) {
-        broadcastInput(controllerState, outbound.back().first);
+    for (const auto& [frame, state] : outbound) {
+        broadcastInput(state, frame);
     }
 
     return outbound;
@@ -579,14 +584,20 @@ void LockstepEngine::setInputDelayFrames(int frames)
     }
 
     m_config.inputDelayFrames = frames;
-    m_config.stallTimeoutMilliseconds = 0;
+    m_config.stallTimeoutMilliseconds = stallTimeoutForDelayFrames(frames);
     m_inputCv.notify_all();
 }
 
 int LockstepEngine::stallTimeoutForDelayFrames(int inputDelayFrames)
 {
-    (void)inputDelayFrames;
-    return 0;
+    if (inputDelayFrames < static_cast<int>(kMinInputDelayFrames)) {
+        inputDelayFrames = static_cast<int>(kMinInputDelayFrames);
+    }
+
+    // Wait roughly one emulated frame per two delay units so brief jitter can
+    // resolve without freezing, then fall back to the last known remote input.
+    const int timeoutMs = (inputDelayFrames * kNetplayFrameMs) / 2 + kNetplayFrameMs;
+    return std::max(kNetplayFrameMs, std::min(120, timeoutMs));
 }
 
 void LockstepEngine::setPeerSessionActive(int slot, bool active)
@@ -1096,8 +1107,11 @@ int LockstepEngine::computeInputWaitTimeoutMsUnlocked(
         }
     }
 
-    // Dolphin-style: stall on lag spikes instead of advancing with stale inputs.
-    return 0;
+    if (m_config.stallTimeoutMilliseconds > 0) {
+        return m_config.stallTimeoutMilliseconds;
+    }
+
+    return stallTimeoutForDelayFrames(m_config.inputDelayFrames);
 }
 
 bool LockstepEngine::allMissingInputsAreFromDisconnectedPeersUnlocked(
@@ -1168,14 +1182,29 @@ bool LockstepEngine::waitForAllInputs(
             }
         }
 
-        if (hasDeadline &&
-            std::chrono::steady_clock::now() >= deadline) {
-            return false;
+        if (hasDeadline) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= deadline) {
+                return false;
+            }
+
+            const auto remaining =
+                std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
+            const auto waitSlice =
+                std::min(std::chrono::milliseconds(4), remaining);
+
+            m_inputCv.wait_for(
+                lock,
+                waitSlice,
+                [this, frameNumber]() {
+                    return hasAllInputsForFrameUnlocked(frameNumber);
+                });
+            continue;
         }
 
         m_inputCv.wait_for(
             lock,
-            std::chrono::milliseconds(2),
+            std::chrono::milliseconds(4),
             [this, frameNumber]() {
                 return hasAllInputsForFrameUnlocked(frameNumber);
             });
