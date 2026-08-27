@@ -107,6 +107,8 @@ private:
         QJsonArray activeCheats;
         QJsonArray activeSaves;
         QJsonObject activeCoreSettings;
+        bool hasSaveSyncSnapshot = false;
+        bool hasCheatSyncSnapshot = false;
         int inputDelayFrames = 4;
         QMap<int, uint32_t> lastFrameSyncBySlot;
         QSet<int> emulationReadySlots;

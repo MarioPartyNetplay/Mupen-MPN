@@ -42,6 +42,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QSignalBlocker>
 
 #include <RMG-Core/Error.hpp>
@@ -92,9 +93,8 @@ QString sanitizeSaveBaseName(QString name)
     return name;
 }
 
-QString buildMupenSaveBaseName(const CoreRomHeader& header, const CoreRomSettings& settings)
+QString buildMupenSaveBaseNameForFormat(const CoreRomHeader& header, const CoreRomSettings& settings, int format)
 {
-    const int format = CoreSettingsGetIntValue(SettingsID::Core_SaveFileNameFormat);
     if (format == 0) {
         return sanitizeSaveBaseName(QString::fromStdString(header.Name));
     }
@@ -111,6 +111,34 @@ QString buildMupenSaveBaseName(const CoreRomHeader& header, const CoreRomSetting
 
     const QString md5Prefix = QString::fromStdString(settings.MD5).left(8);
     return sanitizeSaveBaseName(base + "-" + md5Prefix);
+}
+
+QStringList collectSaveSyncBaseNames(const QString& romFile)
+{
+    QStringList saveBaseNames;
+    saveBaseNames << QFileInfo(romFile).completeBaseName();
+
+    CoreRomType type = {};
+    CoreRomHeader header = {};
+    CoreRomSettings defaultSettings = {};
+    CoreRomSettings settings = {};
+    if (CoreGetCachedRomHeaderAndSettings(romFile.toStdU32String(), &type, &header, &defaultSettings, &settings)) {
+        // Include every naming scheme the core may open. Custom boards often keep
+        // the stock GoodName while using a new MD5-named save; leftover GoodName
+        // files must be collected/cleared or get_eeprom_path() will prefer them.
+        saveBaseNames << buildMupenSaveBaseNameForFormat(header, settings, 0);
+        saveBaseNames << buildMupenSaveBaseNameForFormat(header, settings, 1);
+        if (!settings.GoodName.empty()) {
+            saveBaseNames << sanitizeSaveBaseName(QString::fromStdString(settings.GoodName));
+        }
+        if (!header.Name.empty()) {
+            saveBaseNames << sanitizeSaveBaseName(QString::fromStdString(header.Name));
+        }
+    }
+
+    saveBaseNames.removeAll(QString());
+    saveBaseNames.removeDuplicates();
+    return saveBaseNames;
 }
 
 void appendSaveFileIfExists(QJsonArray& saveFiles, const QDir& directory, const QString& filename)
@@ -135,6 +163,46 @@ void appendSaveFileIfExists(QJsonArray& saveFiles, const QDir& directory, const 
     saveFile["size"] = static_cast<qint64>(data.size());
     saveFile["data"] = QString::fromLatin1(data.toBase64());
     saveFiles.append(saveFile);
+}
+
+void clearLocalSaveSyncCandidates(const QString& romFile, QDir& directory)
+{
+    for (const QString& baseName : collectSaveSyncBaseNames(romFile)) {
+        for (const QString& extension : netplaySaveExtensions()) {
+            QFile::remove(directory.filePath(baseName + extension));
+        }
+    }
+}
+
+bool writeSaveSyncFile(QDir& directory, const QString& filename, const QByteArray& data)
+{
+    if (filename.isEmpty()) {
+        return false;
+    }
+
+    const QString filePath = directory.filePath(filename);
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        qWarning() << "NetplaySessionDialog: Failed to write save file" << filePath;
+        return false;
+    }
+
+    if (!data.isEmpty() && file.write(data) != data.size()) {
+        qWarning() << "NetplaySessionDialog: Failed to fully write save file" << filePath;
+        file.close();
+        return false;
+    }
+
+    file.close();
+    return true;
+}
+
+void mirrorSaveDataToAllBaseNames(QDir& directory, const QStringList& baseNames,
+                                  const QString& extension, const QByteArray& data)
+{
+    for (const QString& baseName : baseNames) {
+        writeSaveSyncFile(directory, baseName + extension, data);
+    }
 }
 
 QJsonArray buildEnabledCheatsSnapshot(const QString& romFile)
@@ -163,29 +231,51 @@ QJsonArray buildSaveSyncFiles(const QString& romFile)
     QJsonArray saveFiles;
     const auto saveDirectory = CoreGetSaveDirectory();
     const QDir directory(QString::fromStdString(saveDirectory.string()));
-
-    QStringList saveBaseNames;
-    saveBaseNames << QFileInfo(romFile).completeBaseName();
+    const QStringList baseNames = collectSaveSyncBaseNames(romFile);
 
     CoreRomType type = {};
     CoreRomHeader header = {};
     CoreRomSettings defaultSettings = {};
     CoreRomSettings settings = {};
-    if (CoreGetCachedRomHeaderAndSettings(romFile.toStdU32String(), &type, &header, &defaultSettings, &settings)) {
-        saveBaseNames << buildMupenSaveBaseName(header, settings);
-        if (!settings.GoodName.empty()) {
-            saveBaseNames << sanitizeSaveBaseName(QString::fromStdString(settings.GoodName));
-        }
-        if (!header.Name.empty()) {
-            saveBaseNames << sanitizeSaveBaseName(QString::fromStdString(header.Name));
-        }
-    }
+    const bool haveRomInfo = CoreGetCachedRomHeaderAndSettings(
+        romFile.toStdU32String(), &type, &header, &defaultSettings, &settings);
+    const int format = CoreSettingsGetIntValue(SettingsID::Core_SaveFileNameFormat);
 
-    saveBaseNames.removeDuplicates();
+    // Match mupen64plus get_*_path(): prefer a non-empty legacy GoodName save, else
+    // the configured SaveFilenameFormat name. Syncing only that file (then mirroring
+    // it on clients) keeps every peer on the same EEPROM the host will open.
+    for (const QString& extension : netplaySaveExtensions()) {
+        QString chosenFilename;
 
-    for (const QString& baseName : saveBaseNames) {
-        for (const QString& extension : netplaySaveExtensions()) {
-            appendSaveFileIfExists(saveFiles, directory, baseName + extension);
+        if (haveRomInfo && !settings.GoodName.empty()) {
+            const QString legacyName =
+                sanitizeSaveBaseName(QString::fromStdString(settings.GoodName)) + extension;
+            const QFileInfo legacyInfo(directory.filePath(legacyName));
+            if (legacyInfo.exists() && legacyInfo.size() > 0) {
+                chosenFilename = legacyName;
+            }
+        }
+
+        if (chosenFilename.isEmpty() && haveRomInfo) {
+            const QString formattedName =
+                buildMupenSaveBaseNameForFormat(header, settings, format) + extension;
+            if (QFileInfo::exists(directory.filePath(formattedName))) {
+                chosenFilename = formattedName;
+            }
+        }
+
+        if (chosenFilename.isEmpty()) {
+            for (const QString& baseName : baseNames) {
+                const QString candidate = baseName + extension;
+                if (QFileInfo::exists(directory.filePath(candidate))) {
+                    chosenFilename = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (!chosenFilename.isEmpty()) {
+            appendSaveFileIfExists(saveFiles, directory, chosenFilename);
         }
     }
 
@@ -770,8 +860,12 @@ bool NetplaySessionDialog::getCheats(std::vector<CoreCheat>& cheats, QJsonArray&
     QJsonDocument sessionDoc = QJsonDocument::fromJson(this->sessionFile.toUtf8());
     QJsonObject sessionJson = sessionDoc.object();
 
-    cheatsArray = sessionJson.value("cheats").toArray();
-    if (cheatsArray.isEmpty() && this->isLocalSessionHost())
+    if (sessionJson.contains(QStringLiteral("cheats")))
+    {
+        // Explicit (including empty) host sync must win over local enabled cheats.
+        cheatsArray = sessionJson.value(QStringLiteral("cheats")).toArray();
+    }
+    else if (this->isLocalSessionHost())
     {
         // Host falls back to locally enabled cheats until the first sync.
         cheatsArray = buildEnabledCheatsSnapshot(this->romFile);
@@ -1158,13 +1252,6 @@ void NetplaySessionDialog::on_coordinator_cheatsUpdated(const QJsonArray& cheats
 
 void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& saveFiles)
 {
-    if (saveFiles.isEmpty()) {
-        this->m_sessionSavesApplied = true;
-        this->requestSynchronizedEmulationStart();
-        this->tryCompletePendingGameStart();
-        return;
-    }
-
     const auto saveDirectory = CoreGetSaveDirectory();
     QDir directory(QString::fromStdString(saveDirectory.string()));
     if (!directory.exists())
@@ -1172,18 +1259,14 @@ void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& sav
         directory.mkpath(".");
     }
 
-    QStringList filenamesToReplace;
-    for (const auto& value : saveFiles) {
-        const QString filename = value.toObject().value("filename").toString();
-        if (!filename.isEmpty()) {
-            filenamesToReplace << filename;
-        }
-    }
+    const QStringList baseNames = collectSaveSyncBaseNames(this->romFile);
 
-    for (const QString& filename : filenamesToReplace) {
-        QFile::remove(directory.filePath(filename));
-    }
+    // Always wipe every path the core might open for this ROM. Custom boards keep
+    // stock GoodNames, so a leftover Mario Party .eep would otherwise win over the
+    // synced MD5-named file and desync on the save select screen.
+    clearLocalSaveSyncCandidates(this->romFile, directory);
 
+    QHash<QString, QByteArray> dataByExtension;
     for (const auto& value : saveFiles)
     {
         const QJsonObject saveFile = value.toObject();
@@ -1200,20 +1283,26 @@ void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& sav
         {
             continue;
         }
-
-        const QString filePath = directory.filePath(filename);
-        QFile file(filePath);
-        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        if (expectedSize >= 0 && decodedData.size() != expectedSize && expectedSize > 0)
         {
-            qWarning() << "NetplaySessionDialog: Failed to write save file" << filePath;
-            continue;
+            qWarning() << "NetplaySessionDialog: Save sync size mismatch for" << filename
+                       << "expected" << expectedSize << "got" << decodedData.size();
         }
 
-        if (expectedSize > 0 && file.write(decodedData) != expectedSize)
-        {
-            qWarning() << "NetplaySessionDialog: Failed to fully write save file" << filePath;
+        writeSaveSyncFile(directory, filename, decodedData);
+
+        for (const QString& extension : netplaySaveExtensions()) {
+            if (filename.endsWith(extension, Qt::CaseInsensitive) && !dataByExtension.contains(extension)) {
+                dataByExtension.insert(extension, decodedData);
+                break;
+            }
         }
-        file.close();
+    }
+
+    // Mirror host save bytes onto every candidate basename so peers with different
+    // SaveFilenameFormat / leftover naming still open identical EEPROM contents.
+    for (auto it = dataByExtension.constBegin(); it != dataByExtension.constEnd(); ++it) {
+        mirrorSaveDataToAllBaseNames(directory, baseNames, it.key(), it.value());
     }
 
     this->m_sessionSavesApplied = true;
@@ -1236,12 +1325,16 @@ void NetplaySessionDialog::syncHostSessionState(void)
         return;
     }
 
+    // Always push cheats (including an empty list) so clients clear local-only codes.
     const QJsonArray hostCheats = buildEnabledCheatsSnapshot(this->romFile);
-    if (!hostCheats.isEmpty())
+    if (!this->setCheats(hostCheats))
     {
-        this->coordinator->sendCheatsUpdate(hostCheats);
+        qWarning() << "NetplaySessionDialog: Failed to store host cheat snapshot for sync";
     }
+    this->applyCheats();
+    this->coordinator->sendCheatsUpdate(hostCheats);
 
+    // Always push saves (including empty) so clients wipe leftover GoodName/MD5 files.
     this->coordinator->sendSaveSync(buildSaveSyncFiles(this->romFile));
 
     const QJsonObject coreSettings = buildCoreSettingsSyncPayload(this->romFile);
@@ -1531,12 +1624,19 @@ void NetplaySessionDialog::on_coordinator_stateChanged(Netplay::NetplayCoordinat
     this->applyHostOnlyControlsVisibility();
 
     if (state == Netplay::NetplayCoordinator::InGame) {
-        // Prefer game focus; chat remains usable via click.
+        // Prefer game focus; chat remains usable via click. Do not move focus to
+        // the main window chrome — Emulation_Started already focuses the render
+        // widget for netplay.
         this->chatLineEdit->clearFocus();
+        if (this->bufferDelaySpinBox) {
+            this->bufferDelaySpinBox->clearFocus();
+        }
+        if (this->listWidget) {
+            this->listWidget->clearFocus();
+        }
         if (QWidget* parentWindow = this->parentWidget()) {
             parentWindow->raise();
             parentWindow->activateWindow();
-            parentWindow->setFocus(Qt::OtherFocusReason);
         }
     }
 }
@@ -1569,14 +1669,17 @@ bool NetplaySessionDialog::eventFilter(QObject* object, QEvent* event)
 {
     Q_UNUSED(object);
 
-    if (event->type() != QEvent::KeyPress && event->type() != QEvent::KeyRelease) {
+    const bool isKeyEvent =
+        event->type() == QEvent::KeyPress ||
+        event->type() == QEvent::KeyRelease ||
+        event->type() == QEvent::ShortcutOverride;
+
+    if (!isKeyEvent) {
         return QDialog::eventFilter(object, event);
     }
 
-    if (!CoreIsEmulationRunning()) {
-        return QDialog::eventFilter(object, event);
-    }
-
+    // Netplay keeps this dialog open; always forward keys to the core while
+    // embedded netplay is active unless the user is typing in chat/settings.
     if (CoreIsEmbeddedNetplayActive()) {
         QWidget* focusWidget = QApplication::focusWidget();
         if (this->isKeyboardCaptureWidget(focusWidget)) {
@@ -1584,16 +1687,35 @@ bool NetplaySessionDialog::eventFilter(QObject* object, QEvent* event)
         }
 
         auto* keyEvent = static_cast<QKeyEvent*>(event);
+        if (keyEvent->isAutoRepeat() && event->type() == QEvent::KeyRelease) {
+            return true;
+        }
+
         const int key = Utilities::QtKeyToSdl3Key(keyEvent->key());
         const int mod = Utilities::QtModKeyToSdl3ModKey(keyEvent->modifiers());
 
-        if (event->type() == QEvent::KeyPress) {
-            CoreSetKeyDown(key, mod);
-        } else {
+        if (event->type() == QEvent::KeyRelease) {
             CoreSetKeyUp(key, mod);
+        } else {
+            // KeyPress and ShortcutOverride both count as pressed.
+            CoreSetKeyDown(key, mod);
         }
 
-        return true;
+        // Consume when this dialog (or a non-text child) has focus so the list
+        // widget etc. does not eat keys. When the game window has focus, still
+        // inject into the core above, but let MainWindow's filter run too.
+        if (focusWidget != nullptr && this->isAncestorOf(focusWidget)) {
+            return true;
+        }
+        if (event->type() == QEvent::ShortcutOverride) {
+            event->accept();
+            return true;
+        }
+        return false;
+    }
+
+    if (!CoreIsEmulationRunning()) {
+        return QDialog::eventFilter(object, event);
     }
 
     // Only intercept keys while this dialog (or one of its children) holds focus.
@@ -1613,9 +1735,12 @@ bool NetplaySessionDialog::eventFilter(QObject* object, QEvent* event)
     const int key = Utilities::QtKeyToSdl3Key(keyEvent->key());
     const int mod = Utilities::QtModKeyToSdl3ModKey(keyEvent->modifiers());
 
-    if (event->type() == QEvent::KeyPress) {
+    if (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride) {
         CoreSetKeyDown(key, mod);
-    } else {
+        if (event->type() == QEvent::ShortcutOverride) {
+            event->accept();
+        }
+    } else if (event->type() == QEvent::KeyRelease) {
         CoreSetKeyUp(key, mod);
     }
 

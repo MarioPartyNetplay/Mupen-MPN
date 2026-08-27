@@ -515,13 +515,31 @@ void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
         return;
     }
 
-    const uint32_t latestFrame = outbound.back().first;
-    const uint32_t latestState = outbound.back().second;
-
     const Qt::ConnectionType dispatchType =
         isHostingServer()
             ? socketDispatchConnectionType(m_server.get())
             : socketDispatchConnectionType(m_socketIO.get());
+
+    // When no P2P data channel is open, signaling is the only path. Tip-only
+    // coalescing is fine once gap-fill has a prior sample, but the first
+    // packets must include every published frame so peers are not stuck on
+    // frame 0 waiting for a tip that never gap-fills without a prior packet.
+    if (!engine->hasOpenRemoteDataChannels()) {
+        for (const auto& [frame, state] : outbound) {
+            const quint32 frameNumber = frame;
+            const quint32 frameState = state;
+            QMetaObject::invokeMethod(
+                this,
+                [this, frameNumber, frameState]() {
+                    relayLocalControllerInput(frameNumber, frameState);
+                },
+                dispatchType);
+        }
+        return;
+    }
+
+    const uint32_t latestFrame = outbound.back().first;
+    const uint32_t latestState = outbound.back().second;
 
     m_pendingRelayFrame.store(latestFrame, std::memory_order_relaxed);
     m_pendingRelayState.store(latestState, std::memory_order_relaxed);
@@ -579,44 +597,22 @@ bool NetplayCoordinator::advanceFrame()
         return false;
     }
 
-    const uint32_t completedFrame = engine->getCurrentFrameNumber();
-    const bool advanced = engine->advanceFrame();
-    if (advanced) {
-        queueFrameSyncCheck(completedFrame);
+    // Hash at the lockstep boundary for the previously completed frame. At this
+    // point every peer is in GetKeys after that frame's inputs were consumed by
+    // the core and before waiting on the next frame — so labels cannot drift a
+    // frame relative to GL swap / extra PIF polls.
+    const uint32_t frameToRun = engine->getCurrentFrameNumber();
+    if (frameToRun > 0) {
+        maybeSubmitCompletedFrameSync(frameToRun - 1);
     }
-    return advanced;
+
+    return engine->advanceFrame();
 }
 
 void NetplayCoordinator::submitEndOfFrameSync()
 {
-    const uint32_t frameNumber = m_pendingFrameSyncFrame.exchange(0, std::memory_order_acq_rel);
-    if (frameNumber == 0) {
-        return;
-    }
-
-    const auto engine = activeLockstepEngine();
-    if (!engine) {
-        return;
-    }
-
-    const uint32_t stateHash = CoreGetNetplayFrameSyncHash();
-    if (stateHash == 0) {
-        return;
-    }
-
-    // broadcastFrameSync touches Qt networking objects; run it on the coordinator
-    // thread so we never race UI-thread teardown with the render thread.
-    if (QThread::currentThread() == thread()) {
-        broadcastFrameSync(engine, frameNumber, stateHash);
-        return;
-    }
-
-    QMetaObject::invokeMethod(
-        this,
-        [this, engine, frameNumber, stateHash]() {
-            broadcastFrameSync(engine, frameNumber, stateHash);
-        },
-        Qt::QueuedConnection);
+    // Frame sync is taken in advanceFrame() at the lockstep boundary. GL swap
+    // timing is not deterministic across peers (extra polls, skipped buffers).
 }
 
 void NetplayCoordinator::onDesyncDetected(const QString& reason)
@@ -930,6 +926,9 @@ void NetplayCoordinator::syncLockstepPeerSessionActive()
 
     const int numPlayers = m_lockstepConfig.numPlayers;
     const QList<SocketIOClient::PlayerInfo> players = getPlayerList();
+    // An empty list is often a transient signaling blip — do not mark everyone
+    // inactive or frame 0 will advance with zeros and desync when peers return.
+    const bool trustAbsences = !players.isEmpty();
 
     for (int slot = 0; slot < numPlayers; ++slot) {
         if (slot == m_lockstepConfig.localPlayerSlot) {
@@ -937,15 +936,19 @@ void NetplayCoordinator::syncLockstepPeerSessionActive()
             continue;
         }
 
-        bool active = false;
+        bool present = false;
         for (const auto& player : players) {
             if (player.slot == slot) {
-                active = true;
+                present = true;
                 break;
             }
         }
 
-        m_lockstepEngine->setPeerSessionActive(slot, active);
+        if (present) {
+            m_lockstepEngine->setPeerSessionActive(slot, true);
+        } else if (trustAbsences) {
+            m_lockstepEngine->setPeerSessionActive(slot, false);
+        }
     }
 }
 
@@ -1502,10 +1505,10 @@ void NetplayCoordinator::sendSaveSync(const QJsonArray& saveFiles)
 
     if (isHostingServer()) {
         if (m_server && !m_gameSession.roomId.isEmpty()) {
-            if (!saveFiles.isEmpty()) {
-                m_server->broadcastSaveSync(m_gameSession.roomId, saveFiles);
-            } else {
-                qDebug() << "NetplayCoordinator: No save files found to sync for this ROM";
+            // Always broadcast, including an empty list, so clients can wipe leftovers.
+            m_server->broadcastSaveSync(m_gameSession.roomId, saveFiles);
+            if (saveFiles.isEmpty()) {
+                qDebug() << "NetplayCoordinator: Broadcasting empty save sync for this ROM";
             }
         }
         return;
@@ -1675,9 +1678,9 @@ void NetplayCoordinator::on_peerFrameSyncReceived(int slot, uint32_t frameNumber
     }
 }
 
-void NetplayCoordinator::queueFrameSyncCheck(uint32_t frameNumber)
+void NetplayCoordinator::maybeSubmitCompletedFrameSync(uint32_t completedFrame)
 {
-    if (frameNumber == 0) {
+    if (completedFrame == 0) {
         return;
     }
 
@@ -1687,13 +1690,42 @@ void NetplayCoordinator::queueFrameSyncCheck(uint32_t frameNumber)
 
     {
         std::lock_guard<std::recursive_mutex> lock(m_mutex);
-        if (frameNumber % syncInterval != 0 ||
-            frameNumber == m_lastBroadcastFrameSync) {
+        if (completedFrame % syncInterval != 0 ||
+            completedFrame == m_lastBroadcastFrameSync) {
             return;
         }
     }
 
-    m_pendingFrameSyncFrame.store(frameNumber, std::memory_order_release);
+    const auto engine = activeLockstepEngine();
+    if (!engine) {
+        return;
+    }
+
+    const uint32_t stateHash = CoreGetNetplayFrameSyncHash();
+    if (stateHash == 0) {
+        return;
+    }
+
+    // Sampled on the emulation thread at a lockstep barrier; hop to the
+    // coordinator thread only for the Qt/network broadcast.
+    if (QThread::currentThread() == thread()) {
+        broadcastFrameSync(engine, completedFrame, stateHash);
+        return;
+    }
+
+    QMetaObject::invokeMethod(
+        this,
+        [this, engine, completedFrame, stateHash]() {
+            broadcastFrameSync(engine, completedFrame, stateHash);
+        },
+        Qt::QueuedConnection);
+}
+
+void NetplayCoordinator::queueFrameSyncCheck(uint32_t frameNumber)
+{
+    // Kept for ABI with older call sites; hashing now happens in
+    // maybeSubmitCompletedFrameSync() at the lockstep boundary.
+    Q_UNUSED(frameNumber);
 }
 
 void NetplayCoordinator::broadcastFrameSync(

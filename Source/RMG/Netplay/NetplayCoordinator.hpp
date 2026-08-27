@@ -209,6 +209,7 @@
      void initializeLockstepEngine();
      void applyPlayerPings(const QJsonArray& pings);
      void queueFrameSyncCheck(uint32_t frameNumber);
+     void maybeSubmitCompletedFrameSync(uint32_t completedFrame);
      void broadcastFrameSync(
          const std::shared_ptr<RMGCore::LockstepEngine>& engine,
          uint32_t frameNumber,

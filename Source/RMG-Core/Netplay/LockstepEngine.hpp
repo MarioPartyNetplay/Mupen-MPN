@@ -137,11 +137,11 @@ private:
     void pruneOldFrameSyncDataUnlocked(uint32_t oldestFrameToKeep);
     void applyTimeoutFallbackUnlocked(uint32_t frameNumber);
     void notifyPendingCallbacks();
-    bool hasAllRemoteDataChannelsConnectedUnlocked() const;
-    bool hasReceivedBootstrapInputFromAllRemotesUnlocked() const;
     bool allMissingInputsAreFromDisconnectedPeersUnlocked(
         uint32_t frameNumber) const;
     int computeInputWaitTimeoutMsUnlocked(uint32_t frameNumber) const;
+    /** Re-send locally published inputs for the current delay window (WebRTC). */
+    void rebroadcastLocalInputsUnlocked(uint32_t frameNumber);
     bool isAlive() const { return !m_shutdown.load(); }
 
     Config m_config;

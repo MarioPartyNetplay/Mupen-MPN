@@ -39,6 +39,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 
 #define M64P_CORE_PROTOTYPES 1
 #include "api/callbacks.h"
@@ -1609,6 +1614,28 @@ void main_change_gb_cart(int control_id)
 * emulation thread - runs the core
 */
 
+static int rmg_embedded_netplay_is_active(void)
+{
+    typedef int (*rmg_netplay_is_active_fn)(void);
+    static rmg_netplay_is_active_fn fn = NULL;
+    static int resolved = 0;
+
+    if (!resolved) {
+        resolved = 1;
+#if defined(_WIN32)
+        fn = (rmg_netplay_is_active_fn)GetProcAddress(GetModuleHandleA(NULL), "RMG_Netplay_IsActive");
+#else
+        fn = (rmg_netplay_is_active_fn)dlsym(RTLD_DEFAULT, "RMG_Netplay_IsActive");
+#endif
+    }
+
+    return fn != NULL && fn() != 0;
+}
+
+static int netplay_determinism_required(void)
+{
+    return netplay_is_init() || rmg_embedded_netplay_is_active();
+}
 
 m64p_error main_run(void)
 {
@@ -1651,7 +1678,7 @@ m64p_error main_run(void)
     }
 
     /* Seed MPK ID gen using current time */
-    uint64_t mpk_seed = !netplay_is_init() ? (uint64_t)time(NULL) : 0;
+    uint64_t mpk_seed = !netplay_determinism_required() ? (uint64_t)time(NULL) : 0;
     l_mpk_idgen = xoshiro256pp_seed(mpk_seed);
 
     /* take the r4300 emulator mode from the config file at this point and cache it in a global variable */
@@ -1661,8 +1688,11 @@ m64p_error main_run(void)
     savestates_set_autoinc_slot(ConfigGetParamBool(g_CoreConfig, "AutoStateSlotIncrement"));
     savestates_select_slot(ConfigGetParamInt(g_CoreConfig, "CurrentStateSlot"));
     no_compiled_jump = ConfigGetParamBool(g_CoreConfig, "NoCompiledJump");
-    //We disable any randomness for netplay
-    randomize_interrupt = !netplay_is_init() ? ConfigGetParamBool(g_CoreConfig, "RandomizeInterrupt") : 0;
+    /* Hard-disable PI/SI interrupt randomization for classic and embedded netplay.
+     * Per-client overlay settings must not diverge lockstep timing. */
+    randomize_interrupt = netplay_determinism_required()
+        ? 0
+        : ConfigGetParamBool(g_CoreConfig, "RandomizeInterrupt");
     count_per_op = ConfigGetParamInt(g_CoreConfig, "CountPerOp");
     count_per_op_denom_pot = ConfigGetParamInt(g_CoreConfig, "CountPerOpDenomPot");
 

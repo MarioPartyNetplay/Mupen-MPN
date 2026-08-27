@@ -30,8 +30,6 @@ constexpr int kNetplayFrameMs = 17;
 // Cap how many future frames we publish per emulated frame so a large buffer
 // setting does not burst hundreds of WebRTC/signaling packets at once.
 constexpr uint32_t kMaxInputPrefillPerSubmitCap = 16;
-// Initial join / first remote packet: allow extra time without freezing a full 8s.
-constexpr int kBootstrapInputWaitMs = 2500;
 // Reject remote inputs whose frame number is implausibly far ahead of the
 // current frame. In strict lockstep a peer can only ever lead by roughly the
 // input delay window, so anything beyond this is a corrupted/stale/garbage
@@ -326,17 +324,26 @@ void LockstepEngine::submitRemoteInput(
     if (existing != frameInputs.playerInputs.end() &&
         existing->second != controllerState &&
         frameNumber <= m_currentFrameNumber) {
-        m_stats.desyncDetections++;
-        m_isDesynchronized = true;
-        const std::string desyncReason =
-            "Conflicting remote input for frame " +
-            std::to_string(frameNumber);
-        auto desyncCallback = m_callbacks.desyncDetected;
-        lock.unlock();
-        if (desyncCallback) {
-            desyncCallback(frameNumber, desyncReason);
+        // Allow replacing invented stall fallback (0 with no prior sample) so a
+        // late-but-valid first packet after releaseCurrentFrameWait / disconnect
+        // recovery does not hard-desync the session.
+        const bool replaceableFallback =
+            existing->second == FALLBACK_INPUT &&
+            m_lastKnownInputFrames.find(fromSlot) ==
+                m_lastKnownInputFrames.end();
+        if (!replaceableFallback) {
+            m_stats.desyncDetections++;
+            m_isDesynchronized = true;
+            const std::string desyncReason =
+                "Conflicting remote input for frame " +
+                std::to_string(frameNumber);
+            auto desyncCallback = m_callbacks.desyncDetected;
+            lock.unlock();
+            if (desyncCallback) {
+                desyncCallback(frameNumber, desyncReason);
+            }
+            return;
         }
-        return;
     }
 
     frameInputs.frameNumber = frameNumber;
@@ -491,7 +498,14 @@ void LockstepEngine::checkDesync(uint32_t stateHash)
     uint32_t frameNumber = 0;
     {
         std::lock_guard<std::recursive_mutex> lock(m_mutex);
-        frameNumber = m_currentFrameNumber;
+        // m_currentFrameNumber is the next frame to run; hash belongs to the
+        // last completed lockstep frame (same convention as coordinator sync).
+        frameNumber =
+            m_currentFrameNumber > 0 ? m_currentFrameNumber - 1 : 0;
+    }
+
+    if (frameNumber == 0) {
+        return;
     }
 
     recordLocalFrameSync(frameNumber, stateHash);
@@ -708,11 +722,10 @@ void LockstepEngine::onDataChannelClosed(int peerSlot)
         m_dataChannels[peerSlot] = nullptr;
     }
 
-    if (peerSlot >= 0 && peerSlot < m_config.numPlayers &&
-        peerSlot != m_config.localPlayerSlot) {
-        m_peerSessionActive[peerSlot] = false;
-    }
-
+    // Do not clear peerSessionActive here. WebRTC often drops or renegotiates
+    // while the peer is still in the room; signaling still carries inputs.
+    // Marking the slot inactive makes advanceFrame treat them as gone and
+    // invent fallback inputs (stall at frame 0 → desync when real input arrives).
     m_inputCv.notify_all();
 }
 
@@ -964,6 +977,14 @@ void LockstepEngine::applyTimeoutFallbackUnlocked(uint32_t frameNumber)
             continue;
         }
 
+        const auto activeIt = m_peerSessionActive.find(slot);
+        const bool sessionActive =
+            activeIt != m_peerSessionActive.end() && activeIt->second;
+        // Empty / left slots are not stalls — skip without inventing input.
+        if (!sessionActive) {
+            continue;
+        }
+
         const auto lastKnown = m_lastKnownInputs.find(slot);
         frameInputs.playerInputs[slot] =
             lastKnown != m_lastKnownInputs.end()
@@ -1046,6 +1067,13 @@ bool LockstepEngine::hasAllInputsForFrameUnlocked(
             continue;
         }
 
+        const auto activeIt = m_peerSessionActive.find(slot);
+        const bool sessionActive =
+            activeIt != m_peerSessionActive.end() && activeIt->second;
+        if (!sessionActive) {
+            continue;
+        }
+
         bool found = false;
 
         if (frameIt != m_frameBuffer.end()) {
@@ -1055,48 +1083,6 @@ bool LockstepEngine::hasAllInputsForFrameUnlocked(
         }
 
         if (!found) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool LockstepEngine::hasAllRemoteDataChannelsConnectedUnlocked() const
-{
-    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
-        if (slot == m_config.localPlayerSlot) {
-            continue;
-        }
-
-        const auto activeIt = m_peerSessionActive.find(slot);
-        const bool sessionActive =
-            activeIt != m_peerSessionActive.end() && activeIt->second;
-        if (!sessionActive) {
-            continue;
-        }
-
-        // Inputs can arrive over the signaling relay when WebRTC is down.
-        if (m_lastKnownInputFrames.find(slot) != m_lastKnownInputFrames.end()) {
-            continue;
-        }
-
-        if (!m_dataChannels[slot] || !m_dataChannels[slot]->isOpen()) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool LockstepEngine::hasReceivedBootstrapInputFromAllRemotesUnlocked() const
-{
-    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
-        if (slot == m_config.localPlayerSlot) {
-            continue;
-        }
-
-        if (m_lastKnownInputFrames.find(slot) == m_lastKnownInputFrames.end()) {
             return false;
         }
     }
@@ -1126,13 +1112,11 @@ int LockstepEngine::computeInputWaitTimeoutMsUnlocked(
 {
     (void)frameNumber;
 
-    if (!hasAllRemoteDataChannelsConnectedUnlocked() ||
-        !hasReceivedBootstrapInputFromAllRemotesUnlocked()) {
-        return kBootstrapInputWaitMs;
-    }
-
-    // Connected session: wait for real inputs instead of timing out into stale
-    // fallback (desync). waitForAllInputs throttles its polling while blocked.
+    // Never invent inputs for active peers — including during bootstrap / frame 0.
+    // Timing out into FALLBACK_INPUT is what produced "input stall on frame 0"
+    // followed by "conflicting remote input" / state-hash desync when the real
+    // packet arrived. Disconnected slots are handled separately via
+    // allMissingInputsAreFromDisconnectedPeersUnlocked.
     return 0;
 }
 
@@ -1166,6 +1150,28 @@ bool LockstepEngine::allMissingInputsAreFromDisconnectedPeersUnlocked(
     return true;
 }
 
+void LockstepEngine::rebroadcastLocalInputsUnlocked(uint32_t frameNumber)
+{
+    const uint32_t sendFrame =
+        frameNumber + static_cast<uint32_t>(m_config.inputDelayFrames);
+
+    for (uint32_t frame = frameNumber; frame <= sendFrame; ++frame) {
+        const auto frameIt = m_frameBuffer.find(frame);
+        if (frameIt == m_frameBuffer.end()) {
+            continue;
+        }
+
+        const auto localIt =
+            frameIt->second.playerInputs.find(m_config.localPlayerSlot);
+        if (localIt == frameIt->second.playerInputs.end()) {
+            continue;
+        }
+
+        // broadcastInput takes the lock itself; we already hold it (recursive).
+        broadcastInput(localIt->second, frame);
+    }
+}
+
 bool LockstepEngine::waitForAllInputs(
     uint32_t frameNumber,
     int timeoutMs)
@@ -1178,6 +1184,7 @@ bool LockstepEngine::waitForAllInputs(
     std::unique_lock<std::recursive_mutex> lock(m_mutex);
     int waitSliceMs = 4;
     int idleWaitSlices = 0;
+    int slicesSinceRebroadcast = 0;
 
     while (!hasAllInputsForFrameUnlocked(frameNumber)) {
         if (m_shutdown.load()) {
@@ -1204,6 +1211,13 @@ bool LockstepEngine::waitForAllInputs(
                 pumpCb();
                 lock.lock();
             }
+        }
+
+        // Re-publish our delay window occasionally so a dropped first WebRTC
+        // packet cannot leave both peers blocked on frame 0 forever.
+        if (++slicesSinceRebroadcast >= 16) {
+            slicesSinceRebroadcast = 0;
+            rebroadcastLocalInputsUnlocked(frameNumber);
         }
 
         if (hasDeadline) {

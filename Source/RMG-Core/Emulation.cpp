@@ -68,12 +68,17 @@ static bool get_emulation_state(m64p_emu_state& state)
 
 static void apply_coresettings_overlay(void)
 {
+    const bool netplaySession =
+        CoreIsEmbeddedNetplayActive() || CoreHasNetplaySyncSettings() || CoreHasInitNetplay();
+
     if (CoreHasNetplaySyncSettings())
     {
         CoreApplyNetplaySyncedCoreSettings();
         CoreSettingsSetValue(SettingsID::Core_EnableDebugger, CoreSettingsGetBoolValue(SettingsID::CoreOverlay_EnableDebugger));
         CoreSettingsSetValue(SettingsID::Core_SaveFileNameFormat, CoreSettingsGetIntValue(SettingsID::CoreOverLay_SaveFileNameFormat));
         CoreSettingsSetValue(SettingsID::Core_GbCameraVideoCaptureBackend1, CoreSettingsGetStringValue(SettingsID::CoreOverlay_GbCameraVideoCaptureBackend1));
+        // Hardcoded off for lockstep — never trust host/client overlay divergence.
+        CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
         return;
     }
 
@@ -87,7 +92,7 @@ static void apply_coresettings_overlay(void)
     CoreSettingsSetValue(SettingsID::Core_SaveFileNameFormat, CoreSettingsGetIntValue(SettingsID::CoreOverLay_SaveFileNameFormat));
     CoreSettingsSetValue(SettingsID::Core_GbCameraVideoCaptureBackend1, CoreSettingsGetStringValue(SettingsID::CoreOverlay_GbCameraVideoCaptureBackend1));
 
-    if (CoreIsEmbeddedNetplayActive())
+    if (netplaySession)
     {
         CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
     }
@@ -95,8 +100,12 @@ static void apply_coresettings_overlay(void)
 
 static void apply_game_coresettings_overlay(void)
 {
+    const bool netplaySession =
+        CoreIsEmbeddedNetplayActive() || CoreHasNetplaySyncSettings() || CoreHasInitNetplay();
+
     if (CoreHasNetplaySyncSettings())
     {
+        CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
         return;
     }
 
@@ -107,6 +116,10 @@ static void apply_game_coresettings_overlay(void)
     // when we fail to retrieve the rom settings, return
     if (!CoreGetCurrentDefaultRomSettings(romSettings))
     {
+        if (netplaySession)
+        {
+            CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
+        }
         return;
     }
 
@@ -121,7 +134,7 @@ static void apply_game_coresettings_overlay(void)
     overrideCoreSettings = CoreSettingsGetBoolValue(SettingsID::Game_OverrideCoreSettings, section);
     if (!overrideCoreSettings)
     {
-        if (CoreIsEmbeddedNetplayActive())
+        if (netplaySession)
         {
             CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
         }
@@ -133,7 +146,7 @@ static void apply_game_coresettings_overlay(void)
     CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, CoreSettingsGetIntValue(SettingsID::Game_CPU_Emulator, section));
     CoreSettingsSetValue(SettingsID::Core_CountPerOpDenomPot, CoreSettingsGetIntValue(SettingsID::Game_CountPerOpDenomPot, section));
 
-    if (CoreIsEmbeddedNetplayActive())
+    if (netplaySession)
     {
         CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
     }

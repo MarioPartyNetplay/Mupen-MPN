@@ -238,7 +238,8 @@ CORE_EXPORT int CoreGetEmbeddedNetplayMaxFrameAdvanceWaitMs(void)
     const int stallTimeout =
         RMGCore::LockstepEngine::stallTimeoutForDelayFrames(
             l_EmbeddedNetplayInputDelayFrames);
-    // Match LockstepEngine bootstrap wait budget (see kBootstrapInputWaitMs).
+    // Soft upper bound for UI/plugin helpers only. Lockstep itself waits
+    // indefinitely for active peers rather than inventing fallback inputs.
     return std::max(stallTimeout, 2500);
 }
 

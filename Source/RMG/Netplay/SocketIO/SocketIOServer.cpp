@@ -198,6 +198,8 @@ void SocketIOServer::createInitialRoom(const QString& roomId, const QString& hos
     // Explicitly initialize state storage
     room.activeCheats = QJsonArray();
     room.activeSaves = QJsonArray();
+    room.hasSaveSyncSnapshot = false;
+    room.hasCheatSyncSnapshot = false;
     room.inputDelayFrames = 4;
     
     auto* hostClient = new ClientConnection();
@@ -337,6 +339,7 @@ void SocketIOServer::handle_CheatsUpdate(ENetPeer* socket, const QJsonObject& ms
             }
 
             room->activeCheats = combinedCheats;
+            room->hasCheatSyncSnapshot = true;
             m_pendingCheatUpdates.remove(batchKey);
             emit cheatsUpdated(client->roomId, room->activeCheats);
         }
@@ -346,6 +349,7 @@ void SocketIOServer::handle_CheatsUpdate(ENetPeer* socket, const QJsonObject& ms
 
     // 2. Cache it on the server for future joiners
     room->activeCheats = cheatsArray;
+    room->hasCheatSyncSnapshot = true;
 
     // 3. Broadcast a stable payload shape used by SocketIOClient.
     QJsonObject payload = buildCheatsPayload(cheatsArray);
@@ -377,6 +381,7 @@ void SocketIOServer::handle_SaveSyncUpdate(ENetPeer* socket, const QJsonObject& 
 
     // Cache structural save files
     room->activeSaves = msg.value("files").toArray();
+    room->hasSaveSyncSnapshot = true;
 
     QJsonObject payload;
     payload["files"] = room->activeSaves;
@@ -463,13 +468,13 @@ bool SocketIOServer::startHostedGame(const QString& roomId, const QString& mode,
     payload["resyncEnabled"] = resyncEnabled;
     payload["romHash"] = romHash;
     payload["matchId"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    Q_UNUSED(saveFiles);
+    room->activeSaves = saveFiles;
+    room->hasSaveSyncSnapshot = true;
     emitToConnectedRoomClients(roomId, "game-started", payload);
 
-    if (!cheats.isEmpty())
-    {
-        broadcastCheatsUpdate(roomId, cheats);
-    }
+    // Always re-broadcast session cheats/saves (including empty) so clients converge.
+    broadcastCheatsUpdate(roomId, cheats);
+    broadcastSaveSync(roomId, saveFiles);
 
     qInfo() << "SocketIOServer: Hosted game started in room" << roomId;
     emit gameStarted(roomId);
@@ -531,6 +536,7 @@ void SocketIOServer::broadcastCheatsUpdate(const QString& roomId, const QJsonArr
     }
 
     room->activeCheats = cheats;
+    room->hasCheatSyncSnapshot = true;
 
     const int chunkCount = (cheats.size() + kCheatsChunkSize - 1) / kCheatsChunkSize;
     if (chunkCount <= 1)
@@ -573,9 +579,14 @@ void SocketIOServer::broadcastSaveSync(const QString& roomId, const QJsonArray& 
         return;
     }
 
+    // Cache for late join / reconnect catch-up (same as handle_SaveSyncUpdate).
+    room->activeSaves = saveFiles;
+    room->hasSaveSyncSnapshot = true;
+
     QJsonObject payload;
     payload["files"] = saveFiles;
     emitToConnectedRoomClients(roomId, "save-sync", payload);
+    emit saveSyncReceived(roomId, saveFiles);
 }
 
 void SocketIOServer::broadcastInputDelayUpdate(const QString& roomId, int frames)
@@ -826,7 +837,7 @@ void SocketIOServer::sendRoomCatchUp(const QString& roomId, ClientConnection* cl
         return;
     }
 
-    if (!room->activeCheats.isEmpty()) {
+    if (room->hasCheatSyncSnapshot) {
         const int chunkCount = (room->activeCheats.size() + kCheatsChunkSize - 1) / kCheatsChunkSize;
         if (chunkCount <= 1) {
             emitToClient(client->id, "cheats-updated", buildCheatsPayload(room->activeCheats));
@@ -838,7 +849,7 @@ void SocketIOServer::sendRoomCatchUp(const QString& roomId, ClientConnection* cl
             }
         }
     }
-    if (!room->activeSaves.isEmpty()) {
+    if (room->hasSaveSyncSnapshot) {
         QJsonObject savePayload;
         savePayload["files"] = room->activeSaves;
         emitToClient(client->id, "save-sync", savePayload);
