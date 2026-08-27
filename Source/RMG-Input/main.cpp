@@ -905,9 +905,14 @@ static bool profile_has_live_pad_input(int control)
 static int resolve_embedded_netplay_local_profile(void)
 {
     // Mirror one local physical source into the assigned netplay slot.
-    // Prefer an open gamepad/joystick over keyboard so Automatic/pad setups
-    // are not forced into keyboard-only reads.
     const int localSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
+
+    // Assigned-slot keyboard takes priority so P2–P4 keyboard players work after
+    // port remapping (do not steal P1's pad profile when this client is not P1).
+    if (profile_has_keyboard_local_input(localSlot))
+    {
+        return localSlot;
+    }
 
     if (profile_has_live_pad_input(localSlot))
     {
@@ -925,11 +930,6 @@ static int resolve_embedded_netplay_local_profile(void)
         {
             return i;
         }
-    }
-
-    if (profile_has_keyboard_local_input(localSlot))
-    {
-        return localSlot;
     }
 
     if (profile_has_keyboard_local_input(0))
@@ -1820,17 +1820,13 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
 
             if (!l_IsConfigGuiOpen && !l_EmbeddedNetplayFrameAdvanced)
             {
-                constexpr int kMaxAdvanceAttempts = 8000;
-                int attempts = 0;
+                int throttleMs = 1;
                 bool advanced = CoreAdvanceEmbeddedNetplayFrame();
-                while (!advanced)
+                while (!advanced && CoreIsEmbeddedNetplayActive())
                 {
-                    if (!CoreIsEmbeddedNetplayActive() || ++attempts >= kMaxAdvanceAttempts)
-                    {
-                        break;
-                    }
-
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    std::this_thread::sleep_for(
+                        std::chrono::milliseconds(throttleMs));
+                    throttleMs = std::min(16, throttleMs + 1);
                     advanced = CoreAdvanceEmbeddedNetplayFrame();
                 }
 

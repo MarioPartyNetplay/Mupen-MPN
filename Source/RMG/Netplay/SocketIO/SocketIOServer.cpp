@@ -9,6 +9,7 @@
 #include <QDateTime>
 #include <QThread>
 #include <QTimer>
+#include <QSet>
 #include <algorithm>
 #include <enet/enet.h>
 
@@ -1116,6 +1117,18 @@ bool SocketIOServer::reorderLobbyPlayers(const QString& roomId, const QStringLis
         return false;
     }
 
+    if (clientIds.size() != room->lobbyOrder.size()) {
+        qWarning() << "SocketIOServer: Reorder rejected, client count mismatch"
+                   << clientIds.size() << "vs" << room->lobbyOrder.size();
+        return false;
+    }
+
+    QSet<QString> uniqueClientIds(clientIds.cbegin(), clientIds.cend());
+    if (uniqueClientIds.size() != clientIds.size()) {
+        qWarning() << "SocketIOServer: Reorder rejected, duplicate client ids";
+        return false;
+    }
+
     QHash<QString, ClientConnection*> byLookup;
     for (auto* player : room->lobbyOrder) {
         if (!player) {
@@ -1133,21 +1146,14 @@ bool SocketIOServer::reorderLobbyPlayers(const QString& roomId, const QStringLis
     for (const QString& clientId : clientIds) {
         auto it = byLookup.find(clientId);
         if (it == byLookup.end() || placed.contains(it.value())) {
-            continue;
+            qWarning() << "SocketIOServer: Reorder rejected, unknown client id" << clientId;
+            return false;
         }
         newOrder.append(it.value());
         placed.insert(it.value());
     }
 
-    // Keep any lobby members the UI omitted (e.g. reconnect-grace ghosts) at the end.
-    for (auto* player : room->lobbyOrder) {
-        if (player && !placed.contains(player)) {
-            newOrder.append(player);
-            placed.insert(player);
-        }
-    }
-
-    if (newOrder.isEmpty() || newOrder.size() != room->lobbyOrder.size()) {
+    if (newOrder.size() != room->lobbyOrder.size()) {
         return false;
     }
 

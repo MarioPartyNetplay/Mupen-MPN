@@ -29,7 +29,9 @@ constexpr uint32_t kMinInputDelayFrames = 1;
 constexpr int kNetplayFrameMs = 17;
 // Cap how many future frames we publish per emulated frame so a large buffer
 // setting does not burst hundreds of WebRTC/signaling packets at once.
-constexpr uint32_t kMaxInputPrefillPerSubmit = 8;
+constexpr uint32_t kMaxInputPrefillPerSubmitCap = 16;
+// Initial join / first remote packet: allow extra time without freezing a full 8s.
+constexpr int kBootstrapInputWaitMs = 2500;
 // Reject remote inputs whose frame number is implausibly far ahead of the
 // current frame. In strict lockstep a peer can only ever lead by roughly the
 // input delay window, so anything beyond this is a corrupted/stale/garbage
@@ -214,10 +216,43 @@ LockstepEngine::submitLocalInput(uint32_t controllerState)
         // has usable input instead of waiting for the delay to elapse.
         // Prefill is spread across emulated frames so high buffer values do
         // not flood peers and drop the data channel or signaling connection.
+        // When the current frame is still missing remote input, throttle prefill
+        // so outbound bursts do not worsen the stall.
+        bool waitingOnRemoteForCurrentFrame = false;
+        if (m_config.numPlayers > 1) {
+            const auto currentIt = m_frameBuffer.find(m_currentFrameNumber);
+            for (int slot = 0; slot < m_config.numPlayers; ++slot) {
+                if (slot == m_config.localPlayerSlot) {
+                    continue;
+                }
+
+                const auto activeIt = m_peerSessionActive.find(slot);
+                const bool sessionActive =
+                    activeIt != m_peerSessionActive.end() && activeIt->second;
+                if (!sessionActive) {
+                    continue;
+                }
+
+                const bool hasInput =
+                    currentIt != m_frameBuffer.end() &&
+                    currentIt->second.playerInputs.find(slot) !=
+                        currentIt->second.playerInputs.end();
+                if (!hasInput) {
+                    waitingOnRemoteForCurrentFrame = true;
+                    break;
+                }
+            }
+        }
+
+        const uint32_t maxPrefillCap =
+            waitingOnRemoteForCurrentFrame ? 2u : kMaxInputPrefillPerSubmitCap;
+        const uint32_t maxPrefill = std::min(
+            static_cast<uint32_t>(m_config.inputDelayFrames),
+            maxPrefillCap);
         uint32_t prefilled = 0;
         for (uint32_t frame = m_currentFrameNumber;
              frame < sendFrame &&
-             prefilled < kMaxInputPrefillPerSubmit;
+             prefilled < maxPrefill;
              ++frame) {
 
             if (m_frameBuffer[frame].playerInputs.find(m_config.localPlayerSlot) !=
@@ -268,12 +303,18 @@ void LockstepEngine::submitRemoteInput(
         return;
     }
 
+    const auto lastKnownIt = m_lastKnownInputs.find(fromSlot);
+    const uint32_t gapFillState =
+        lastKnownIt != m_lastKnownInputs.end()
+            ? lastKnownIt->second
+            : controllerState;
+
     for (uint32_t frame = m_currentFrameNumber; frame < frameNumber; ++frame) {
         FrameInputs& priorFrameInputs = m_frameBuffer[frame];
         if (priorFrameInputs.playerInputs.find(fromSlot) ==
             priorFrameInputs.playerInputs.end()) {
             priorFrameInputs.frameNumber = frame;
-            priorFrameInputs.playerInputs[fromSlot] = controllerState;
+            priorFrameInputs.playerInputs[fromSlot] = gapFillState;
             if (frame == m_currentFrameNumber) {
                 m_frameReceived[fromSlot] = true;
             }
@@ -594,10 +635,11 @@ int LockstepEngine::stallTimeoutForDelayFrames(int inputDelayFrames)
         inputDelayFrames = static_cast<int>(kMinInputDelayFrames);
     }
 
-    // Wait roughly one emulated frame per two delay units so brief jitter can
-    // resolve without freezing, then fall back to the last known remote input.
-    const int timeoutMs = (inputDelayFrames * kNetplayFrameMs) / 2 + kNetplayFrameMs;
-    return std::max(kNetplayFrameMs, std::min(120, timeoutMs));
+    // Wait up to one emulated frame per delay unit plus jitter so high-latency
+    // peers can deliver within the buffer window before we fall back.
+    const int timeoutMs =
+        inputDelayFrames * kNetplayFrameMs + kNetplayFrameMs * 2;
+    return std::max(kNetplayFrameMs * 2, std::min(400, timeoutMs));
 }
 
 void LockstepEngine::setPeerSessionActive(int slot, bool active)
@@ -1086,32 +1128,12 @@ int LockstepEngine::computeInputWaitTimeoutMsUnlocked(
 
     if (!hasAllRemoteDataChannelsConnectedUnlocked() ||
         !hasReceivedBootstrapInputFromAllRemotesUnlocked()) {
-        return 8000;
+        return kBootstrapInputWaitMs;
     }
 
-    for (int slot = 0; slot < m_config.numPlayers; ++slot) {
-        if (slot == m_config.localPlayerSlot) {
-            continue;
-        }
-
-        const auto activeIt = m_peerSessionActive.find(slot);
-        const bool sessionActive =
-            activeIt != m_peerSessionActive.end() && activeIt->second;
-        if (!sessionActive) {
-            continue;
-        }
-
-        // WebRTC dropped but the peer is still in-session via signaling.
-        if (!m_dataChannels[slot] || !m_dataChannels[slot]->isOpen()) {
-            return 250;
-        }
-    }
-
-    if (m_config.stallTimeoutMilliseconds > 0) {
-        return m_config.stallTimeoutMilliseconds;
-    }
-
-    return stallTimeoutForDelayFrames(m_config.inputDelayFrames);
+    // Connected session: wait for real inputs instead of timing out into stale
+    // fallback (desync). waitForAllInputs throttles its polling while blocked.
+    return 0;
 }
 
 bool LockstepEngine::allMissingInputsAreFromDisconnectedPeersUnlocked(
@@ -1154,6 +1176,8 @@ bool LockstepEngine::waitForAllInputs(
         std::chrono::milliseconds(timeoutMs);
 
     std::unique_lock<std::recursive_mutex> lock(m_mutex);
+    int waitSliceMs = 4;
+    int idleWaitSlices = 0;
 
     while (!hasAllInputsForFrameUnlocked(frameNumber)) {
         if (m_shutdown.load()) {
@@ -1190,24 +1214,44 @@ bool LockstepEngine::waitForAllInputs(
 
             const auto remaining =
                 std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
-            const auto waitSlice =
-                std::min(std::chrono::milliseconds(4), remaining);
+            const auto sliceMs =
+                std::min(waitSliceMs,
+                         static_cast<int>(remaining.count()));
+            const auto waitSlice = std::chrono::milliseconds(std::max(1, sliceMs));
 
-            m_inputCv.wait_for(
+            const bool ready = m_inputCv.wait_for(
                 lock,
                 waitSlice,
                 [this, frameNumber]() {
                     return hasAllInputsForFrameUnlocked(frameNumber);
                 });
+            if (ready) {
+                break;
+            }
+
+            ++idleWaitSlices;
+            if (idleWaitSlices >= 4) {
+                waitSliceMs = std::min(16, waitSliceMs + 2);
+                idleWaitSlices = 0;
+            }
             continue;
         }
 
-        m_inputCv.wait_for(
+        const bool ready = m_inputCv.wait_for(
             lock,
-            std::chrono::milliseconds(4),
+            std::chrono::milliseconds(waitSliceMs),
             [this, frameNumber]() {
                 return hasAllInputsForFrameUnlocked(frameNumber);
             });
+        if (ready) {
+            break;
+        }
+
+        ++idleWaitSlices;
+        if (idleWaitSlices >= 4) {
+            waitSliceMs = std::min(16, waitSliceMs + 2);
+            idleWaitSlices = 0;
+        }
     }
 
     return true;

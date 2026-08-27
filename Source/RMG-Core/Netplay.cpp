@@ -19,6 +19,9 @@
 #include "Library.hpp"
 #include "Error.hpp"
 #include "Emulation.hpp"
+#include "Netplay/LockstepEngine.hpp"
+
+#include <algorithm>
 
 #include "m64p/Api.hpp"
 
@@ -30,6 +33,7 @@
 static bool l_HasInitNetplay = false;
 static bool l_EmbeddedNetplayActive = false;
 static int l_EmbeddedNetplayLocalPlayerSlot = 0;
+static int l_EmbeddedNetplayInputDelayFrames = 6;
 static CoreEmbeddedNetplaySubmitInputCallback l_EmbeddedSubmitInputCallback = nullptr;
 static CoreEmbeddedNetplayGetInputCallback l_EmbeddedGetInputCallback = nullptr;
 static CoreEmbeddedNetplayAdvanceFrameCallback l_EmbeddedAdvanceFrameCallback = nullptr;
@@ -205,6 +209,37 @@ CORE_EXPORT bool CoreIsEmbeddedNetplayActive(void)
 CORE_EXPORT int CoreGetEmbeddedNetplayLocalPlayerSlot(void)
 {
     return l_EmbeddedNetplayLocalPlayerSlot;
+}
+
+CORE_EXPORT void CoreSetEmbeddedNetplayInputDelayFrames(int frames)
+{
+    if (frames < 1) {
+        frames = 1;
+    } else if (frames > 99) {
+        frames = 99;
+    }
+
+    l_EmbeddedNetplayInputDelayFrames = frames;
+}
+
+CORE_EXPORT int CoreGetEmbeddedNetplayInputDelayFrames(void)
+{
+    return l_EmbeddedNetplayInputDelayFrames;
+}
+
+CORE_EXPORT int CoreGetEmbeddedNetplayInputWaitTimeoutMs(void)
+{
+    return RMGCore::LockstepEngine::stallTimeoutForDelayFrames(
+        l_EmbeddedNetplayInputDelayFrames);
+}
+
+CORE_EXPORT int CoreGetEmbeddedNetplayMaxFrameAdvanceWaitMs(void)
+{
+    const int stallTimeout =
+        RMGCore::LockstepEngine::stallTimeoutForDelayFrames(
+            l_EmbeddedNetplayInputDelayFrames);
+    // Match LockstepEngine bootstrap wait budget (see kBootstrapInputWaitMs).
+    return std::max(stallTimeout, 2500);
 }
 
 CORE_EXPORT void CoreSetEmbeddedNetplayCallbacks(

@@ -103,6 +103,7 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
     m_lockstepConfig.resyncEnabled = false;
     m_lockstepConfig.resyncCheckIntervalFrames = 180;
     m_lockstepConfig.stallTimeoutMilliseconds = 0;
+    CoreSetEmbeddedNetplayInputDelayFrames(m_lockstepConfig.inputDelayFrames);
 
     qDebug() << "NetplayCoordinator created";
     UserInterface::Netplay::g_netplayCoordinator = this;
@@ -1583,6 +1584,7 @@ void NetplayCoordinator::setInputDelayFrames(int frames)
 
     m_lockstepConfig.inputDelayFrames = frames;
     m_lockstepConfig.stallTimeoutMilliseconds = 0;
+    CoreSetEmbeddedNetplayInputDelayFrames(frames);
     if (auto engine = activeLockstepEngine()) {
         engine->setInputDelayFrames(frames);
         engine->wakeInputWaiters();

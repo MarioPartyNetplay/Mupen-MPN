@@ -32,6 +32,12 @@ bool CoreIsEmbeddedNetplayActive(void);
 // returns local player slot [0..3] for embedded (P2P) netplay
 int CoreGetEmbeddedNetplayLocalPlayerSlot(void);
 
+// input delay / stall timeout used by the lockstep input plugin
+void CoreSetEmbeddedNetplayInputDelayFrames(int frames);
+int CoreGetEmbeddedNetplayInputDelayFrames(void);
+int CoreGetEmbeddedNetplayInputWaitTimeoutMs(void);
+int CoreGetEmbeddedNetplayMaxFrameAdvanceWaitMs(void);
+
 // embedded netplay lockstep callback types
 using CoreEmbeddedNetplaySubmitInputCallback = void(*)(uint32_t controllerState);
 using CoreEmbeddedNetplayGetInputCallback = uint32_t(*)(int playerSlot);

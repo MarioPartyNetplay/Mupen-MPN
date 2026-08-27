@@ -891,7 +891,7 @@ void NetplaySessionDialog::refreshPlayersListWidget(void)
                 break;
             }
         }
-        if (!hasHost && players.isEmpty()) {
+        if (!hasHost) {
             Netplay::SocketIOClient::PlayerInfo hostPlayer;
             hostPlayer.name = this->sessionJson.value("player_name").toString("Host");
             hostPlayer.slot = this->sessionSlot >= 0 ? this->sessionSlot : 0;
@@ -922,18 +922,25 @@ void NetplaySessionDialog::refreshPlayersListWidget(void)
     }
 
     for (const auto& player : players) {
-        if (player.slot < 0 || player.slot >= 4 || player.name.isEmpty()) {
+        if (player.slot < 0 || player.slot >= 4) {
             continue;
         }
+
+        const QString displayName =
+            !player.name.isEmpty()
+                ? player.name
+                : (!player.clientId.isEmpty()
+                       ? player.clientId
+                       : (!player.id.isEmpty() ? player.id : QStringLiteral("Player")));
 
         const int pingMs =
             this->coordinator ? this->coordinator->getPlayerPing(player.slot) : -1;
         QListWidgetItem* item = new QListWidgetItem();
-        item->setText(formatPlayerListLabel(player.slot, player.name, pingMs));
+        item->setText(formatPlayerListLabel(player.slot, displayName, pingMs));
         item->setData(kPlayerClientIdRole, player.clientId.isEmpty() ? player.id : player.clientId);
         item->setData(kPlayerSlotRole, player.slot);
         item->setData(kPlayerIdRole, player.id);
-        item->setData(kPlayerNameRole, player.name);
+        item->setData(kPlayerNameRole, displayName);
         Qt::ItemFlags flags = Qt::ItemIsEnabled | Qt::ItemIsDropEnabled;
         if (isHost) {
             flags |= Qt::ItemIsSelectable | Qt::ItemIsDragEnabled;
@@ -965,6 +972,7 @@ void NetplaySessionDialog::on_playerListRowsMoved(void)
 
     QStringList clientIds;
     clientIds.reserve(this->listWidget->count());
+    QSet<QString> seenClientIds;
     for (int row = 0; row < this->listWidget->count(); ++row) {
         QListWidgetItem* item = this->listWidget->item(row);
         if (!item) {
@@ -976,7 +984,17 @@ void NetplaySessionDialog::on_playerListRowsMoved(void)
             this->refreshPlayersListWidget();
             return;
         }
+        if (seenClientIds.contains(clientId)) {
+            this->refreshPlayersListWidget();
+            return;
+        }
+        seenClientIds.insert(clientId);
         clientIds.append(clientId);
+    }
+
+    if (clientIds.size() != this->listWidget->count()) {
+        this->refreshPlayersListWidget();
+        return;
     }
 
     if (!this->coordinator->reorderLobbyPlayers(clientIds)) {
@@ -1574,6 +1592,25 @@ bool NetplaySessionDialog::eventFilter(QObject* object, QEvent* event)
 
     if (!CoreIsEmulationRunning()) {
         return QDialog::eventFilter(object, event);
+    }
+
+    if (CoreIsEmbeddedNetplayActive()) {
+        QWidget* focusWidget = QApplication::focusWidget();
+        if (this->isKeyboardCaptureWidget(focusWidget)) {
+            return QDialog::eventFilter(object, event);
+        }
+
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        const int key = Utilities::QtKeyToSdl3Key(keyEvent->key());
+        const int mod = Utilities::QtModKeyToSdl3ModKey(keyEvent->modifiers());
+
+        if (event->type() == QEvent::KeyPress) {
+            CoreSetKeyDown(key, mod);
+        } else {
+            CoreSetKeyUp(key, mod);
+        }
+
+        return true;
     }
 
     // Only intercept keys while this dialog (or one of its children) holds focus.
