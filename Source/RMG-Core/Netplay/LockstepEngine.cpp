@@ -71,8 +71,8 @@ LockstepEngine::LockstepEngine(const Config& config)
     , m_currentFrameNumber(0)
     , m_isDesynchronized(false)
 {
-    if (m_config.numPlayers < 2) {
-        m_config.numPlayers = 2;
+    if (m_config.numPlayers < 1) {
+        m_config.numPlayers = 1;
     }
 
     if (m_config.numPlayers > 4) {
@@ -1261,8 +1261,8 @@ void LockstepEngine::setNumPlayers(int numPlayers)
 {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
-    if (numPlayers < 2) {
-        numPlayers = 2;
+    if (numPlayers < 1) {
+        numPlayers = 1;
     }
 
     if (numPlayers > 4) {

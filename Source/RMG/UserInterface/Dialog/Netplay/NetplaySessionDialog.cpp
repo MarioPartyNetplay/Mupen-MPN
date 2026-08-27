@@ -1446,23 +1446,6 @@ void NetplaySessionDialog::accept()
         return;
     }
 
-    const int activePlayers = this->coordinator ? this->coordinator->getPlayerList().size() : 0;
-    if (activePlayers < 2)
-    {
-        QMessageBox messageBox(this);
-        messageBox.setIcon(QMessageBox::Warning);
-        messageBox.setWindowTitle("Start Game");
-        messageBox.setText("There are fewer than 2 players in the lobby.");
-        messageBox.setInformativeText("Are you sure you want to start anyway?");
-        messageBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
-        messageBox.setDefaultButton(QMessageBox::No);
-
-        if (messageBox.exec() != QMessageBox::Yes)
-        {
-            return;
-        }
-    }
-
     if (QPushButton* startButton = this->buttonBox->button(QDialogButtonBox::Ok)) {
         startButton->setEnabled(false);
     }

@@ -188,12 +188,6 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
                     totalPlayers = 4;
                 }
 
-                if (totalPlayers < 2) {
-                    qWarning() << "NetplayCoordinator: Refusing to start host netplay with fewer than 2 players";
-                    setState(InLobby);
-                    return;
-                }
-
                 m_gameSession.numPlayers = totalPlayers;
                 m_lockstepConfig.numPlayers = totalPlayers;
                 // Preserve remapped host controller port (not always P1).
@@ -476,13 +470,6 @@ void NetplayCoordinator::startGame(const QString& gameMode, bool resyncEnabled, 
         m_gameSession.gameMode = gameMode;
         m_gameSession.resyncEnabled = resyncEnabled;
         m_gameSession.romHash = romHash;
-
-        const int activePlayers = std::max(1, m_server ? (m_server->getConnectedClientCount() + 1) : 1);
-        if (activePlayers < 2) {
-            qWarning() << "NetplayCoordinator: Need at least 2 players to start hosted netplay, have" << activePlayers;
-            setState(InLobby);
-            return;
-        }
 
         setState(StartingGame);
         if (!m_server->startHostedGame(m_gameSession.roomId, gameMode, resyncEnabled, romHash,
@@ -1102,10 +1089,10 @@ void NetplayCoordinator::on_socketIO_answerReceived(const QString& fromPlayerId,
 }
 void NetplayCoordinator::synchronizeLockstepPlayerCount()
 {
-    int numPlayers = 2;
+    int numPlayers = 1;
 
     if (isHostingServer()) {
-        numPlayers = std::max(2, m_server ? (m_server->getConnectedClientCount() + 1) : 2);
+        numPlayers = std::max(1, m_server ? (m_server->getConnectedClientCount() + 1) : 1);
     }
 
     numPlayers = std::max(numPlayers, static_cast<int>(m_cachedPlayers.size()));

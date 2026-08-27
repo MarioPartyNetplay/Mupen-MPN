@@ -443,9 +443,9 @@ bool SocketIOServer::startHostedGame(const QString& roomId, const QString& mode,
         return false;
     }
 
-    if (room->players.size() < 2)
+    if (room->players.isEmpty())
     {
-        qWarning() << "SocketIOServer: Cannot start hosted game, need at least 2 players in room" << roomId;
+        qWarning() << "SocketIOServer: Cannot start hosted game, room has no players" << roomId;
         return false;
     }
 
@@ -630,7 +630,7 @@ void SocketIOServer::tryBroadcastEmulationBegin(SignalingRoom* room)
     }
 
     const int requiredPlayers = room->lobbyOrder.size();
-    if (requiredPlayers < 2) {
+    if (requiredPlayers < 1) {
         return;
     }
 
@@ -1304,8 +1304,8 @@ void SocketIOServer::handle_StartGame(ENetPeer* socket, const QJsonObject& msg)
     if (!room || room->hostId != client->id)
         return;  // Only host can start game
 
-    if (room->players.size() < 2)
-        return;  // Need at least 2 players
+    if (room->players.isEmpty())
+        return;
 
     room->started = true;
     room->emulationReadySlots.clear();
