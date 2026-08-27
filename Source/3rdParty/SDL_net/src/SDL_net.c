@@ -41,11 +41,13 @@ typedef SOCKET Socket;
 typedef int SockLen;
 typedef SOCKADDR_STORAGE AddressStorage;
 
-static int write(SOCKET s, const void *buf, size_t count) {
+// Named away from POSIX read()/write() so MinGW's io.h declarations do not
+// conflict when SDL headers pull them in.
+static int NET_WriteSocket(SOCKET s, const void *buf, size_t count) {
     return send(s, (const char *)buf, (int) count, 0);
 }
 
-static int read(SOCKET s, char *buf, size_t count) {
+static int NET_ReadSocket(SOCKET s, char *buf, size_t count) {
     WSABUF wsabuf;
     wsabuf.buf = buf;
     wsabuf.len = (ULONG) count;
@@ -57,6 +59,9 @@ static int read(SOCKET s, char *buf, size_t count) {
     }
     return (int)count_received;
 }
+
+#define write NET_WriteSocket
+#define read NET_ReadSocket
 
 // WSAPoll doesn't exist on Windows before Vista, and isn't reliable before some version of Windows 10,
 //  so for now we just fake it with select().
