@@ -515,13 +515,31 @@ void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
         return;
     }
 
-    const uint32_t latestFrame = outbound.back().first;
-    const uint32_t latestState = outbound.back().second;
-
     const Qt::ConnectionType dispatchType =
         isHostingServer()
             ? socketDispatchConnectionType(m_server.get())
             : socketDispatchConnectionType(m_socketIO.get());
+
+    // When no P2P data channel is open, signaling is the only path. Tip-only
+    // coalescing is fine once gap-fill has a prior sample, but the first
+    // packets must include every published frame so peers are not stuck on
+    // frame 0 waiting for a tip that never gap-fills without a prior packet.
+    if (!engine->hasOpenRemoteDataChannels()) {
+        for (const auto& [frame, state] : outbound) {
+            const quint32 frameNumber = frame;
+            const quint32 frameState = state;
+            QMetaObject::invokeMethod(
+                this,
+                [this, frameNumber, frameState]() {
+                    relayLocalControllerInput(frameNumber, frameState);
+                },
+                dispatchType);
+        }
+        return;
+    }
+
+    const uint32_t latestFrame = outbound.back().first;
+    const uint32_t latestState = outbound.back().second;
 
     m_pendingRelayFrame.store(latestFrame, std::memory_order_relaxed);
     m_pendingRelayState.store(latestState, std::memory_order_relaxed);
@@ -930,6 +948,9 @@ void NetplayCoordinator::syncLockstepPeerSessionActive()
 
     const int numPlayers = m_lockstepConfig.numPlayers;
     const QList<SocketIOClient::PlayerInfo> players = getPlayerList();
+    // An empty list is often a transient signaling blip — do not mark everyone
+    // inactive or frame 0 will advance with zeros and desync when peers return.
+    const bool trustAbsences = !players.isEmpty();
 
     for (int slot = 0; slot < numPlayers; ++slot) {
         if (slot == m_lockstepConfig.localPlayerSlot) {
@@ -937,15 +958,19 @@ void NetplayCoordinator::syncLockstepPeerSessionActive()
             continue;
         }
 
-        bool active = false;
+        bool present = false;
         for (const auto& player : players) {
             if (player.slot == slot) {
-                active = true;
+                present = true;
                 break;
             }
         }
 
-        m_lockstepEngine->setPeerSessionActive(slot, active);
+        if (present) {
+            m_lockstepEngine->setPeerSessionActive(slot, true);
+        } else if (trustAbsences) {
+            m_lockstepEngine->setPeerSessionActive(slot, false);
+        }
     }
 }
 

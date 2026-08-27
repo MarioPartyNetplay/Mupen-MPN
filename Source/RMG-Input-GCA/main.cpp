@@ -425,17 +425,12 @@ static void advanceEmbeddedNetplayFrameIfNeeded(void)
         return;
     }
 
-    constexpr int kMaxAdvanceAttempts = 8000;
-    int attempts = 0;
+    int throttleMs = 1;
     bool advanced = CoreAdvanceEmbeddedNetplayFrame();
-    while (!advanced)
+    while (!advanced && CoreIsEmbeddedNetplayActive())
     {
-        if (!CoreIsEmbeddedNetplayActive() || ++attempts >= kMaxAdvanceAttempts)
-        {
-            break;
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(throttleMs));
+        throttleMs = std::min(16, throttleMs + 1);
         advanced = CoreAdvanceEmbeddedNetplayFrame();
     }
 

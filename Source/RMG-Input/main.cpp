@@ -780,53 +780,6 @@ static void close_controllers(void)
     }
 }
 
-static bool input_mapping_uses_keyboard(const InputMapping* mapping)
-{
-    for (int i = 0; i < mapping->Count; i++)
-    {
-        if (static_cast<InputType>(mapping->Type[i]) == InputType::Keyboard)
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-static bool profile_has_keyboard_bindings(const InputProfile* profile)
-{
-    static const InputMapping InputProfile::* mappings[] = {
-        &InputProfile::Button_A,
-        &InputProfile::Button_B,
-        &InputProfile::Button_Start,
-        &InputProfile::Button_DpadUp,
-        &InputProfile::Button_DpadDown,
-        &InputProfile::Button_DpadLeft,
-        &InputProfile::Button_DpadRight,
-        &InputProfile::Button_CButtonUp,
-        &InputProfile::Button_CButtonDown,
-        &InputProfile::Button_CButtonLeft,
-        &InputProfile::Button_CButtonRight,
-        &InputProfile::Button_LeftShoulder,
-        &InputProfile::Button_RightShoulder,
-        &InputProfile::Button_ZTrigger,
-        &InputProfile::AnalogStick_Up,
-        &InputProfile::AnalogStick_Down,
-        &InputProfile::AnalogStick_Left,
-        &InputProfile::AnalogStick_Right,
-    };
-
-    for (const auto mapping : mappings)
-    {
-        if (input_mapping_uses_keyboard(&(profile->*mapping)))
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 static bool profile_has_open_pad(const InputProfile* profile)
 {
     return profile->SDLGamepad != nullptr || profile->SDLJoystick != nullptr;
@@ -904,60 +857,27 @@ static bool profile_has_live_pad_input(int control)
 
 static int resolve_embedded_netplay_local_profile(void)
 {
-    // Mirror one local physical source into the assigned netplay slot.
+    // Always prefer the profile for this client's assigned netplay port. That is
+    // the profile the session Input Settings tab configures (keyboard or pad).
+    // Falling back to "any live pad" was overriding P1/P2 keyboard setups whenever
+    // a controller happened to be plugged in.
     const int localSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
-
-    // Assigned-slot keyboard takes priority so P2–P4 keyboard players work after
-    // port remapping (do not steal P1's pad profile when this client is not P1).
-    if (profile_has_keyboard_local_input(localSlot))
+    if (localSlot >= 0 && localSlot < NUM_CONTROLLERS &&
+        l_InputProfiles[localSlot].PluggedIn)
     {
         return localSlot;
     }
 
-    if (profile_has_live_pad_input(localSlot))
-    {
-        return localSlot;
-    }
-
-    if (profile_has_live_pad_input(0))
+    if (profile_has_keyboard_local_input(0) || profile_has_live_pad_input(0) ||
+        profile_has_live_local_input(0))
     {
         return 0;
     }
 
     for (int i = 0; i < NUM_CONTROLLERS; i++)
     {
-        if (profile_has_live_pad_input(i))
-        {
-            return i;
-        }
-    }
-
-    if (profile_has_keyboard_local_input(0))
-    {
-        return 0;
-    }
-
-    for (int i = 0; i < NUM_CONTROLLERS; i++)
-    {
-        if (profile_has_keyboard_local_input(i))
-        {
-            return i;
-        }
-    }
-
-    if (profile_has_live_local_input(localSlot))
-    {
-        return localSlot;
-    }
-
-    if (profile_has_live_local_input(0))
-    {
-        return 0;
-    }
-
-    for (int i = 0; i < NUM_CONTROLLERS; i++)
-    {
-        if (profile_has_live_local_input(i))
+        if (profile_has_keyboard_local_input(i) || profile_has_live_pad_input(i) ||
+            profile_has_live_local_input(i))
         {
             return i;
         }
@@ -1023,40 +943,6 @@ static int get_button_state(InputProfile* profile, const InputMapping* inputMapp
         }
 
         // early return when needed
-        if (allPressed && !full_state)
-        {
-            return full_state;
-        }
-    }
-
-    return full_state;
-}
-
-static int get_button_state_keyboard_only(
-    const InputMapping* inputMapping,
-    const bool allPressed = false)
-{
-    int state = 0;
-    int full_state = 0;
-
-    for (int i = 0; i < inputMapping->Count; i++)
-    {
-        if (static_cast<InputType>(inputMapping->Type[i]) != InputType::Keyboard)
-        {
-            continue;
-        }
-
-        state = l_KeyboardState[inputMapping->Data[i]] ? 1 : 0;
-
-        if (allPressed && i > 0)
-        {
-            full_state &= state;
-        }
-        else
-        {
-            full_state |= state;
-        }
-
         if (allPressed && !full_state)
         {
             return full_state;
@@ -1138,39 +1024,6 @@ static double get_axis_state(InputProfile* profile, const InputMapping* inputMap
     {
         return value;
     }
-}
-
-static double get_axis_state_keyboard_only(
-    const InputMapping* inputMapping,
-    const int direction,
-    const double value,
-    bool& useButtonMapping)
-{
-    double axis_state = value;
-    bool button_state = false;
-
-    for (int i = 0; i < inputMapping->Count; i++)
-    {
-        if (static_cast<InputType>(inputMapping->Type[i]) != InputType::Keyboard)
-        {
-            continue;
-        }
-
-        button_state |= l_KeyboardState[inputMapping->Data[i]];
-    }
-
-    if (button_state)
-    {
-        useButtonMapping = true;
-        return direction;
-    }
-
-    if (!useButtonMapping)
-    {
-        return axis_state;
-    }
-
-    return value;
 }
 
 // maps a value in one range to a value in another
@@ -1353,93 +1206,6 @@ static bool check_hotkeys(int Control)
 
 #undef DEFINE_HOTKEY
     return false;
-}
-
-static void fill_embedded_netplay_local_keys(int localControl, BUTTONS* outKeys)
-{
-    outKeys->Value = 0;
-
-    if (localControl < 0 || localControl >= NUM_CONTROLLERS)
-    {
-        return;
-    }
-
-    InputProfile* profile = &l_InputProfiles[localControl];
-
-    if (!profile->PluggedIn || l_IsConfigGuiOpen)
-    {
-        return;
-    }
-
-#ifdef VRU
-    if (profile->DeviceType == InputDeviceType::EmulateVRU)
-    {
-        outKeys->Value = GetVRUMicState() ? 0x0020 : 0x0000;
-        return;
-    }
-#endif // VRU
-
-    if (check_hotkeys(localControl))
-    {
-        return;
-    }
-
-    // Keyboard-only reads are for keyboard/Automatic-without-pad profiles.
-    // Pad profiles often retain leftover keyboard bindings; those must not
-    // disable SDL gamepad/joystick sampling during netplay.
-    const bool keyboardOnly =
-        profile->DeviceType == InputDeviceType::Keyboard ||
-        (profile->DeviceType == InputDeviceType::Automatic && !profile_has_open_pad(profile));
-
-    const auto readButton = [&](const InputMapping* mapping) {
-        return keyboardOnly
-            ? get_button_state_keyboard_only(mapping)
-            : get_button_state(profile, mapping);
-    };
-
-    const auto readAxis = [&](const InputMapping* mapping, int direction, double current, bool& useButtons) {
-        return keyboardOnly
-            ? get_axis_state_keyboard_only(mapping, direction, current, useButtons)
-            : get_axis_state(profile, mapping, direction, current, useButtons);
-    };
-
-    outKeys->A_BUTTON     = readButton(&profile->Button_A);
-    outKeys->B_BUTTON     = readButton(&profile->Button_B);
-    outKeys->START_BUTTON = readButton(&profile->Button_Start);
-    outKeys->U_DPAD       = readButton(&profile->Button_DpadUp);
-    outKeys->D_DPAD       = readButton(&profile->Button_DpadDown);
-    outKeys->L_DPAD       = readButton(&profile->Button_DpadLeft);
-    outKeys->R_DPAD       = readButton(&profile->Button_DpadRight);
-    outKeys->U_CBUTTON    = readButton(&profile->Button_CButtonUp);
-    outKeys->D_CBUTTON    = readButton(&profile->Button_CButtonDown);
-    outKeys->L_CBUTTON    = readButton(&profile->Button_CButtonLeft);
-    outKeys->R_CBUTTON    = readButton(&profile->Button_CButtonRight);
-    outKeys->L_TRIG       = readButton(&profile->Button_LeftShoulder);
-    outKeys->R_TRIG       = readButton(&profile->Button_RightShoulder);
-    outKeys->Z_TRIG       = readButton(&profile->Button_ZTrigger);
-
-    double inputX = 0, inputY = 0;
-    bool useButtonMapping = false;
-    inputY = readAxis(&profile->AnalogStick_Up,    1, inputY, useButtonMapping);
-    inputY = readAxis(&profile->AnalogStick_Down, -1, inputY, useButtonMapping);
-    inputX = readAxis(&profile->AnalogStick_Left, -1, inputX, useButtonMapping);
-    inputX = readAxis(&profile->AnalogStick_Right, 1, inputX, useButtonMapping);
-
-    const double deadzone = profile->DeadzoneValue;
-    inputX = apply_deadzone(inputX, deadzone);
-    inputY = apply_deadzone(inputY, deadzone);
-
-    const double sensitivityRatio = profile->SensitivityValue;
-    const double lowerInputLimit = std::max(-1.0, -sensitivityRatio);
-    const double upperInputLimit = std::min(1.0, sensitivityRatio);
-    inputX = std::clamp(inputX * sensitivityRatio, lowerInputLimit, upperInputLimit);
-    inputY = std::clamp(inputY * sensitivityRatio, lowerInputLimit, upperInputLimit);
-
-    int octagonX = 0, octagonY = 0;
-    simulate_octagon(deadzone, inputX, inputY, octagonX, octagonY);
-
-    outKeys->X_AXIS = octagonX;
-    outKeys->Y_AXIS = octagonY;
 }
 
 static void sdl_init()
@@ -1812,8 +1578,10 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
             BUTTONS localKeys = {};
             if (!l_IsConfigGuiOpen)
             {
-                const int localProfile = resolve_embedded_netplay_local_profile();
-                fill_embedded_netplay_local_keys(localProfile, &localKeys);
+                // Use the same local read path as offline play so keyboard/pad
+                // bindings behave identically; only the destination (lockstep
+                // slot) differs.
+                fillLocalKeys(resolve_embedded_netplay_local_profile(), &localKeys);
             }
             CoreSubmitEmbeddedNetplayFrameInput(localKeys.Value);
             l_EmbeddedNetplayLocalSubmitted = true;

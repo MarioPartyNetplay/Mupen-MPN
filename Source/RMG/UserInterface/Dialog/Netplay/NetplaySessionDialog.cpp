@@ -1531,12 +1531,19 @@ void NetplaySessionDialog::on_coordinator_stateChanged(Netplay::NetplayCoordinat
     this->applyHostOnlyControlsVisibility();
 
     if (state == Netplay::NetplayCoordinator::InGame) {
-        // Prefer game focus; chat remains usable via click.
+        // Prefer game focus; chat remains usable via click. Do not move focus to
+        // the main window chrome — Emulation_Started already focuses the render
+        // widget for netplay.
         this->chatLineEdit->clearFocus();
+        if (this->bufferDelaySpinBox) {
+            this->bufferDelaySpinBox->clearFocus();
+        }
+        if (this->listWidget) {
+            this->listWidget->clearFocus();
+        }
         if (QWidget* parentWindow = this->parentWidget()) {
             parentWindow->raise();
             parentWindow->activateWindow();
-            parentWindow->setFocus(Qt::OtherFocusReason);
         }
     }
 }
@@ -1569,14 +1576,17 @@ bool NetplaySessionDialog::eventFilter(QObject* object, QEvent* event)
 {
     Q_UNUSED(object);
 
-    if (event->type() != QEvent::KeyPress && event->type() != QEvent::KeyRelease) {
+    const bool isKeyEvent =
+        event->type() == QEvent::KeyPress ||
+        event->type() == QEvent::KeyRelease ||
+        event->type() == QEvent::ShortcutOverride;
+
+    if (!isKeyEvent) {
         return QDialog::eventFilter(object, event);
     }
 
-    if (!CoreIsEmulationRunning()) {
-        return QDialog::eventFilter(object, event);
-    }
-
+    // Netplay keeps this dialog open; always forward keys to the core while
+    // embedded netplay is active unless the user is typing in chat/settings.
     if (CoreIsEmbeddedNetplayActive()) {
         QWidget* focusWidget = QApplication::focusWidget();
         if (this->isKeyboardCaptureWidget(focusWidget)) {
@@ -1584,16 +1594,35 @@ bool NetplaySessionDialog::eventFilter(QObject* object, QEvent* event)
         }
 
         auto* keyEvent = static_cast<QKeyEvent*>(event);
+        if (keyEvent->isAutoRepeat() && event->type() == QEvent::KeyRelease) {
+            return true;
+        }
+
         const int key = Utilities::QtKeyToSdl3Key(keyEvent->key());
         const int mod = Utilities::QtModKeyToSdl3ModKey(keyEvent->modifiers());
 
-        if (event->type() == QEvent::KeyPress) {
-            CoreSetKeyDown(key, mod);
-        } else {
+        if (event->type() == QEvent::KeyRelease) {
             CoreSetKeyUp(key, mod);
+        } else {
+            // KeyPress and ShortcutOverride both count as pressed.
+            CoreSetKeyDown(key, mod);
         }
 
-        return true;
+        // Consume when this dialog (or a non-text child) has focus so the list
+        // widget etc. does not eat keys. When the game window has focus, still
+        // inject into the core above, but let MainWindow's filter run too.
+        if (focusWidget != nullptr && this->isAncestorOf(focusWidget)) {
+            return true;
+        }
+        if (event->type() == QEvent::ShortcutOverride) {
+            event->accept();
+            return true;
+        }
+        return false;
+    }
+
+    if (!CoreIsEmulationRunning()) {
+        return QDialog::eventFilter(object, event);
     }
 
     // Only intercept keys while this dialog (or one of its children) holds focus.
@@ -1613,9 +1642,12 @@ bool NetplaySessionDialog::eventFilter(QObject* object, QEvent* event)
     const int key = Utilities::QtKeyToSdl3Key(keyEvent->key());
     const int mod = Utilities::QtModKeyToSdl3ModKey(keyEvent->modifiers());
 
-    if (event->type() == QEvent::KeyPress) {
+    if (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride) {
         CoreSetKeyDown(key, mod);
-    } else {
+        if (event->type() == QEvent::ShortcutOverride) {
+            event->accept();
+        }
+    } else if (event->type() == QEvent::KeyRelease) {
         CoreSetKeyUp(key, mod);
     }
 
