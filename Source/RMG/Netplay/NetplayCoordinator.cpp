@@ -265,16 +265,8 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
                 return;
             }
 
-            const auto engine = activeLockstepEngine();
-            if (!engine) {
-                return;
-            }
-
-            if (slot == m_gameSession.localSlot) {
-                return;
-            }
-
-            engine->submitRemoteInput(slot, frameNumber, controllerState);
+            // Hosted path shares the same dual-path rule as Socket.IO clients.
+            on_socketIO_controllerInputReceived(slot, frameNumber, controllerState);
         });
 
     connect(m_server.get(), &SocketIOServer::frameSyncReceived,
@@ -537,34 +529,18 @@ void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
             ? socketDispatchConnectionType(m_server.get())
             : socketDispatchConnectionType(m_socketIO.get());
 
-    // When no P2P data channel is open, signaling is the only path. Tip-only
-    // coalescing is fine once gap-fill has a prior sample, but the first
-    // packets must include every published frame so peers are not stuck on
-    // frame 0 waiting for a tip that never gap-fills without a prior packet.
-    if (!engine->hasOpenRemoteDataChannels()) {
-        for (const auto& [frame, state] : outbound) {
-            const quint32 frameNumber = frame;
-            const quint32 frameState = state;
-            QMetaObject::invokeMethod(
-                this,
-                [this, frameNumber, frameState]() {
-                    relayLocalControllerInput(frameNumber, frameState);
-                },
-                dispatchType);
-        }
-        return;
-    }
-
-    const uint32_t latestFrame = outbound.back().first;
-    const uint32_t latestState = outbound.back().second;
-
-    m_pendingRelayFrame.store(latestFrame, std::memory_order_relaxed);
-    m_pendingRelayState.store(latestState, std::memory_order_relaxed);
-
-    if (!m_relayInputQueued.exchange(true, std::memory_order_acq_rel)) {
+    // Always relay the full outbound burst on signaling — never tip-only.
+    // Tip-only + gap-fill raced with the WebRTC full stream and invented wrong
+    // mid-window inputs (reciprocal state-hash desyncs). WebRTC still carries
+    // every frame via LockstepEngine::broadcastInput; signaling must match.
+    for (const auto& [frame, state] : outbound) {
+        const quint32 frameNumber = frame;
+        const quint32 frameState = state;
         QMetaObject::invokeMethod(
             this,
-            "flushPendingControllerRelay",
+            [this, frameNumber, frameState]() {
+                relayLocalControllerInput(frameNumber, frameState);
+            },
             dispatchType);
     }
 }
@@ -1719,16 +1695,21 @@ void NetplayCoordinator::on_socketIO_controllerInputReceived(int slot, uint32_t 
         return;
     }
 
-    if (slot == m_gameSession.localSlot) {
+    if (resolvedSlot == m_gameSession.localSlot) {
         return;
     }
 
-    if (slot >= 0 && slot < m_lockstepConfig.numPlayers) {
-        engine->submitRemoteInput(slot, frameNumber, controllerState);
-    } else if (slot == -1 && m_lockstepConfig.numPlayers == 2) {
-        const int inferredSlot = (m_gameSession.localSlot == 0) ? 1 : 0;
-        engine->submitRemoteInput(inferredSlot, frameNumber, controllerState);
+    if (resolvedSlot < 0 || resolvedSlot >= m_lockstepConfig.numPlayers) {
+        return;
     }
+
+    // While WebRTC is up for this peer, signaling inputs are backup-only. Applying
+    // them gap-fills ahead of the P2P stream and desyncs both sides.
+    if (engine->hasOpenDataChannelForPeer(resolvedSlot)) {
+        return;
+    }
+
+    engine->submitRemoteInput(resolvedSlot, frameNumber, controllerState);
 }
 
 void NetplayCoordinator::on_peerFrameSyncReceived(int slot, uint32_t frameNumber, uint32_t stateHash)

@@ -1114,6 +1114,19 @@ bool LockstepEngine::hasOpenRemoteDataChannels() const
     return false;
 }
 
+bool LockstepEngine::hasOpenDataChannelForPeer(int peerSlot) const
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    if (peerSlot < 0 ||
+        peerSlot >= static_cast<int>(m_dataChannels.size()) ||
+        peerSlot == m_config.localPlayerSlot) {
+        return false;
+    }
+
+    return m_dataChannels[peerSlot] && m_dataChannels[peerSlot]->isOpen();
+}
+
 void LockstepEngine::importPreGameHandshakeInputs(
     const std::map<int, uint32_t>& remoteInputsBySlot,
     uint32_t localInputState)

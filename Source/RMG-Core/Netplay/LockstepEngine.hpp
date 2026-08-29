@@ -108,6 +108,8 @@ public:
     void releaseCurrentFrameWait();
     /** True when at least one remote peer has an open WebRTC input channel. */
     bool hasOpenRemoteDataChannels() const;
+    /** True when the given peer slot has an open WebRTC input channel. */
+    bool hasOpenDataChannelForPeer(int peerSlot) const;
     /** Seed frame-0 inputs collected during the pre-start input handshake. */
     void importPreGameHandshakeInputs(
         const std::map<int, uint32_t>& remoteInputsBySlot,
