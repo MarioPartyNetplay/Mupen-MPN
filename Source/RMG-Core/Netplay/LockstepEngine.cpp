@@ -425,6 +425,13 @@ bool LockstepEngine::advanceFrame()
         return false;
     }
 
+    if (m_config.numPlayers > 1) {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        if (!m_inputBootstrapComplete) {
+            return false;
+        }
+    }
+
     uint32_t frameNumber = 0;
     {
         std::lock_guard<std::recursive_mutex> lock(m_mutex);
@@ -1105,6 +1112,54 @@ bool LockstepEngine::hasOpenRemoteDataChannels() const
     }
 
     return false;
+}
+
+void LockstepEngine::importPreGameHandshakeInputs(
+    const std::map<int, uint32_t>& remoteInputsBySlot,
+    uint32_t localInputState)
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    const uint32_t sendFrame =
+        m_currentFrameNumber +
+        static_cast<uint32_t>(m_config.inputDelayFrames);
+
+    for (uint32_t frame = m_currentFrameNumber; frame <= sendFrame; ++frame) {
+        FrameInputs& frameInputs = m_frameBuffer[frame];
+        frameInputs.frameNumber = frame;
+        frameInputs.playerInputs[m_config.localPlayerSlot] = localInputState;
+    }
+
+    m_lastKnownInputs[m_config.localPlayerSlot] = localInputState;
+    m_lastKnownInputFrames[m_config.localPlayerSlot] = sendFrame;
+
+    for (const auto& [slot, state] : remoteInputsBySlot) {
+        if (slot < 0 ||
+            slot >= m_config.numPlayers ||
+            slot == m_config.localPlayerSlot) {
+            continue;
+        }
+
+        FrameInputs& frameInputs = m_frameBuffer[m_currentFrameNumber];
+        frameInputs.frameNumber = m_currentFrameNumber;
+        frameInputs.playerInputs[slot] = state;
+        m_lastKnownInputs[slot] = state;
+        m_lastKnownInputFrames[slot] = m_currentFrameNumber;
+        m_frameReceived[slot] = true;
+    }
+}
+
+void LockstepEngine::markInputBootstrapComplete()
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    m_inputBootstrapComplete = true;
+    m_inputCv.notify_all();
+}
+
+bool LockstepEngine::isInputBootstrapComplete() const
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return m_inputBootstrapComplete || m_config.numPlayers <= 1;
 }
 
 int LockstepEngine::computeInputWaitTimeoutMsUnlocked(

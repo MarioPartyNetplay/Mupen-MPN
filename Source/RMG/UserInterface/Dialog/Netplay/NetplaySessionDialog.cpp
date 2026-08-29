@@ -1149,7 +1149,7 @@ void NetplaySessionDialog::requestSynchronizedEmulationStart(void)
         return;
     }
 
-    this->coordinator->sendEmulationReady();
+    this->coordinator->requestEmulationReadyWhenPrepared();
 }
 
 void NetplaySessionDialog::tryStartPendingGame(void)
@@ -1338,6 +1338,11 @@ void NetplaySessionDialog::syncHostSessionState(void)
     this->coordinator->sendSaveSync(buildSaveSyncFiles(this->romFile));
 
     const QJsonObject coreSettings = buildCoreSettingsSyncPayload(this->romFile);
+    CoreNetplaySyncSettings hostSyncSettings;
+    if (CoreBuildNetplaySyncSettings(this->romFile.toStdU32String(), hostSyncSettings))
+    {
+        CoreSetNetplaySyncSettings(hostSyncSettings);
+    }
     this->coordinator->sendCoreSettingsSync(coreSettings);
 }
 

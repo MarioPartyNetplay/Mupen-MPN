@@ -16,6 +16,9 @@
  #include <QMap>
  #include <QList>
  #include <QJsonArray>
+ #include <QTimer>
+ #include <QElapsedTimer>
+ #include <QSet>
  #include <memory>
  #include <mutex>
 #include <atomic>
@@ -96,6 +99,8 @@
 
      void sendEmulationPauseUpdate(bool paused);
      void sendEmulationReady();
+     /** Wait for WebRTC input channels + pre-start input handshake before ready. */
+     void requestEmulationReadyWhenPrepared();
      /** Host-only lobby remap of N64 controller ports via player clientId order. */
      bool reorderLobbyPlayers(const QStringList& clientIds);
  
@@ -199,6 +204,9 @@
      void on_webRTC_connectionEstablished(const QString& peerId);
      void on_webRTC_connectionFailed(const QString& peerId, const QString& reason);
      void on_webRTC_dataChannelOpened(const QString& peerId, const QString& label);
+
+ private slots:
+     void evaluateEmulationStartReadiness();
  
  private:
     void clearRoomSessionState();
@@ -220,6 +228,16 @@
      void recoverWebRTCPeerConnections();
      void recreatePeerConnection(int slot);
      int findPeerSlotById(const QString& peerId) const;
+     void resetEmulationStartPrep();
+     int countRequiredRemotePeers() const;
+     bool areRemoteInputChannelsReady() const;
+     bool isInputHandshakeComplete() const;
+     void beginInputHandshake();
+     void sendInputHandshakeBurst();
+     void recordInputHandshake(int slot, uint32_t frameNumber, uint32_t controllerState);
+     void attachInputChannelForHandshake(
+         int peerSlot,
+         const std::shared_ptr<WebRTCDataChannel>& channel);
      void connectSocketIOClientSignals(SocketIOClient* client);
      void sendWebRTCOffer(const QString& targetPlayerId, const QString& sdpOffer);
      void sendWebRTCAnswer(const QString& targetPlayerId, const QString& sdpAnswer);
@@ -258,8 +276,18 @@
     std::atomic<uint32_t> m_pendingFrameSyncFrame{0};
     std::atomic<bool> m_pumpNetworkQueued{false};
     std::atomic<bool> m_relayInputQueued{false};
-    std::atomic<quint32> m_pendingRelayFrame{0};
-    std::atomic<quint32> m_pendingRelayState{0};
+     std::atomic<quint32> m_pendingRelayFrame{0};
+     std::atomic<quint32> m_pendingRelayState{0};
+
+     bool m_emulationReadyRequested = false;
+     bool m_emulationReadySent = false;
+     bool m_inputHandshakeActive = false;
+     bool m_inputChannelWaitExpired = false;
+     bool m_inputHandshakeForced = false;
+     QSet<int> m_inputHandshakeReceivedSlots;
+     std::map<int, uint32_t> m_inputHandshakeInputs;
+     QTimer* m_emulationPrepTimer = nullptr;
+     QElapsedTimer m_gameStartPrepTimer;
      
      mutable std::recursive_mutex m_mutex;
  };

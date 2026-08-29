@@ -14,6 +14,7 @@
 #include <RMG-Core/Netplay.hpp>
 #include <RMG-Core/Emulation.hpp>
 #include <algorithm>
+#include <cstring>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -73,6 +74,12 @@ bool coreSettingsFromJson(const QJsonObject& payload, CoreNetplaySyncSettings& s
     return true;
 }
 
+constexpr int kWebRtcInputChannelWaitMs = 15000;
+constexpr int kInputHandshakeRetryMs = 200;
+constexpr int kInputHandshakeTimeoutMs = 8000;
+constexpr uint32_t kInputHandshakeFrame = 0;
+constexpr uint32_t kInputHandshakeState = 0;
+
 } // namespace
 
 std::shared_ptr<RMGCore::LockstepEngine> NetplayCoordinator::activeLockstepEngine()
@@ -104,6 +111,11 @@ NetplayCoordinator::NetplayCoordinator(const QString& serverUrl, QObject* parent
     m_lockstepConfig.resyncCheckIntervalFrames = 180;
     m_lockstepConfig.stallTimeoutMilliseconds = 0;
     CoreSetEmbeddedNetplayInputDelayFrames(m_lockstepConfig.inputDelayFrames);
+
+    m_emulationPrepTimer = new QTimer(this);
+    m_emulationPrepTimer->setInterval(kInputHandshakeRetryMs);
+    connect(m_emulationPrepTimer, &QTimer::timeout,
+            this, &NetplayCoordinator::evaluateEmulationStartReadiness);
 
     qDebug() << "NetplayCoordinator created";
     UserInterface::Netplay::g_netplayCoordinator = this;
@@ -173,6 +185,9 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
     connect(m_server.get(), &SocketIOServer::gameStarted,
             this, [this](const QString& roomId) {
                 qInfo() << "Hosting: Game started in room" << roomId;
+
+                resetEmulationStartPrep();
+                m_gameStartPrepTimer.start();
 
                 int totalPlayers = 1;
                 if (this->isHostingServer() && m_server) {
@@ -1025,6 +1040,9 @@ void NetplayCoordinator::on_socketIO_gameStarted(const QString& mode, bool resyn
     Q_UNUSED(resync);
     Q_UNUSED(matchId);
 
+    resetEmulationStartPrep();
+    m_gameStartPrepTimer.start();
+
     m_lockstepConfig.localPlayerSlot = m_gameSession.localSlot;
     synchronizeLockstepPlayerCount();
     setupPeerConnections(getPlayerList());
@@ -1153,6 +1171,7 @@ void NetplayCoordinator::resetEmulationSync()
     m_relayInputQueued.store(false, std::memory_order_relaxed);
     m_pendingRelayFrame.store(0, std::memory_order_relaxed);
     m_pendingRelayState.store(0, std::memory_order_relaxed);
+    resetEmulationStartPrep();
 }
 
 void NetplayCoordinator::initializeLockstepEngine()
@@ -1239,6 +1258,18 @@ void NetplayCoordinator::initializeLockstepEngine()
     m_lockstepEngine->setCallbacks(callbacks);
     syncLockstepPeerSessionActive();
     attachExistingPeerDataChannels();
+
+    if (!m_inputHandshakeInputs.empty()) {
+        m_lockstepEngine->importPreGameHandshakeInputs(
+            m_inputHandshakeInputs,
+            kInputHandshakeState);
+    } else {
+        m_lockstepEngine->importPreGameHandshakeInputs(
+            {},
+            kInputHandshakeState);
+    }
+    m_lockstepEngine->markInputBootstrapComplete();
+
     UserInterface::Netplay::installEmbeddedNetplayCallbacks();
 }
 
@@ -1426,6 +1457,17 @@ void NetplayCoordinator::on_webRTC_dataChannelOpened(const QString& peerId, cons
     const int peerSlot = findPeerSlotById(peerId);
     if (peerSlot < 0) {
         return;
+    }
+
+    if (label == QStringLiteral("RMG-Input")) {
+        const auto peerIt = m_peers.constFind(peerSlot);
+        if (peerIt != m_peers.constEnd() && peerIt.value()) {
+            const auto channel = peerIt.value()->getDataChannel(label);
+            if (channel && channel->isOpen() && !m_lockstepEngine) {
+                attachInputChannelForHandshake(peerSlot, channel);
+            }
+        }
+        evaluateEmulationStartReadiness();
     }
 
     if (!m_lockstepEngine) {
@@ -1641,6 +1683,19 @@ void NetplayCoordinator::on_socketIO_emulationPauseReceived(bool paused)
 
 void NetplayCoordinator::on_socketIO_controllerInputReceived(int slot, uint32_t frameNumber, uint32_t controllerState)
 {
+    int resolvedSlot = slot;
+    if (resolvedSlot == -1 && m_lockstepConfig.numPlayers == 2) {
+        resolvedSlot = (m_gameSession.localSlot == 0) ? 1 : 0;
+    }
+
+    if (resolvedSlot >= 0 &&
+        resolvedSlot != m_gameSession.localSlot &&
+        m_inputHandshakeActive &&
+        !m_emulationReadySent &&
+        frameNumber <= kInputHandshakeFrame + static_cast<uint32_t>(m_lockstepConfig.inputDelayFrames)) {
+        recordInputHandshake(resolvedSlot, frameNumber, controllerState);
+    }
+
     const auto engine = activeLockstepEngine();
     if (!engine) {
         return;
@@ -1653,7 +1708,6 @@ void NetplayCoordinator::on_socketIO_controllerInputReceived(int slot, uint32_t 
     if (slot >= 0 && slot < m_lockstepConfig.numPlayers) {
         engine->submitRemoteInput(slot, frameNumber, controllerState);
     } else if (slot == -1 && m_lockstepConfig.numPlayers == 2) {
-        // Fallback for 2-player simple sync
         const int inferredSlot = (m_gameSession.localSlot == 0) ? 1 : 0;
         engine->submitRemoteInput(inferredSlot, frameNumber, controllerState);
     }
@@ -2031,6 +2085,240 @@ void NetplayCoordinator::sendInputDelayUpdate(int frames)
     }
 
     emit inputDelayChanged(frames);
+}
+
+void NetplayCoordinator::resetEmulationStartPrep()
+{
+    m_emulationReadyRequested = false;
+    m_emulationReadySent = false;
+    m_inputHandshakeActive = false;
+    m_inputChannelWaitExpired = false;
+    m_inputHandshakeForced = false;
+    m_inputHandshakeReceivedSlots.clear();
+    m_inputHandshakeInputs.clear();
+    if (m_emulationPrepTimer) {
+        m_emulationPrepTimer->stop();
+    }
+}
+
+int NetplayCoordinator::countRequiredRemotePeers() const
+{
+    int required = 0;
+    const QList<SocketIOClient::PlayerInfo> players = getPlayerList();
+    for (const auto& player : players) {
+        if (player.slot < 0 || player.slot == m_gameSession.localSlot) {
+            continue;
+        }
+        ++required;
+    }
+    return required;
+}
+
+bool NetplayCoordinator::areRemoteInputChannelsReady() const
+{
+    const QList<SocketIOClient::PlayerInfo> players = getPlayerList();
+    bool sawRemote = false;
+
+    for (const auto& player : players) {
+        if (player.slot < 0 || player.slot == m_gameSession.localSlot) {
+            continue;
+        }
+
+        sawRemote = true;
+        const auto peerIt = m_peers.constFind(player.slot);
+        if (peerIt == m_peers.constEnd() || !peerIt.value()) {
+            return false;
+        }
+
+        const auto channel = peerIt.value()->getDataChannel(QStringLiteral("RMG-Input"));
+        if (!channel || !channel->isOpen()) {
+            return false;
+        }
+    }
+
+    return sawRemote;
+}
+
+bool NetplayCoordinator::isInputHandshakeComplete() const
+{
+    if (m_inputHandshakeForced) {
+        return true;
+    }
+
+    const QList<SocketIOClient::PlayerInfo> players = getPlayerList();
+    for (const auto& player : players) {
+        if (player.slot < 0 || player.slot == m_gameSession.localSlot) {
+            continue;
+        }
+
+        if (!m_inputHandshakeReceivedSlots.contains(player.slot)) {
+            return false;
+        }
+    }
+
+    return countRequiredRemotePeers() > 0;
+}
+
+void NetplayCoordinator::beginInputHandshake()
+{
+    if (m_inputHandshakeActive) {
+        sendInputHandshakeBurst();
+        return;
+    }
+
+    qInfo() << "NetplayCoordinator: Starting pre-start input handshake";
+    m_inputHandshakeActive = true;
+    sendInputHandshakeBurst();
+
+    if (m_emulationPrepTimer && !m_emulationPrepTimer->isActive()) {
+        m_emulationPrepTimer->start();
+    }
+}
+
+void NetplayCoordinator::attachInputChannelForHandshake(
+    int peerSlot,
+    const std::shared_ptr<WebRTCDataChannel>& channel)
+{
+    if (!channel || peerSlot < 0 || peerSlot == m_gameSession.localSlot) {
+        return;
+    }
+
+    channel->onBinaryMessageReceived =
+        [this, peerSlot](const std::vector<uint8_t>& data) {
+            if (data.size() != 8) {
+                return;
+            }
+
+            uint32_t frameNumber = 0;
+            uint32_t controllerState = 0;
+            std::memcpy(&frameNumber, data.data(), 4);
+            std::memcpy(&controllerState, data.data() + 4, 4);
+
+            if (m_inputHandshakeActive && !m_emulationReadySent) {
+                recordInputHandshake(peerSlot, frameNumber, controllerState);
+            }
+        };
+}
+
+void NetplayCoordinator::sendInputHandshakeBurst()
+{
+    relayLocalControllerInput(kInputHandshakeFrame, kInputHandshakeState);
+
+    std::vector<uint8_t> packet(8);
+    std::memcpy(packet.data(), &kInputHandshakeFrame, 4);
+    std::memcpy(packet.data() + 4, &kInputHandshakeState, 4);
+
+    for (auto it = m_peers.constBegin(); it != m_peers.constEnd(); ++it) {
+        if (it.key() == m_gameSession.localSlot || !it.value()) {
+            continue;
+        }
+
+        const auto channel = it.value()->getDataChannel(QStringLiteral("RMG-Input"));
+        if (channel && channel->isOpen()) {
+            (void)channel->sendBinary(packet);
+        }
+    }
+}
+
+void NetplayCoordinator::recordInputHandshake(
+    int slot,
+    uint32_t frameNumber,
+    uint32_t controllerState)
+{
+    if (slot < 0 ||
+        slot >= m_lockstepConfig.numPlayers ||
+        slot == m_gameSession.localSlot) {
+        return;
+    }
+
+    if (frameNumber > kInputHandshakeFrame + static_cast<uint32_t>(m_lockstepConfig.inputDelayFrames)) {
+        return;
+    }
+
+    if (!m_inputHandshakeReceivedSlots.contains(slot)) {
+        qDebug() << "NetplayCoordinator: Input handshake received from slot" << slot
+                 << "frame" << frameNumber;
+    }
+
+    m_inputHandshakeReceivedSlots.insert(slot);
+    m_inputHandshakeInputs[slot] = controllerState;
+    evaluateEmulationStartReadiness();
+}
+
+void NetplayCoordinator::requestEmulationReadyWhenPrepared()
+{
+    m_emulationReadyRequested = true;
+
+    if (countRequiredRemotePeers() == 0) {
+        if (!m_emulationReadySent) {
+            sendEmulationReady();
+            m_emulationReadySent = true;
+        }
+        return;
+    }
+
+    if (m_emulationPrepTimer && !m_emulationPrepTimer->isActive()) {
+        m_emulationPrepTimer->start();
+    }
+
+    evaluateEmulationStartReadiness();
+}
+
+void NetplayCoordinator::evaluateEmulationStartReadiness()
+{
+    if (!m_emulationReadyRequested || m_emulationReadySent) {
+        return;
+    }
+
+    if (countRequiredRemotePeers() == 0) {
+        sendEmulationReady();
+        m_emulationReadySent = true;
+        if (m_emulationPrepTimer) {
+            m_emulationPrepTimer->stop();
+        }
+        return;
+    }
+
+    if (!areRemoteInputChannelsReady()) {
+        if (!m_inputChannelWaitExpired &&
+            m_gameStartPrepTimer.isValid() &&
+            m_gameStartPrepTimer.elapsed() >= kWebRtcInputChannelWaitMs) {
+            qWarning() << "NetplayCoordinator: WebRTC input channels not ready after"
+                       << kWebRtcInputChannelWaitMs
+                       << "ms; continuing via signaling relay";
+            m_inputChannelWaitExpired = true;
+        }
+
+        if (!m_inputChannelWaitExpired) {
+            return;
+        }
+    }
+
+    if (!m_inputHandshakeActive) {
+        beginInputHandshake();
+        return;
+    }
+
+    if (!isInputHandshakeComplete()) {
+        if (!m_inputHandshakeForced &&
+            m_gameStartPrepTimer.isValid() &&
+            m_gameStartPrepTimer.elapsed() >= kInputHandshakeTimeoutMs) {
+            qWarning() << "NetplayCoordinator: Input handshake timed out after"
+                       << kInputHandshakeTimeoutMs
+                       << "ms; proceeding with partial handshake";
+            m_inputHandshakeForced = true;
+        } else if (!m_inputHandshakeForced) {
+            sendInputHandshakeBurst();
+            return;
+        }
+    }
+
+    qInfo() << "NetplayCoordinator: Pre-start input paths ready; sending emulation-ready";
+    sendEmulationReady();
+    m_emulationReadySent = true;
+    if (m_emulationPrepTimer) {
+        m_emulationPrepTimer->stop();
+    }
 }
 
 void NetplayCoordinator::sendEmulationReady()

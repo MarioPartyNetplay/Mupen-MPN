@@ -108,6 +108,13 @@ public:
     void releaseCurrentFrameWait();
     /** True when at least one remote peer has an open WebRTC input channel. */
     bool hasOpenRemoteDataChannels() const;
+    /** Seed frame-0 inputs collected during the pre-start input handshake. */
+    void importPreGameHandshakeInputs(
+        const std::map<int, uint32_t>& remoteInputsBySlot,
+        uint32_t localInputState = 0);
+    /** Allow advanceFrame() after pre-start handshake (or import) is complete. */
+    void markInputBootstrapComplete();
+    bool isInputBootstrapComplete() const;
     /** Detach callbacks/channels and unblock any waiters (safe during teardown). */
     void shutdown();
 
@@ -146,6 +153,7 @@ private:
 
     Config m_config;
     uint32_t m_currentFrameNumber = 0;
+    bool m_inputBootstrapComplete = false;
     mutable std::recursive_mutex m_mutex;
     std::condition_variable_any m_inputCv;
     std::atomic<bool> m_shutdown{false};
