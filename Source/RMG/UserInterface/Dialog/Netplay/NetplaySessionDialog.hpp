@@ -60,6 +60,9 @@ private:
     int m_pendingPlayerSlot = 0;
     int m_lastDisplayedBufferDelay = -1;
     int m_clientSessionPrepWatchdogTimerId = -1;
+    int m_clientSessionPrepRetries = 0;
+    int m_hostSessionSyncRetryTimerId = -1;
+    int m_hostSessionSyncRetries = 0;
 
     QList<Netplay::SocketIOClient::PlayerInfo> m_cachedPlayers;
     QStringList m_publishedSessionPlayerIds;
@@ -74,7 +77,8 @@ private:
     void tryStartPendingGame(void);
     void tryCompletePendingGameStart(void);
     void requestSynchronizedEmulationStart(void);
-    void ensureClientSessionPrepComplete(void);
+    bool sessionPrepReadyForStart(void) const;
+    void scheduleHostSessionSyncRetries(void);
     bool getCheats(std::vector<CoreCheat>& cheats, QJsonArray& cheatsArray);
     bool setCheats(const QJsonArray& cheatsArray);
     bool applyCheats(void);

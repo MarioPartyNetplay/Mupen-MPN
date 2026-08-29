@@ -439,7 +439,8 @@ void SocketIOServer::handle_EmulationPauseUpdate(ENetPeer* socket, const QJsonOb
 }
 
 bool SocketIOServer::startHostedGame(const QString& roomId, const QString& mode, bool resyncEnabled, const QString& romHash,
-                                     const QJsonArray& cheats, const QJsonArray& saveFiles)
+                                     const QJsonArray& cheats, const QJsonArray& saveFiles,
+                                     const QJsonObject& coreSettings)
 {
     SignalingRoom* room = getRoomById(roomId);
     if (!room)
@@ -472,9 +473,14 @@ bool SocketIOServer::startHostedGame(const QString& roomId, const QString& mode,
     room->hasSaveSyncSnapshot = true;
     emitToConnectedRoomClients(roomId, "game-started", payload);
 
-    // Always re-broadcast session cheats/saves (including empty) so clients converge.
+    // Always re-broadcast session cheats/saves/settings (including empty saves) so
+    // clients converge before emulation-begin. Core timing must match or lockstep
+    // desyncs within the first few hash checks.
     broadcastCheatsUpdate(roomId, cheats);
     broadcastSaveSync(roomId, saveFiles);
+    if (!coreSettings.isEmpty()) {
+        broadcastCoreSettingsSync(roomId, coreSettings);
+    }
 
     qInfo() << "SocketIOServer: Hosted game started in room" << roomId;
     emit gameStarted(roomId);

@@ -484,6 +484,14 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     connect(this->coordinator, &Netplay::NetplayCoordinator::emulationBeginReceived,
             this, [this]() {
         this->m_emulationBeginReceived = true;
+        if (this->m_hostSessionSyncRetryTimerId != -1) {
+            this->killTimer(this->m_hostSessionSyncRetryTimerId);
+            this->m_hostSessionSyncRetryTimerId = -1;
+        }
+        if (this->m_clientSessionPrepWatchdogTimerId != -1) {
+            this->killTimer(this->m_clientSessionPrepWatchdogTimerId);
+            this->m_clientSessionPrepWatchdogTimerId = -1;
+        }
         this->tryCompletePendingGameStart();
     });
     const int initialBufferDelay = sessionJson.value("buffer_delay").toInt(this->coordinator->getInputDelayFrames());
@@ -1110,14 +1118,34 @@ void NetplaySessionDialog::on_playerListRowsMoved(void)
     }
 }
 
-void NetplaySessionDialog::ensureClientSessionPrepComplete(void)
+bool NetplaySessionDialog::sessionPrepReadyForStart(void) const
 {
     if (this->isLocalSessionHost()) {
+        // Host must have applied its own synced timing before launching.
+        return this->coordinator && this->coordinator->hasAppliedCoreSettingsSync();
+    }
+
+    if (!this->m_sessionSavesApplied || !this->m_sessionCoreSettingsApplied) {
+        return false;
+    }
+
+    // Never launch without host timing — local overlays desync within ~3s of play.
+    return this->coordinator && this->coordinator->hasAppliedCoreSettingsSync();
+}
+
+void NetplaySessionDialog::scheduleHostSessionSyncRetries(void)
+{
+    if (!this->isLocalSessionHost()) {
         return;
     }
 
-    this->m_sessionSavesApplied = true;
-    this->m_sessionCoreSettingsApplied = true;
+    if (this->m_hostSessionSyncRetryTimerId != -1) {
+        this->killTimer(this->m_hostSessionSyncRetryTimerId);
+        this->m_hostSessionSyncRetryTimerId = -1;
+    }
+
+    this->m_hostSessionSyncRetries = 0;
+    this->m_hostSessionSyncRetryTimerId = this->startTimer(750);
 }
 
 void NetplaySessionDialog::tryCompletePendingGameStart(void)
@@ -1126,10 +1154,8 @@ void NetplaySessionDialog::tryCompletePendingGameStart(void)
         return;
     }
 
-    if (!this->isLocalSessionHost()) {
-        if (!this->m_sessionSavesApplied || !this->m_sessionCoreSettingsApplied) {
-            return;
-        }
+    if (!this->sessionPrepReadyForStart()) {
+        return;
     }
 
     this->tryStartPendingGame();
@@ -1141,11 +1167,7 @@ void NetplaySessionDialog::requestSynchronizedEmulationStart(void)
         return;
     }
 
-    if (!this->isLocalSessionHost() && !this->m_sessionSavesApplied) {
-        return;
-    }
-
-    if (!this->isLocalSessionHost() && !this->m_sessionCoreSettingsApplied) {
+    if (!this->sessionPrepReadyForStart()) {
         return;
     }
 
@@ -1158,11 +1180,7 @@ void NetplaySessionDialog::tryStartPendingGame(void)
         return;
     }
 
-    if (!this->isLocalSessionHost() && !this->m_sessionSavesApplied) {
-        return;
-    }
-
-    if (!this->isLocalSessionHost() && !this->m_sessionCoreSettingsApplied) {
+    if (!this->sessionPrepReadyForStart()) {
         return;
     }
 
@@ -1209,15 +1227,22 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
     this->m_pendingGameStart = true;
     this->m_pendingPlayerSlot = selectedSlot;
     this->m_emulationBeginReceived = false;
+    this->m_clientSessionPrepRetries = 0;
+    this->m_hostSessionSyncRetries = 0;
 
     if (this->m_clientSessionPrepWatchdogTimerId != -1) {
         this->killTimer(this->m_clientSessionPrepWatchdogTimerId);
         this->m_clientSessionPrepWatchdogTimerId = -1;
     }
+    if (this->m_hostSessionSyncRetryTimerId != -1) {
+        this->killTimer(this->m_hostSessionSyncRetryTimerId);
+        this->m_hostSessionSyncRetryTimerId = -1;
+    }
 
     if (this->isLocalSessionHost()) {
         this->m_sessionSavesApplied = true;
         this->m_sessionCoreSettingsApplied = true;
+        this->scheduleHostSessionSyncRetries();
     } else {
         this->m_sessionSavesApplied = false;
         this->m_sessionCoreSettingsApplied = false;
@@ -1586,17 +1611,60 @@ void NetplaySessionDialog::showEvent(QShowEvent* event)
 
 void NetplaySessionDialog::timerEvent(QTimerEvent* event)
 {
-    if (event->timerId() == this->m_clientSessionPrepWatchdogTimerId) {
-        this->killTimer(this->m_clientSessionPrepWatchdogTimerId);
-        this->m_clientSessionPrepWatchdogTimerId = -1;
-
-        if (!this->m_pendingGameStart || this->isLocalSessionHost()) {
+    if (event->timerId() == this->m_hostSessionSyncRetryTimerId) {
+        if (!this->m_pendingGameStart || !this->isLocalSessionHost() || this->m_emulationBeginReceived) {
+            this->killTimer(this->m_hostSessionSyncRetryTimerId);
+            this->m_hostSessionSyncRetryTimerId = -1;
             return;
         }
 
-        this->ensureClientSessionPrepComplete();
-        this->requestSynchronizedEmulationStart();
-        this->tryCompletePendingGameStart();
+        ++this->m_hostSessionSyncRetries;
+        if (this->coordinator) {
+            this->coordinator->rebroadcastSessionSync();
+        }
+
+        // A few retries covers late joiners / dropped UDP signaling packets.
+        if (this->m_hostSessionSyncRetries >= 6) {
+            this->killTimer(this->m_hostSessionSyncRetryTimerId);
+            this->m_hostSessionSyncRetryTimerId = -1;
+        }
+        return;
+    }
+
+    if (event->timerId() == this->m_clientSessionPrepWatchdogTimerId) {
+        if (!this->m_pendingGameStart || this->isLocalSessionHost()) {
+            this->killTimer(this->m_clientSessionPrepWatchdogTimerId);
+            this->m_clientSessionPrepWatchdogTimerId = -1;
+            return;
+        }
+
+        // Never invent "sync applied" — launching with local EEPROM/timing is what
+        // produced the reciprocal state-hash desyncs at frames 540/720/900.
+        if (this->sessionPrepReadyForStart()) {
+            this->killTimer(this->m_clientSessionPrepWatchdogTimerId);
+            this->m_clientSessionPrepWatchdogTimerId = -1;
+            this->requestSynchronizedEmulationStart();
+            this->tryCompletePendingGameStart();
+            return;
+        }
+
+        ++this->m_clientSessionPrepRetries;
+        qWarning() << "NetplaySessionDialog: Still waiting for host save/core sync"
+                   << "(saves=" << this->m_sessionSavesApplied
+                   << "settings=" << this->m_sessionCoreSettingsApplied
+                   << "coreApplied=" << (this->coordinator && this->coordinator->hasAppliedCoreSettingsSync())
+                   << ") retry" << this->m_clientSessionPrepRetries;
+
+        if (this->m_clientSessionPrepRetries >= 10) {
+            this->killTimer(this->m_clientSessionPrepWatchdogTimerId);
+            this->m_clientSessionPrepWatchdogTimerId = -1;
+            this->chatPlainTextEdit->appendHtml(
+                QStringLiteral("<span style=\"color:#ff6666;\"><b>Netplay:</b> Timed out waiting for "
+                               "host save/settings sync. Do not start — leave and rejoin.</span>"));
+            return;
+        }
+
+        // Keep polling; host rebroadcasts on its own retry timer.
         return;
     }
 

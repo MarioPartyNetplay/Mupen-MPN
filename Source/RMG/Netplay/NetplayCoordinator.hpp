@@ -101,6 +101,10 @@
      void sendEmulationReady();
      /** Wait for WebRTC input channels + pre-start input handshake before ready. */
      void requestEmulationReadyWhenPrepared();
+     /** Host: re-push cheats/saves/core settings for clients still waiting. */
+     void rebroadcastSessionSync();
+     /** True when this peer has applied host core timing settings. */
+     bool hasAppliedCoreSettingsSync() const;
      /** Host-only lobby remap of N64 controller ports via player clientId order. */
      bool reorderLobbyPlayers(const QStringList& clientIds);
  

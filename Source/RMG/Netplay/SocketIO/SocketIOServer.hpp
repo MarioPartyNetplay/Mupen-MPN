@@ -36,7 +36,8 @@ public:
     bool reorderLobbyPlayers(const QString& roomId, const QStringList& clientIds);
 
     bool startHostedGame(const QString& roomId, const QString& mode, bool resyncEnabled, const QString& romHash,
-                         const QJsonArray& cheats = QJsonArray(), const QJsonArray& saveFiles = QJsonArray());
+                         const QJsonArray& cheats = QJsonArray(), const QJsonArray& saveFiles = QJsonArray(),
+                         const QJsonObject& coreSettings = QJsonObject());
 
     void broadcastControllerInput(const QString& roomId, int slot, uint32_t frameNumber, uint32_t controllerState);
     void broadcastFrameSync(const QString& roomId, int slot, uint32_t frameNumber, uint32_t stateHash);

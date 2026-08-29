@@ -489,7 +489,8 @@ void NetplayCoordinator::startGame(const QString& gameMode, bool resyncEnabled, 
 
         setState(StartingGame);
         if (!m_server->startHostedGame(m_gameSession.roomId, gameMode, resyncEnabled, romHash,
-                                        m_sessionSyncCheats, m_sessionSyncSaves)) {
+                                        m_sessionSyncCheats, m_sessionSyncSaves,
+                                        m_sessionSyncCoreSettings)) {
             qWarning() << "NetplayCoordinator: Failed to start hosted game";
             setState(InLobby);
         }
@@ -1139,6 +1140,15 @@ void NetplayCoordinator::beginEmulationSync()
 {
     m_lockstepConfig.localPlayerSlot = m_gameSession.localSlot;
     synchronizeLockstepPlayerCount();
+
+    // Belt-and-suspenders: ensure synced timing is in core before M64CMD_EXECUTE.
+    if (!m_sessionSyncCoreSettings.isEmpty()) {
+        CoreNetplaySyncSettings settings;
+        if (coreSettingsFromJson(m_sessionSyncCoreSettings, settings)) {
+            CoreSetNetplaySyncSettings(settings);
+        }
+    }
+
     initializeLockstepEngine();
 
     CoreSetEmbeddedNetplayState(true, m_gameSession.localSlot);
@@ -1569,6 +1579,13 @@ void NetplayCoordinator::sendCoreSettingsSync(const QJsonObject& coreSettings)
     }
 
     m_sessionSyncCoreSettings = coreSettings;
+
+    // Host applies locally here too so M64CMD_EXECUTE always sees the same
+    // CountPerOp / SiDmaDuration / CPU as clients, even if dialog sync raced.
+    CoreNetplaySyncSettings settings;
+    if (coreSettingsFromJson(coreSettings, settings)) {
+        CoreSetNetplaySyncSettings(settings);
+    }
 
     if (isHostingServer()) {
         if (m_server && !m_gameSession.roomId.isEmpty()) {
@@ -2320,6 +2337,25 @@ void NetplayCoordinator::evaluateEmulationStartReadiness()
     if (m_emulationPrepTimer) {
         m_emulationPrepTimer->stop();
     }
+}
+
+void NetplayCoordinator::rebroadcastSessionSync()
+{
+    if (!isHostingServer() || m_gameSession.roomId.isEmpty() || !m_server) {
+        return;
+    }
+
+    qInfo() << "NetplayCoordinator: Rebroadcasting session cheats/saves/core settings";
+    sendCheatsUpdate(m_sessionSyncCheats);
+    sendSaveSync(m_sessionSyncSaves);
+    if (!m_sessionSyncCoreSettings.isEmpty()) {
+        sendCoreSettingsSync(m_sessionSyncCoreSettings);
+    }
+}
+
+bool NetplayCoordinator::hasAppliedCoreSettingsSync() const
+{
+    return CoreHasNetplaySyncSettings();
 }
 
 void NetplayCoordinator::sendEmulationReady()
