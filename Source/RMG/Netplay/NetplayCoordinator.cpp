@@ -11,6 +11,7 @@
 #include "NetplayProtocol.hpp"
 #include "Netplay.hpp"
 #include "WebRTC/TurnCredentialClient.hpp"
+#include <RMG-Core/Netplay/WebRTC/WebRTCDataChannel.hpp>
 #include <RMG-Core/Netplay.hpp>
 #include <RMG-Core/Emulation.hpp>
 #include <algorithm>
