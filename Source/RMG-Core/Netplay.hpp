@@ -74,6 +74,8 @@ struct CoreNetplaySyncSettings
     bool disableExtraMem = false;
     int siDmaDuration = -1;
     int cpuEmulator = 2;
+    int saveType = 0;
+    bool transferPak = false;
     bool valid = false;
 };
 

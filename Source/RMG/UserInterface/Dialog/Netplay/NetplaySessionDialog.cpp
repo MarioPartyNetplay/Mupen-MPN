@@ -296,6 +296,8 @@ QJsonObject buildCoreSettingsSyncPayload(const QString& romFile)
     payload[QStringLiteral("disableExtraMem")] = settings.disableExtraMem;
     payload[QStringLiteral("siDmaDuration")] = settings.siDmaDuration;
     payload[QStringLiteral("cpuEmulator")] = settings.cpuEmulator;
+    payload[QStringLiteral("saveType")] = settings.saveType;
+    payload[QStringLiteral("transferPak")] = settings.transferPak;
     return payload;
 }
 

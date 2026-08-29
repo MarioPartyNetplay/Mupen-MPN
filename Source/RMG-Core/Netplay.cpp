@@ -52,6 +52,7 @@ static void apply_synced_core_config(const CoreNetplaySyncSettings& sync)
     CoreSettingsSetValue(SettingsID::Core_DisableExtraMem, sync.disableExtraMem);
     CoreSettingsSetValue(SettingsID::Core_SiDmaDuration, sync.siDmaDuration);
     CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, sync.cpuEmulator);
+    CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
 }
 
 //
@@ -376,6 +377,8 @@ CORE_EXPORT bool CoreBuildNetplaySyncSettings(std::filesystem::path romPath, Cor
     out.disableExtraMem = disableExtraMem;
     out.siDmaDuration = siDmaDuration;
     out.cpuEmulator = cpuEmulator;
+    out.saveType = gameSettings.SaveType;
+    out.transferPak = gameSettings.TransferPak;
     out.valid = true;
     return true;
 }
@@ -424,6 +427,8 @@ CORE_EXPORT void CoreApplyNetplaySyncedRomSettings(void)
     romSettings.CountPerOp = l_NetplaySyncSettings.countPerOp;
     romSettings.SiDMADuration = l_NetplaySyncSettings.siDmaDuration;
     romSettings.DisableExtraMem = l_NetplaySyncSettings.disableExtraMem ? 1 : 0;
+    romSettings.SaveType = static_cast<uint16_t>(l_NetplaySyncSettings.saveType);
+    romSettings.TransferPak = l_NetplaySyncSettings.transferPak;
     CoreApplyRomSettings(romSettings);
 }
 

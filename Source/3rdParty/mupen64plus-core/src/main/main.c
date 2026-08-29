@@ -1693,6 +1693,9 @@ m64p_error main_run(void)
     randomize_interrupt = netplay_determinism_required()
         ? 0
         : ConfigGetParamBool(g_CoreConfig, "RandomizeInterrupt");
+    if (netplay_determinism_required()) {
+        no_compiled_jump = 0;
+    }
     count_per_op = ConfigGetParamInt(g_CoreConfig, "CountPerOp");
     count_per_op_denom_pot = ConfigGetParamInt(g_CoreConfig, "CountPerOpDenomPot");
 

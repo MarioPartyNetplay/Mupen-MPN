@@ -52,6 +52,8 @@ QJsonObject coreSettingsToJson(const CoreNetplaySyncSettings& settings)
     payload[QStringLiteral("disableExtraMem")] = settings.disableExtraMem;
     payload[QStringLiteral("siDmaDuration")] = settings.siDmaDuration;
     payload[QStringLiteral("cpuEmulator")] = settings.cpuEmulator;
+    payload[QStringLiteral("saveType")] = settings.saveType;
+    payload[QStringLiteral("transferPak")] = settings.transferPak;
     return payload;
 }
 
@@ -71,6 +73,8 @@ bool coreSettingsFromJson(const QJsonObject& payload, CoreNetplaySyncSettings& s
     settings.disableExtraMem = payload.value(QStringLiteral("disableExtraMem")).toBool(false);
     settings.siDmaDuration = payload.value(QStringLiteral("siDmaDuration")).toInt(-1);
     settings.cpuEmulator = payload.value(QStringLiteral("cpuEmulator")).toInt(2);
+    settings.saveType = payload.value(QStringLiteral("saveType")).toInt(0);
+    settings.transferPak = payload.value(QStringLiteral("transferPak")).toBool(false);
     settings.valid = true;
     return true;
 }
@@ -78,8 +82,10 @@ bool coreSettingsFromJson(const QJsonObject& payload, CoreNetplaySyncSettings& s
 constexpr int kWebRtcInputChannelWaitMs = 15000;
 constexpr int kInputHandshakeRetryMs = 200;
 constexpr int kInputHandshakeTimeoutMs = 8000;
+constexpr uint32_t kInputHandshakeMagic = 0x4E504853; // 'NPHS'
 constexpr uint32_t kInputHandshakeFrame = 0;
 constexpr uint32_t kInputHandshakeState = 0;
+constexpr int kInputHandshakePacketSize = 16;
 
 } // namespace
 
@@ -1039,53 +1045,6 @@ void NetplayCoordinator::on_socketIO_gameEnded()
     emit gameEnded();
 }
 
-void NetplayCoordinator::on_socketIO_offerReceived(const QString& fromPlayerId, const QString& sdpOffer)
-{
-    qDebug() << "NetplayCoordinator: Offer received from" << fromPlayerId;
-
-    // Find which slot this player is in
-    int slotIndex = -1;
-    for (const auto& player : getPlayerList()) {
-        if (player.id == fromPlayerId) {
-            slotIndex = player.slot;
-            break;
-        }
-    }
-
-    if (slotIndex < 0) {
-        qWarning() << "NetplayCoordinator: Could not find slot for player" << fromPlayerId;
-        return;
-    }
-
-    // Create peer if not exists
-    if (!m_peers.contains(slotIndex)) {
-        auto peer = std::make_shared<WebRTCPeer>(fromPlayerId, false, this);
-        m_peers[slotIndex] = peer;
-        bindWebRTCPeerSignals(peer, fromPlayerId);
-    }
-
-    // Set remote description
-    auto peer = m_peers[slotIndex];
-    if (peer) {
-        peer->setRemoteDescription(sdpOffer);
-    }
-}
-
-void NetplayCoordinator::on_socketIO_answerReceived(const QString& fromPlayerId, const QString& sdpAnswer)
-{
-    qDebug() << "NetplayCoordinator: Answer received from" << fromPlayerId;
-
-    // Find peer and set remote description
-    for (int slot = 0; slot < 4; ++slot) {
-        if (m_peers.contains(slot)) {
-            auto peer = m_peers[slot];
-            if (peer && peer->getPeerId() == fromPlayerId) {
-                peer->setRemoteDescription(sdpAnswer);
-                break;
-            }
-        }
-    }
-}
 void NetplayCoordinator::synchronizeLockstepPlayerCount()
 {
     int numPlayers = 1;
@@ -1246,15 +1205,9 @@ void NetplayCoordinator::initializeLockstepEngine()
     syncLockstepPeerSessionActive();
     attachExistingPeerDataChannels();
 
-    if (!m_inputHandshakeInputs.empty()) {
-        m_lockstepEngine->importPreGameHandshakeInputs(
-            m_inputHandshakeInputs,
-            kInputHandshakeState);
-    } else {
-        m_lockstepEngine->importPreGameHandshakeInputs(
-            {},
-            kInputHandshakeState);
-    }
+    // Handshake only proves the input path is alive. Never seed lockstep with
+    // those packets — they were zeros tagged as frame 0 and made one peer
+    // consume empty pads while the other waited for real analog.
     m_lockstepEngine->markInputBootstrapComplete();
 
     UserInterface::Netplay::installEmbeddedNetplayCallbacks();
@@ -1301,12 +1254,115 @@ int NetplayCoordinator::findPeerSlotById(const QString& peerId) const
 {
     for (auto it = m_peers.constBegin(); it != m_peers.constEnd(); ++it) {
         const auto& peer = it.value();
-        if (peer && peer->getPeerId() == peerId) {
+        if (peer && webRtcPeerIdsMatch(peer->getPeerId(), peerId)) {
             return it.key();
         }
     }
 
+    // Fall back to lobby identity in case the peer map used a different alias.
+    return resolvePlayerSlotBySignalId(peerId);
+}
+
+bool NetplayCoordinator::webRtcPeerIdsMatch(const QString& a, const QString& b)
+{
+    if (a == b) {
+        return true;
+    }
+
+    // Host used to signal as "p0" while the lobby listed "host".
+    const bool aHost = (a == QStringLiteral("host") || a == QStringLiteral("p0"));
+    const bool bHost = (b == QStringLiteral("host") || b == QStringLiteral("p0"));
+    return aHost && bHost;
+}
+
+int NetplayCoordinator::resolvePlayerSlotBySignalId(const QString& signalPlayerId) const
+{
+    if (signalPlayerId.isEmpty()) {
+        return -1;
+    }
+
+    for (const auto& player : getPlayerList()) {
+        if (player.id == signalPlayerId || player.clientId == signalPlayerId) {
+            return player.slot;
+        }
+
+        if (webRtcPeerIdsMatch(player.id, signalPlayerId) ||
+            webRtcPeerIdsMatch(player.clientId, signalPlayerId)) {
+            return player.slot;
+        }
+    }
+
     return -1;
+}
+
+void NetplayCoordinator::on_socketIO_offerReceived(const QString& fromPlayerId, const QString& sdpOffer)
+{
+    qDebug() << "NetplayCoordinator: Offer received from" << fromPlayerId;
+
+    const int slotIndex = resolvePlayerSlotBySignalId(fromPlayerId);
+    if (slotIndex < 0) {
+        qWarning() << "NetplayCoordinator: Could not find slot for player" << fromPlayerId;
+        return;
+    }
+
+    // Prefer the lobby canonical id so later ICE/answer lookups stay consistent.
+    QString canonicalId = fromPlayerId;
+    for (const auto& player : getPlayerList()) {
+        if (player.slot == slotIndex && !player.id.isEmpty()) {
+            canonicalId = player.id;
+            break;
+        }
+    }
+
+    if (!m_peers.contains(slotIndex)) {
+        auto peer = std::make_shared<WebRTCPeer>(canonicalId, false, this);
+        m_peers[slotIndex] = peer;
+        bindWebRTCPeerSignals(peer, canonicalId);
+    }
+
+    auto peer = m_peers[slotIndex];
+    if (peer) {
+        peer->setRemoteDescription(sdpOffer);
+    }
+}
+
+void NetplayCoordinator::on_socketIO_answerReceived(const QString& fromPlayerId, const QString& sdpAnswer)
+{
+    qDebug() << "NetplayCoordinator: Answer received from" << fromPlayerId;
+
+    for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
+        auto peer = it.value();
+        if (peer && webRtcPeerIdsMatch(peer->getPeerId(), fromPlayerId)) {
+            peer->setRemoteDescription(sdpAnswer);
+            return;
+        }
+    }
+
+    // Peer map may not exist yet; resolve via lobby and create if needed.
+    const int slotIndex = resolvePlayerSlotBySignalId(fromPlayerId);
+    if (slotIndex >= 0 && m_peers.contains(slotIndex) && m_peers[slotIndex]) {
+        m_peers[slotIndex]->setRemoteDescription(sdpAnswer);
+    }
+}
+
+void NetplayCoordinator::on_socketIO_iceCandidateReceived(const QString& fromPlayerId, const QString& candidate, int mLineIndex)
+{
+    for (auto it = m_peers.begin(); it != m_peers.end(); ++it) {
+        auto peer = it.value();
+        if (peer && webRtcPeerIdsMatch(peer->getPeerId(), fromPlayerId)) {
+            peer->addICECandidate(candidate, mLineIndex);
+            return;
+        }
+    }
+
+    // Offer may still be in flight; attach to lobby-resolved slot if present.
+    const int slotIndex = resolvePlayerSlotBySignalId(fromPlayerId);
+    if (slotIndex >= 0 && m_peers.contains(slotIndex) && m_peers[slotIndex]) {
+        m_peers[slotIndex]->addICECandidate(candidate, mLineIndex);
+        return;
+    }
+
+    qDebug() << "NetplayCoordinator: Ignored ICE candidate for unknown or dropped peer:" << fromPlayerId;
 }
 
 void NetplayCoordinator::recreatePeerConnection(int slot)
@@ -1372,42 +1428,11 @@ void NetplayCoordinator::recoverWebRTCPeerConnections()
     }
 }
 
-void NetplayCoordinator::on_socketIO_iceCandidateReceived(const QString& fromPlayerId, const QString& candidate, int mLineIndex)
-{
-    // Use a more efficient iterator-based lookup
-    auto it = m_peers.begin();
-    while (it != m_peers.end()) {
-        auto peer = it.value();
-        
-        // Check if this is the peer we are looking for and it still exists
-        if (peer && peer->getPeerId() == fromPlayerId) {
-            // Only add the candidate if the peer connection is actually active
-            // This prevents adding candidates to a peer that just failed/closed
-            peer->addICECandidate(candidate, mLineIndex);
-            return; // Exit once found
-        }
-        ++it;
-    }
-
-    qDebug() << "NetplayCoordinator: Ignored ICE candidate for unknown or dropped peer:" << fromPlayerId;
-}
-
 void NetplayCoordinator::on_webRTC_connectionEstablished(const QString& peerId)
 {
     qDebug() << "NetplayCoordinator: WebRTC connection established with peer" << peerId;
 
-    // Find which slot this peer is in
-    int peerSlot = -1;
-    for (int slot = 0; slot < 4; ++slot) {
-        if (m_peers.contains(slot)) {
-            auto peer = m_peers[slot];
-            if (peer && peer->getPeerId() == peerId) {
-                peerSlot = slot;
-                break;
-            }
-        }
-    }
-
+    const int peerSlot = findPeerSlotById(peerId);
     if (peerSlot >= 0) {
         emit peerConnected(peerSlot);
     }
@@ -1929,7 +1954,7 @@ void NetplayCoordinator::sendWebRTCOffer(const QString& targetPlayerId, const QS
         QJsonObject signal;
         signal[QStringLiteral("target")] = targetPlayerId;
         signal[QStringLiteral("offer")] = sdpOffer;
-        m_server->relayHostedWebRTCSignal(m_gameSession.roomId, QStringLiteral("p0"), signal);
+        m_server->relayHostedWebRTCSignal(m_gameSession.roomId, QStringLiteral("host"), signal);
         return;
     }
 
@@ -1944,7 +1969,7 @@ void NetplayCoordinator::sendWebRTCAnswer(const QString& targetPlayerId, const Q
         QJsonObject signal;
         signal[QStringLiteral("target")] = targetPlayerId;
         signal[QStringLiteral("answer")] = sdpAnswer;
-        m_server->relayHostedWebRTCSignal(m_gameSession.roomId, QStringLiteral("p0"), signal);
+        m_server->relayHostedWebRTCSignal(m_gameSession.roomId, QStringLiteral("host"), signal);
         return;
     }
 
@@ -1960,7 +1985,7 @@ void NetplayCoordinator::sendWebRTCIceCandidate(const QString& targetPlayerId, c
         signal[QStringLiteral("target")] = targetPlayerId;
         signal[QStringLiteral("candidate")] = candidate;
         signal[QStringLiteral("sdpMLineIndex")] = mLineIndex;
-        m_server->relayHostedWebRTCSignal(m_gameSession.roomId, QStringLiteral("p0"), signal);
+        m_server->relayHostedWebRTCSignal(m_gameSession.roomId, QStringLiteral("host"), signal);
         return;
     }
 
@@ -2184,14 +2209,19 @@ void NetplayCoordinator::attachInputChannelForHandshake(
 
     channel->onBinaryMessageReceived =
         [this, peerSlot](const std::vector<uint8_t>& data) {
-            if (data.size() != 8) {
+            if (data.size() != kInputHandshakePacketSize) {
                 return;
             }
 
+            uint32_t magic = 0;
             uint32_t frameNumber = 0;
             uint32_t controllerState = 0;
-            std::memcpy(&frameNumber, data.data(), 4);
-            std::memcpy(&controllerState, data.data() + 4, 4);
+            std::memcpy(&magic, data.data(), 4);
+            if (magic != kInputHandshakeMagic) {
+                return;
+            }
+            std::memcpy(&frameNumber, data.data() + 4, 4);
+            std::memcpy(&controllerState, data.data() + 8, 4);
 
             if (m_inputHandshakeActive && !m_emulationReadySent) {
                 recordInputHandshake(peerSlot, frameNumber, controllerState);
@@ -2201,11 +2231,13 @@ void NetplayCoordinator::attachInputChannelForHandshake(
 
 void NetplayCoordinator::sendInputHandshakeBurst()
 {
-    relayLocalControllerInput(kInputHandshakeFrame, kInputHandshakeState);
-
-    std::vector<uint8_t> packet(8);
-    std::memcpy(packet.data(), &kInputHandshakeFrame, 4);
-    std::memcpy(packet.data() + 4, &kInputHandshakeState, 4);
+    // Do not send these on the playable controller-input channel. Frame 0 / state 0
+    // packets were imported as real pads and let one peer advance while the other
+    // still had empty analog.
+    std::vector<uint8_t> packet(kInputHandshakePacketSize);
+    std::memcpy(packet.data(), &kInputHandshakeMagic, 4);
+    std::memcpy(packet.data() + 4, &kInputHandshakeFrame, 4);
+    std::memcpy(packet.data() + 8, &kInputHandshakeState, 4);
 
     for (auto it = m_peers.constBegin(); it != m_peers.constEnd(); ++it) {
         if (it.key() == m_gameSession.localSlot || !it.value()) {

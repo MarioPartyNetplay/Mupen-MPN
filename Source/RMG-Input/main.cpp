@@ -449,18 +449,16 @@ static void apply_controller_profiles(void)
         }
 #endif // VRU
 
-        // In embedded netplay, all controller ports should appear present to the ROM.
-        // Port 0 remains the local physical controller; the assigned netplay slot is carried in synced frame data.
+        // Identical pak/present flags on every peer. Local profile paks (and GCA
+        // defaulting port 0 to mempak) made Mario Party's PIF status diverge
+        // immediately on the file-select screen.
         if (embeddedNetplay)
         {
             l_ControlInfo.Controls[i].Present = 1;
-            if (i != 0)
-            {
-                l_ControlInfo.Controls[i].Plugin = PLUGIN_NONE;
-                l_ControlInfo.Controls[i].RawData = 0;
-                l_ControlInfo.Controls[i].Type = CONT_TYPE_STANDARD;
-                continue;
-            }
+            l_ControlInfo.Controls[i].Plugin = PLUGIN_NONE;
+            l_ControlInfo.Controls[i].RawData = 0;
+            l_ControlInfo.Controls[i].Type = CONT_TYPE_STANDARD;
+            continue;
         }
         else
         {
@@ -477,6 +475,11 @@ static void controller_rumble_stop(InputProfile* profile); // forward declaratio
 
 static void switch_controller_pak(InputProfile* profile, const int Control, const int pak)
 {
+    if (CoreIsEmbeddedNetplayActive())
+    {
+        return;
+    }
+
     const int currentPak = l_ControlInfo.Controls[Control].Plugin;
 
     // we don't need to do anything,

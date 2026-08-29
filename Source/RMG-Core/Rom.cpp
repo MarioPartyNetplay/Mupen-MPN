@@ -21,6 +21,7 @@
 #include "Error.hpp"
 #include "File.hpp"
 #include "Rom.hpp"
+#include "Netplay.hpp"
 
 #include <string>
 #include <cstdlib>
@@ -153,9 +154,12 @@ CORE_EXPORT bool CoreOpenRom(std::filesystem::path file)
         l_RomPath = file;
         // store default ROM settings
         CoreStoreCurrentDefaultRomSettings();
-        // apply rom settings overlay
-        CoreApplyRomSettingsOverlay();
-        // update cached rom header and settings entry
+        // Local per-game overlays (save type, extra mem, …) desync netplay.
+        // Host values are applied later via CoreApplyNetplaySyncedRomSettings().
+        if (!CoreIsEmbeddedNetplayActive() && !CoreHasNetplaySyncSettings())
+        {
+            CoreApplyRomSettingsOverlay();
+        }
         CoreUpdateCachedRomHeaderAndSettings(file);
     }
 

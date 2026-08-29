@@ -232,6 +232,9 @@
      void recoverWebRTCPeerConnections();
      void recreatePeerConnection(int slot);
      int findPeerSlotById(const QString& peerId) const;
+     /** Resolve lobby slot from a WebRTC/signaling player id (id, clientId, host aliases). */
+     int resolvePlayerSlotBySignalId(const QString& signalPlayerId) const;
+     static bool webRtcPeerIdsMatch(const QString& a, const QString& b);
      void resetEmulationStartPrep();
      int countRequiredRemotePeers() const;
      bool areRemoteInputChannelsReady() const;

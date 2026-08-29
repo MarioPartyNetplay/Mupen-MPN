@@ -590,7 +590,7 @@ EXPORT void CALL InitiateControllers(CONTROL_INFO ControlInfo)
         if (embeddedNetplay)
         {
             ControlInfo.Controls[i].Present = 1;
-            ControlInfo.Controls[i].Plugin = (i == 0) ? PLUGIN_MEMPAK : PLUGIN_NONE;
+            ControlInfo.Controls[i].Plugin = PLUGIN_NONE;
             ControlInfo.Controls[i].RawData = 0;
             ControlInfo.Controls[i].Type = CONT_TYPE_STANDARD;
         }
