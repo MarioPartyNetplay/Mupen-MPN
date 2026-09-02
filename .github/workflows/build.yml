@@ -164,12 +164,20 @@ jobs:
           echo '/usr/local/bin' >> "$GITHUB_PATH"
           echo '/usr/local/sbin' >> "$GITHUB_PATH"
 
+      - name: Install ccache
+        run: |
+          # openssl@3 postinstall can fail under Rosetta x86_64 Homebrew on
+          # macos-14 and makes `brew install` exit 1 even when packages
+          # installed successfully. Preinstall openssl with the broken hook
+          # skipped so the later ccache install sees it as already satisfied.
+          arch -x86_64 /usr/local/bin/brew install --skip-post-install openssl@3
+          arch -x86_64 /usr/local/bin/brew install ccache
+
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: macos-rosetta-x86_64
-          install: yes
-          update-package-index: true
+          install: no
 
       - name: Install Build Dependencies
         run: |
