@@ -15,6 +15,7 @@
 #include <QCoreApplication>
 #include <QThread>
 #include <QMouseEvent>
+#include <QCloseEvent>
 
 #include <QEvent>
 #include <QPalette>
@@ -162,7 +163,8 @@ bool cropScreenshotBorders(const std::vector<std::uint8_t>& source, int sourceWi
 
 } // namespace
 
-OGLWidget::OGLWidget(QWidget *parent)
+OGLWidget::OGLWidget(QWidget *parent, bool dedicatedWindow)
+    : m_dedicatedWindow(dedicatedWindow)
 {
 #ifdef __APPLE__
     this->setSurfaceType(QWindow::MetalSurface);
@@ -176,20 +178,27 @@ OGLWidget::OGLWidget(QWidget *parent)
     this->openGLcontext->setFormat(format);
 #endif
 
-    // QWindow must be created before embedding it in a container widget.
-    this->widgetContainer = QWidget::createWindowContainer(this, parent);
-    this->widgetContainer->installEventFilter(this);
-
-    // on wayland we have to make sure that the widget
-    // has a black background palette set, else
-    // the window will have the theme as background color
-    if (QGuiApplication::platformName() == "wayland" ||
-        QGuiApplication::platformName() == "cocoa")
+    if (m_dedicatedWindow)
     {
-        QPalette blackPalette;
-        blackPalette.setColor(QPalette::Window, Qt::black);
-        this->widgetContainer->setAutoFillBackground(true);
-        this->widgetContainer->setPalette(blackPalette);
+        this->setFlags(Qt::Window);
+    }
+    else
+    {
+        // QWindow must be created before embedding it in a container widget.
+        this->widgetContainer = QWidget::createWindowContainer(this, parent);
+        this->widgetContainer->installEventFilter(this);
+
+        // on wayland we have to make sure that the widget
+        // has a black background palette set, else
+        // the window will have the theme as background color
+        if (QGuiApplication::platformName() == "wayland" ||
+            QGuiApplication::platformName() == "cocoa")
+        {
+            QPalette blackPalette;
+            blackPalette.setColor(QPalette::Window, Qt::black);
+            this->widgetContainer->setAutoFillBackground(true);
+            this->widgetContainer->setPalette(blackPalette);
+        }
     }
 }
 
@@ -268,6 +277,11 @@ bool OGLWidget::prepareNativeSurface()
         {
             this->resize(this->widgetContainer->size());
         }
+    }
+    else if (this->m_dedicatedWindow)
+    {
+        this->show();
+        this->update();
     }
 
     if (!this->handle())
@@ -530,9 +544,126 @@ void OGLWidget::SetHideCursor(bool hide)
     this->setCursor(hide ? Qt::BlankCursor : Qt::ArrowCursor);
 }
 
+void OGLWidget::ApplyDedicatedWindowChrome(const QIcon& icon)
+{
+    if (!this->m_dedicatedWindow)
+    {
+        return;
+    }
+
+    if (!icon.isNull())
+    {
+        this->setIcon(icon);
+    }
+}
+
+void OGLWidget::closeEvent(QCloseEvent* event)
+{
+    if (!this->m_dedicatedWindow)
+    {
+        QWindow::closeEvent(event);
+        return;
+    }
+
+    event->ignore();
+    emit dedicatedWindowCloseRequested();
+}
+
+void OGLWidget::ShowRenderSurface()
+{
+    if (this->m_dedicatedWindow)
+    {
+        this->show();
+        this->raise();
+        this->requestActivate();
+        return;
+    }
+
+    if (this->widgetContainer != nullptr)
+    {
+        this->widgetContainer->show();
+    }
+}
+
+void OGLWidget::HideRenderSurface()
+{
+    if (this->m_dedicatedWindow)
+    {
+        this->hide();
+        return;
+    }
+
+    if (this->widgetContainer != nullptr)
+    {
+        this->widgetContainer->hide();
+    }
+}
+
 QWidget* OGLWidget::GetWidget(void)
 {
     return this->widgetContainer;
+}
+
+bool OGLWidget::handleMouseEvent(QEvent* event)
+{
+    switch (event->type())
+    {
+    case QEvent::MouseButtonPress:
+    case QEvent::MouseMove:
+    case QEvent::MouseButtonRelease:
+    {
+        QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
+        const float scale       = static_cast<float>(this->devicePixelRatio());
+        const float x           = static_cast<float>(mouseEvent->position().x()) * scale;
+        const float y           = static_cast<float>(mouseEvent->position().y()) * scale;
+        const Qt::KeyboardModifiers keyboardModifiers =
+            mouseEvent->modifiers() | QGuiApplication::keyboardModifiers();
+        const bool configureModifier = (keyboardModifiers & Qt::AltModifier) != 0;
+        bool consumed = false;
+
+        switch (event->type())
+        {
+        case QEvent::MouseButtonPress:
+            if (mouseEvent->button() == Qt::LeftButton)
+            {
+                consumed = OnScreenDisplayHandleMousePress(x, y, configureModifier);
+            }
+            break;
+        case QEvent::MouseMove:
+            consumed = OnScreenDisplayHandleMouseMove(x, y, configureModifier);
+            break;
+        case QEvent::MouseButtonRelease:
+            if (mouseEvent->button() == Qt::LeftButton)
+            {
+                consumed = OnScreenDisplayHandleMouseRelease();
+            }
+            break;
+        default:
+            break;
+        }
+
+        return consumed || OnScreenDisplayIsDragging();
+    }
+    default:
+        break;
+    }
+
+    return false;
+}
+
+bool OGLWidget::event(QEvent* event)
+{
+    if (this->m_dedicatedWindow && this->handleMouseEvent(event))
+    {
+        return true;
+    }
+
+    if (this->m_dedicatedWindow && event->type() == QEvent::Resize)
+    {
+        this->queueVideoSizeUpdate(static_cast<QResizeEvent*>(event)->size());
+    }
+
+    return QWindow::event(event);
 }
 
 bool OGLWidget::eventFilter(QObject *object, QEvent *event)
@@ -543,50 +674,9 @@ bool OGLWidget::eventFilter(QObject *object, QEvent *event)
     }
     else if (object == this->widgetContainer)
     {
-        switch (event->type())
+        if (this->handleMouseEvent(event))
         {
-        case QEvent::MouseButtonPress:
-        case QEvent::MouseMove:
-        case QEvent::MouseButtonRelease:
-        {
-            QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
-            const float scale       = static_cast<float>(this->devicePixelRatio());
-            const float x           = static_cast<float>(mouseEvent->position().x()) * scale;
-            const float y           = static_cast<float>(mouseEvent->position().y()) * scale;
-            const Qt::KeyboardModifiers keyboardModifiers =
-                mouseEvent->modifiers() | QGuiApplication::keyboardModifiers();
-            const bool configureModifier = (keyboardModifiers & Qt::AltModifier) != 0;
-            bool consumed = false;
-
-            switch (event->type())
-            {
-            case QEvent::MouseButtonPress:
-                if (mouseEvent->button() == Qt::LeftButton)
-                {
-                    consumed = OnScreenDisplayHandleMousePress(x, y, configureModifier);
-                }
-                break;
-            case QEvent::MouseMove:
-                consumed = OnScreenDisplayHandleMouseMove(x, y, configureModifier);
-                break;
-            case QEvent::MouseButtonRelease:
-                if (mouseEvent->button() == Qt::LeftButton)
-                {
-                    consumed = OnScreenDisplayHandleMouseRelease();
-                }
-                break;
-            default:
-                break;
-            }
-
-            if (consumed || OnScreenDisplayIsDragging())
-            {
-                return true;
-            }
-            break;
-        }
-        default:
-            break;
+            return true;
         }
     }
 

@@ -34,6 +34,7 @@
 #include <QMainWindow>
 #include <QMessageBox>
 #include <QAction>
+#include <QWindow>
 
 #include <string>
 
@@ -73,6 +74,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 
     bool ui_HideCursorInEmulation = false;
     bool ui_HideCursorInFullscreenEmulation = false;
+    bool ui_DedicatedRenderWindow = false;
     bool ui_NoSwitchToRomBrowser = false;
     bool ui_VidExtForceSetMode   = false;
     bool ui_LaunchInFullscreen   = false;
@@ -91,6 +93,14 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 
     bool ui_ManuallySavedState  = false;
     bool ui_ManuallyLoadedState = false;
+
+    QWindow* getActiveRenderWindow() const;
+    bool isRenderFullscreen() const;
+    void showActiveRenderSurface();
+    void hideActiveRenderSurface();
+    void resizeActiveRenderWindow(int width, int height);
+    void setActiveRenderHideCursor(bool hide);
+    void configureDedicatedRenderSurface(QObject* renderSurface);
 
     bool ui_ForceClose = false;
 
@@ -190,6 +200,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     void on_Action_System_OpenCombo(void);
     void on_Action_System_OpenUserFolder(void);
     void on_Action_System_Shutdown(void);
+    void on_DedicatedRenderWindow_CloseRequested(void);
     void on_Action_System_SoftReset(void);
     void on_Action_System_HardReset(void);
     void on_Action_System_Pause(void);

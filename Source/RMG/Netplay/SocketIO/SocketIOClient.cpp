@@ -309,6 +309,10 @@ void SocketIOClient::failReconnect()
     destroyEnetClient();
     m_connectionState = Disconnected;
     m_awaitingReconnectAck = false;
+    m_roomId.clear();
+    m_playerId.clear();
+    m_reconnectToken.clear();
+    m_currentRoom = RoomInfo();
     qWarning() << "SocketIOClient: Reconnect attempts exhausted";
     emit disconnected();
 }

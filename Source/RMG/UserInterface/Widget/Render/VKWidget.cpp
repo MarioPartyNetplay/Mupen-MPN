@@ -14,16 +14,26 @@
 #include <QGuiApplication>
 #include <QMouseEvent>
 #include <QResizeEvent>
+#include <QCloseEvent>
 
 #include <RMG-Core/Video.hpp>
 
 using namespace UserInterface::Widget;
 
-VKWidget::VKWidget(QWidget *parent)
+VKWidget::VKWidget(QWidget *parent, bool dedicatedWindow)
+    : m_dedicatedWindow(dedicatedWindow)
 {
-    this->widgetContainer = QWidget::createWindowContainer(this, parent);
-    this->widgetContainer->installEventFilter(this);
     this->setSurfaceType(QWindow::VulkanSurface);
+
+    if (m_dedicatedWindow)
+    {
+        this->setFlags(Qt::Window);
+    }
+    else
+    {
+        this->widgetContainer = QWidget::createWindowContainer(this, parent);
+        this->widgetContainer->installEventFilter(this);
+    }
 }
 
 VKWidget::~VKWidget(void)
@@ -35,9 +45,126 @@ void VKWidget::SetHideCursor(bool hide)
     this->setCursor(hide ? Qt::BlankCursor : Qt::ArrowCursor);
 }
 
+void VKWidget::ApplyDedicatedWindowChrome(const QIcon& icon)
+{
+    if (!this->m_dedicatedWindow)
+    {
+        return;
+    }
+
+    if (!icon.isNull())
+    {
+        this->setIcon(icon);
+    }
+}
+
+void VKWidget::closeEvent(QCloseEvent* event)
+{
+    if (!this->m_dedicatedWindow)
+    {
+        QWindow::closeEvent(event);
+        return;
+    }
+
+    event->ignore();
+    emit dedicatedWindowCloseRequested();
+}
+
+void VKWidget::ShowRenderSurface()
+{
+    if (this->m_dedicatedWindow)
+    {
+        this->show();
+        this->raise();
+        this->requestActivate();
+        return;
+    }
+
+    if (this->widgetContainer != nullptr)
+    {
+        this->widgetContainer->show();
+    }
+}
+
+void VKWidget::HideRenderSurface()
+{
+    if (this->m_dedicatedWindow)
+    {
+        this->hide();
+        return;
+    }
+
+    if (this->widgetContainer != nullptr)
+    {
+        this->widgetContainer->hide();
+    }
+}
+
 QWidget* VKWidget::GetWidget(void)
 {
     return this->widgetContainer;
+}
+
+bool VKWidget::handleMouseEvent(QEvent* event)
+{
+    switch (event->type())
+    {
+    case QEvent::MouseButtonPress:
+    case QEvent::MouseMove:
+    case QEvent::MouseButtonRelease:
+    {
+        QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
+        const float scale       = static_cast<float>(this->devicePixelRatio());
+        const float x           = static_cast<float>(mouseEvent->position().x()) * scale;
+        const float y           = static_cast<float>(mouseEvent->position().y()) * scale;
+        const Qt::KeyboardModifiers keyboardModifiers =
+            mouseEvent->modifiers() | QGuiApplication::keyboardModifiers();
+        const bool configureModifier = (keyboardModifiers & Qt::AltModifier) != 0;
+        bool consumed = false;
+
+        switch (event->type())
+        {
+        case QEvent::MouseButtonPress:
+            if (mouseEvent->button() == Qt::LeftButton)
+            {
+                consumed = OnScreenDisplayHandleMousePress(x, y, configureModifier);
+            }
+            break;
+        case QEvent::MouseMove:
+            consumed = OnScreenDisplayHandleMouseMove(x, y, configureModifier);
+            break;
+        case QEvent::MouseButtonRelease:
+            if (mouseEvent->button() == Qt::LeftButton)
+            {
+                consumed = OnScreenDisplayHandleMouseRelease();
+            }
+            break;
+        default:
+            break;
+        }
+
+        return consumed || OnScreenDisplayIsDragging();
+    }
+    default:
+        break;
+    }
+
+    return false;
+}
+
+bool VKWidget::event(QEvent* event)
+{
+    if (this->m_dedicatedWindow && this->handleMouseEvent(event))
+    {
+        return true;
+    }
+
+    if (this->m_dedicatedWindow && event->type() == QEvent::Resize)
+    {
+        this->queueVideoSizeUpdate(static_cast<QResizeEvent*>(event)->size());
+    }
+
+    return QWindow::event(event);
 }
 
 bool VKWidget::eventFilter(QObject *object, QEvent *event)
@@ -48,50 +175,9 @@ bool VKWidget::eventFilter(QObject *object, QEvent *event)
     }
     else if (object == this->widgetContainer)
     {
-        switch (event->type())
+        if (this->handleMouseEvent(event))
         {
-        case QEvent::MouseButtonPress:
-        case QEvent::MouseMove:
-        case QEvent::MouseButtonRelease:
-        {
-            QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
-            const float scale       = static_cast<float>(this->devicePixelRatio());
-            const float x           = static_cast<float>(mouseEvent->position().x()) * scale;
-            const float y           = static_cast<float>(mouseEvent->position().y()) * scale;
-            const Qt::KeyboardModifiers keyboardModifiers =
-                mouseEvent->modifiers() | QGuiApplication::keyboardModifiers();
-            const bool configureModifier = (keyboardModifiers & Qt::AltModifier) != 0;
-            bool consumed = false;
-
-            switch (event->type())
-            {
-            case QEvent::MouseButtonPress:
-                if (mouseEvent->button() == Qt::LeftButton)
-                {
-                    consumed = OnScreenDisplayHandleMousePress(x, y, configureModifier);
-                }
-                break;
-            case QEvent::MouseMove:
-                consumed = OnScreenDisplayHandleMouseMove(x, y, configureModifier);
-                break;
-            case QEvent::MouseButtonRelease:
-                if (mouseEvent->button() == Qt::LeftButton)
-                {
-                    consumed = OnScreenDisplayHandleMouseRelease();
-                }
-                break;
-            default:
-                break;
-            }
-
-            if (consumed || OnScreenDisplayIsDragging())
-            {
-                return true;
-            }
-            break;
-        }
-        default:
-            break;
+            return true;
         }
     }
 

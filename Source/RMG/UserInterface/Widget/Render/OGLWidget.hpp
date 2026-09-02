@@ -12,11 +12,13 @@
 
 #include <QThread>
 #include <QResizeEvent>
+#include <QCloseEvent>
 #include <QWindow>
 #include <QTimerEvent>
 #include <QOpenGLContext>
 #include <QSurfaceFormat>
 #include <QWidget>
+#include <QIcon>
 
 #include <cstdint>
 #include <vector>
@@ -34,8 +36,13 @@ class OGLWidget : public QWindow
     Q_OBJECT
 
   public:
-    OGLWidget(QWidget *);
+    OGLWidget(QWidget *parent = nullptr, bool dedicatedWindow = false);
     ~OGLWidget(void);
+
+    bool UsesDedicatedWindow() const { return m_dedicatedWindow; }
+    void ApplyDedicatedWindowChrome(const QIcon& icon);
+    void ShowRenderSurface();
+    void HideRenderSurface();
 
 #ifdef __APPLE__
     Q_INVOKABLE bool prepareNativeSurface();
@@ -59,14 +66,21 @@ class OGLWidget : public QWindow
 
     QWidget* GetWidget(void);
 
+  signals:
+    void dedicatedWindowCloseRequested();
+
   protected:
+    void closeEvent(QCloseEvent* event) override;
+    bool event(QEvent* event) override;
     bool eventFilter(QObject *object, QEvent *event) override;
     void resizeEvent(QResizeEvent *) Q_DECL_OVERRIDE;
     void timerEvent(QTimerEvent *) Q_DECL_OVERRIDE;
 
   private:
     void queueVideoSizeUpdate(QSize size);
+    bool handleMouseEvent(QEvent* event);
 
+    bool m_dedicatedWindow = false;
     QWidget* widgetContainer      = nullptr;
     QOpenGLContext* openGLcontext = nullptr;
 #ifdef __APPLE__

@@ -235,6 +235,13 @@
                 </widget>
                </item>
                <item>
+                <widget class="QCheckBox" name="dedicatedRenderWindowCheckBox">
+                 <property name="text">
+                  <string>Open game in dedicated window</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
                 <widget class="QCheckBox" name="confirmDragDropCheckBox">
                  <property name="text">
                   <string>Ask for confirmation during drag and drop</string>

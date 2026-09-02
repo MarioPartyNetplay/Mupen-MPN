@@ -12,9 +12,11 @@
 
 #include <QThread>
 #include <QResizeEvent>
+#include <QCloseEvent>
 #include <QWindow>
 #include <QTimerEvent>
 #include <QWidget>
+#include <QIcon>
 
 namespace UserInterface
 {
@@ -22,24 +24,36 @@ namespace Widget
 {
 class VKWidget : public QWindow
 {
+    Q_OBJECT
+
   public:
-    VKWidget(QWidget *);
+    VKWidget(QWidget *parent = nullptr, bool dedicatedWindow = false);
     ~VKWidget(void);
+
+    bool UsesDedicatedWindow() const { return m_dedicatedWindow; }
+    void ApplyDedicatedWindowChrome(const QIcon& icon);
+    void ShowRenderSurface();
+    void HideRenderSurface();
 
     void SetHideCursor(bool hide);
 
     QWidget* GetWidget(void);
 
-    void SetActive(bool value);
+  signals:
+    void dedicatedWindowCloseRequested();
 
   protected:
+    void closeEvent(QCloseEvent* event) override;
+    bool event(QEvent* event) override;
     bool eventFilter(QObject *object, QEvent *event) override;
     void resizeEvent(QResizeEvent *) Q_DECL_OVERRIDE;
     void timerEvent(QTimerEvent *) Q_DECL_OVERRIDE;
 
   private:
     void queueVideoSizeUpdate(QSize size);
+    bool handleMouseEvent(QEvent* event);
 
+    bool m_dedicatedWindow = false;
     QWidget* widgetContainer = nullptr;
     int width                = 0;
     int height               = 0;

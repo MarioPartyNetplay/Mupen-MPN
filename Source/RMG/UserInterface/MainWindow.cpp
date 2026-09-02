@@ -55,6 +55,7 @@
 #include <QTimer>
 #include <QDir>
 #include <QUrl>
+#include <QIcon>
 
 #ifdef KCA_DRAG_DROP
 #include <KUrlMimeData>
@@ -571,10 +572,26 @@ void MainWindow::updateUI(bool inEmulation, bool isPaused)
                 }
             }
 
-            this->setWindowTitle(goodName + QString(" - ") + this->ui_WindowTitle);
+            const QString gameTitle = goodName + QString(" - ") + this->ui_WindowTitle;
+            if (this->ui_DedicatedRenderWindow)
+            {
+                if (QWindow* renderWindow = this->getActiveRenderWindow())
+                {
+                    renderWindow->setTitle(gameTitle);
+                }
+                this->setWindowTitle(this->ui_WindowTitle);
+            }
+            else
+            {
+                this->setWindowTitle(gameTitle);
+            }
         }
 
-        if (this->ui_VidExtRenderMode == VidExtRenderMode::OpenGL)
+        if (this->ui_DedicatedRenderWindow)
+        {
+            this->showActiveRenderSurface();
+        }
+        else if (this->ui_VidExtRenderMode == VidExtRenderMode::OpenGL)
         {
             if (QSurfaceFormat::defaultFormat().renderableType() == QSurfaceFormat::OpenGLES)
             {
@@ -601,10 +618,14 @@ void MainWindow::updateUI(bool inEmulation, bool isPaused)
             this->ui_Widgets->setCurrentWidget(this->ui_Widget_Dummy);
         }
 
-        this->storeGeometry();
+        if (!this->ui_DedicatedRenderWindow)
+        {
+            this->storeGeometry();
+        }
     }
     else if (!this->ui_NoSwitchToRomBrowser)
     {
+        this->hideActiveRenderSurface();
         this->setWindowTitle(this->ui_WindowTitle);
         this->ui_Widgets->setCurrentWidget(this->ui_Widget_RomBrowser);
         //this->ui_StatusBar_RenderModeLabel->clear();
@@ -685,6 +706,113 @@ void MainWindow::loadGeometry(void)
     }
 
     this->ui_Geometry_Saved = false;
+}
+
+QWindow* MainWindow::getActiveRenderWindow() const
+{
+    if (this->ui_VidExtRenderMode == VidExtRenderMode::OpenGL && this->ui_Widget_OpenGL != nullptr)
+    {
+        return this->ui_Widget_OpenGL;
+    }
+
+    if (this->ui_VidExtRenderMode == VidExtRenderMode::Vulkan && this->ui_Widget_Vulkan != nullptr)
+    {
+        return this->ui_Widget_Vulkan;
+    }
+
+    return nullptr;
+}
+
+bool MainWindow::isRenderFullscreen() const
+{
+    if (this->ui_DedicatedRenderWindow)
+    {
+        QWindow* renderWindow = this->getActiveRenderWindow();
+        return renderWindow != nullptr && (renderWindow->windowState() & Qt::WindowFullScreen);
+    }
+
+    return this->isFullScreen();
+}
+
+void MainWindow::showActiveRenderSurface()
+{
+    if (this->ui_VidExtRenderMode == VidExtRenderMode::OpenGL && this->ui_Widget_OpenGL != nullptr)
+    {
+        this->ui_Widget_OpenGL->ShowRenderSurface();
+    }
+    else if (this->ui_VidExtRenderMode == VidExtRenderMode::Vulkan && this->ui_Widget_Vulkan != nullptr)
+    {
+        this->ui_Widget_Vulkan->ShowRenderSurface();
+    }
+}
+
+void MainWindow::hideActiveRenderSurface()
+{
+    if (this->ui_VidExtRenderMode == VidExtRenderMode::OpenGL && this->ui_Widget_OpenGL != nullptr)
+    {
+        this->ui_Widget_OpenGL->HideRenderSurface();
+    }
+    else if (this->ui_VidExtRenderMode == VidExtRenderMode::Vulkan && this->ui_Widget_Vulkan != nullptr)
+    {
+        this->ui_Widget_Vulkan->HideRenderSurface();
+    }
+}
+
+void MainWindow::resizeActiveRenderWindow(int width, int height)
+{
+    QWindow* renderWindow = this->getActiveRenderWindow();
+    if (renderWindow == nullptr || !this->ui_VidExtForceSetMode)
+    {
+        return;
+    }
+
+    if (renderWindow->devicePixelRatio() != 1.0)
+    {
+        const qreal ratio = renderWindow->devicePixelRatio();
+        width  = static_cast<int>(std::ceil(static_cast<double>(width) / ratio));
+        height = static_cast<int>(std::ceil(static_cast<double>(height) / ratio));
+    }
+
+    renderWindow->resize(width, height);
+    this->ui_VidExtForceSetMode = false;
+}
+
+void MainWindow::setActiveRenderHideCursor(bool hide)
+{
+    if (this->ui_VidExtRenderMode == VidExtRenderMode::OpenGL && this->ui_Widget_OpenGL != nullptr)
+    {
+        this->ui_Widget_OpenGL->SetHideCursor(hide);
+    }
+    else if (this->ui_VidExtRenderMode == VidExtRenderMode::Vulkan && this->ui_Widget_Vulkan != nullptr)
+    {
+        this->ui_Widget_Vulkan->SetHideCursor(hide);
+    }
+}
+
+void MainWindow::configureDedicatedRenderSurface(QObject* renderSurface)
+{
+    if (!this->ui_DedicatedRenderWindow || renderSurface == nullptr)
+    {
+        return;
+    }
+
+    const QIcon windowIcon = this->windowIcon().isNull() ? QIcon(QStringLiteral(":Resource/RMG.png"))
+                                                         : this->windowIcon();
+
+    if (auto* oglWidget = qobject_cast<Widget::OGLWidget*>(renderSurface))
+    {
+        oglWidget->ApplyDedicatedWindowChrome(windowIcon);
+        connect(oglWidget, &Widget::OGLWidget::dedicatedWindowCloseRequested, this,
+                &MainWindow::on_DedicatedRenderWindow_CloseRequested);
+        return;
+    }
+
+    if (auto* vkWidget = qobject_cast<Widget::VKWidget*>(renderSurface))
+    {
+        vkWidget->ApplyDedicatedWindowChrome(windowIcon);
+        connect(vkWidget, &Widget::VKWidget::dedicatedWindowCloseRequested, this,
+                &MainWindow::on_DedicatedRenderWindow_CloseRequested);
+    }
 }
 
 void MainWindow::initializeEmulationThread(void)
@@ -792,6 +920,7 @@ void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool re
 
     this->ui_HideCursorInEmulation = CoreSettingsGetBoolValue(SettingsID::GUI_HideCursorInEmulation);
     this->ui_HideCursorInFullscreenEmulation = CoreSettingsGetBoolValue(SettingsID::GUI_HideCursorInFullscreenEmulation);
+    this->ui_DedicatedRenderWindow = CoreSettingsGetBoolValue(SettingsID::GUI_DedicatedRenderWindow);
 
     if (this->ui_ShowUI)
     {
@@ -1392,7 +1521,7 @@ void MainWindow::timerEvent(QTimerEvent *event)
 
         // we're finished when we're in fullscreen already,
         // or when switching to fullscreen succeeds
-        if (this->isFullScreen() || CoreToggleFullscreen())
+        if (this->isRenderFullscreen() || CoreToggleFullscreen())
         {
             this->killTimer(timerId);
             this->ui_FullscreenTimerId = 0;
@@ -1777,6 +1906,33 @@ void MainWindow::on_Action_System_Shutdown(void)
     {
         this->showErrorMessage("CoreStopEmulation() Failed", QString::fromStdString(CoreGetError()));
     }
+}
+
+void MainWindow::on_DedicatedRenderWindow_CloseRequested(void)
+{
+    if (!this->emulationThread->isRunning() && !CoreIsEmulationRunning() && !CoreIsEmulationPaused())
+    {
+        return;
+    }
+
+    if (this->ui_ShowUI && CoreSettingsGetBoolValue(SettingsID::GUI_ConfirmExitWhileInGame))
+    {
+        bool skipConfirmation = false;
+        const bool accepted = QtMessageBox::Question(
+            this,
+            QStringLiteral("Are you sure you want to stop the game?"),
+            QStringLiteral("Don't ask for confirmation again"),
+            skipConfirmation);
+        if (!accepted)
+        {
+            this->showActiveRenderSurface();
+            return;
+        }
+
+        CoreSettingsSetValue(SettingsID::GUI_ConfirmExitWhileInGame, !skipConfirmation);
+    }
+
+    this->on_Action_System_Shutdown();
 }
 
 void MainWindow::on_Action_System_Exit(void)
@@ -2495,19 +2651,27 @@ void MainWindow::on_VidExt_Init(VidExtRenderMode renderMode)
 
     if (renderMode == VidExtRenderMode::OpenGL)
     {
-        this->ui_Widget_OpenGL = new Widget::OGLWidget(this);
-        this->ui_Widget_OpenGL->GetWidget()->installEventFilter(this->ui_EventFilter);
+        this->ui_Widget_OpenGL = new Widget::OGLWidget(this, this->ui_DedicatedRenderWindow);
+        this->ui_Widget_OpenGL->installEventFilter(this->ui_EventFilter);
+        if (!this->ui_DedicatedRenderWindow)
+        {
+            this->ui_Widget_OpenGL->GetWidget()->installEventFilter(this->ui_EventFilter);
+            this->ui_Widgets->addWidget(this->ui_Widget_OpenGL->GetWidget());
+        }
         this->ui_Widget_OpenGL->SetHideCursor(this->ui_HideCursorInEmulation);
-
-        this->ui_Widgets->addWidget(this->ui_Widget_OpenGL->GetWidget());
+        this->configureDedicatedRenderSurface(this->ui_Widget_OpenGL);
     }
     else if (renderMode == VidExtRenderMode::Vulkan)
     {
-        this->ui_Widget_Vulkan = new Widget::VKWidget(this);
-        this->ui_Widget_Vulkan->GetWidget()->installEventFilter(this->ui_EventFilter);
+        this->ui_Widget_Vulkan = new Widget::VKWidget(this, this->ui_DedicatedRenderWindow);
+        this->ui_Widget_Vulkan->installEventFilter(this->ui_EventFilter);
+        if (!this->ui_DedicatedRenderWindow)
+        {
+            this->ui_Widget_Vulkan->GetWidget()->installEventFilter(this->ui_EventFilter);
+            this->ui_Widgets->addWidget(this->ui_Widget_Vulkan->GetWidget());
+        }
         this->ui_Widget_Vulkan->SetHideCursor(this->ui_HideCursorInEmulation);
-
-        this->ui_Widgets->addWidget(this->ui_Widget_Vulkan->GetWidget());
+        this->configureDedicatedRenderSurface(this->ui_Widget_Vulkan);
     }
 
 #ifdef NETPLAY
@@ -2518,20 +2682,31 @@ void MainWindow::on_VidExt_Init(VidExtRenderMode renderMode)
         this->raise();
         this->activateWindow();
 
-        QWidget* renderWidget = nullptr;
-        if (this->ui_Widget_OpenGL != nullptr)
+        if (this->ui_DedicatedRenderWindow)
         {
-            renderWidget = this->ui_Widget_OpenGL->GetWidget();
+            this->showActiveRenderSurface();
+            if (QWindow* renderWindow = this->getActiveRenderWindow())
+            {
+                renderWindow->requestActivate();
+            }
         }
-        else if (this->ui_Widget_Vulkan != nullptr)
+        else
         {
-            renderWidget = this->ui_Widget_Vulkan->GetWidget();
-        }
+            QWidget* renderWidget = nullptr;
+            if (this->ui_Widget_OpenGL != nullptr)
+            {
+                renderWidget = this->ui_Widget_OpenGL->GetWidget();
+            }
+            else if (this->ui_Widget_Vulkan != nullptr)
+            {
+                renderWidget = this->ui_Widget_Vulkan->GetWidget();
+            }
 
-        if (renderWidget != nullptr)
-        {
-            renderWidget->setFocusPolicy(Qt::StrongFocus);
-            renderWidget->setFocus(Qt::OtherFocusReason);
+            if (renderWidget != nullptr)
+            {
+                renderWidget->setFocusPolicy(Qt::StrongFocus);
+                renderWidget->setFocus(Qt::OtherFocusReason);
+            }
         }
     }
 #endif // NETPLAY
@@ -2546,6 +2721,30 @@ void MainWindow::on_VidExt_SetupOGL(QSurfaceFormat format, QThread* thread)
 
 void MainWindow::on_VidExt_SetWindowedMode(int width, int height, int bps, int flags)
 {
+    if (this->ui_DedicatedRenderWindow)
+    {
+        QWindow* renderWindow = this->getActiveRenderWindow();
+        if (renderWindow != nullptr && (renderWindow->windowState() & Qt::WindowFullScreen))
+        {
+            renderWindow->showNormal();
+        }
+
+        if (!this->ui_HideCursorInEmulation && this->ui_HideCursorInFullscreenEmulation)
+        {
+            this->setActiveRenderHideCursor(false);
+        }
+
+        if (!this->ui_VidExtForceSetMode)
+        {
+            this->showActiveRenderSurface();
+            return;
+        }
+
+        this->resizeActiveRenderWindow(width, height);
+        this->showActiveRenderSurface();
+        return;
+    }
+
     bool returnedFromFullscreen = false;
 
     if (this->isFullScreen())
@@ -2596,6 +2795,23 @@ void MainWindow::on_VidExt_SetWindowedMode(int width, int height, int bps, int f
 
 void MainWindow::on_VidExt_SetFullscreenMode(int width, int height, int bps, int flags)
 {
+    if (this->ui_DedicatedRenderWindow)
+    {
+        QWindow* renderWindow = this->getActiveRenderWindow();
+        if (renderWindow != nullptr && !(renderWindow->windowState() & Qt::WindowFullScreen))
+        {
+            renderWindow->showFullScreen();
+        }
+
+        if (!this->ui_HideCursorInEmulation && this->ui_HideCursorInFullscreenEmulation)
+        {
+            this->setActiveRenderHideCursor(true);
+        }
+
+        this->showActiveRenderSurface();
+        return;
+    }
+
     if (!this->isFullScreen())
     {
         this->showFullScreen();
@@ -2636,6 +2852,12 @@ void MainWindow::on_VidExt_SetFullscreenMode(int width, int height, int bps, int
 
 void MainWindow::on_VidExt_ResizeWindow(int width, int height)
 {
+    if (this->ui_DedicatedRenderWindow)
+    {
+        this->resizeActiveRenderWindow(width, height);
+        return;
+    }
+
     // account for HiDPI scaling
     if (this->devicePixelRatio() != 1)
     {
@@ -2691,6 +2913,43 @@ void MainWindow::on_VidExt_ResizeWindow(int width, int height)
 
 void MainWindow::on_VidExt_ToggleFS(bool fullscreen)
 {
+    if (this->ui_DedicatedRenderWindow)
+    {
+        QWindow* renderWindow = this->getActiveRenderWindow();
+        if (renderWindow == nullptr)
+        {
+            return;
+        }
+
+        if (fullscreen)
+        {
+            if (!(renderWindow->windowState() & Qt::WindowFullScreen))
+            {
+                renderWindow->showFullScreen();
+            }
+
+            if (!this->ui_HideCursorInEmulation && this->ui_HideCursorInFullscreenEmulation)
+            {
+                this->setActiveRenderHideCursor(true);
+            }
+        }
+        else
+        {
+            if (renderWindow->windowState() & Qt::WindowFullScreen)
+            {
+                renderWindow->showNormal();
+            }
+
+            if (!this->ui_HideCursorInEmulation && this->ui_HideCursorInFullscreenEmulation)
+            {
+                this->setActiveRenderHideCursor(false);
+            }
+        }
+
+        this->showActiveRenderSurface();
+        return;
+    }
+
     if (fullscreen)
     {
         if (!this->isFullScreen())
@@ -2992,16 +3251,34 @@ void MainWindow::on_Core_StateCallback(CoreStateCallbackType type, int value)
 
 void MainWindow::on_VidExt_Quit(void)
 {
+    this->hideActiveRenderSurface();
+
     if (this->ui_VidExtRenderMode == VidExtRenderMode::OpenGL)
     {
-        this->ui_Widgets->removeWidget(this->ui_Widget_OpenGL->GetWidget());
-        this->ui_Widget_OpenGL->GetWidget()->deleteLater();
+        if (!this->ui_DedicatedRenderWindow && this->ui_Widget_OpenGL != nullptr &&
+            this->ui_Widget_OpenGL->GetWidget() != nullptr)
+        {
+            this->ui_Widgets->removeWidget(this->ui_Widget_OpenGL->GetWidget());
+            this->ui_Widget_OpenGL->GetWidget()->deleteLater();
+        }
+        else
+        {
+            delete this->ui_Widget_OpenGL;
+        }
         this->ui_Widget_OpenGL = nullptr;
     }
     else if (this->ui_VidExtRenderMode == VidExtRenderMode::Vulkan)
     {
-        this->ui_Widgets->removeWidget(this->ui_Widget_Vulkan->GetWidget());
-        this->ui_Widget_Vulkan->GetWidget()->deleteLater();
+        if (!this->ui_DedicatedRenderWindow && this->ui_Widget_Vulkan != nullptr &&
+            this->ui_Widget_Vulkan->GetWidget() != nullptr)
+        {
+            this->ui_Widgets->removeWidget(this->ui_Widget_Vulkan->GetWidget());
+            this->ui_Widget_Vulkan->GetWidget()->deleteLater();
+        }
+        else
+        {
+            delete this->ui_Widget_Vulkan;
+        }
         this->ui_Widget_Vulkan = nullptr;
     }
 
