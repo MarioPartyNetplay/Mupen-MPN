@@ -443,22 +443,26 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
         roomName = roomId;
     }
 
+    // Prefer live rooms-list game over a possibly stale session index entry.
     QString gameName = roomData.value("gameName").toString();
     if (gameName.isEmpty()) {
-        gameName = roomData.value("gameId").toString("Unknown");
+        gameName = roomData.value("gameId").toString();
     }
-
-    if (!this->pendingIndexSession.isEmpty()) {
-        const QString indexGame = this->pendingIndexSession.value("game_name").toString();
-        if (!indexGame.isEmpty()) {
-            gameName = indexGame;
-        }
+    if (gameName.isEmpty() && !this->pendingIndexSession.isEmpty()) {
+        gameName = this->pendingIndexSession.value("game_name").toString();
+    }
+    if (gameName.isEmpty()) {
+        gameName = QStringLiteral("Unknown");
     }
 
     QString romPath;
     QString localMd5;
-    const QString expectedMd5 = this->pendingIndexSession.value("md5_hash").toString(
-        this->pendingIndexSession.value("MD5").toString());
+    QString expectedMd5 = roomData.value(QStringLiteral("gameMd5")).toString(
+        roomData.value(QStringLiteral("md5")).toString());
+    if (expectedMd5.isEmpty() && !this->pendingIndexSession.isEmpty()) {
+        expectedMd5 = this->pendingIndexSession.value("md5_hash").toString(
+            this->pendingIndexSession.value("MD5").toString());
+    }
 
     for (auto it = this->romData.constBegin(); it != this->romData.constEnd(); ++it)
     {
@@ -473,7 +477,7 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
         }
     }
 
-    if (romPath.isEmpty()) {
+    if (romPath.isEmpty() && expectedMd5.isEmpty()) {
         for (auto it = this->romData.constBegin(); it != this->romData.constEnd(); ++it)
         {
             const QString candidatePath = it.key();

@@ -242,6 +242,7 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
                     }
                     p.name = obj["name"].toString();
                     p.slot = obj["slotIndex"].toInt(obj["slot"].toInt(-1));
+                    p.romMd5 = obj.value(QStringLiteral("romMd5")).toString();
                     p.isSpectator = false;
                     p.isReady = true;
                     players.append(p);

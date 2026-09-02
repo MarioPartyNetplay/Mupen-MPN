@@ -884,7 +884,7 @@ void NetplaySessionDialog::applyHostOnlyControlsVisibility(void)
 
     if (this->changeGamePushButton) {
         this->changeGamePushButton->setVisible(true);
-        this->changeGamePushButton->setEnabled(this->coordinator && !this->coordinator->isInGame());
+        this->changeGamePushButton->setEnabled(canEditLobby);
     }
     if (this->kickPlayerPushButton) {
         this->kickPlayerPushButton->setVisible(isHost);
@@ -925,7 +925,7 @@ void NetplaySessionDialog::updateLobbyActionButtons(void)
         this->assignPortsPushButton->setEnabled(canEditLobby && this->playerTreeWidget->topLevelItemCount() > 0);
     }
     if (this->changeGamePushButton) {
-        this->changeGamePushButton->setEnabled(this->coordinator && !this->coordinator->isInGame());
+        this->changeGamePushButton->setEnabled(canEditLobby);
     }
     if (!this->kickPlayerPushButton) {
         return;
@@ -1014,6 +1014,17 @@ void NetplaySessionDialog::updateChangeGameButton(const QString& gameName)
         return;
     }
     this->changeGamePushButton->setText(gameName.isEmpty() ? QStringLiteral("Change Game") : gameName);
+}
+
+void NetplaySessionDialog::appendGameChangedSystemMessage(const QString& gameName)
+{
+    if (!this->chatPlainTextEdit) {
+        return;
+    }
+
+    const QString changeMessage = QStringLiteral("Game changed to '%1'").arg(gameName);
+    this->chatPlainTextEdit->appendHtml(
+        QStringLiteral("<i>%1</i>").arg(changeMessage.toHtmlEscaped()));
 }
 
 QString NetplaySessionDialog::expectedSessionMd5(void) const
@@ -1211,7 +1222,7 @@ void NetplaySessionDialog::openAssignPortsDialog(void)
 
 void NetplaySessionDialog::on_changeGamePushButton_clicked(void)
 {
-    if (!this->coordinator || this->coordinator->isInGame()) {
+    if (!this->isLocalSessionHost() || !this->coordinator || this->coordinator->isInGame()) {
         return;
     }
 
@@ -1223,18 +1234,9 @@ void NetplaySessionDialog::on_changeGamePushButton_clicked(void)
     }
 
     this->applyLocalSessionGame(file, gameName, md5);
-
-    if (this->isLocalSessionHost()) {
-        this->coordinator->changeSessionGame(gameName, md5);
-        this->publishHostSessionIndex(false);
-
-        const QString changeMessage = QStringLiteral("Game changed to '%1'").arg(gameName);
-        if (CoreSettingsGetBoolValue(SettingsID::GUI_NetplayShareSystemMessagesInChat)) {
-            this->coordinator->sendChatMessage(changeMessage);
-        } else {
-            this->chatPlainTextEdit->appendHtml(QStringLiteral("<i>%1</i>").arg(changeMessage));
-        }
-    }
+    this->coordinator->changeSessionGame(gameName, md5);
+    this->publishHostSessionIndex(false);
+    this->appendGameChangedSystemMessage(gameName);
 }
 
 void NetplaySessionDialog::on_kickPlayerPushButton_clicked(void)
@@ -1299,8 +1301,7 @@ void NetplaySessionDialog::on_coordinator_sessionGameChanged(const QString& game
         this->refreshPlayersListWidget();
     }
 
-    const QString changeMessage = QStringLiteral("Game changed to '%1'").arg(gameName);
-    this->chatPlainTextEdit->appendHtml(QStringLiteral("<i>%1</i>").arg(changeMessage));
+    this->appendGameChangedSystemMessage(gameName);
 }
 
 bool NetplaySessionDialog::getCheats(std::vector<CoreCheat>& cheats, QJsonArray& cheatsArray)
@@ -1850,10 +1851,12 @@ void NetplaySessionDialog::publishHostSessionIndex(bool started)
 
 void NetplaySessionDialog::on_coordinator_chatMessageReceived(const QString& playerName, const QString& message)
 {
-    if (message.startsWith(QStringLiteral("Buffer changed to "))) {
+    if (message.startsWith(QStringLiteral("Buffer changed to ")) ||
+        message.startsWith(QStringLiteral("Game changed to "))) {
         this->chatPlainTextEdit->appendHtml(
             QStringLiteral("<i>%1</i>").arg(message.toHtmlEscaped()));
-        if (CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayBufferAlerts)) {
+        if (message.startsWith(QStringLiteral("Buffer changed to ")) &&
+            CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayBufferAlerts)) {
             OnScreenDisplaySetMessage(message.toStdString());
         }
         return;

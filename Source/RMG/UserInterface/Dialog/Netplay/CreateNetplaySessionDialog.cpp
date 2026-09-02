@@ -303,6 +303,12 @@ void CreateNetplaySessionDialog::createSession(void)
         return;
     }
 
+    // Publish the host ROM hash immediately so early joiners get a rooms-list MD5
+    // before the session dialog opens and re-reports it.
+    if (!this->sessionMD5.isEmpty()) {
+        this->coordinator->reportLocalRomMd5(this->sessionMD5);
+    }
+
     // Build session JSON with hosting information
     QJsonObject json;
     json.insert("room_name", playerName);  // Room name is the host's nickname
@@ -341,6 +347,7 @@ void CreateNetplaySessionDialog::createSession(void)
         json.insert("players", players);
     }
     json.insert("md5_hash", this->sessionMD5);  // For ROM matching
+    json.insert("local_md5", this->sessionMD5);
     json.insert("rom_path", this->sessionFile); // For loading cheats
     json.insert("room_id", this->coordinator->getGameSession().roomId);
 

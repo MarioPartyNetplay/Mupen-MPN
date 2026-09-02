@@ -906,6 +906,13 @@ void SocketIOServer::sendRoomCatchUp(const QString& roomId, ClientConnection* cl
     QJsonObject delayPayload;
     delayPayload["frames"] = room->inputDelayFrames;
     emitToClient(client->id, "update-input-delay", delayPayload);
+
+    if (!room->gameName.isEmpty()) {
+        QJsonObject gamePayload;
+        gamePayload[QStringLiteral("gameName")] = room->gameName;
+        gamePayload[QStringLiteral("md5")] = room->gameMd5;
+        emitToClient(client->id, QStringLiteral("game-changed"), gamePayload);
+    }
 }
 
 void SocketIOServer::handle_ReconnectRoom(ENetPeer* socket, const QJsonObject& msg)
@@ -1459,6 +1466,9 @@ bool SocketIOServer::setPlayerRomMd5(const QString& roomId, const QString& clien
     }
 
     player->romMd5 = md5;
+    if (clientId == room->hostId || clientId == QStringLiteral("host")) {
+        room->gameMd5 = md5;
+    }
     broadcastRoomUpdate(roomId);
     return true;
 }
@@ -1657,6 +1667,8 @@ void SocketIOServer::handle_ListRooms(ENetPeer* socket, const QJsonObject& msg)
         roomObj["roomName"] = room.roomName;
         roomObj["gameName"] = room.gameName;
         roomObj["gameId"] = room.gameId;
+        roomObj["gameMd5"] = room.gameMd5;
+        roomObj["md5"] = room.gameMd5;
         roomObj["playerCount"] = room.players.size();
         roomObj["maxPlayers"] = room.maxPlayers;
         roomObj["lobbySize"] = QString("%1/%2").arg(room.players.size()).arg(room.maxPlayers);

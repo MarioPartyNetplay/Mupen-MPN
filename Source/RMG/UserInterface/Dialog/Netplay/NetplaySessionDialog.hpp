@@ -94,6 +94,7 @@ private:
     QString promptMatchingRom(const QString& gameName, const QString& md5);
     void applyLocalSessionGame(const QString& romPath, const QString& gameName, const QString& md5);
     void updateChangeGameButton(const QString& gameName);
+    void appendGameChangedSystemMessage(const QString& gameName);
     QString expectedSessionMd5(void) const;
     bool isHostClientId(const QString& clientId) const;
 
