@@ -264,6 +264,10 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
                     setupPeerConnections(players);
                 }
 
+                if (m_state == InGame) {
+                    syncLockstepPeerSessionActive();
+                }
+
                 emit playersUpdated(players);
             });
 
@@ -876,6 +880,28 @@ void NetplayCoordinator::connectSocketIOClientSignals(SocketIOClient* client)
             this, &NetplayCoordinator::on_socketIO_emulationBeginReceived);
     connect(client, &SocketIOClient::playerKicked,
             this, [this](const QString& reason) {
+        qInfo() << "NetplayCoordinator: Kicked from session:" << reason;
+        const bool wasInGame = (m_state == InGame || m_state == StartingGame);
+
+        if (auto engine = activeLockstepEngine()) {
+            engine->releaseCurrentFrameWait();
+        }
+
+        clearRoomSessionState();
+
+        if (wasInGame) {
+            resetEmulationSync();
+            emit gameEnded();
+        } else {
+            CoreClearNetplaySyncSettings();
+        }
+
+        if (m_socketIO && m_socketIO->getConnectionState() == SocketIOClient::Connected) {
+            setState(Connected);
+        } else {
+            setState(Idle);
+        }
+
         emit playerKicked(reason);
     });
     connect(client, &SocketIOClient::sessionGameChanged,
@@ -997,8 +1023,26 @@ void NetplayCoordinator::on_socketIO_roomLeft()
 void NetplayCoordinator::on_socketIO_roomClosed(const QString& reason)
 {
     qDebug() << "NetplayCoordinator: Room closed:" << reason;
+    const bool wasInGame = (m_state == InGame || m_state == StartingGame);
+
+    if (auto engine = activeLockstepEngine()) {
+        engine->releaseCurrentFrameWait();
+    }
+
     clearRoomSessionState();
-    setState(Connected);
+
+    if (wasInGame) {
+        resetEmulationSync();
+        emit gameEnded();
+    } else {
+        CoreClearNetplaySyncSettings();
+    }
+
+    if (m_socketIO && m_socketIO->getConnectionState() == SocketIOClient::Connected) {
+        setState(Connected);
+    } else {
+        setState(Idle);
+    }
     emit roomClosed(reason);
 }
 

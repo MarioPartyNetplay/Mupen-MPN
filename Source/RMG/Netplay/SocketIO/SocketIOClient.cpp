@@ -395,6 +395,10 @@ void SocketIOClient::leaveRoom()
     QJsonObject payload;
     emitEvent("leave-room", payload);
     m_roomId.clear();
+    m_playerId.clear();
+    m_reconnectToken.clear();
+    m_currentRoom = RoomInfo();
+    emit roomLeft();
 }
 
 void SocketIOClient::setPlayerName(const QString& name)
@@ -855,8 +859,8 @@ void SocketIOClient::on_serviceTimer()
                 }
                 m_connectionState = Disconnected;
                 m_lastSentFrameSync = 0;
-        m_lastSentControllerFrame = UINT32_MAX;
-        m_lastSentControllerState = UINT32_MAX;
+                m_lastSentControllerFrame = UINT32_MAX;
+                m_lastSentControllerState = UINT32_MAX;
                 if (m_pingTimer) {
                     m_pingTimer->stop();
                 }
@@ -981,7 +985,14 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
 
     } else if (eventName == "room-closed" && args.size() > 0) {
         QString reason = args[0].toObject()["reason"].toString();
+        m_intentionalDisconnect = true;
+        if (m_reconnectTimer) {
+            m_reconnectTimer->stop();
+        }
         m_roomId.clear();
+        m_playerId.clear();
+        m_reconnectToken.clear();
+        m_currentRoom = RoomInfo();
         emit roomClosed(reason);
 
     } else if (eventName == "game-started" && args.size() > 0) {
@@ -1110,6 +1121,15 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
     } else if (eventName == "kicked" && args.size() > 0) {
         const QString reason = args[0].toObject().value(QStringLiteral("reason")).toString(
             QStringLiteral("Kicked by host"));
+        // Prevent reconnect attempts after an intentional kick.
+        m_intentionalDisconnect = true;
+        if (m_reconnectTimer) {
+            m_reconnectTimer->stop();
+        }
+        m_roomId.clear();
+        m_playerId.clear();
+        m_reconnectToken.clear();
+        m_currentRoom = RoomInfo();
         emit playerKicked(reason);
 
     } else if (eventName == "game-changed" && args.size() > 0) {

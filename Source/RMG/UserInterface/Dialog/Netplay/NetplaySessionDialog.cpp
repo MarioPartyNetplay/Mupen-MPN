@@ -586,6 +586,8 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     });
     connect(this->coordinator, &Netplay::NetplayCoordinator::playerKicked,
             this, &NetplaySessionDialog::on_coordinator_playerKicked);
+    connect(this->coordinator, &Netplay::NetplayCoordinator::roomClosed,
+            this, &NetplaySessionDialog::on_coordinator_roomClosed);
     connect(this->coordinator, &Netplay::NetplayCoordinator::sessionGameChanged,
             this, &NetplaySessionDialog::on_coordinator_sessionGameChanged);
     const int initialBufferDelay = sessionJson.value("buffer_delay").toInt(this->coordinator->getInputDelayFrames());
@@ -1271,6 +1273,22 @@ void NetplaySessionDialog::on_coordinator_playerKicked(const QString& reason)
 
     QtMessageBox::Error(this, QStringLiteral("Kicked from session"),
                         reason.isEmpty() ? QStringLiteral("Kicked by host") : reason);
+    this->reject();
+}
+
+void NetplaySessionDialog::on_coordinator_roomClosed(const QString& reason)
+{
+    if (this->m_sessionShutdown) {
+        return;
+    }
+
+    // Local leave already tears the dialog down; ignore the echo.
+    if (reason == QStringLiteral("left")) {
+        return;
+    }
+
+    QtMessageBox::Error(this, QStringLiteral("Session closed"),
+                        reason.isEmpty() ? QStringLiteral("Host closed the session") : reason);
     this->reject();
 }
 
@@ -2101,6 +2119,14 @@ void NetplaySessionDialog::on_netplay_disconnected()
 {
     this->chatLineEdit->setEnabled(false);
     this->sendPushButton->setEnabled(false);
+
+    if (this->m_sessionShutdown) {
+        return;
+    }
+
+    QtMessageBox::Error(this, QStringLiteral("Disconnected"),
+                        QStringLiteral("Lost connection to the netplay session."));
+    this->reject();
 }
 
 void NetplaySessionDialog::on_coordinator_stateChanged(Netplay::NetplayCoordinator::State state)

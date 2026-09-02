@@ -178,6 +178,11 @@ void SocketIOServer::stopServer()
         return;
     }
 
+    const QStringList roomIds = m_rooms.keys();
+    for (const QString& roomId : roomIds) {
+        closeRoom(roomId, QStringLiteral("Host closed the session"));
+    }
+
     for (auto* client : m_clients.values()) {
         if (client && client->peer) {
             enet_peer_disconnect(client->peer, 0);
@@ -190,7 +195,7 @@ void SocketIOServer::stopServer()
         delete client;
     }
     m_disconnectedClientsByToken.clear();
-    m_rooms.clear();
+    flushSignaling();
 
     if (m_pingTimer) {
         m_pingTimer->stop();
@@ -801,6 +806,60 @@ void SocketIOServer::onClientConnected(ENetPeer* peer)
     emit clientConnected(client->id);
 }
 
+void SocketIOServer::flushSignaling()
+{
+    if (m_enetHost) {
+        enet_host_flush(m_enetHost);
+    }
+}
+
+bool SocketIOServer::isTemporarilyDisconnected(const ClientConnection* client) const
+{
+    if (!client || client->id == QStringLiteral("host")) {
+        return false;
+    }
+    return client->peer == nullptr && !client->reconnectToken.isEmpty() &&
+           m_disconnectedClientsByToken.contains(client->reconnectToken);
+}
+
+void SocketIOServer::closeRoom(const QString& roomId, const QString& reason)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room) {
+        return;
+    }
+
+    QJsonObject payload;
+    payload[QStringLiteral("reason")] = reason.isEmpty()
+        ? QStringLiteral("Host closed the session")
+        : reason;
+    emitToRoom(roomId, QStringLiteral("room-closed"), payload);
+    flushSignaling();
+
+    const QList<ClientConnection*> members = room->lobbyOrder;
+    for (ClientConnection* player : members) {
+        if (!player) {
+            continue;
+        }
+
+        const QString token = player->reconnectToken;
+        player->roomId.clear();
+        player->slotIndex = -1;
+        player->reconnectToken.clear();
+        if (!token.isEmpty()) {
+            m_disconnectedClientsByToken.remove(token);
+        }
+
+        const bool stillConnected = player->peer && m_clients.contains(player->peer);
+        if (player->id == QStringLiteral("host") || !stillConnected) {
+            m_clientsById.remove(player->id);
+            delete player;
+        }
+    }
+
+    m_rooms.remove(roomId);
+}
+
 void SocketIOServer::onClientDisconnected(ENetPeer* peer)
 {
     if (!peer) {
@@ -813,18 +872,23 @@ void SocketIOServer::onClientDisconnected(ENetPeer* peer)
     }
 
     const QString clientId = client->id;
+    const QString roomId = client->roomId;
     client->peer = nullptr;
     client->disconnectedAtMs = QDateTime::currentMSecsSinceEpoch();
     m_clients.remove(peer);
     peer->data = nullptr;
 
-    if (!client->roomId.isEmpty() && !client->reconnectToken.isEmpty()) {
+    SignalingRoom* room = roomId.isEmpty() ? nullptr : getRoomById(roomId);
+    // Keep in-game seats reserved for reconnect, but never leave lobby ghosts.
+    if (room && room->started && !client->reconnectToken.isEmpty()) {
         m_disconnectedClientsByToken.insert(client->reconnectToken, client);
-        qInfo() << "Client disconnected (grace period):" << clientId << "room:" << client->roomId;
+        broadcastRoomUpdate(roomId);
+        qInfo() << "Client disconnected (grace period):" << clientId << "room:" << roomId;
         emit clientDisconnected(clientId);
         return;
     }
 
+    client->reconnectToken.clear();
     removeClientFromRoom(client);
     m_clientsById.remove(clientId);
     delete client;
@@ -843,16 +907,22 @@ void SocketIOServer::removeClientFromRoom(ClientConnection* client)
     const QString roomId = client->roomId;
     SignalingRoom* room = getRoomById(roomId);
     if (!room) {
+        client->roomId.clear();
+        client->slotIndex = -1;
+        return;
+    }
+
+    if (room->hostId == clientId) {
+        client->roomId.clear();
+        client->slotIndex = -1;
+        closeRoom(roomId, QStringLiteral("Host left the session"));
+        emit playerLeft(roomId, clientId);
         return;
     }
 
     room->lobbyOrder.removeAll(client);
     rebuildLobbySlots(*room);
     broadcastRoomUpdate(roomId);
-
-    if (room->hostId == clientId) {
-        m_rooms.remove(roomId);
-    }
 
     client->roomId.clear();
     client->slotIndex = -1;
@@ -1136,35 +1206,18 @@ void SocketIOServer::handle_OpenRoom(ENetPeer* socket, const QJsonObject& msg)
 
 void SocketIOServer::handle_LeaveRoom(ENetPeer* socket, const QJsonObject& msg)
 {
+    Q_UNUSED(msg);
     ClientConnection* client = getClientFromPeer(socket);
-    if (!client)
+    if (!client || client->roomId.isEmpty()) {
         return;
-
-    if (client->roomId.isEmpty())
-        return;
-
-    QString roomId = client->roomId;
-    SignalingRoom* room = getRoomById(roomId);
-
-    if (room)
-    {
-        room->lobbyOrder.removeAll(client);
-        rebuildLobbySlots(*room);
-        broadcastRoomUpdate(roomId);
-
-        // If host left, close room
-        if (room->hostId == client->id)
-        {
-            m_rooms.remove(roomId);
-        }
     }
 
-    client->roomId.clear();
-    client->slotIndex = -1;
+    client->reconnectToken.clear();
+    const QString roomId = client->roomId;
+    removeClientFromRoom(client);
     client->playerId.clear();
 
     qInfo() << "Player left room:" << roomId;
-    emit playerLeft(roomId, client->id);
 }
 
 void SocketIOServer::handle_ClaimSlot(ENetPeer* socket, const QJsonObject& msg)
@@ -1381,12 +1434,15 @@ bool SocketIOServer::kickPlayer(const QString& roomId, const QString& clientId)
     QJsonObject payload;
     payload[QStringLiteral("reason")] = QStringLiteral("Kicked by host");
     emitToClient(target->id, QStringLiteral("kicked"), payload);
+    // Ensure the kick notification is delivered before the peer is torn down.
+    flushSignaling();
 
     target->reconnectToken.clear();
     ENetPeer* peer = target->peer;
     removeClientFromRoom(target);
     if (peerIsConnected(peer)) {
         enet_peer_disconnect(peer, 0);
+        flushSignaling();
     }
 
     qInfo() << "SocketIOServer: Kicked" << clientId << "from room" << roomId;
@@ -1852,25 +1908,28 @@ void SocketIOServer::broadcastRoomUpdate(const QString& roomId)
         return;
 
     QJsonArray playersArray;
+    int visibleCount = 0;
     for (auto* player : room->lobbyOrder)
     {
-        if (player)
-        {
-            QJsonObject playerObj;
-            playerObj["playerId"] = player->playerId;
-            playerObj["id"] = player->playerId;
-            playerObj["name"] = player->name;
-            playerObj["slotIndex"] = player->slotIndex;
-            playerObj["slot"] = player->slotIndex;
-            playerObj["clientId"] = player->id;
-            playerObj["romMd5"] = player->romMd5;
-            playersArray.append(playerObj);
+        if (!player || isTemporarilyDisconnected(player)) {
+            continue;
         }
+
+        QJsonObject playerObj;
+        playerObj["playerId"] = player->playerId;
+        playerObj["id"] = player->playerId;
+        playerObj["name"] = player->name;
+        playerObj["slotIndex"] = player->slotIndex;
+        playerObj["slot"] = player->slotIndex;
+        playerObj["clientId"] = player->id;
+        playerObj["romMd5"] = player->romMd5;
+        playersArray.append(playerObj);
+        ++visibleCount;
     }
 
     QJsonObject update;
     update["players"] = playersArray;
-    update["playerCount"] = room->lobbyOrder.size();
+    update["playerCount"] = visibleCount;
     update["started"] = room->started;
 
     emit roomPlayersUpdated(roomId, playersArray);

@@ -119,6 +119,7 @@ private slots:
     void on_quitPushButton_clicked(void);
     void on_cheatsPushButton_clicked(void);
     void on_coordinator_playerKicked(const QString& reason);
+    void on_coordinator_roomClosed(const QString& reason);
     void on_coordinator_sessionGameChanged(const QString& gameName, const QString& md5);
     void accept(void) Q_DECL_OVERRIDE;
     void reject(void) Q_DECL_OVERRIDE;

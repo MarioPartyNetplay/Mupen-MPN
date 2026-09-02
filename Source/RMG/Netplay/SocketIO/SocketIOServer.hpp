@@ -170,6 +170,9 @@ private:
     void sendReconnectToken(ClientConnection* client);
     void sendRoomCatchUp(const QString& roomId, ClientConnection* client);
     void removeClientFromRoom(ClientConnection* client);
+    void closeRoom(const QString& roomId, const QString& reason);
+    void flushSignaling();
+    bool isTemporarilyDisconnected(const ClientConnection* client) const;
 
     void broadcastRoomPlayerPings(const QString& roomId);
     void tryBroadcastEmulationBegin(SignalingRoom* room);
