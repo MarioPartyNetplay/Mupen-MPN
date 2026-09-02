@@ -35,6 +35,7 @@ CreateNetplaySessionWidget::CreateNetplaySessionWidget(QWidget* parent) : QStack
     this->listWidget = new QListWidget(this);
     this->addWidget(this->listWidget);
     connect(this->listWidget, &QListWidget::currentRowChanged, this, &CreateNetplaySessionWidget::on_listWidget_currentRowChanged);
+    connect(this->listWidget, &QListWidget::itemDoubleClicked, this, &CreateNetplaySessionWidget::on_listWidget_itemDoubleClicked);
 
     this->setCurrentWidget(this->listWidget);
 }
@@ -102,4 +103,12 @@ bool CreateNetplaySessionWidget::GetCurrentRom(NetplayRomData& data)
 void CreateNetplaySessionWidget::on_listWidget_currentRowChanged(int index)
 {
     emit this->OnRomChanged(index != -1);
+}
+
+void CreateNetplaySessionWidget::on_listWidget_itemDoubleClicked(QListWidgetItem* item)
+{
+    Q_UNUSED(item);
+    if (this->IsCurrentRomValid()) {
+        emit this->OnRomActivated();
+    }
 }

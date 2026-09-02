@@ -50,7 +50,7 @@ void SocketIOServer::rebuildLobbySlots(SignalingRoom& room)
 {
     room.players.clear();
 
-    int slotIndex = 0;
+    QSet<int> usedSlots;
     for (auto* player : room.lobbyOrder)
     {
         if (!player)
@@ -58,13 +58,49 @@ void SocketIOServer::rebuildLobbySlots(SignalingRoom& room)
             continue;
         }
 
-        player->slotIndex = slotIndex;
-        // Keep a stable signaling/WebRTC identity across port remaps.
         if (player->playerId.isEmpty()) {
             player->playerId = player->id;
         }
-        room.players[slotIndex] = player;
-        ++slotIndex;
+
+        if (player->slotIndex >= 0 && player->slotIndex < 4 && !usedSlots.contains(player->slotIndex))
+        {
+            usedSlots.insert(player->slotIndex);
+            room.players[player->slotIndex] = player;
+        }
+    }
+
+    for (auto* player : room.lobbyOrder)
+    {
+        if (!player)
+        {
+            continue;
+        }
+
+        if (room.players.value(player->slotIndex) == player)
+        {
+            continue;
+        }
+
+        int freeSlot = -1;
+        for (int slot = 0; slot < 4; ++slot)
+        {
+            if (!usedSlots.contains(slot))
+            {
+                freeSlot = slot;
+                break;
+            }
+        }
+
+        if (freeSlot < 0)
+        {
+            qWarning() << "SocketIOServer: No free controller port for" << player->id;
+            player->slotIndex = -1;
+            continue;
+        }
+
+        player->slotIndex = freeSlot;
+        usedSlots.insert(freeSlot);
+        room.players[freeSlot] = player;
     }
 }
 
@@ -268,6 +304,10 @@ void SocketIOServer::handle_JoinRoom(ENetPeer* socket, const QJsonObject& msg)
     if (client->name.isEmpty() && !requestedName.isEmpty())
     {
         client->name = requestedName;
+    }
+    const QString joinMd5 = extra.value(QStringLiteral("romMd5")).toString();
+    if (!joinMd5.isEmpty()) {
+        client->romMd5 = joinMd5;
     }
     if (client->name.isEmpty())
     {
@@ -807,7 +847,6 @@ void SocketIOServer::removeClientFromRoom(ClientConnection* client)
     }
 
     room->lobbyOrder.removeAll(client);
-    // Compact controller ports so remaining players never keep stale/gapped slots.
     rebuildLobbySlots(*room);
     broadcastRoomUpdate(roomId);
 
@@ -1007,6 +1046,14 @@ void SocketIOServer::handleEvent(ENetPeer* socket, const QJsonArray& args)
             handle_ClaimSlot(socket, data);
         else if (eventName == "reorder-players")
             handle_ReorderPlayers(socket, data);
+        else if (eventName == "assign-slots")
+            handle_AssignSlots(socket, data);
+        else if (eventName == "kick-player")
+            handle_KickPlayer(socket, data);
+        else if (eventName == "change-game")
+            handle_ChangeGame(socket, data);
+        else if (eventName == "rom-declare")
+            handle_RomDeclare(socket, data);
         else if (eventName == "set-name")
             handle_SetName(socket, data);
         else if (eventName == "webrtc-signal")
@@ -1175,6 +1222,11 @@ bool SocketIOServer::reorderLobbyPlayers(const QString& roomId, const QStringLis
     }
 
     room->lobbyOrder = newOrder;
+    for (int slot = 0; slot < newOrder.size(); ++slot) {
+        if (newOrder[slot]) {
+            newOrder[slot]->slotIndex = slot;
+        }
+    }
     rebuildLobbySlots(*room);
     broadcastRoomUpdate(roomId);
     qInfo() << "SocketIOServer: Reordered lobby players in room" << roomId << clientIds;
@@ -1209,6 +1261,240 @@ void SocketIOServer::handle_ReorderPlayers(ENetPeer* socket, const QJsonObject& 
     }
 
     reorderLobbyPlayers(client->roomId, clientIds);
+}
+
+bool SocketIOServer::assignLobbySlots(const QString& roomId, const QList<QPair<QString, int>>& assignments)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room || room->started) {
+        return false;
+    }
+
+    if (assignments.isEmpty() || assignments.size() != room->lobbyOrder.size()) {
+        qWarning() << "SocketIOServer: Assign slots rejected, client count mismatch"
+                   << assignments.size() << "vs" << room->lobbyOrder.size();
+        return false;
+    }
+
+    QHash<QString, ClientConnection*> byLookup;
+    for (auto* player : room->lobbyOrder) {
+        if (!player) {
+            continue;
+        }
+        byLookup.insert(player->id, player);
+        if (!player->playerId.isEmpty() && player->playerId != player->id) {
+            byLookup.insert(player->playerId, player);
+        }
+    }
+
+    QSet<int> usedSlots;
+    QSet<ClientConnection*> placed;
+    QList<QPair<ClientConnection*, int>> resolved;
+    resolved.reserve(assignments.size());
+
+    for (const auto& assignment : assignments) {
+        const QString& clientId = assignment.first;
+        const int slot = assignment.second;
+        if (slot < 0 || slot > 3 || usedSlots.contains(slot)) {
+            qWarning() << "SocketIOServer: Assign slots rejected, invalid or duplicate slot" << slot;
+            return false;
+        }
+
+        auto it = byLookup.find(clientId);
+        if (it == byLookup.end() || placed.contains(it.value())) {
+            qWarning() << "SocketIOServer: Assign slots rejected, unknown client id" << clientId;
+            return false;
+        }
+
+        usedSlots.insert(slot);
+        placed.insert(it.value());
+        resolved.append({it.value(), slot});
+    }
+
+    if (placed.size() != room->lobbyOrder.size()) {
+        return false;
+    }
+
+    for (const auto& entry : resolved) {
+        entry.first->slotIndex = entry.second;
+    }
+
+    std::sort(room->lobbyOrder.begin(), room->lobbyOrder.end(),
+              [](ClientConnection* left, ClientConnection* right) {
+                  const int leftSlot = left ? left->slotIndex : 4;
+                  const int rightSlot = right ? right->slotIndex : 4;
+                  return leftSlot < rightSlot;
+              });
+
+    rebuildLobbySlots(*room);
+    broadcastRoomUpdate(roomId);
+    qInfo() << "SocketIOServer: Assigned controller ports in room" << roomId;
+    return true;
+}
+
+void SocketIOServer::handle_AssignSlots(ENetPeer* socket, const QJsonObject& msg)
+{
+    ClientConnection* client = getClientFromPeer(socket);
+    if (!client || client->roomId.isEmpty()) {
+        return;
+    }
+
+    SignalingRoom* room = getRoomById(client->roomId);
+    if (!room || room->started || client->id != room->hostId) {
+        return;
+    }
+
+    QList<QPair<QString, int>> assignments;
+    const QJsonArray order = msg.value(QStringLiteral("assignments")).toArray();
+    for (const QJsonValue& value : order) {
+        const QJsonObject entry = value.toObject();
+        const QString clientId = entry.value(QStringLiteral("clientId")).toString().trimmed();
+        const int slot = entry.value(QStringLiteral("slot")).toInt(-1);
+        if (clientId.isEmpty()) {
+            return;
+        }
+        assignments.append({clientId, slot});
+    }
+
+    assignLobbySlots(client->roomId, assignments);
+}
+
+bool SocketIOServer::kickPlayer(const QString& roomId, const QString& clientId)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room || room->started) {
+        return false;
+    }
+
+    ClientConnection* target = findRoomPlayer(room, clientId);
+    if (!target || target->id == room->hostId) {
+        return false;
+    }
+
+    QJsonObject payload;
+    payload[QStringLiteral("reason")] = QStringLiteral("Kicked by host");
+    emitToClient(target->id, QStringLiteral("kicked"), payload);
+
+    target->reconnectToken.clear();
+    ENetPeer* peer = target->peer;
+    removeClientFromRoom(target);
+    if (peerIsConnected(peer)) {
+        enet_peer_disconnect(peer, 0);
+    }
+
+    qInfo() << "SocketIOServer: Kicked" << clientId << "from room" << roomId;
+    return true;
+}
+
+void SocketIOServer::handle_KickPlayer(ENetPeer* socket, const QJsonObject& msg)
+{
+    ClientConnection* client = getClientFromPeer(socket);
+    if (!client || client->roomId.isEmpty()) {
+        return;
+    }
+
+    SignalingRoom* room = getRoomById(client->roomId);
+    if (!room || room->started || client->id != room->hostId) {
+        return;
+    }
+
+    kickPlayer(client->roomId, msg.value(QStringLiteral("clientId")).toString());
+}
+
+bool SocketIOServer::changeSessionGame(const QString& roomId, const QString& gameName, const QString& md5)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room || room->started) {
+        return false;
+    }
+
+    if (gameName.trimmed().isEmpty()) {
+        return false;
+    }
+
+    room->gameName = gameName;
+    room->gameId = gameName;
+    room->gameMd5 = md5;
+
+    if (ClientConnection* hostPlayer = findRoomPlayer(room, room->hostId)) {
+        hostPlayer->romMd5 = md5;
+    }
+
+    QJsonObject payload;
+    payload[QStringLiteral("gameName")] = gameName;
+    payload[QStringLiteral("md5")] = md5;
+    emitToRoom(roomId, QStringLiteral("game-changed"), payload);
+    broadcastRoomUpdate(roomId);
+    qInfo() << "SocketIOServer: Game changed in room" << roomId << "to" << gameName;
+    return true;
+}
+
+void SocketIOServer::handle_ChangeGame(ENetPeer* socket, const QJsonObject& msg)
+{
+    ClientConnection* client = getClientFromPeer(socket);
+    if (!client || client->roomId.isEmpty()) {
+        return;
+    }
+
+    SignalingRoom* room = getRoomById(client->roomId);
+    if (!room || room->started || client->id != room->hostId) {
+        return;
+    }
+
+    changeSessionGame(client->roomId,
+                      msg.value(QStringLiteral("gameName")).toString(),
+                      msg.value(QStringLiteral("md5")).toString());
+}
+
+bool SocketIOServer::setPlayerRomMd5(const QString& roomId, const QString& clientId, const QString& md5)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room) {
+        return false;
+    }
+
+    ClientConnection* player = findRoomPlayer(room, clientId);
+    if (!player) {
+        return false;
+    }
+
+    player->romMd5 = md5;
+    broadcastRoomUpdate(roomId);
+    return true;
+}
+
+void SocketIOServer::handle_RomDeclare(ENetPeer* socket, const QJsonObject& msg)
+{
+    ClientConnection* client = getClientFromPeer(socket);
+    if (!client || client->roomId.isEmpty()) {
+        return;
+    }
+
+    const QString md5 = msg.value(QStringLiteral("hash")).toString();
+    if (md5.isEmpty()) {
+        client->romMd5.clear();
+    } else {
+        client->romMd5 = md5;
+    }
+    broadcastRoomUpdate(client->roomId);
+}
+
+SocketIOServer::ClientConnection* SocketIOServer::findRoomPlayer(SignalingRoom* room, const QString& clientId)
+{
+    if (!room || clientId.isEmpty()) {
+        return nullptr;
+    }
+
+    for (auto* player : room->lobbyOrder) {
+        if (!player) {
+            continue;
+        }
+        if (player->id == clientId || player->playerId == clientId) {
+            return player;
+        }
+    }
+
+    return nullptr;
 }
 
 void SocketIOServer::handle_SetName(ENetPeer* socket, const QJsonObject& msg)
@@ -1565,6 +1851,7 @@ void SocketIOServer::broadcastRoomUpdate(const QString& roomId)
             playerObj["slotIndex"] = player->slotIndex;
             playerObj["slot"] = player->slotIndex;
             playerObj["clientId"] = player->id;
+            playerObj["romMd5"] = player->romMd5;
             playersArray.append(playerObj);
         }
     }

@@ -13,6 +13,7 @@
 #include <QJsonObject>
 #include <QDialog>
 #include <QString>
+#include <QPair>
 #include <memory>
 
 #include <QCloseEvent>
@@ -85,8 +86,16 @@ private:
     void updateCheatsTreeWidget(void);
     bool isLocalSessionHost(void) const;
     void applyHostOnlyControlsVisibility(void);
+    void updateLobbyActionButtons(void);
     void setLayoutWidgetsVisible(QLayout* layout, bool visible);
     void openInputConfiguration(void);
+    void openAssignPortsDialog(void);
+    bool selectGameFromRomList(QString* romPathOut, QString* gameNameOut, QString* md5Out);
+    QString promptMatchingRom(const QString& gameName, const QString& md5);
+    void applyLocalSessionGame(const QString& romPath, const QString& gameName, const QString& md5);
+    void updateChangeGameButton(const QString& gameName);
+    QString expectedSessionMd5(void) const;
+    bool isHostClientId(const QString& clientId) const;
 
 private slots:
     void on_netplay_connected();
@@ -101,9 +110,15 @@ private slots:
     void on_coordinator_motdReceived(const QString& message);
     void on_chatLineEdit_textChanged(const QString& text);
     void on_sendPushButton_clicked(void);
-    void on_playerListRowsMoved(void);
-    
-    void on_buttonBox_clicked(QAbstractButton* button);
+    void on_changeGamePushButton_clicked(void);
+    void on_kickPlayerPushButton_clicked(void);
+    void on_assignPortsPushButton_clicked(void);
+    void on_copyRoomIdPushButton_clicked(void);
+    void on_startPushButton_clicked(void);
+    void on_quitPushButton_clicked(void);
+    void on_cheatsPushButton_clicked(void);
+    void on_coordinator_playerKicked(const QString& reason);
+    void on_coordinator_sessionGameChanged(const QString& gameName, const QString& md5);
     void accept(void) Q_DECL_OVERRIDE;
     void reject(void) Q_DECL_OVERRIDE;
 

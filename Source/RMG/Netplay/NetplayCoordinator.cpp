@@ -79,9 +79,10 @@ bool coreSettingsFromJson(const QJsonObject& payload, CoreNetplaySyncSettings& s
     return true;
 }
 
-constexpr int kWebRtcInputChannelWaitMs = 15000;
 constexpr int kInputHandshakeRetryMs = 200;
-constexpr int kInputHandshakeTimeoutMs = 8000;
+// Only used when P2P input channels are already open at start. Do not wait for
+// ICE/TURN — that was adding ~10–15s before emulation-ready while relay works.
+constexpr int kInputHandshakeTimeoutMs = 2000;
 constexpr uint32_t kInputHandshakeMagic = 0x4E504853; // 'NPHS'
 constexpr uint32_t kInputHandshakeFrame = 0;
 constexpr uint32_t kInputHandshakeState = 0;
@@ -727,6 +728,81 @@ bool NetplayCoordinator::reorderLobbyPlayers(const QStringList& clientIds)
     return false;
 }
 
+void NetplayCoordinator::kickPlayer(const QString& clientId)
+{
+    if (!isHost() || clientId.isEmpty()) {
+        return;
+    }
+
+    if (m_state != InLobby && m_state != Connected) {
+        return;
+    }
+
+    if (isHostingServer() && m_server && !m_gameSession.roomId.isEmpty()) {
+        m_server->kickPlayer(m_gameSession.roomId, clientId);
+        return;
+    }
+
+    if (m_socketIO) {
+        m_socketIO->kickPlayer(clientId);
+    }
+}
+
+bool NetplayCoordinator::assignLobbySlots(const QList<QPair<QString, int>>& assignments)
+{
+    if (!isHost() || assignments.isEmpty()) {
+        return false;
+    }
+
+    if (m_state != InLobby && m_state != Connected) {
+        return false;
+    }
+
+    if (isHostingServer() && m_server && !m_gameSession.roomId.isEmpty()) {
+        return m_server->assignLobbySlots(m_gameSession.roomId, assignments);
+    }
+
+    if (m_socketIO) {
+        m_socketIO->assignLobbySlots(assignments);
+        return true;
+    }
+
+    return false;
+}
+
+void NetplayCoordinator::changeSessionGame(const QString& gameName, const QString& md5)
+{
+    if (!isHost() || gameName.trimmed().isEmpty()) {
+        return;
+    }
+
+    if (m_state != InLobby && m_state != Connected) {
+        return;
+    }
+
+    if (isHostingServer() && m_server && !m_gameSession.roomId.isEmpty()) {
+        m_server->changeSessionGame(m_gameSession.roomId, gameName, md5);
+        return;
+    }
+
+    if (m_socketIO) {
+        m_socketIO->changeSessionGame(gameName, md5);
+    }
+}
+
+void NetplayCoordinator::reportLocalRomMd5(const QString& md5)
+{
+    if (isHostingServer() && m_server && !m_gameSession.roomId.isEmpty()) {
+        m_server->setPlayerRomMd5(m_gameSession.roomId, QStringLiteral("host"), md5);
+        return;
+    }
+
+    if (m_socketIO) {
+        m_socketIO->setPendingRomMd5(md5);
+        m_socketIO->declareROMInfo(QString(), md5, 0);
+    }
+}
+
 bool NetplayCoordinator::isInGame() const
 {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
@@ -797,6 +873,14 @@ void NetplayCoordinator::connectSocketIOClientSignals(SocketIOClient* client)
             this, &NetplayCoordinator::on_socketIO_emulationPauseReceived);
     connect(client, &SocketIOClient::emulationBeginReceived,
             this, &NetplayCoordinator::on_socketIO_emulationBeginReceived);
+    connect(client, &SocketIOClient::playerKicked,
+            this, [this](const QString& reason) {
+        emit playerKicked(reason);
+    });
+    connect(client, &SocketIOClient::sessionGameChanged,
+            this, [this](const QString& gameName, const QString& md5) {
+        emit sessionGameChanged(gameName, md5);
+    });
     connect(client, &SocketIOClient::pingUpdated,
             this, [this](int pingMs) {
         if (m_gameSession.localSlot >= 0) {
@@ -2310,19 +2394,21 @@ void NetplayCoordinator::evaluateEmulationStartReadiness()
         return;
     }
 
+    // WebRTC often finishes ICE after Start is pressed. Blocking on those
+    // channels delayed emulation-begin by up to 15s even though lockstep
+    // already relays inputs over signaling until P2P opens.
     if (!areRemoteInputChannelsReady()) {
-        if (!m_inputChannelWaitExpired &&
-            m_gameStartPrepTimer.isValid() &&
-            m_gameStartPrepTimer.elapsed() >= kWebRtcInputChannelWaitMs) {
-            qWarning() << "NetplayCoordinator: WebRTC input channels not ready after"
-                       << kWebRtcInputChannelWaitMs
-                       << "ms; continuing via signaling relay";
+        if (!m_inputChannelWaitExpired) {
+            qInfo() << "NetplayCoordinator: WebRTC input channels not ready; "
+                       "starting via signaling relay";
             m_inputChannelWaitExpired = true;
         }
-
-        if (!m_inputChannelWaitExpired) {
-            return;
+        sendEmulationReady();
+        m_emulationReadySent = true;
+        if (m_emulationPrepTimer) {
+            m_emulationPrepTimer->stop();
         }
+        return;
     }
 
     if (!m_inputHandshakeActive) {

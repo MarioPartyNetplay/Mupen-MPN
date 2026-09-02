@@ -436,6 +436,51 @@ void SocketIOClient::reorderPlayers(const QStringList& clientIds)
     emitEvent("reorder-players", payload);
 }
 
+void SocketIOClient::assignLobbySlots(const QList<QPair<QString, int>>& assignments)
+{
+    if (m_connectionState != Connected || assignments.isEmpty()) {
+        return;
+    }
+
+    QJsonArray assignmentArray;
+    for (const auto& assignment : assignments) {
+        if (assignment.first.isEmpty()) {
+            continue;
+        }
+        QJsonObject entry;
+        entry[QStringLiteral("clientId")] = assignment.first;
+        entry[QStringLiteral("slot")] = assignment.second;
+        assignmentArray.append(entry);
+    }
+
+    QJsonObject payload;
+    payload[QStringLiteral("assignments")] = assignmentArray;
+    emitEvent("assign-slots", payload);
+}
+
+void SocketIOClient::kickPlayer(const QString& clientId)
+{
+    if (m_connectionState != Connected || clientId.isEmpty()) {
+        return;
+    }
+
+    QJsonObject payload;
+    payload[QStringLiteral("clientId")] = clientId;
+    emitEvent("kick-player", payload);
+}
+
+void SocketIOClient::changeSessionGame(const QString& gameName, const QString& md5)
+{
+    if (m_connectionState != Connected || gameName.trimmed().isEmpty()) {
+        return;
+    }
+
+    QJsonObject payload;
+    payload[QStringLiteral("gameName")] = gameName;
+    payload[QStringLiteral("md5")] = md5;
+    emitEvent("change-game", payload);
+}
+
 void SocketIOClient::startGame(const QString& mode, bool resyncEnabled, const QString& romHash)
 {
     if (m_connectionState != Connected) {
@@ -596,6 +641,11 @@ void SocketIOClient::declareROMInfo(const QString& fileName, const QString& hash
     payload["hash"] = hash;
     payload["fileSize"] = (int)fileSize;
     emitEvent("rom-declare", payload);
+}
+
+void SocketIOClient::setPendingRomMd5(const QString& md5)
+{
+    m_pendingRomMd5 = md5;
 }
 
 void SocketIOClient::sendSyncLog(const QString& matchId, const QJsonArray& entries, const QJsonObject& summary)
@@ -917,6 +967,7 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
             p.slot = pObj["slotIndex"].toInt(pObj["slot"].toInt(-1));
             p.isSpectator = pObj["isSpectator"].toBool();
             p.isReady = pObj["isReady"].toBool();
+            p.romMd5 = pObj.value(QStringLiteral("romMd5")).toString();
             players.append(p);
         }
         m_currentRoom.players = players;
@@ -1056,6 +1107,16 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
     } else if (eventName == "emulation-begin") {
         emit emulationBeginReceived();
 
+    } else if (eventName == "kicked" && args.size() > 0) {
+        const QString reason = args[0].toObject().value(QStringLiteral("reason")).toString(
+            QStringLiteral("Kicked by host"));
+        emit playerKicked(reason);
+
+    } else if (eventName == "game-changed" && args.size() > 0) {
+        const QJsonObject data = args[0].toObject();
+        emit sessionGameChanged(data.value(QStringLiteral("gameName")).toString(),
+                                data.value(QStringLiteral("md5")).toString());
+
     } else if (eventName == "player-pings" && args.size() > 0) {
         const QJsonArray pings = args[0].toObject().value(QStringLiteral("pings")).toArray();
         emit playerPingsReceived(pings);
@@ -1135,6 +1196,9 @@ QJsonObject SocketIOClient::buildJoinRoomPayload(const QString& roomId, bool spe
     extra["player_name"] = m_playerName;
     extra["spectate"] = spectate;
     extra["roomId"] = roomId;
+    if (!m_pendingRomMd5.isEmpty()) {
+        extra[QStringLiteral("romMd5")] = m_pendingRomMd5;
+    }
 
     QJsonObject payload;
     payload["roomId"] = roomId;
@@ -1164,6 +1228,7 @@ void SocketIOClient::updatePlayerList(const QJsonArray& players)
         p.slot = playerObj["slot"].toInt();
         p.isSpectator = playerObj["isSpectator"].toBool();
         p.isReady = playerObj["isReady"].toBool();
+        p.romMd5 = playerObj.value(QStringLiteral("romMd5")).toString();
         playerList.append(p);
     }
     m_currentRoom.players = playerList;

@@ -21,6 +21,8 @@
 #include <QJsonObject>
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QList>
+#include <QPair>
 #include <QTimer>
 #include <QHostAddress>
 #include <QUdpSocket>
@@ -62,6 +64,7 @@ public:
         int slot;
         bool isSpectator;
         bool isReady;
+        QString romMd5;
     };
 
     struct RoomInfo {
@@ -104,6 +107,9 @@ public:
     void claimSlot(int slot);
     /** Host-only: remap controller ports by full lobby clientId order. */
     void reorderPlayers(const QStringList& clientIds);
+    void assignLobbySlots(const QList<QPair<QString, int>>& assignments);
+    void kickPlayer(const QString& clientId);
+    void changeSessionGame(const QString& gameName, const QString& md5);
 
     void startGame(const QString& mode, bool resyncEnabled, const QString& romHash);
     void endGame();
@@ -118,6 +124,7 @@ public:
     void setROMSharingEnabled(bool enabled);
     void declareROMReady(bool ready);
     void declareROMInfo(const QString& fileName, const QString& hash, uint32_t fileSize);
+    void setPendingRomMd5(const QString& md5);
 
     void sendSyncLog(const QString& matchId, const QJsonArray& entries, const QJsonObject& summary);
     void sendDebugLog(const QString& matchId, const QString& logContent);
@@ -181,6 +188,8 @@ signals:
     void inputDelayReceived(int frames);
     void emulationPauseReceived(bool paused);
     void emulationBeginReceived();
+    void playerKicked(const QString& reason);
+    void sessionGameChanged(const QString& gameName, const QString& md5);
 
 private slots:
     void on_serviceTimer();
@@ -234,6 +243,7 @@ private:
     uint32_t m_lastSentControllerState = UINT32_MAX;
     int m_lastPingMs = -1;
     QString m_reconnectToken;
+    QString m_pendingRomMd5;
     bool m_intentionalDisconnect = false;
     bool m_awaitingReconnectAck = false;
     qint64 m_reconnectAckSentAtMs = 0;

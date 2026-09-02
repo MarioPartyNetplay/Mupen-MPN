@@ -51,9 +51,11 @@ class CreateNetplaySessionWidget : public QStackedWidget
 
   private slots:
     void on_listWidget_currentRowChanged(int index);
+    void on_listWidget_itemDoubleClicked(QListWidgetItem* item);
 
   signals:
     void OnRomChanged(bool valid);
+    void OnRomActivated();
 
 };
 } // namespace Widget

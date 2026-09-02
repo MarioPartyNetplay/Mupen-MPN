@@ -16,6 +16,7 @@
  #include <QMap>
  #include <QList>
  #include <QJsonArray>
+#include <QPair>
  #include <QTimer>
  #include <QElapsedTimer>
  #include <QSet>
@@ -99,14 +100,18 @@
 
      void sendEmulationPauseUpdate(bool paused);
      void sendEmulationReady();
-     /** Wait for WebRTC input channels + pre-start input handshake before ready. */
-     void requestEmulationReadyWhenPrepared();
+    /** Send emulation-ready once session prep is done (optional quick P2P handshake). */
+    void requestEmulationReadyWhenPrepared();
      /** Host: re-push cheats/saves/core settings for clients still waiting. */
      void rebroadcastSessionSync();
      /** True when this peer has applied host core timing settings. */
      bool hasAppliedCoreSettingsSync() const;
+     void kickPlayer(const QString& clientId);
+     bool assignLobbySlots(const QList<QPair<QString, int>>& assignments);
      /** Host-only lobby remap of N64 controller ports via player clientId order. */
      bool reorderLobbyPlayers(const QStringList& clientIds);
+     void changeSessionGame(const QString& gameName, const QString& md5);
+     void reportLocalRomMd5(const QString& md5);
  
      // State Queries
      State getCurrentState() const;
@@ -163,6 +168,8 @@
      void saveSyncReceived(const QJsonArray& saveFiles);
      void coreSettingsSyncReceived(const QJsonObject& coreSettings);
      void emulationBeginReceived();
+     void playerKicked(const QString& reason);
+     void sessionGameChanged(const QString& gameName, const QString& md5);
  
      void resyncAttempted();
      void resyncSucceeded();

@@ -12,6 +12,7 @@
 #include <QHostAddress>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QPair>
 #include <QTimer>
 
 struct _ENetHost;
@@ -34,6 +35,10 @@ public:
     void createInitialRoom(const QString& roomId, const QString& hostName, const QString& gameName = "Unknown");
     /** Host-only lobby remap of controller ports. clientIds is the full lobby order. */
     bool reorderLobbyPlayers(const QString& roomId, const QStringList& clientIds);
+    bool assignLobbySlots(const QString& roomId, const QList<QPair<QString, int>>& assignments);
+    bool kickPlayer(const QString& roomId, const QString& clientId);
+    bool changeSessionGame(const QString& roomId, const QString& gameName, const QString& md5);
+    bool setPlayerRomMd5(const QString& roomId, const QString& clientId, const QString& md5);
 
     bool startHostedGame(const QString& roomId, const QString& mode, bool resyncEnabled, const QString& romHash,
                          const QJsonArray& cheats = QJsonArray(), const QJsonArray& saveFiles = QJsonArray(),
@@ -90,6 +95,7 @@ private:
         int lastPingMs = -1;
         QString reconnectToken;
         QString persistentId;
+        QString romMd5;
         qint64 disconnectedAtMs = 0;
     };
 
@@ -100,6 +106,7 @@ private:
         QString roomName;
         QString gameName;
         QString gameId;
+        QString gameMd5;
         int maxPlayers = 4;
         QMap<int, ClientConnection*> players;
         QList<ClientConnection*> lobbyOrder;
@@ -139,6 +146,10 @@ private:
     void handle_LeaveRoom(ENetPeer* peer, const QJsonObject& msg);
     void handle_ClaimSlot(ENetPeer* peer, const QJsonObject& msg);
     void handle_ReorderPlayers(ENetPeer* peer, const QJsonObject& msg);
+    void handle_AssignSlots(ENetPeer* peer, const QJsonObject& msg);
+    void handle_KickPlayer(ENetPeer* peer, const QJsonObject& msg);
+    void handle_ChangeGame(ENetPeer* peer, const QJsonObject& msg);
+    void handle_RomDeclare(ENetPeer* peer, const QJsonObject& msg);
     void handle_SetName(ENetPeer* peer, const QJsonObject& msg);
     void handle_WebRTCSignal(ENetPeer* peer, const QJsonObject& msg);
     void handle_StartGame(ENetPeer* peer, const QJsonObject& msg);
@@ -178,6 +189,7 @@ private:
     void emitToClient(const QString& clientId, const QString& eventName, const QJsonArray& data);
     void broadcastRoomUpdate(const QString& roomId);
     void rebuildLobbySlots(SignalingRoom& room);
+    ClientConnection* findRoomPlayer(SignalingRoom* room, const QString& clientId);
 };
 
 #endif // SOCKET_IO_SERVER_HPP

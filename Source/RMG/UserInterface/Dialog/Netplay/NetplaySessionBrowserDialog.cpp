@@ -456,16 +456,36 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
     }
 
     QString romPath;
+    QString localMd5;
+    const QString expectedMd5 = this->pendingIndexSession.value("md5_hash").toString(
+        this->pendingIndexSession.value("MD5").toString());
+
     for (auto it = this->romData.constBegin(); it != this->romData.constEnd(); ++it)
     {
         const QString candidatePath = it.key();
-        const QString candidateGoodName = QString::fromStdString(it.value().GoodName);
-        const QString candidateFileName = QFileInfo(candidatePath).fileName();
-
-        if (candidateGoodName == gameName || candidateFileName == gameName)
+        const QString candidateMd5 = QString::fromStdString(it.value().MD5);
+        if (!expectedMd5.isEmpty() &&
+            expectedMd5.compare(candidateMd5, Qt::CaseInsensitive) == 0)
         {
             romPath = candidatePath;
+            localMd5 = candidateMd5;
             break;
+        }
+    }
+
+    if (romPath.isEmpty()) {
+        for (auto it = this->romData.constBegin(); it != this->romData.constEnd(); ++it)
+        {
+            const QString candidatePath = it.key();
+            const QString candidateGoodName = QString::fromStdString(it.value().GoodName);
+            const QString candidateFileName = QFileInfo(candidatePath).fileName();
+
+            if (candidateGoodName == gameName || candidateFileName == gameName)
+            {
+                romPath = candidatePath;
+                localMd5 = QString::fromStdString(it.value().MD5);
+                break;
+            }
         }
     }
 
@@ -473,17 +493,7 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
         const QString indexedRomPath = this->pendingIndexSession.value("rom_path").toString();
         if (!indexedRomPath.isEmpty() && QFileInfo::exists(indexedRomPath)) {
             romPath = indexedRomPath;
-        }
-    }
-
-    if (romPath.isEmpty())
-    {
-        const QString md5 = this->pendingIndexSession.value("md5_hash").toString();
-        romPath = this->showROMDialog(gameName, md5);
-        if (romPath.isEmpty())
-        {
-            QtMessageBox::Error(this, "ROM Required", "Please select a ROM to join this netplay game.");
-            return;
+            localMd5 = expectedMd5;
         }
     }
 
@@ -502,6 +512,9 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
     sessionJson.insert("public_address", this->targetAddress);
     sessionJson.insert("public_port", this->targetPort);
     sessionJson.insert("rom_path", romPath);
+    sessionJson.insert("md5_hash", expectedMd5);
+    sessionJson.insert("MD5", expectedMd5);
+    sessionJson.insert("local_md5", localMd5);
     const Netplay::NetplayConnectionMode mode =
         connectionModeForJoin(this->pendingIndexSession, this->targetAddress);
     sessionJson.insert("connection_mode", Netplay::netplayConnectionModeToString(mode));

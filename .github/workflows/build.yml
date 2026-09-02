@@ -169,6 +169,7 @@ jobs:
         with:
           key: macos-rosetta-x86_64
           install: yes
+          update-package-index: true
 
       - name: Install Build Dependencies
         run: |
