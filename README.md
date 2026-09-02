@@ -1,6 +1,6 @@
 # Mupen MPN
 
-A Nintendo 64 emulator built on [Rosalie's Mupen GUI (RMG)](https://github.com/Rosalie241/RMG) and Mupen64Plus, extended for Mario Party Netplay with online sessions, cheats, and NAT traversal support.
+A Nintendo 64 emulator built on [Rosalie's Mupen GUI (RMG)](https://github.com/Rosalie241/RMG) and Mupen64Plus, extended for Mario Party Netplay with online sessions, cheats, and rewritten p2p NetPlay support (soon TM).
 
 Buildbots for Windows and Linux are powered by GitHub Actions's hosted runners.
 
