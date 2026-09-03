@@ -34,9 +34,9 @@ And to everyone who has contributed, tested, supported, or been part of the jour
 
 Online netplay relies on a dedicated NAT traversal server so players behind routers and firewalls can connect to each other. That server is purchased and operated by Aurelia, who currently funds it out of pocket.
 
-If you use netplay and want to help keep the service running, donations are genuinely appreciated. You can contribute via Ko-fi or PayPal:
+If you use netplay and want to help keep the service running, donations are genuinely appreciated. You can contribute via Ko-fi:
 
-**[https://ko-fi.com/Aureliahanegan](https://ko-fi.com/Aureliahanegan)**
+**[Ko-fi](https://ko-fi.com/tabithahanegan)**
 
 ---
 
