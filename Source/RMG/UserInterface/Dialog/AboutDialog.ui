@@ -208,15 +208,10 @@ And everyone who contributed, tested, and supports the project.
          </property>
 
          <property name="plainText">
-          <string>
-GNU GENERAL PUBLIC LICENSE
-Version 3
+          <string>GNU GENERAL PUBLIC LICENSE
+Version 3, 29 June 2007
 
-This program is free software: you can redistribute it and/or modify it
-under the terms of the GNU General Public License.
-
-This program is distributed WITHOUT ANY WARRANTY.
-          </string>
+Loading license text...</string>
          </property>
 
         </widget>

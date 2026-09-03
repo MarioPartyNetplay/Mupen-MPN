@@ -9,6 +9,10 @@
  */
 #include "AboutDialog.hpp"
 
+#include <QFile>
+#include <QFontDatabase>
+#include <QTextEdit>
+
 #include <RMG-Core/Core.hpp>
 #include <RMG-Core/Version.hpp>
 
@@ -19,4 +23,12 @@ AboutDialog::AboutDialog(QWidget* parent) : QDialog(parent)
     this->setupUi(this);
 
     this->versionLabel->setText(QString::fromStdString(CoreGetVersion()));
+
+    this->licenseText->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    this->licenseText->setLineWrapMode(QTextEdit::WidgetWidth);
+    QFile licenseFile(QStringLiteral(":/LICENSE.txt"));
+    if (licenseFile.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        this->licenseText->setPlainText(QString::fromUtf8(licenseFile.readAll()));
+    }
 }

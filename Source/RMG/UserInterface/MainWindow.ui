@@ -317,7 +317,7 @@
      <iconset theme="folder-open-line"/>
     </property>
     <property name="text">
-     <string>Open User Folder (&amp;Data)</string>
+     <string>Open User Folder</string>
     </property>
     <property name="visible">
      <bool>false</bool>

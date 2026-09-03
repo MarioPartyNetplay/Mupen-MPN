@@ -2,6 +2,7 @@
 <qresource>
   <file>Resource/RMG.png</file>
   <file>Resource/CoverFallback.png</file>
+  <file alias="LICENSE.txt">../../../LICENSE</file>
 
   <file alias="icons/black/svg/open-mpn.png">Resource/icons/black/svg/open-mpn.png</file>
   <file alias="icons/white/svg/open-mpn.png">Resource/icons/white/svg/open-mpn.png</file>
