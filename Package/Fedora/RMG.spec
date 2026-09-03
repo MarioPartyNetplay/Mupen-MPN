@@ -58,7 +58,7 @@ Mupen MPN is a free and open-source mupen64plus front-end written in C++
 /usr/lib64/RMG/
 /usr/share/RMG/
 /usr/share/applications/org.marioparty.mupen.desktop
-/usr/share/icons/hicolor/scalable/apps/org.marioparty.mupen.svg
+/usr/share/icons/hicolor/512x512/apps/org.marioparty.mupen.png
 /usr/share/metainfo/org.marioparty.mupen.metainfo.xml
 
 %changelog

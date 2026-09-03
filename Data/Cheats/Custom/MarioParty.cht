@@ -1,23 +1,23 @@
 [2829657E-A0621877-C:45]
 Name=Mario Party (U)
 
-$aQOL - Always Save After Every Turn, Msg Speed Always Fast
+$QOL - Always Save After Every Turn, Msg Speed Always Fast
 Note=By: gamemasterplc.
 800ED5E2 0002
 800ED5E4 0002
 D00F09F7 007F
 800ED5E2 0000
 
-$aQOL - Do Not Proceed on Results
+$QOL - Do Not Proceed on Results
 Note=By: gamemasterplc.
 D10FB20A EC5C
 810FB1AC 2400
 
-$aQOL - Increased Board Speed
+$QOL - Increased Board Speed
 Note=By: gamemasterplc.
 81057852 4218
 
-$aQOL - Increased Taunt Capabilities
+$QOL - Increased Taunt Capabilities
 Note=By: gamemasterplc, Taunting can be spammed during your own turn.
 8109023C 0802
 8109023E F3A8
@@ -130,7 +130,7 @@ Note=By: gamemasterplc, Taunting can be spammed during your own turn.
 810BCF76 F3D6
 810BCF78 2400
 
-$aQOL - Show Player Who Paused
+$QOL - Show Player Who Paused
 Note=By: gamemasterplc.
 8105FA08 080F
 8105FA0A FC10
@@ -166,7 +166,7 @@ Note=By: gamemasterplc.
 813FF078 0002
 813FF07A 1040
 
-$aQOL - Skip Player Start Screen
+$QOL - Skip Player Start Screen
 Note=By: gamemasterplc.
 D10F09F6 0064
 810FB1AC 2400
@@ -174,7 +174,7 @@ D10F09F6 0040
 810FB1AC 2400
 81046DDC 2400
 
-$aQOL - Unlock Everything
+$QOL - Unlock Everything
 Note=By: gamemasterplc.
 810FDD5C 1000
 81059428 2404
@@ -194,7 +194,12 @@ D10FDD10 1040
 D10FDD5C 1440
 810FDD5C 1000
 
-$Board: Bowser's Magma Mountain - Always Win Star Rolls
+$Awards Ceremony - Bonus Ztars
+Note=By: Celery. Bonus Stars take away a Star rather than awarding one.
+D10F09F6 0042
+810F788E FFFF
+
+$Board - Bowser's Magma Mountain - Always Win Star Rolls
 Note=By: Celery. Makes the Star/Bowser roll always result in a Star.
 D00D62D0 0001
 800D62D0 0002
@@ -205,17 +210,17 @@ D00D6358 0001
 D00D639C 0001
 800D639C 0002
 
-$Board: DK's Jungle Adventure - Free Doors
+$Board - DK's Jungle Adventure - Free Doors
 Note=By: gamemasterplc.
 D10F91EA 0014
 810F91EA 0000
 
-$Board: Eternal Star - Always Win Roulette
+$Board - Eternal Star - Always Win Roulette
 Note=By: gamemasterplc.
 D10F690E 7F00
 810F6F54 2400
 
-$Board: Eternal Star - No Happening Space Warp
+$Board - Eternal Star - No Happening Space Warp
 Note=By: Rain.
 D1120A6E 8F48
 81120A6C 0000
@@ -234,7 +239,7 @@ D1120F2E 8F48
 D1120F2E 8F48
 81120F2E 0000
 
-$Board: Eternal Star - Only Warp Player Who Lands On Happening Space
+$Board - Eternal Star - Only Warp Player Who Lands On Happening Space
 D10FC5DE 80AB
 810F853C 3C04
 D10FC5DE 80AB
@@ -264,18 +269,7 @@ D10FC5DE 80AB
 D10FC5DE 80AB
 810F8556 E15F
 
-$Board: Bowser's Magma Mountain - Always Win Star Rolls
-Note=By: Celery. Makes the Star/Bowser roll always result in a Star.
-D00D62D0 0001
-800D62D0 0002
-D00D6314 0001
-800D6314 0002
-D00D6358 0001
-800D6358 0002
-D00D639C 0001
-800D639C 0002
-
-$Board: Mario's Rainbow Castle - Visiting Boo Swaps Toad/Bowser
+$Board - Mario's Rainbow Castle - Visiting Boo Swaps Toad/Bowser
 Note=By: gamemasterplc.
 D10F7E7A 0065
 810F7E80 080C
@@ -297,24 +291,369 @@ D10F7E7A 0065
 813002DA DFA2
 813002DC 2400
 
-$Board: Wario's Battle Canyon - No Center Star Spawn
-Note=By: Tabitha.
+$Board - Wario's Battle Canyon - No Center Star Spawn
+Note=By: Aurelia.
 D0121433 0005
 F0121433 0001
 D00F982D 005D
 800F982D 0000
 
-$Board: Wario's Battle Canyon - Slower Cannon Roulette
+$Board - Wario's Battle Canyon - Slower Cannon Roulette
 Note=By: gamemasterplc. Slows random space roulette to one eighth of original speed.
 D10F7F66 0003
 810F7F66 0018
 
-$Board: Yoshi's Tropical Island - Fees start at 10 coins
+$Board - Yoshi's Tropical Island - Fees Start at 10 Coins
 Note=By: gamemasterplc. Slows random space roulette to one eighth of original speed.
 D10F7F66 0003
 810F7F66 0018
 
-$Extra: Custom Turns
+$Economy - Always Receive a Hidden Block
+Note=By: gamemasterplc. Hidden blocks appear every time a player lands.
+81057BF8 2400
+
+$Economy - Always Win Mushroom Space Rolls
+Note=By: Celery. Makes the Mushroom/Poison Mushroom roll always result in a Mushroom.
+D00D62D1 0003
+800D62D1 0004
+D00D6315 0003
+800D6315 0004
+D00D6359 0003
+800D6359 0004
+D00D639D 0003
+800D639D 0004
+
+$Economy - Faster Chance Time
+Note=By: gamemasterplc. Speeds up Chance Time enough to make it totally luck-dependant.
+D10FC4A2 12D4
+811012D4 4220
+D10FC4A2 12D4
+811012D8 4220
+
+$Economy - Gain X Coins on Blue Spaces (Doesn't Respect Last 5)
+Note=By: Rain.
+81057D80 3408
+81057D82 0000
+81057D84 1100
+81057D86 0003
+81057D88 3410
+81057D8A 00??
+81057D8C 5440
+81057D8E 0001
+81057D90 0010
+81057D92 8040
+00 0 Coins
+01 1 Coin
+05 5 Coins
+0A 10 Coins
+0F 15 Coins
+14 20 Coins
+19 25 Coins
+1E 30 Coins
+23 35 Coins
+28 40 Coins
+2D 45 Coins
+32 50 Coins
+37 55 Coins
+3C 60 Coins
+41 65 Coins
+46 70 Coins
+4B 75 Coins
+50 80 Coins
+55 85 Coins
+5A 90 Coins
+5F 95 Coins
+63 99 Coins
+
+$Economy - Gain X Coins on Blue Spaces (Respects Last 5)
+Note=By: Rain.
+81057D80 3408
+81057D82 0001
+81057D84 1100
+81057D86 0003
+81057D88 3410
+81057D8A 00??
+81057D8C 5440
+81057D8E 0001
+81057D90 0010
+81057D92 8040
+00 0 Coins
+01 1 Coin
+05 5 Coins
+0A 10 Coins
+0F 15 Coins
+14 20 Coins
+19 25 Coins
+1E 30 Coins
+23 35 Coins
+28 40 Coins
+2D 45 Coins
+32 50 Coins
+37 55 Coins
+3C 60 Coins
+41 65 Coins
+46 70 Coins
+4B 75 Coins
+50 80 Coins
+55 85 Coins
+5A 90 Coins
+5F 95 Coins
+63 99 Coins
+
+$Economy - Lose X Coins on Red Spaces (Doesn't Respect Last 5)
+Note=By: Rain.
+81057DD8 3408
+81057DDA 0000
+81057DDC 1100
+81057DDE 0003
+81057DE0 3410
+81057DE2 00??
+81057DE4 5440
+81057DE6 0001
+81057DE8 0010
+81057DEA 8040
+00 0 Coins
+01 1 Coin
+05 5 Coins
+0A 10 Coins
+0F 15 Coins
+14 20 Coins
+19 25 Coins
+1E 30 Coins
+23 35 Coins
+28 40 Coins
+2D 45 Coins
+32 50 Coins
+37 55 Coins
+3C 60 Coins
+41 65 Coins
+46 70 Coins
+4B 75 Coins
+50 80 Coins
+55 85 Coins
+5A 90 Coins
+5F 95 Coins
+63 99 Coins
+
+$Economy - Lose X Coins on Red Spaces (Respects Last 5)
+Note=By: Rain.
+81057DD8 3408
+81057DDA 0001
+81057DDC 1100
+81057DDE 0003
+81057DE0 3410
+81057DE2 00??
+81057DE4 5440
+81057DE6 0001
+81057DE8 0010
+81057DEA 8040
+00 0 Coins
+01 1 Coin
+05 5 Coins
+0A 10 Coins
+0F 15 Coins
+14 20 Coins
+19 25 Coins
+1E 30 Coins
+23 35 Coins
+28 40 Coins
+2D 45 Coins
+32 50 Coins
+37 55 Coins
+3C 60 Coins
+41 65 Coins
+46 70 Coins
+4B 75 Coins
+50 80 Coins
+55 85 Coins
+5A 90 Coins
+5F 95 Coins
+63 99 Coins
+
+$Economy - No Hidden Blocks
+Note=By: gamemasterplc
+810F2CDC FFFF
+
+$Economy - Stars Cost X Coins
+Note=By: Unknown Author. Star price; refund paths use ! (two's complement of the option).
+D10F778E 0014
+810F778E 00??
+D10F6D5A 0014
+810F6D5A 00??
+D10F6CD2 0014
+810F6CD2 00??
+D10F6C58 0014
+810F6C58 00??
+D10F6E9A FFEC
+810F6E9A FF!!
+D10F6E12 FFEC
+810F6E12 FF!!
+05 5 Coins
+0A 10 Coins
+0F 15 Coins
+14 20 Coins
+19 25 Coins
+1E 30 Coins
+23 35 Coins
+28 40 Coins
+2D 45 Coins
+32 50 Coins
+37 55 Coins
+3C 60 Coins
+41 65 Coins
+46 70 Coins
+4B 75 Coins
+50 80 Coins
+55 85 Coins
+5A 90 Coins
+5F 95 Coins
+63 99 Coins
+
+$Items - Increased Special Dice Block Chances
+Note=By: gamemasterplc. All five special blocks now have a 12.5% chance of appearing each.
+81040818 2400
+8104082A 0007
+810408F0 2400
+810408B4 2400
+81040878 2400
+8104083C 2400
+8104092C 2400
+
+$Minigame - Balloon Burst - Restore Move to the Mambo
+Note=By: gamemasterplc. Applies to Balloon Burst and Musical Mushrooms.
+D10F958A 0026
+810F958A 0018
+D10F97EE 001D
+810F97EE 0018
+
+$Minigame - Bumper Balls - Less Friction
+Note=By: gamemasterplc.
+D10F77EA 3F75
+810F77EA 3F7A
+D10F782A 3F75
+810F782A 3F7A
+
+$Minigame - No End of Turn Minigames
+Note=By: Unknown Author.
+8004CF47 0003
+8004CF4F 0003
+8004CF57 0003
+
+$Minigame - Stick Rotation - Convert to A Mashers
+81009E4C 3C08
+81009E4E 800E
+81009E50 3508
+81009E52 CE08
+81009E54 3C09
+81009E56 8000
+81009E58 3529
+81009E5A 9F00
+81009E5C 3C0A
+81009E5E 8000
+81009E60 354A
+81009E62 9F10
+81009E64 0004
+81009E66 5840
+81009E68 0168
+81009E6A 6021
+81009E6C 958D
+81009E6E 0000
+81009E70 0169
+81009E72 7021
+81009E74 95CF
+81009E76 0000
+81009E78 01ED
+81009E7A C026
+81009E7C 030D
+81009E7E C024
+81009E80 016A
+81009E82 C821
+81009E84 A738
+81009E86 0000
+81009E88 A5CD
+81009E8A 0000
+81009E8C 3309
+81009E8E 8000
+81009E90 0000
+81009E92 1021
+81009E94 5520
+81009E96 0001
+81009E98 3402
+81009E9A 0002
+81009E9C 03E0
+81009E9E 0008
+81009EA0 0000
+81009EA2 0000
+
+$Minigame - Whack a Plant - Half Coin Gain
+Note=By: gamemasterplc.
+D10F9F56 CCCC
+810F9C84 8C82
+D10F9F56 CCCC
+810F9C9C 8082
+D10F9F56 CCCC
+810F9C9E 004C
+D10F9F56 CCCC
+810F9CA0 0002
+D10F9F56 CCCC
+810F9CA2 1043
+
+$Minigame Replacement - Bash 'n' Cash ➜ Coin Block Bash
+Note=By: Celery.
+D10ED5DE 0010
+810ED5DE 0015
+
+$Minigame Replacement - Bombsketball ➜ Bobsled Run
+Note=By: Celery.
+D10ED5DE 002A
+810ED5DE 001D
+
+$Minigame Replacement - Cast Aways ➜ Running of the Bulb
+Note=By: Celery.
+D10ED5DE 002B
+810ED5DE 002D
+
+$Minigame Replacement - Coin Shower Flower ➜ Bowl Over
+Note=By: Celery.
+D10ED5DE 0036
+810ED5DE 0011
+
+$Minigame Replacement - Deep Sea Divers ➜ Bobsled Run
+Note=By: Celery.
+D10ED5DE 0031
+810ED5DE 001D
+
+$Minigame Replacement - Ground Pound ➜ Ghost Guess
+Note=By: Celery.
+D10ED5DE 0012
+810ED5DE 000A
+
+$Minigame Replacement - Mario Bandstand ➜ Yoshi's Tongue Meeting
+Note=By: Celery. Try out an unused Mini-Game!
+D10F09F6 0026
+810F09F6 0008
+
+$Minigame Replacement - Paddle Battle ➜ Pipe Maze
+Note=By: Celery.
+D10ED5DE 0034
+810ED5DE 0032
+
+$Minigame Replacement - Pedal Power ➜ Knock Block Tower
+Note=By: Celery.
+D10ED5DE 000C
+810ED5DE 0020
+
+$Minigame Replacement - Tug o' War ➜ TightRope Treachery
+Note=By: Celery.
+D10ED5DE 0033
+810ED5DE 001F
+
+$Minigame Replacement - Whack-a-Plant ➜ Same Game
+Note=By: Celery. Try out an unused Mini-Game!
+D10F09F6 000F
+810F09F6 0006
+
+$Turns - Custom Turns
 Note=By: gamemasterplc.
 800ED5C7 00??
 01 1 Turn
@@ -336,281 +675,3 @@ Note=By: gamemasterplc.
 5A 90 Turns
 5F 95 Turns
 63 99 Turns
-
-$Mechanics - Always Recieve a Hidden Block
-Note=By: gamemasterplc. Hidden blocks appear every time a player lands.
-81057BF8 2400
-
-$Mechanics - Always Win Mushroom Space Rolls
-Note=By: Celery. Makes the Mushroom/Poison Mushroom roll always result in a Mushroom.
-D00D62D1 0003
-800D62D1 0004
-D00D6315 0003
-800D6315 0004
-D00D6359 0003
-800D6359 0004
-D00D639D 0003
-800D639D 0004
-
-$Mechanics - Bonus Ztars
-Note=By: Celery. Bonus Stars take away a Star rather than awarding one.
-D10F09F6 0042
-810F788E FFFF
-
-$Mechanics - Faster Chance Time
-Note=By: gamemasterplc. Speeds up Chance Time enough to make it totally luck-dependant.
-D10FC4A2 12D4
-811012D4 4220
-D10FC4A2 12D4
-811012D8 4220
-
-$Mechanics - Free Stars
-Note=By: gamemasterplc.
-D10F6CD2 0014
-810F6CD2 0000
-D10F6D5A 0014
-810F6D5A 0000
-D10F6E94 0C01
-810F6E94 2400
-D10F778E 0014
-810F778E 0000
-D10F78D0 0C01
-810F78D0 2400
-
-$Mechanics - Gain X Coins on Blue Spaces (Doesn't Respect Last 5)
-Note=By: Rain.
-81057D80 3408
-81057D82 0000
-81057D84 1100
-81057D86 0003
-81057D88 3410
-81057D8A 00??
-81057D8C 5440
-81057D8E 0001
-81057D90 0010
-81057D92 8040
-00 1 Coin
-05 5 Coins
-0A 10 Coins
-0F 15 Coins
-14 20 Coins
-19 25 Coins
-1E 30 Coins
-23 35 Coins
-28 40 Coins
-2D 45 Coins
-32 50 Coins
-37 55 Coins
-3C 60 Coins
-41 65 Coins
-46 70 Coins
-4B 75 Coins
-50 80 Coins
-55 85 Coins
-5A 90 Coins
-5F 95 Coins
-63 99 Coins
-
-$Mechanics - Gain X Coins on Blue Spaces (Respects Last 5)
-Note=By: Rain.
-81057D80 3408
-81057D82 0001
-81057D84 1100
-81057D86 0003
-81057D88 3410
-81057D8A 00??
-81057D8C 5440
-81057D8E 0001
-81057D90 0010
-81057D92 8040
-00 1 Coin
-05 5 Coins
-0A 10 Coins
-0F 15 Coins
-14 20 Coins
-19 25 Coins
-1E 30 Coins
-23 35 Coins
-28 40 Coins
-2D 45 Coins
-32 50 Coins
-37 55 Coins
-3C 60 Coins
-41 65 Coins
-46 70 Coins
-4B 75 Coins
-50 80 Coins
-55 85 Coins
-5A 90 Coins
-5F 95 Coins
-63 99 Coins
-
-$Mechanics - Increased Special Dice Block Chances
-Note=By: gamemasterplc. All five special blocks now have a 12.5% chance of appearing each.
-81040818 2400
-8104082A 0007
-810408F0 2400
-810408B4 2400
-81040878 2400
-8104083C 2400
-8104092C 2400
-
-$Mechanics - Lose X Coins on Red Spaces (Doesn't Respect Last 5)
-Note=By: Rain.
-81057DD8 3408
-81057DDA 0000
-81057DDC 1100
-81057DDE 0003
-81057DE0 3410
-81057DE2 00??
-81057DE4 5440
-81057DE6 0001
-81057DE8 0010
-81057DEA 8040
-00 1 Coin
-05 5 Coins
-0A 10 Coins
-0F 15 Coins
-14 20 Coins
-19 25 Coins
-1E 30 Coins
-23 35 Coins
-28 40 Coins
-2D 45 Coins
-32 50 Coins
-37 55 Coins
-3C 60 Coins
-41 65 Coins
-46 70 Coins
-4B 75 Coins
-50 80 Coins
-55 85 Coins
-5A 90 Coins
-5F 95 Coins
-63 99 Coins
-
-$Mechanics - Lose X Coins on Red Spaces (Respects Last 5)
-Note=By: Rain.
-81057DD8 3408
-81057DDA 0001
-81057DDC 1100
-81057DDE 0003
-81057DE0 3410
-81057DE2 00??
-81057DE4 5440
-81057DE6 0001
-81057DE8 0010
-81057DEA 8040
-00 1 Coin
-05 5 Coins
-0A 10 Coins
-0F 15 Coins
-14 20 Coins
-19 25 Coins
-1E 30 Coins
-23 35 Coins
-28 40 Coins
-2D 45 Coins
-32 50 Coins
-37 55 Coins
-3C 60 Coins
-41 65 Coins
-46 70 Coins
-4B 75 Coins
-50 80 Coins
-55 85 Coins
-5A 90 Coins
-5F 95 Coins
-63 99 Coins
-
-$Mechanics - No End of Turn Minigames
-Note=By: Unknown Author.
-8004CF47 0003
-8004CF4F 0003
-8004CF57 0003
-
-$Mechanics - No Hidden Blocks
-Note=By: gamemasterplc
-810F2CDC FFFF
-
-$Minigame: Balloon Burst - Restore Move to the Mambo
-Note=By: gamemasterplc. Applies to Balloon Burst and Musical Mushrooms.
-D10F958A 0026
-810F958A 0018
-D10F97EE 001D
-810F97EE 0018
-
-$Minigame: Bumper Balls - Less Friction
-Note=By: gamemasterplc.
-D10F77EA 3F75
-810F77EA 3F7A
-D10F782A 3F75
-810F782A 3F7A
-
-$Minigame: Whack a Plant - Half Coin Gain
-Note=By: gamemasterplc.
-D10F9F56 CCCC
-810F9C84 8C82
-D10F9F56 CCCC
-810F9C9C 8082
-D10F9F56 CCCC
-810F9C9E 004C
-D10F9F56 CCCC
-810F9CA0 0002
-D10F9F56 CCCC
-810F9CA2 1043
-
-$Minigame Replacement - Bash 'n' Cash -> Coin Block Bash
-Note=By: Celery.
-D10ED5DE 0010
-810ED5DE 0015
-
-$Minigame Replacement - Bombsketball -> Bobsled Run
-Note=By: Celery.
-D10ED5DE 002A
-810ED5DE 001D
-
-$Minigame Replacement - Cast Aways -> Running of the Bulb
-Note=By: Celery.
-D10ED5DE 002B
-810ED5DE 002D
-
-$Minigame Replacement - Coin Shower Flower -> Bowl Over
-Note=By: Celery.
-D10ED5DE 0036
-810ED5DE 0011
-
-$Minigame Replacement - Deep Sea Divers -> Bobsled Run
-Note=By: Celery.
-D10ED5DE 0031
-810ED5DE 001D
-
-$Minigame Replacement - Ground Pound -> Ghost Guess
-Note=By: Celery.
-D10ED5DE 0012
-810ED5DE 000A
-
-$Minigame Replacement - Mario Bandstand -> Yoshi's Tongue Meeting
-Note=By: Celery. Try out an unused Mini-Game!
-D10F09F6 0026
-810F09F6 0008
-
-$Minigame Replacement - Paddle Battle -> Pipe Maze
-Note=By: Celery.
-D10ED5DE 0034
-810ED5DE 0032
-
-$Minigame Replacement - Pedal Power -> Knock Block Tower
-Note=By: Celery.
-D10ED5DE 000C
-810ED5DE 0020
-
-$Minigame Replacement - Tug o' War -> TightRope Treachery
-Note=By: Celery.
-D10ED5DE 0033
-810ED5DE 001F
-
-$Minigame Replacement - Whack-a-Plant -> Same Game
-Note=By: Celery. Try out an unused Mini-Game!
-D10F09F6 000F
-810F09F6 0006

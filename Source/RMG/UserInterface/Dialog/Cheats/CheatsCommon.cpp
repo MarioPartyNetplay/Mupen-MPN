@@ -68,6 +68,7 @@ bool CheatsCommon::EnableCheat(bool netplay, QJsonArray& json, QString file, con
                 codeObject["address"] = (qint64)cheatCode.Address;
                 codeObject["value"]   = (qint64)cheatCode.Value;
                 codeObject["use_option"]   = cheatCode.UseOptions;
+                codeObject["negate_option"] = cheatCode.NegateOption;
                 codeObject["option_index"] = cheatCode.OptionIndex;
                 codeObject["option_size"]  = cheatCode.OptionSize;
                 codesArray.push_back(codeObject);
@@ -253,6 +254,7 @@ bool CheatsCommon::ParseCheatJson(const QJsonArray& json, std::vector<CoreCheat>
             cheatCode.Address = (uint32_t)cheatCodeObject["address"].toInteger();
             cheatCode.Value   = cheatCodeObject["value"].toInt();
             cheatCode.UseOptions  = cheatCodeObject["use_option"].toBool();
+            cheatCode.NegateOption = cheatCodeObject["negate_option"].toBool();
             cheatCode.OptionIndex = cheatCodeObject["option_index"].toInt();
             cheatCode.OptionSize  = cheatCodeObject["option_size"].toInt();
 
@@ -391,7 +393,6 @@ bool CheatsCommon::AddCheatsToTreeWidget(bool netplay, QJsonArray& json, QString
         }
     }
 
-    cheatsTreeWidget->sortItems(0, Qt::SortOrder::AscendingOrder);
     return true;
 }
 

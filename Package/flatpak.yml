@@ -87,8 +87,8 @@ modules:
       # Flatpak only exports desktop/icon/metainfo files that match app-id.
       - mv /app/share/applications/org.marioparty.mupen.desktop
         /app/share/applications/org.mariopartynetplay.RMG-MPN.desktop
-      - mv /app/share/icons/hicolor/scalable/apps/org.marioparty.mupen.svg
-        /app/share/icons/hicolor/scalable/apps/org.mariopartynetplay.RMG-MPN.svg
+      - mv /app/share/icons/hicolor/512x512/apps/org.marioparty.mupen.png
+        /app/share/icons/hicolor/512x512/apps/org.mariopartynetplay.RMG-MPN.png
       - mv /app/share/metainfo/org.marioparty.mupen.metainfo.xml
         /app/share/metainfo/org.mariopartynetplay.RMG-MPN.metainfo.xml
       - desktop-file-edit --set-key=Exec --set-value='/app/bin/Mupen-MPN %f'

@@ -50,13 +50,10 @@ void AddCheatDialog::configureModificationUi(void)
     this->label->setVisible(false);
     this->label_2->setVisible(false);
     this->authorLineEdit->setVisible(false);
-    this->label_3->setVisible(false);
-    this->label_4->setVisible(false);
     this->label_5->setVisible(false);
     this->label_6->setVisible(false);
     this->label_7->setVisible(false);
     this->optionsTextEdit->setVisible(false);
-    this->codeTextEdit->setVisible(false);
 
     this->nameLineEdit->setPlaceholderText("Name");
     this->notesTextEdit->setPlaceholderText("Description");
@@ -64,6 +61,9 @@ void AddCheatDialog::configureModificationUi(void)
 
 void AddCheatDialog::SetCheat(CoreCheat cheat)
 {
+    this->updateMode = true;
+    this->oldCheat = cheat;
+
     // change window title
     this->setWindowTitle(this->modificationInternalName.isEmpty() ? "Edit Cheat" : "Edit Code");
 
@@ -91,9 +91,6 @@ void AddCheatDialog::SetCheat(CoreCheat cheat)
 
     this->setPlainTextEditLines(this->codeTextEdit, codeLines);
     this->setPlainTextEditLines(this->optionsTextEdit, optionLines);
-
-    this->updateMode = true;
-    this->oldCheat = cheat;
 }
 
 void AddCheatDialog::setPlainTextEditLines(QPlainTextEdit* plainTextEdit, const std::vector<std::string>& lines)
@@ -142,7 +139,7 @@ bool AddCheatDialog::validate(void)
     // ensure code lines aren't empty
     if (documentLines.isEmpty())
     {
-        return this->updateMode && !this->modificationInternalName.isEmpty();
+        return false;
     }
 
     // parse code lines
@@ -171,14 +168,22 @@ bool AddCheatDialog::validate(void)
 
         QString tmpValue = value;
         tmpValue.remove("?");
+        tmpValue.remove("!");
 
-        // value without '?' should be hex
+        // value without option placeholders should be hex
         if (!tmpValue.isEmpty() && !hexRegExpr.match(tmpValue).hasMatch())
         {
             return false;
         }
 
-        int optionCount = value.count("?");
+        const int questionCount = value.count("?");
+        const int bangCount = value.count("!");
+        if (questionCount > 0 && bangCount > 0)
+        {
+            return false;
+        }
+
+        const int optionCount = questionCount + bangCount;
         if (optionCount > 0)
         {
             if (!foundOption)
@@ -283,25 +288,15 @@ bool AddCheatDialog::getCheat(CoreCheat& cheat)
         lines.push_back("Note=" + note.toStdString());
     }
 
-    if (!this->modificationInternalName.isEmpty() && this->updateMode)
+    qLines = this->getLines(this->codeTextEdit->document());
+    for (const QString& line : qLines)
     {
-        if (!CoreGetCheatLines(this->oldCheat, codeLines, optionLines))
-        {
-            return false;
-        }
+        codeLines.push_back(line.toStdString());
     }
-    else
+    qLines = this->getLines(this->optionsTextEdit->document());
+    for (const QString& line : qLines)
     {
-        qLines = this->getLines(this->codeTextEdit->document());
-        for (const QString& line : qLines)
-        {
-            codeLines.push_back(line.toStdString());
-        }
-        qLines = this->getLines(this->optionsTextEdit->document());
-        for (const QString& line : qLines)
-        {
-            optionLines.push_back(line.toStdString());
-        }
+        optionLines.push_back(line.toStdString());
     }
 
     for (const std::string& line : codeLines)

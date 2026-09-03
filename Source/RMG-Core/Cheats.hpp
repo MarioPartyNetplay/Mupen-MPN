@@ -24,6 +24,8 @@ struct CoreCheatCode
     int32_t  Value   = 0;
 
     bool UseOptions  = false;
+    // When true, option digits are written as two's complement of the selected option.
+    bool NegateOption = false;
     int  OptionIndex = 0;
     int  OptionSize  = 0;
 
@@ -32,6 +34,7 @@ struct CoreCheatCode
         return Address == other.Address &&
                 Value == other.Value &&
                 UseOptions == other.UseOptions &&
+                NegateOption == other.NegateOption &&
                 OptionIndex == other.OptionIndex &&
                 OptionSize == other.OptionSize;
     }

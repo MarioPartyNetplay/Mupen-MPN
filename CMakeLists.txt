@@ -139,7 +139,7 @@ else()
     set(INSTALL_DESKTOP_FILE ON)
     set(METAINFO_INSTALL_PATH "${CMAKE_INSTALL_DATADIR}/metainfo/")
     set(DESKTOP_INSTALL_PATH "${CMAKE_INSTALL_DATADIR}/applications")
-    set(ICON_INSTALL_PATH "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps/")
+    set(ICON_INSTALL_PATH "${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps/")
 endif()
 
 add_subdirectory(Source/3rdParty)
@@ -259,9 +259,9 @@ if (INSTALL_DESKTOP_FILE)
         DESTINATION ${DESKTOP_INSTALL_PATH}
         RENAME org.marioparty.mupen.desktop
     )
-    install(FILES Package/com.github.Rosalie241.RMG.svg
+    install(FILES Source/RMG/UserInterface/Resource/RMG.png
         DESTINATION ${ICON_INSTALL_PATH}
-        RENAME org.marioparty.mupen.svg
+        RENAME org.marioparty.mupen.png
     )
     install(FILES Package/com.github.Rosalie241.RMG.metainfo.xml
         DESTINATION ${METAINFO_INSTALL_PATH}

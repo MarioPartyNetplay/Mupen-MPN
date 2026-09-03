@@ -55,7 +55,7 @@ ModificationsDialog::ModificationsDialog(QWidget* parent)
     this->splitter->setStretchFactor(1, 1);
     this->splitter->setHandleWidth(1);
     this->setWindowIcon(QIcon::fromTheme("modifications", QIcon(":Resource/RMG.png")));
-    this->addCodeButton->setVisible(false);
+    this->addCodeButton->setEnabled(false);
     this->loadGames();
 }
 
@@ -153,6 +153,7 @@ void ModificationsDialog::loadCodes(void)
     this->loadingCodes = false;
 
     this->clearCodeDetails();
+    this->addCodeButton->setEnabled(true);
     this->editCodeButton->setEnabled(false);
     this->removeCodeButton->setEnabled(false);
 }
@@ -214,10 +215,6 @@ void ModificationsDialog::updateCodeDetails(QListWidgetItem* item)
         {
             lines.append(QString::fromStdString(line));
         }
-        for (const std::string& line : optionLines)
-        {
-            lines.append(QString::fromStdString(line));
-        }
         this->codeTextEdit->setPlainText(lines.join('\n'));
     }
     else
@@ -260,6 +257,9 @@ void ModificationsDialog::on_gamesListWidget_currentRowChanged(int row)
         this->currentInternalName.clear();
         this->codesListWidget->clear();
         this->clearCodeDetails();
+        this->addCodeButton->setEnabled(false);
+        this->editCodeButton->setEnabled(false);
+        this->removeCodeButton->setEnabled(false);
         return;
     }
 

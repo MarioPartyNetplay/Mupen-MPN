@@ -313,12 +313,25 @@ static bool parse_cheat(const std::vector<std::string>& lines, int startIndex, C
                 }
             }
 
-            if (value.find("?") != std::string::npos)
-            { // value uses options
-                cheatCode.UseOptions  = true;
-                cheatCode.OptionIndex = value.find('?');
-                cheatCode.OptionSize  = std::count(value.begin(), value.end(), '?');
-                std::replace(value.begin(), value.end(), '?', '0');
+            if (value.find("?") != std::string::npos || value.find("!") != std::string::npos)
+            { // value uses options ('?' = option, '!' = two's complement of option)
+                const bool negateOption = value.find('!') != std::string::npos;
+                if (negateOption && value.find('?') != std::string::npos)
+                {
+                    error = "parse_cheat Failed: ";
+                    error += "invalid line: \"";
+                    error += line;
+                    error += "\" (cannot mix ? and !)";
+                    CoreSetError(error);
+                    return false;
+                }
+
+                const char placeholder = negateOption ? '!' : '?';
+                cheatCode.UseOptions   = true;
+                cheatCode.NegateOption = negateOption;
+                cheatCode.OptionIndex  = value.find(placeholder);
+                cheatCode.OptionSize   = std::count(value.begin(), value.end(), placeholder);
+                std::replace(value.begin(), value.end(), placeholder, '0');
                 if (value.empty())
                 {
                     cheatCode.Value = 0;
@@ -331,6 +344,7 @@ static bool parse_cheat(const std::vector<std::string>& lines, int startIndex, C
             else
             { // value doesn't use options
                 cheatCode.UseOptions = false;
+                cheatCode.NegateOption = false;
                 cheatCode.Value      = std::strtoll(value.c_str(), nullptr, 16);
             }
 
@@ -514,11 +528,12 @@ static bool write_cheat_file(const CoreCheatFile& cheatFile, const std::filesyst
             if (code.UseOptions)
             {
                 std::string value = std::format("{:04X}", code.Value);
+                const char placeholder = code.NegateOption ? '!' : '?';
 
-                // insert question mark string
-                value.replace(code.OptionIndex, code.OptionSize, code.OptionSize, '?');
+                // insert option placeholder string
+                value.replace(code.OptionIndex, code.OptionSize, code.OptionSize, placeholder);
 
-                lines += std::format("{:04X} {}\n", code.Address, value);
+                lines += std::format("{:08X} {}\n", code.Address, value);
             }
             else
             {
@@ -560,8 +575,18 @@ bool combine_cheat_code_and_option(const CoreCheatCode& code, const CoreCheatOpt
         return false;
     }
 
+    uint32_t optionValue = option.Value;
+    if (code.NegateOption)
+    {
+        // Two's complement of the option digits (e.g. 05 -> FB, 0005 -> FFFB).
+        const uint32_t mask = (code.OptionSize >= 8)
+                                  ? 0xFFFFFFFFu
+                                  : ((1u << (static_cast<uint32_t>(code.OptionSize) * 4u)) - 1u);
+        optionValue = (~optionValue + 1u) & mask;
+    }
+
     codeValueString   = std::format("{:04X}", code.Value);
-    optionValueString = std::format("{:0{}X}", option.Value, option.Size);
+    optionValueString = std::format("{:0{}X}", optionValue, option.Size);
 
     // insert option
     codeValueString.replace(code.OptionIndex, code.OptionSize, optionValueString);
@@ -687,11 +712,12 @@ CORE_EXPORT bool CoreGetCheatLines(CoreCheat cheat, std::vector<std::string>& co
         if (code.UseOptions)
         {
             std::string value = std::format("{:04X}", code.Value);
+            const char placeholder = code.NegateOption ? '!' : '?';
 
-            // insert question mark string
-            value.replace(code.OptionIndex, code.OptionSize, code.OptionSize, '?');
+            // insert option placeholder string
+            value.replace(code.OptionIndex, code.OptionSize, code.OptionSize, placeholder);
 
-            codeLines.push_back(std::format("{:04X} {}", code.Address, value));
+            codeLines.push_back(std::format("{:08X} {}", code.Address, value));
         }
         else
         {

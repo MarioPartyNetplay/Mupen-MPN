@@ -108,7 +108,7 @@
        <item>
         <widget class="QLabel" name="label_4">
          <property name="text">
-          <string>&lt;address&gt; &lt;value&gt;</string>
+          <string>&lt;address&gt; &lt;value&gt; (? option, ! negate)</string>
          </property>
          <property name="textFormat">
           <enum>Qt::PlainText</enum>

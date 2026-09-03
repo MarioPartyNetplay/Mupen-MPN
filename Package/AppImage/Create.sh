@@ -49,8 +49,8 @@ then
 fi
 
 cp "$bin_dir/usr/share/applications/org.marioparty.mupen.desktop" "$bin_dir"
-cp "$bin_dir/usr/share/icons/hicolor/scalable/apps/org.marioparty.mupen.svg" "$bin_dir"
-ln -s org.marioparty.mupen.svg "$bin_dir"/.DirIcon
+cp "$bin_dir/usr/share/icons/hicolor/512x512/apps/org.marioparty.mupen.png" "$bin_dir"
+ln -s org.marioparty.mupen.png "$bin_dir"/.DirIcon
 mv "$bin_dir/usr/share" "$bin_dir/share"
 mv "$bin_dir/usr" "$bin_dir/shared"
 
