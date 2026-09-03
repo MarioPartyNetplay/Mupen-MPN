@@ -93,40 +93,87 @@ bundle_external_dylib() {
     local dep_path="$2"
     local frameworks_dir="$deploy_target/Contents/Frameworks"
 
-    if [[ ! -f "$binary" || ! -f "$dep_path" ]]
+    if [[ ! -f "$binary" || -z "$dep_path" ]]
     then
-        return 0
+        return 1
     fi
 
-    local dep_name
+    local dep_name dest new_path dest_existed=0
     dep_name="$(basename "$dep_path")"
+    dest="$frameworks_dir/$dep_name"
+    new_path="@executable_path/../Frameworks/$dep_name"
     mkdir -p "$frameworks_dir"
-    cp -f "$dep_path" "$frameworks_dir/$dep_name"
-    install_name_tool -id "@executable_path/../Frameworks/$dep_name" "$frameworks_dir/$dep_name" || return 0
-    install_name_tool -change "$dep_path" "@executable_path/../Frameworks/$dep_name" "$binary" || \
+    [[ -f "$dest" ]] && dest_existed=1
+
+    # Copy when the original still exists (fresh from MacPorts/Homebrew).
+    # Nested dylibs such as libminizip -> libz are often already staged by
+    # macdeployqt, but still record the absolute prefix path.
+    if [[ -f "$dep_path" ]]
+    then
+        cp -f "$dep_path" "$dest"
+        install_name_tool -id "$new_path" "$dest" 2>/dev/null || true
+        codesign --force --sign - "$dest" 2>/dev/null || true
+    elif [[ ! -f "$dest" && "$dep_name" == libz.* ]]
+    then
+        # macOS always provides zlib; MacPorts minizip/libpng may still
+        # record /opt/local/lib/libz.1.dylib when that file is absent.
+        if install_name_tool -change "$dep_path" "/usr/lib/libz.1.dylib" "$binary" 2>/dev/null
+        then
+            codesign --force --sign - "$binary" 2>/dev/null || true
+            return 0
+        fi
         echo "BundleDependenciesMacOS.sh: warning: could not rewrite $dep_path in $binary"
+        return 1
+    elif [[ ! -f "$dest" ]]
+    then
+        return 1
+    fi
+
+    if install_name_tool -change "$dep_path" "$new_path" "$binary" 2>/dev/null
+    then
+        codesign --force --sign - "$binary" 2>/dev/null || true
+    else
+        echo "BundleDependenciesMacOS.sh: warning: could not rewrite $dep_path in $binary"
+    fi
+
+    [[ "$dest_existed" -eq 0 && -f "$dest" ]]
 }
 
 bundle_homebrew_dependencies() {
     local frameworks_dir="$deploy_target/Contents/Frameworks"
-    [[ -d "$frameworks_dir" ]] || return 0
+    [[ -n "$deploy_target" ]] || return 0
+    mkdir -p "$frameworks_dir"
 
-    while IFS= read -r binary
+    # Walk MacOS binaries and already-bundled Frameworks dylibs so nested
+    # deps (libminizip -> libz, libpng -> libz) get rewritten too.
+    local pass copied binary dep_path
+    for pass in 1 2 3 4 5 6 7 8
     do
-        if skip_homebrew_rewrite "$binary"
-        then
-            continue
-        fi
-
-        while IFS= read -r dep_path
+        copied=0
+        while IFS= read -r binary
         do
-            if [[ "$dep_path" == *Qt*.framework* ]]
+            if skip_homebrew_rewrite "$binary"
             then
                 continue
             fi
-            bundle_external_dylib "$binary" "$dep_path"
-        done < <(otool -L "$binary" 2>/dev/null | awk '/\/opt\/homebrew\/|\/usr\/local\/opt\/|\/opt\/local\// { print $1 }')
-    done < <(find "$deploy_target/Contents/MacOS" -type f 2>/dev/null)
+
+            otool -hv "$binary" 2>/dev/null | grep -q "MH_" || continue
+
+            while IFS= read -r dep_path
+            do
+                if [[ "$dep_path" == *Qt*.framework* ]]
+                then
+                    continue
+                fi
+                if bundle_external_dylib "$binary" "$dep_path"
+                then
+                    copied=1
+                fi
+            done < <(otool -L "$binary" 2>/dev/null | awk '/\/opt\/homebrew\/|\/usr\/local\/opt\/|\/usr\/local\/Cellar\/|\/opt\/local\// { print $1 }')
+        done < <(find "$deploy_target/Contents/MacOS" "$frameworks_dir" -type f 2>/dev/null)
+
+        [[ "$copied" -eq 0 ]] && break
+    done
 }
 
 rewrite_bundled_qt_frameworks() {
