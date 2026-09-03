@@ -471,6 +471,23 @@ CORE_EXPORT bool CoreApplyPluginSettings(void)
     return apply_plugin_settings(settings);
 }
 
+CORE_EXPORT void* CoreGetPluginLibraryHandle(CorePluginType type)
+{
+    try
+    {
+        m64p::PluginApi& plugin = get_plugin(type);
+        if (!plugin.IsHooked())
+        {
+            return nullptr;
+        }
+        return plugin.GetHandle();
+    }
+    catch (...)
+    {
+        return nullptr;
+    }
+}
+
 CORE_EXPORT bool CoreApplyRomPluginSettings(void)
 {
     CoreRomSettings romSettings;

@@ -131,6 +131,7 @@ ifeq ($(OS), OSX)
   #xcode-select has been around since XCode 3.0, i.e. OS X 10.5
   OSX_SDK_ROOT = $(shell xcode-select -print-path)/Platforms/MacOSX.platform/Developer/SDKs
   OSX_SDK_PATH = $(OSX_SDK_ROOT)/$(shell ls $(OSX_SDK_ROOT) | tail -1)
+  LDFLAGS += -Wl,-headerpad_max_install_names
 
   ifeq ($(CPU), X86)
     ifeq ($(ARCH_DETECTED), 64BITS)

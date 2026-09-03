@@ -38,5 +38,8 @@ void VI_UpdateSize();
 void VI_UpdateScreen();
 u16 VI_GetMaxBufferHeight(u16 _width);
 
+// MPN minigame overrides. -1 leaves the user setting.
+void MPN_SetOccasionalOverrides(int n64DepthCompare, int enableHalosRemoval, int enableNativeResTexrects);
+
 #endif
 

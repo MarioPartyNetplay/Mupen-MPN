@@ -192,6 +192,7 @@ ifeq ($(OS), LINUX)
 endif
 ifeq ($(OS), OSX)
 OSX_SDK_PATH = $(shell xcrun --sdk macosx --show-sdk-path)
+  LDFLAGS += -Wl,-headerpad_max_install_names
 
   ifeq ($(CPU), X86)
     ifeq ($(ARCH_DETECTED), 64BITS)

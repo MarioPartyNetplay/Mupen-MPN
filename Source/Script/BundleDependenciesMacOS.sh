@@ -69,7 +69,22 @@ should_stage_for_macdeployqt() {
         return 0
     fi
 
-    # This plugin cannot be processed by install_name_tool on current Xcode toolchains.
+    local name
+    name="$(basename "$plugin")"
+    # macdeployqt walks every dylib; keep the emulator core and plugins it
+    # cannot rewrite out of that pass. Homebrew deps are rewritten later.
+    [[ "$name" == "mupen64plus-input-raphnetraw.dylib" ||
+       "$name" == "libmupen64plus.dylib" ||
+       "$plugin" == *"/Core/"* ]]
+}
+
+skip_homebrew_rewrite() {
+    local plugin="$1"
+    if is_mach_o_bundle "$plugin"
+    then
+        return 0
+    fi
+
     [[ "$(basename "$plugin")" == "mupen64plus-input-raphnetraw.dylib" ]]
 }
 
@@ -98,7 +113,7 @@ bundle_homebrew_dependencies() {
 
     while IFS= read -r binary
     do
-        if should_stage_for_macdeployqt "$binary"
+        if skip_homebrew_rewrite "$binary"
         then
             continue
         fi
@@ -309,10 +324,20 @@ if [[ -n "$molten_vk_src" ]]
 then
     echo "BundleDependenciesMacOS.sh: bundling MoltenVK from $molten_vk_src"
     cp -f "$molten_vk_src" "$macos_dir/libMoltenVK.dylib"
-    # Homebrew ships a signed dylib; strip and re-sign after changing the id.
-    codesign --remove-signature "$macos_dir/libMoltenVK.dylib" 2>/dev/null || true
-    install_name_tool -id "@loader_path/libMoltenVK.dylib" "$macos_dir/libMoltenVK.dylib"
-    codesign --force --sign - "$macos_dir/libMoltenVK.dylib"
+    # Do not strip the vendor signature first: that can leave __LINKEDIT
+    # inconsistent so install_name_tool refuses the file entirely.
+    if otool -hv "$macos_dir/libMoltenVK.dylib" 2>/dev/null | grep -q "MH_"
+    then
+        if ! install_name_tool -id "@loader_path/libMoltenVK.dylib" "$macos_dir/libMoltenVK.dylib" 2>/dev/null
+        then
+            echo "BundleDependenciesMacOS.sh: warning: could not rewrite MoltenVK install name; using unmodified copy"
+            cp -f "$molten_vk_src" "$macos_dir/libMoltenVK.dylib"
+        fi
+        codesign --force --sign - "$macos_dir/libMoltenVK.dylib" 2>/dev/null || \
+            echo "BundleDependenciesMacOS.sh: warning: could not ad-hoc sign MoltenVK"
+    else
+        echo "BundleDependenciesMacOS.sh: warning: MoltenVK is not a Mach-O dylib; leaving as copied"
+    fi
 else
     echo "BundleDependenciesMacOS.sh: MoltenVK not found; install with: sudo port install MoltenVK"
 fi

@@ -69,6 +69,8 @@ endif()
 if(APPLE)
     enable_language(OBJC OBJCXX)
     set(VRU OFF CACHE BOOL "Enables VRU support in RMG-Input" FORCE)
+    # Leave room for install_name_tool to rewrite ids/rpaths when bundling.
+    add_link_options(-Wl,-headerpad_max_install_names)
     # Apple ld does not search /opt/local by default; pkg-config only yields -lminizip.
     if(EXISTS "/opt/local/lib")
         add_link_options(-L/opt/local/lib)

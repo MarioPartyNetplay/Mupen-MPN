@@ -78,4 +78,7 @@ bool CoreDetachPlugins(void);
 // shuts down all currently used plugins
 bool CorePluginsShutdown(void);
 
+// returns the loaded plugin library handle, or nullptr
+void* CoreGetPluginLibraryHandle(CorePluginType type);
+
 #endif // CORE_PLUGINS_HPP

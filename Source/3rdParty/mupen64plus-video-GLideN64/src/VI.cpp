@@ -16,6 +16,8 @@
 #include "osal_keys.h"
 #include "DisplayWindow.h"
 #include "TextureFilterHandler.h"
+#include "Textures.h"
+#include "Combiner.h"
 #include "GLideNHQ/TxFilterExport.h"
 #include <Graphics/Context.h>
 #ifdef MUPENPLUSAPI
@@ -106,48 +108,55 @@ void VI_UpdateSize()
 	VI.rheight = VI.height != 0 ? 1.0f / VI.height : 0.0f;
 }
 
-static int resolveMpnOverride(m64p_handle section, const char* key, int& userValue, int current)
+static int l_MpnDepthOverride = -1;
+static int l_MpnHalosOverride = -1;
+static int l_MpnTexrectsOverride = -1;
+
+void MPN_SetOccasionalOverrides(int n64DepthCompare, int enableHalosRemoval, int enableNativeResTexrects)
+{
+	l_MpnDepthOverride = n64DepthCompare;
+	l_MpnHalosOverride = enableHalosRemoval;
+	l_MpnTexrectsOverride = enableNativeResTexrects;
+}
+
+static int resolveMpnOverride(int requested, int& userValue, int current)
 {
 	if (userValue < 0)
 		userValue = current;
-	const int requested = ConfigGetParamInt(section, key);
 	return (requested >= 0) ? requested : userValue;
 }
 
 static void applyMpnOccasionalSettings()
 {
-#ifdef MUPENPLUSAPI
-	if (ConfigOpenSection == nullptr || ConfigGetParamInt == nullptr)
-		return;
-
-	m64p_handle section = nullptr;
-	if (ConfigOpenSection("MPN-GLideN64", &section) != M64ERR_SUCCESS || section == nullptr)
-		return;
-
 	static int userN64DepthCompare = -1;
 	static int userHalosRemoval = -1;
 	static int userNativeResTexrects = -1;
 
-	const int depthTarget = resolveMpnOverride(section, "N64DepthCompare",
+	const int depthTarget = resolveMpnOverride(l_MpnDepthOverride,
 		userN64DepthCompare, static_cast<int>(config.frameBufferEmulation.N64DepthCompare));
-	const int halosTarget = resolveMpnOverride(section, "EnableHalosRemoval",
+	const int halosTarget = resolveMpnOverride(l_MpnHalosOverride,
 		userHalosRemoval, static_cast<int>(config.texture.enableHalosRemoval));
-	const int texrectsTarget = resolveMpnOverride(section, "EnableNativeResTexrects",
+	const int texrectsTarget = resolveMpnOverride(l_MpnTexrectsOverride,
 		userNativeResTexrects, static_cast<int>(config.graphics2D.enableNativeResTexrects));
 
-	const bool changed =
-		static_cast<int>(config.frameBufferEmulation.N64DepthCompare) != depthTarget ||
-		static_cast<int>(config.texture.enableHalosRemoval) != halosTarget ||
-		static_cast<int>(config.graphics2D.enableNativeResTexrects) != texrectsTarget;
-	if (!changed)
+	const bool depthChanged = static_cast<int>(config.frameBufferEmulation.N64DepthCompare) != depthTarget;
+	const bool halosChanged = static_cast<int>(config.texture.enableHalosRemoval) != halosTarget;
+	const bool texrectsChanged = static_cast<int>(config.graphics2D.enableNativeResTexrects) != texrectsTarget;
+	if (!depthChanged && !halosChanged && !texrectsChanged)
 		return;
 
 	config.frameBufferEmulation.N64DepthCompare = static_cast<u32>(depthTarget);
 	config.texture.enableHalosRemoval = static_cast<u32>(halosTarget);
 	config.graphics2D.enableNativeResTexrects = static_cast<u32>(texrectsTarget);
-	dwnd().stop();
-	dwnd().start();
-#endif
+
+	// Do not call dwnd().stop()/start() here: RMG's Qt VidExt treats
+	// CoreVideo_Quit as a full teardown and never reapplies these values.
+	if (halosChanged || depthChanged) {
+		textureCache().clear();
+		Combiner_Destroy();
+		Combiner_Init();
+		dwnd().restart();
+	}
 }
 
 static void checkHotkeys()

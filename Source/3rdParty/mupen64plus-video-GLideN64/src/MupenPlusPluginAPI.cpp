@@ -2,6 +2,7 @@
 #include "Types.h"
 #include "mupenplus/GLideN64_mupenplus.h"
 #include "N64.h"
+#include "VI.h"
 
 extern "C" {
 
@@ -60,6 +61,11 @@ EXPORT void CALL SetRenderingCallback(void (*callback)(int))
 EXPORT void CALL ResizeVideoOutput(int width, int height)
 {
 	api().ResizeVideoOutput(width, height);
+}
+
+EXPORT void CALL MPN_GLideN64_SetOverrides(int n64DepthCompare, int enableHalosRemoval, int enableNativeResTexrects)
+{
+	MPN_SetOccasionalOverrides(n64DepthCompare, enableHalosRemoval, enableNativeResTexrects);
 }
 
 } // extern "C"

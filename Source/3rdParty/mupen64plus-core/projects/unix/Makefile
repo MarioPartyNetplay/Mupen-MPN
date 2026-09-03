@@ -225,7 +225,7 @@ ifeq ($(OS), OSX)
   OSX_SDK_PATH = $(shell xcrun --sdk macosx --show-sdk-path)
 
   TARGET = libmupen64plus$(POSTFIX).dylib
-  LDFLAGS += -framework CoreFoundation -dynamiclib
+  LDFLAGS += -framework CoreFoundation -dynamiclib -Wl,-headerpad_max_install_names
   LDLIBS += -ldl
   ifeq ($(ARCH_DETECTED), 64BITS)
     ASFLAGS = -f macho64 -d LEADING_UNDERSCORE
