@@ -46,6 +46,7 @@ const uint32_t MP2_MEM_CURRENT_TURN = 0x0F93B2;
 const uint32_t MP2_MEM_GAMESTATE    = 0x0FA63C;
 const uint32_t MP2_MEM_GAMETYPE     = 0;
 const uint32_t MP2_MEM_TOTAL_TURNS  = 0x0F93AC;
+const uint32_t MP2_MEM_MINI_STATE   = 0x0F93C9;
 
 static const char* MP2_BOARDS[9] = 
 {
@@ -83,6 +84,7 @@ const uint32_t MP3_MEM_CURRENT_TURN = 0x0CD058;
 const uint32_t MP3_MEM_GAMESTATE    = 0x0CE200;
 const uint32_t MP3_MEM_GAMETYPE     = 0x0CD05B;
 const uint32_t MP3_MEM_TOTAL_TURNS  = 0x0CD059;
+const uint32_t MP3_MEM_MINI_STATE   = 0x0CD068;
 
 static const char* MP3_BOARDS[7] =
 {

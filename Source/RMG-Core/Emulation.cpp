@@ -11,6 +11,7 @@
 #include "MediaLoader.hpp"
 #include "Discord.hpp"
 #include "TurnCount.hpp"
+#include "GLideN64Occasional.hpp"
 #include "RomSettings.hpp"
 #include "Emulation.hpp"
 #include "RomHeader.hpp"
@@ -338,6 +339,7 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
                     CoreGetCurrentRomHeader(discordHeader))
                 {
                     CoreTurnCountSetRom(discordHeader, discordSettings);
+                    CoreGLideN64OccasionalSetRom(discordHeader, discordSettings);
                     CoreDiscordStart(discordHeader, discordSettings);
                 }
 
@@ -359,6 +361,7 @@ CORE_EXPORT bool CoreStartEmulation(std::filesystem::path n64rom, std::filesyste
 #endif // NETPLAY
 
     CoreTurnCountClearRom();
+    CoreGLideN64OccasionalClearRom();
     CoreDiscordShutdown();
 
     CoreClearCheats();

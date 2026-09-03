@@ -18,6 +18,9 @@
 #include "TextureFilterHandler.h"
 #include "GLideNHQ/TxFilterExport.h"
 #include <Graphics/Context.h>
+#ifdef MUPENPLUSAPI
+#include "mupenplus/GLideN64_mupenplus.h"
+#endif
 
 using namespace std;
 
@@ -103,8 +106,54 @@ void VI_UpdateSize()
 	VI.rheight = VI.height != 0 ? 1.0f / VI.height : 0.0f;
 }
 
+static int resolveMpnOverride(m64p_handle section, const char* key, int& userValue, int current)
+{
+	if (userValue < 0)
+		userValue = current;
+	const int requested = ConfigGetParamInt(section, key);
+	return (requested >= 0) ? requested : userValue;
+}
+
+static void applyMpnOccasionalSettings()
+{
+#ifdef MUPENPLUSAPI
+	if (ConfigOpenSection == nullptr || ConfigGetParamInt == nullptr)
+		return;
+
+	m64p_handle section = nullptr;
+	if (ConfigOpenSection("MPN-GLideN64", &section) != M64ERR_SUCCESS || section == nullptr)
+		return;
+
+	static int userN64DepthCompare = -1;
+	static int userHalosRemoval = -1;
+	static int userNativeResTexrects = -1;
+
+	const int depthTarget = resolveMpnOverride(section, "N64DepthCompare",
+		userN64DepthCompare, static_cast<int>(config.frameBufferEmulation.N64DepthCompare));
+	const int halosTarget = resolveMpnOverride(section, "EnableHalosRemoval",
+		userHalosRemoval, static_cast<int>(config.texture.enableHalosRemoval));
+	const int texrectsTarget = resolveMpnOverride(section, "EnableNativeResTexrects",
+		userNativeResTexrects, static_cast<int>(config.graphics2D.enableNativeResTexrects));
+
+	const bool changed =
+		static_cast<int>(config.frameBufferEmulation.N64DepthCompare) != depthTarget ||
+		static_cast<int>(config.texture.enableHalosRemoval) != halosTarget ||
+		static_cast<int>(config.graphics2D.enableNativeResTexrects) != texrectsTarget;
+	if (!changed)
+		return;
+
+	config.frameBufferEmulation.N64DepthCompare = static_cast<u32>(depthTarget);
+	config.texture.enableHalosRemoval = static_cast<u32>(halosTarget);
+	config.graphics2D.enableNativeResTexrects = static_cast<u32>(texrectsTarget);
+	dwnd().stop();
+	dwnd().start();
+#endif
+}
+
 static void checkHotkeys()
 {
+	applyMpnOccasionalSettings();
+
 	osal_keys_update_state();
 
 	if (osal_is_key_pressed(KEY_G, 0x0001)) {

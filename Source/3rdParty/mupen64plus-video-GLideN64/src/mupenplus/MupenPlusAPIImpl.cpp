@@ -100,6 +100,18 @@ m64p_error PluginAPI::PluginStartup(m64p_dynlib_handle _CoreLibHandle, void* Con
 
 	CoreGetVersion = (ptr_PluginGetVersion) DLSYM(_CoreLibHandle, "PluginGetVersion");
 
+	if (ConfigOpenSection != nullptr && ConfigSetDefaultInt != nullptr) {
+		m64p_handle mpnSection = nullptr;
+		if (ConfigOpenSection("MPN-GLideN64", &mpnSection) == M64ERR_SUCCESS && mpnSection != nullptr) {
+			ConfigSetDefaultInt(mpnSection, "N64DepthCompare", -1,
+				"Occasional N64 depth compare override. -1 uses the user setting; 0=Off, 1=Fast, 2=Compatible.");
+			ConfigSetDefaultInt(mpnSection, "EnableHalosRemoval", -1,
+				"Occasional halo removal override. -1 uses the user setting; 0=Off, 1=On.");
+			ConfigSetDefaultInt(mpnSection, "EnableNativeResTexrects", -1,
+				"Occasional native-res texrects override. -1 uses the user setting; 0=Off, 1=Optimized, 2=Unoptimized.");
+		}
+	}
+
 #ifndef M64P_GLIDENUI
 	if (Config_SetDefault()) {
 		config.version = ConfigGetParamInt(g_configVideoGliden64, "configVersion");

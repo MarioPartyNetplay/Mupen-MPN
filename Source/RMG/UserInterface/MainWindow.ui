@@ -105,7 +105,6 @@
     <addaction name="separator"/>
     <addaction name="menuCurrent_Save_State"/>
     <addaction name="separator"/>
-    <addaction name="action_System_Modifications"/>
     <addaction name="action_System_Cheats"/>
     <addaction name="action_System_GSButton"/>
     <addaction name="separator"/>

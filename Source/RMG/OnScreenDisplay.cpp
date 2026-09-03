@@ -39,6 +39,9 @@ struct OsdElementRect
 };
 
 constexpr int PERMILLE_MAX = 1000;
+// Matches the default main-window size so 100% OSD scale stays unchanged there.
+constexpr float OSD_REFERENCE_WIDTH  = 960.0f;
+constexpr float OSD_REFERENCE_HEIGHT = 720.0f;
 
 static bool l_Initialized     = false;
 static bool l_Enabled         = false;
@@ -107,6 +110,34 @@ static void save_custom_positions(void)
     CoreSettingsSave();
 }
 
+static float osd_window_scale(const ImVec2& displaySize)
+{
+    if (displaySize.x <= 0.0f || displaySize.y <= 0.0f)
+    {
+        return 1.0f;
+    }
+
+    const float scaleX = displaySize.x / OSD_REFERENCE_WIDTH;
+    const float scaleY = displaySize.y / OSD_REFERENCE_HEIGHT;
+    float scale = (scaleX < scaleY) ? scaleX : scaleY;
+
+    if (scale < 0.35f)
+    {
+        scale = 0.35f;
+    }
+    else if (scale > 4.0f)
+    {
+        scale = 4.0f;
+    }
+
+    return scale;
+}
+
+static float osd_effective_scale(const ImVec2& displaySize)
+{
+    return l_Scale * osd_window_scale(displaySize);
+}
+
 static ImVec2 permille_to_pos(int xPermille, int yPermille, const ImVec2& displaySize)
 {
     return ImVec2(displaySize.x * static_cast<float>(xPermille) / static_cast<float>(PERMILLE_MAX),
@@ -170,6 +201,10 @@ static void clamp_pos_to_display(float& x, float& y, float width, float height, 
 
 static ImVec2 legacy_position(OsdElement element, const ImVec2& displaySize, ImVec2& pivot)
 {
+    const float windowScale = osd_window_scale(displaySize);
+    const float padX = l_MessagePaddingX * windowScale;
+    const float padY = l_MessagePaddingY * windowScale;
+
     switch (element)
     {
     case OsdElement::Message:
@@ -178,26 +213,26 @@ static ImVec2 legacy_position(OsdElement element, const ImVec2& displaySize, ImV
         default:
         case 0: // left bottom
             pivot = ImVec2(0.0f, 1.0f);
-            return ImVec2(l_MessagePaddingX, displaySize.y - l_MessagePaddingY);
+            return ImVec2(padX, displaySize.y - padY);
         case 1: // left top
             pivot = ImVec2(0.0f, 0.0f);
-            return ImVec2(l_MessagePaddingX, l_MessagePaddingY);
+            return ImVec2(padX, padY);
         case 2: // right top
             pivot = ImVec2(1.0f, 0.0f);
-            return ImVec2(displaySize.x - l_MessagePaddingX, l_MessagePaddingY);
+            return ImVec2(displaySize.x - padX, padY);
         case 3: // right bottom
             pivot = ImVec2(1.0f, 1.0f);
-            return ImVec2(displaySize.x - l_MessagePaddingX, displaySize.y - l_MessagePaddingY);
+            return ImVec2(displaySize.x - padX, displaySize.y - padY);
         }
     case OsdElement::Overlay:
         pivot = ImVec2(1.0f, 0.0f);
-        return ImVec2(displaySize.x - l_MessagePaddingX, l_MessagePaddingY);
+        return ImVec2(displaySize.x - padX, padY);
     case OsdElement::TurnCount:
         pivot = ImVec2(0.0f, 0.0f);
-        return ImVec2(l_MessagePaddingX, l_MessagePaddingY);
+        return ImVec2(padX, padY);
     default:
         pivot = ImVec2(0.0f, 0.0f);
-        return ImVec2(l_MessagePaddingX, l_MessagePaddingY);
+        return ImVec2(padX, padY);
     }
 }
 
@@ -208,7 +243,7 @@ static bool point_in_rect(float x, float y, const OsdElementRect& rect)
            y >= rect.y && y <= (rect.y + rect.height);
 }
 
-static void draw_configure_highlight(const OsdElementRect& rect)
+static void draw_configure_highlight(const OsdElementRect& rect, float thickness)
 {
     if (!rect.valid)
     {
@@ -221,7 +256,7 @@ static void draw_configure_highlight(const OsdElementRect& rect)
                       IM_COL32(255, 220, 64, 220),
                       0.0f,
                       0,
-                      2.0f);
+                      thickness);
 }
 
 static void render_osd_window(OsdElement element,
@@ -251,12 +286,14 @@ static void render_osd_window(OsdElement element,
 
     ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
 
+    const float scale = osd_effective_scale(displaySize);
+
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(l_BackgroundRed, l_BackgroundGreen, l_BackgroundBlue, l_BackgroundAlpha));
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(l_TextRed, l_TextGreen, l_TextBlue, l_TextAlpha));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f * l_Scale, 8.0f * l_Scale));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f * scale, 8.0f * scale));
 
     ImGui::Begin(windowId, nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
-    ImGui::SetWindowFontScale(l_Scale);
+    ImGui::SetWindowFontScale(scale);
     ImGui::Text("%s", text);
     const ImVec2 windowPos = ImGui::GetWindowPos();
     const ImVec2 windowSize = ImGui::GetWindowSize();
@@ -273,7 +310,7 @@ static void render_osd_window(OsdElement element,
 
     if (configureModifier)
     {
-        draw_configure_highlight(*outRect);
+        draw_configure_highlight(*outRect, 2.0f * osd_window_scale(displaySize));
     }
 }
 

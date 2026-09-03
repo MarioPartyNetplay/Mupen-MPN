@@ -53,6 +53,7 @@ set(RMG_CORE_SOURCES
     Video.cpp
     Error.cpp
     TurnCount.cpp
+    GLideN64Occasional.cpp
     Core.cpp
     File.cpp
     Key.cpp
