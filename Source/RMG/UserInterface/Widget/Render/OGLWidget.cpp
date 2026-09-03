@@ -281,7 +281,7 @@ bool OGLWidget::prepareNativeSurface()
     else if (this->m_dedicatedWindow)
     {
         this->show();
-        this->update();
+        this->requestUpdate();
     }
 
     if (!this->handle())
