@@ -397,11 +397,36 @@ std::uint32_t OGLWidget::DefaultFramebufferObject() const
 
 bool OGLWidget::CaptureScreenshot(std::vector<std::uint8_t>& rgbData, int& width, int& height) const
 {
-    // Prefer the last size actually applied to the video plugin. During resize,
-    // this->width/height can update ~100ms before the framebuffer does, and
-    // glReadPixels with an oversized rect can crash the driver.
-    int captureWidth  = this->appliedWidth > 0 ? this->appliedWidth : this->width;
-    int captureHeight = this->appliedHeight > 0 ? this->appliedHeight : this->height;
+    // Skip while a deferred CoreSetVideoSize is pending — FB size is unstable
+    // and an oversized glReadPixels can crash the driver.
+    if (this->timerId != 0)
+    {
+        return false;
+    }
+
+    // Always take the *smaller* of pending vs applied size. Preferring only
+    // appliedWidth crashed on shrink (applied stays large ~100ms); preferring
+    // only this->width crashed on grow (FB lags behind).
+    auto positiveMin = [](int a, int b) -> int {
+        if (a <= 0)
+        {
+            return b;
+        }
+        if (b <= 0)
+        {
+            return a;
+        }
+        return std::min(a, b);
+    };
+
+    int captureWidth  = positiveMin(this->width, this->appliedWidth);
+    int captureHeight = positiveMin(this->height, this->appliedHeight);
+
+    // Also clamp to the live QWindow surface in device pixels.
+    const int surfaceWidth  = static_cast<int>(QWindow::width() * this->devicePixelRatio());
+    const int surfaceHeight = static_cast<int>(QWindow::height() * this->devicePixelRatio());
+    captureWidth  = positiveMin(captureWidth, surfaceWidth);
+    captureHeight = positiveMin(captureHeight, surfaceHeight);
 
     if (captureWidth <= 0 || captureHeight <= 0)
     {
@@ -439,6 +464,11 @@ bool OGLWidget::CaptureScreenshot(std::vector<std::uint8_t>& rgbData, int& width
         captureHeight = std::min(captureHeight, static_cast<int>(viewport[3]));
     }
 
+    if (captureWidth <= 0 || captureHeight <= 0)
+    {
+        return false;
+    }
+
     std::vector<std::uint8_t> fullBuffer(static_cast<size_t>(captureWidth) * static_cast<size_t>(captureHeight) * 3u);
 
     const std::uint32_t framebuffer = this->DefaultFramebufferObject();
@@ -466,8 +496,16 @@ bool OGLWidget::CaptureScreenshot(std::vector<std::uint8_t>& rgbData, int& width
         }
     }
 
+    // Default GL_PACK_ALIGNMENT is 4. For tightly packed RGB rows, widths where
+    // (width*3) % 4 != 0 (common when width ≡ 2 mod 4) write past the buffer.
+    GLint previousPackAlignment = 4;
+    glFunctions->glGetIntegerv(GL_PACK_ALIGNMENT, &previousPackAlignment);
+    glFunctions->glPixelStorei(GL_PACK_ALIGNMENT, 1);
+
     glFunctions->glReadPixels(0, 0, captureWidth, captureHeight, GL_RGB, GL_UNSIGNED_BYTE, fullBuffer.data());
     glFunctions->glFinish();
+
+    glFunctions->glPixelStorei(GL_PACK_ALIGNMENT, previousPackAlignment);
 
     if (glGetError != nullptr && glGetError() != GL_NO_ERROR)
     {
@@ -481,12 +519,17 @@ bool OGLWidget::CaptureScreenshot(std::vector<std::uint8_t>& rgbData, int& width
         return false;
     }
 
-    int surfaceWidth  = 0;
-    int surfaceHeight = 0;
-    if (this->angleContext.querySurfaceSize(surfaceWidth, surfaceHeight))
+    int angleSurfaceWidth  = 0;
+    int angleSurfaceHeight = 0;
+    if (this->angleContext.querySurfaceSize(angleSurfaceWidth, angleSurfaceHeight))
     {
-        captureWidth  = surfaceWidth;
-        captureHeight = surfaceHeight;
+        captureWidth  = positiveMin(captureWidth, angleSurfaceWidth);
+        captureHeight = positiveMin(captureHeight, angleSurfaceHeight);
+    }
+
+    if (captureWidth <= 0 || captureHeight <= 0)
+    {
+        return false;
     }
 
     using BindFramebufferFn = void (*)(unsigned int, unsigned int);
@@ -494,12 +537,16 @@ bool OGLWidget::CaptureScreenshot(std::vector<std::uint8_t>& rgbData, int& width
     using ReadPixelsFn = void (*)(int, int, int, int, unsigned int, unsigned int, void*);
     using FinishFn = void (*)();
     using GetErrorFn = unsigned int (*)();
+    using GetIntegervFn = void (*)(unsigned int, int*);
+    using PixelStoreiFn = void (*)(unsigned int, int);
 
     const auto glBindFramebuffer = reinterpret_cast<BindFramebufferFn>(this->angleContext.getProcAddress("glBindFramebuffer"));
     const auto glReadBuffer = reinterpret_cast<ReadBufferFn>(this->angleContext.getProcAddress("glReadBuffer"));
     const auto glReadPixels = reinterpret_cast<ReadPixelsFn>(this->angleContext.getProcAddress("glReadPixels"));
     const auto glFinish = reinterpret_cast<FinishFn>(this->angleContext.getProcAddress("glFinish"));
     const auto glGetError = reinterpret_cast<GetErrorFn>(this->angleContext.getProcAddress("glGetError"));
+    const auto glGetIntegerv = reinterpret_cast<GetIntegervFn>(this->angleContext.getProcAddress("glGetIntegerv"));
+    const auto glPixelStorei = reinterpret_cast<PixelStoreiFn>(this->angleContext.getProcAddress("glPixelStorei"));
 
     if (glBindFramebuffer == nullptr || glReadBuffer == nullptr || glReadPixels == nullptr || glFinish == nullptr)
     {
@@ -527,8 +574,23 @@ bool OGLWidget::CaptureScreenshot(std::vector<std::uint8_t>& rgbData, int& width
         }
     }
 
+    int previousPackAlignment = 4;
+    if (glGetIntegerv != nullptr)
+    {
+        glGetIntegerv(0x0D05, &previousPackAlignment); // GL_PACK_ALIGNMENT
+    }
+    if (glPixelStorei != nullptr)
+    {
+        glPixelStorei(0x0D05, 1);
+    }
+
     glReadPixels(0, 0, captureWidth, captureHeight, 0x1907, 0x1401, fullBuffer.data()); // GL_RGB, GL_UNSIGNED_BYTE
     glFinish();
+
+    if (glPixelStorei != nullptr)
+    {
+        glPixelStorei(0x0D05, previousPackAlignment);
+    }
 
     if (glGetError != nullptr && glGetError() != 0)
     {
