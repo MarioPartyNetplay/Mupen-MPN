@@ -13,7 +13,8 @@ then
     echo "$0 [Build Config] [Thread Count]"
     echo ""
     echo "macOS prefers MacPorts (/opt/local). CI builds Intel x86_64 even on Apple Silicon"
-    echo "by setting build_arch x86_64 in /opt/local/etc/macports/macports.conf."
+    echo "by setting build_arch x86_64 in /opt/local/etc/macports/macports.conf"
+    echo "and/or MPN_OSX_ARCH=x86_64."
     echo "Install: https://www.macports.org/install.php"
     echo "Then: sudo port install cmake ccache nasm pkgconfig qt6-qtbase qt6-qttools qt6-qtsvg qt6-qtimageformats SDL3 speexDSP libsamplerate minizip openssl3 nlohmann-json libsrtp libusb libpng MoltenVK vulkan-loader vulkan-headers hidapi libenet"
     echo ""
@@ -28,18 +29,28 @@ if [[ $(uname -s) = Darwin ]]; then
     threads="${2:-4}"
   fi
 
-  macos_arch="$(uname -m)"
+  host_arch="$(uname -m)"
+  macos_arch="${MPN_OSX_ARCH:-$host_arch}"
   macports_prefix="/opt/local"
   macports_qt="${macports_prefix}/libexec/qt6"
 
-  if [[ -x "${macports_prefix}/bin/port" ]]; then
+  if [[ -z "${MPN_OSX_ARCH:-}" && -x "${macports_prefix}/bin/port" ]]; then
     mp_arch="$(awk '/^[[:space:]]*build_arch[[:space:]]+/ { print $2; exit }' "${macports_prefix}/etc/macports/macports.conf" 2>/dev/null || true)"
     macos_arch="${mp_arch:-$macos_arch}"
+  fi
+
+  # mupen64plus unix Makefiles use uname -m for HOST_CPU. When targeting
+  # Intel from an arm64 process, run the rest of the build under Rosetta.
+  if [[ "$macos_arch" = x86_64 && "$host_arch" = arm64 && "${MPN_SKIP_ROSETTA_REEXEC:-}" != "1" ]]; then
+    exec arch -x86_64 env MPN_SKIP_ROSETTA_REEXEC=1 MPN_OSX_ARCH=x86_64 "$0" "$@"
+  fi
+
+  if [[ -x "${macports_prefix}/bin/port" ]]; then
     export PATH="${macports_qt}/bin:${macports_prefix}/bin:${macports_prefix}/sbin:${PATH}"
     export PKG_CONFIG_PATH="${macports_prefix}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
     cmake_extra_args+=(-DCMAKE_PREFIX_PATH="${macports_qt};${macports_prefix}" -DCMAKE_IGNORE_PREFIX_PATH="/usr/local;/opt/homebrew" -DCMAKE_OSX_ARCHITECTURES="${macos_arch}" -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3)
   elif [[ -x /usr/local/bin/brew ]]; then
-    if [[ "$macos_arch" = arm64 && "${MPN_SKIP_ROSETTA_REEXEC:-}" != "1" ]]; then
+    if [[ "$host_arch" = arm64 && "${MPN_SKIP_ROSETTA_REEXEC:-}" != "1" ]]; then
       exec arch -x86_64 env MPN_SKIP_ROSETTA_REEXEC=1 PATH="/usr/local/bin:/usr/local/sbin:${PATH}" "$0" "$@"
     fi
     cmake_extra_args+=(-DCMAKE_PREFIX_PATH="/usr/local" -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3)

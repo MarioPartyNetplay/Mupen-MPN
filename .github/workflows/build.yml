@@ -156,11 +156,14 @@ jobs:
             "https://github.com/macports/macports-base/releases/download/v${MP_VERSION}/MacPorts-${MP_VERSION}-15-Sequoia.pkg"
           sudo installer -pkg macports.pkg -target /
           rm -f macports.pkg
+          # Force Intel packages even if the runner process reports arm64.
+          printf '\nbuild_arch x86_64\nui_interactive no\n' | sudo tee -a /opt/local/etc/macports/macports.conf
           echo "/opt/local/libexec/qt6/bin" >> "$GITHUB_PATH"
           echo "/opt/local/bin" >> "$GITHUB_PATH"
           echo "/opt/local/sbin" >> "$GITHUB_PATH"
           echo "PKG_CONFIG_PATH=/opt/local/lib/pkgconfig" >> "$GITHUB_ENV"
           echo "CMAKE_PREFIX_PATH=/opt/local/libexec/qt6:/opt/local" >> "$GITHUB_ENV"
+          echo "MPN_OSX_ARCH=x86_64" >> "$GITHUB_ENV"
           sudo /opt/local/bin/port -q selfupdate
 
       - name: Install ccache
@@ -201,6 +204,19 @@ jobs:
         run: |
           chmod +x ./Source/Script/Build.sh
           ./Source/Script/Build.sh Release
+
+      - name: Verify x86_64 binary
+        run: |
+          set -euo pipefail
+          bin="Bin/Release/Mupen-MPN.app/Contents/MacOS/Mupen-MPN"
+          test -f "$bin"
+          archs="$(lipo -archs "$bin")"
+          echo "Built architectures: $archs"
+          echo "$archs" | grep -qw x86_64
+          if echo "$archs" | grep -qw arm64; then
+            echo "error: artifact contains arm64; Intel-only x86_64 is required" >&2
+            exit 1
+          fi
 
       - name: Prepare macOS Artifacts
         run: |

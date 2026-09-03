@@ -3,10 +3,12 @@
 #
 cmake_minimum_required(VERSION 3.15)
 
-# Prefer MacPorts build_arch when set (Intel x86_64 on Apple Silicon CI).
+# Prefer MacPorts build_arch / MPN_OSX_ARCH (Intel x86_64 on Apple Silicon CI).
 # Intel Homebrew in /usr/local still forces x86_64 (Rosetta).
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND NOT CMAKE_OSX_ARCHITECTURES)
-    if(EXISTS "/opt/local/bin/port")
+    if(DEFINED ENV{MPN_OSX_ARCH} AND NOT "$ENV{MPN_OSX_ARCH}" STREQUAL "")
+        set(CMAKE_OSX_ARCHITECTURES "$ENV{MPN_OSX_ARCH}" CACHE STRING "macOS target architectures")
+    elseif(EXISTS "/opt/local/bin/port")
         set(_mp_arch "")
         if(EXISTS "/opt/local/etc/macports/macports.conf")
             file(STRINGS "/opt/local/etc/macports/macports.conf" _mp_build_arch_line
@@ -67,6 +69,11 @@ endif()
 if(APPLE)
     enable_language(OBJC OBJCXX)
     set(VRU OFF CACHE BOOL "Enables VRU support in RMG-Input" FORCE)
+    # Apple ld does not search /opt/local by default; pkg-config only yields -lminizip.
+    if(EXISTS "/opt/local/lib")
+        add_link_options(-L/opt/local/lib)
+        list(PREPEND CMAKE_LIBRARY_PATH "/opt/local/lib")
+    endif()
 endif()
 
 find_package(Git)

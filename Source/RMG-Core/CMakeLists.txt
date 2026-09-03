@@ -6,9 +6,9 @@ project(RMG-Core)
 set(CMAKE_CXX_STANDARD 20)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(MINIZIP minizip)
+pkg_check_modules(MINIZIP IMPORTED_TARGET minizip)
 if (NOT MINIZIP_FOUND)
-    pkg_check_modules(MINIZIP REQUIRED minizip-ng)
+    pkg_check_modules(MINIZIP REQUIRED IMPORTED_TARGET minizip-ng)
 endif()
 
 if (WIN32)
@@ -112,7 +112,7 @@ if (DISCORD_RPC)
 endif(DISCORD_RPC)
 
 target_link_libraries(RMG-Core
-    ${MINIZIP_LIBRARIES}
+    PkgConfig::MINIZIP
     lzma
 )
 
