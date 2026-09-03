@@ -12,25 +12,36 @@ if [[ "$1" = "--help" ]] ||
 then
     echo "$0 [Build Config] [Thread Count]"
     echo ""
-    echo "On Apple Silicon, this script re-executes under Rosetta (arch -x86_64)"
-    echo "and expects x86_64 Homebrew dependencies in /usr/local."
-    echo "Install with: arch -x86_64 /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-    echo "Then: arch -x86_64 brew install cmake qt sdl3 nasm speexdsp libsamplerate minizip pkg-config openssl nlohmann-json srtp libusb libpng molten-vk vulkan-loader vulkan-headers"
+    echo "macOS prefers MacPorts (/opt/local). CI builds Intel x86_64 even on Apple Silicon"
+    echo "by setting build_arch x86_64 in /opt/local/etc/macports/macports.conf."
+    echo "Install: https://www.macports.org/install.php"
+    echo "Then: sudo port install cmake ccache nasm pkgconfig qt6-qtbase qt6-qttools qt6-qtsvg qt6-qtimageformats SDL3 speexDSP libsamplerate minizip openssl3 nlohmann-json libsrtp libusb libpng MoltenVK vulkan-loader vulkan-headers hidapi libenet"
+    echo ""
+    echo "Fallback: Intel Homebrew in /usr/local (Rosetta on Apple Silicon), or native Homebrew."
     exit
 fi
 
 if [[ $(uname -s) = Darwin ]]; then
-  if [[ $(uname -m) = arm64 && "${MPN_SKIP_ROSETTA_REEXEC:-}" != "1" && -x /usr/local/bin/brew ]]; then
-    exec arch -x86_64 env MPN_SKIP_ROSETTA_REEXEC=1 PATH="/usr/local/bin:/usr/local/sbin:${PATH}" "$0" "$@"
-  fi
-
   if command -v sysctl >/dev/null 2>&1; then
     threads="${2:-$(sysctl -n hw.ncpu)}"
   else
     threads="${2:-4}"
   fi
 
-  if [[ -x /usr/local/bin/brew ]]; then
+  macos_arch="$(uname -m)"
+  macports_prefix="/opt/local"
+  macports_qt="${macports_prefix}/libexec/qt6"
+
+  if [[ -x "${macports_prefix}/bin/port" ]]; then
+    mp_arch="$(awk '/^[[:space:]]*build_arch[[:space:]]+/ { print $2; exit }' "${macports_prefix}/etc/macports/macports.conf" 2>/dev/null || true)"
+    macos_arch="${mp_arch:-$macos_arch}"
+    export PATH="${macports_qt}/bin:${macports_prefix}/bin:${macports_prefix}/sbin:${PATH}"
+    export PKG_CONFIG_PATH="${macports_prefix}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    cmake_extra_args+=(-DCMAKE_PREFIX_PATH="${macports_qt};${macports_prefix}" -DCMAKE_IGNORE_PREFIX_PATH="/usr/local;/opt/homebrew" -DCMAKE_OSX_ARCHITECTURES="${macos_arch}" -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3)
+  elif [[ -x /usr/local/bin/brew ]]; then
+    if [[ "$macos_arch" = arm64 && "${MPN_SKIP_ROSETTA_REEXEC:-}" != "1" ]]; then
+      exec arch -x86_64 env MPN_SKIP_ROSETTA_REEXEC=1 PATH="/usr/local/bin:/usr/local/sbin:${PATH}" "$0" "$@"
+    fi
     cmake_extra_args+=(-DCMAKE_PREFIX_PATH="/usr/local" -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3)
   else
     cmake_extra_args+=(-DCMAKE_PREFIX_PATH="$(brew --prefix)" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3)

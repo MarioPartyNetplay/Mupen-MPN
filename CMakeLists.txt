@@ -3,9 +3,24 @@
 #
 cmake_minimum_required(VERSION 3.15)
 
-# On Apple Silicon: use x86_64 (Rosetta) when x86_64 Homebrew exists, else native arm64.
+# Prefer MacPorts build_arch when set (Intel x86_64 on Apple Silicon CI).
+# Intel Homebrew in /usr/local still forces x86_64 (Rosetta).
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND NOT CMAKE_OSX_ARCHITECTURES)
-    if(EXISTS "/usr/local/bin/brew")
+    if(EXISTS "/opt/local/bin/port")
+        set(_mp_arch "")
+        if(EXISTS "/opt/local/etc/macports/macports.conf")
+            file(STRINGS "/opt/local/etc/macports/macports.conf" _mp_build_arch_line
+                 REGEX "^[ \t]*build_arch[ \t]+")
+            if(_mp_build_arch_line MATCHES "build_arch[ \t]+([A-Za-z0-9_]+)")
+                set(_mp_arch "${CMAKE_MATCH_1}")
+            endif()
+        endif()
+        if(_mp_arch)
+            set(CMAKE_OSX_ARCHITECTURES "${_mp_arch}" CACHE STRING "macOS target architectures")
+        else()
+            set(CMAKE_OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}" CACHE STRING "macOS target architectures")
+        endif()
+    elseif(EXISTS "/usr/local/bin/brew")
         set(CMAKE_OSX_ARCHITECTURES "x86_64" CACHE STRING "macOS target architectures")
     else()
         set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "macOS target architectures")

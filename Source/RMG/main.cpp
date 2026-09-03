@@ -239,14 +239,18 @@ static void configureMoltenVK(void)
         return;
     }
 
-    static const char* brewPrefixes[] = {"/usr/local/opt/molten-vk", "/opt/homebrew/opt/molten-vk"};
-    for (const char* prefix : brewPrefixes)
+    static const char* moltenVkPrefixes[] = {
+        "/opt/local",
+        "/usr/local/opt/molten-vk",
+        "/opt/homebrew/opt/molten-vk"
+    };
+    for (const char* prefix : moltenVkPrefixes)
     {
-        const QString brewMoltenVk = QString::fromUtf8(prefix) + QStringLiteral("/lib/libMoltenVK.dylib");
-        if (QFile::exists(brewMoltenVk))
+        const QString moltenVk = QString::fromUtf8(prefix) + QStringLiteral("/lib/libMoltenVK.dylib");
+        if (QFile::exists(moltenVk))
         {
-            qputenv("QT_VULKAN_LIB", brewMoltenVk.toUtf8());
-            qputenv("GRANITE_VULKAN_LIBRARY", brewMoltenVk.toUtf8());
+            qputenv("QT_VULKAN_LIB", moltenVk.toUtf8());
+            qputenv("GRANITE_VULKAN_LIBRARY", moltenVk.toUtf8());
             return;
         }
     }

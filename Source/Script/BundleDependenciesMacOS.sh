@@ -110,7 +110,7 @@ bundle_homebrew_dependencies() {
                 continue
             fi
             bundle_external_dylib "$binary" "$dep_path"
-        done < <(otool -L "$binary" 2>/dev/null | awk '/\/opt\/homebrew\/|\/usr\/local\/opt\// { print $1 }')
+        done < <(otool -L "$binary" 2>/dev/null | awk '/\/opt\/homebrew\/|\/usr\/local\/opt\/|\/opt\/local\// { print $1 }')
     done < <(find "$deploy_target/Contents/MacOS" -type f 2>/dev/null)
 }
 
@@ -270,6 +270,7 @@ fi
 find_molten_vk() {
     local candidate
     for candidate in \
+        "/opt/local/lib/libMoltenVK.dylib" \
         "/usr/local/opt/molten-vk/lib/libMoltenVK.dylib" \
         "/opt/homebrew/opt/molten-vk/lib/libMoltenVK.dylib"
     do
@@ -279,6 +280,16 @@ find_molten_vk() {
             return 0
         fi
     done
+
+    if command -v port &>/dev/null
+    then
+        candidate="$(port contents MoltenVK 2>/dev/null | awk '/libMoltenVK\.dylib$/ { print $1; exit }')"
+        if [[ -f "$candidate" ]]
+        then
+            echo "$candidate"
+            return 0
+        fi
+    fi
 
     if command -v brew &>/dev/null
     then
@@ -303,7 +314,7 @@ then
     install_name_tool -id "@loader_path/libMoltenVK.dylib" "$macos_dir/libMoltenVK.dylib"
     codesign --force --sign - "$macos_dir/libMoltenVK.dylib"
 else
-    echo "BundleDependenciesMacOS.sh: MoltenVK not found; install with: brew install molten-vk"
+    echo "BundleDependenciesMacOS.sh: MoltenVK not found; install with: sudo port install MoltenVK"
 fi
 
 exit 0

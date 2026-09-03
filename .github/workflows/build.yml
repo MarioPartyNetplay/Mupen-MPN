@@ -133,7 +133,7 @@ jobs:
           path: Bin/Release/*
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15-intel
 
     steps:
       - name: Checkout Repository
@@ -148,49 +148,62 @@ jobs:
             Source/3rdParty/angle
           git -C Source/3rdParty/libdatachannel submodule update --init --depth 1 --recursive
 
-      - name: Install Rosetta 2
-        run: softwareupdate --install-rosetta --agree-to-license
-
-      - name: Install x86_64 Homebrew
+      - name: Install MacPorts
         run: |
-          if [[ ! -x /usr/local/bin/brew ]]; then
-            NONINTERACTIVE=1 arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          fi
-          {
-            echo 'HOMEBREW_PREFIX=/usr/local'
-            echo 'HOMEBREW_CELLAR=/usr/local/Cellar'
-            echo 'HOMEBREW_REPOSITORY=/usr/local/Homebrew'
-          } >> "$GITHUB_ENV"
-          echo '/usr/local/bin' >> "$GITHUB_PATH"
-          echo '/usr/local/sbin' >> "$GITHUB_PATH"
+          set -euo pipefail
+          MP_VERSION=2.12.6
+          curl -fsSL -o macports.pkg \
+            "https://github.com/macports/macports-base/releases/download/v${MP_VERSION}/MacPorts-${MP_VERSION}-15-Sequoia.pkg"
+          sudo installer -pkg macports.pkg -target /
+          rm -f macports.pkg
+          echo "/opt/local/libexec/qt6/bin" >> "$GITHUB_PATH"
+          echo "/opt/local/bin" >> "$GITHUB_PATH"
+          echo "/opt/local/sbin" >> "$GITHUB_PATH"
+          echo "PKG_CONFIG_PATH=/opt/local/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "CMAKE_PREFIX_PATH=/opt/local/libexec/qt6:/opt/local" >> "$GITHUB_ENV"
+          sudo /opt/local/bin/port -q selfupdate
 
       - name: Install ccache
-        run: |
-          # openssl@3 postinstall can fail under Rosetta x86_64 Homebrew on
-          # macos-14 and makes `brew install` exit 1 even when packages
-          # installed successfully. Preinstall openssl with the broken hook
-          # skipped so the later ccache install sees it as already satisfied.
-          arch -x86_64 /usr/local/bin/brew install --skip-post-install openssl@3
-          arch -x86_64 /usr/local/bin/brew install ccache
+        run: sudo /opt/local/bin/port -N install ccache
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: macos-rosetta-x86_64
+          key: macos-15-intel-macports
           install: no
 
       - name: Install Build Dependencies
         run: |
-          arch -x86_64 /usr/local/bin/brew install cmake qt sdl3 nasm speexdsp libsamplerate minizip pkg-config openssl nlohmann-json srtp libusb libpng molten-vk vulkan-loader vulkan-headers hidapi enet
-        continue-on-error: true
-        
-      - name: Build RMG (x86_64 for Rosetta)
+          sudo /opt/local/bin/port -N install \
+            cmake \
+            nasm \
+            pkgconfig \
+            qt6-qtbase \
+            qt6-qttools \
+            qt6-qtsvg \
+            qt6-qtimageformats \
+            SDL3 \
+            speexDSP \
+            libsamplerate \
+            minizip \
+            openssl3 \
+            nlohmann-json \
+            libsrtp \
+            libusb \
+            libpng \
+            MoltenVK \
+            vulkan-loader \
+            vulkan-headers \
+            hidapi \
+            libenet
+
+      - name: Build RMG (x86_64)
         run: |
           chmod +x ./Source/Script/Build.sh
-          arch -x86_64 env MPN_SKIP_ROSETTA_REEXEC=1 ./Source/Script/Build.sh Release
+          ./Source/Script/Build.sh Release
 
       - name: Prepare macOS Artifacts
-        run: >
+        run: |
           cd Bin/Release
           hdiutil create -volname "Mupen-MPN" -srcfolder Mupen-MPN.app -ov -format UDZO MupenMPN-macOS-x86_64.dmg
           rm -rf Mupen-MPN.app

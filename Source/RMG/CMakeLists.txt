@@ -22,7 +22,12 @@ if (APPLE)
         endif()
     endif()
     if(NOT Vulkan_INCLUDE_DIR)
-        foreach(_prefix "/usr/local/opt/molten-vk" "/opt/homebrew/opt/molten-vk" "/usr/local/opt/vulkan-headers" "/opt/homebrew/opt/vulkan-headers")
+        foreach(_prefix
+            "/opt/local"
+            "/usr/local/opt/molten-vk"
+            "/opt/homebrew/opt/molten-vk"
+            "/usr/local/opt/vulkan-headers"
+            "/opt/homebrew/opt/vulkan-headers")
             if(EXISTS "${_prefix}/include/vulkan/vulkan.h")
                 set(Vulkan_INCLUDE_DIR "${_prefix}/include" CACHE PATH "Vulkan headers" FORCE)
                 break()

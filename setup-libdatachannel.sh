@@ -100,7 +100,7 @@ case "$PLATFORM" in
     macOS)
         echo "📋 macOS detected. Install dependencies with:"
         echo ""
-        echo "   brew install openssl nlohmann-json srtp"
+        echo "   sudo port install openssl3 nlohmann-json libsrtp"
         echo ""
         echo "Then build with:"
         echo ""
