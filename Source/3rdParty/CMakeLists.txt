@@ -168,19 +168,6 @@ ExternalProject_Add(mupen64plus-rsp-hle
     BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-hle/mupen64plus-rsp-hle.${SO_EXT}
 )
 
-ExternalProject_Add(mupen64plus-rsp-parallel
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-rsp-parallel/
-
-    INSTALL_COMMAND ""
-
-    BUILD_IN_SOURCE False
-    BUILD_ALWAYS True
-    CMAKE_ARGS -DUSE_IPO=OFF ${CMAKE_CONFIGURE_ARGS}
-    BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-parallel
-
-    BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/mupen64plus-rsp-parallel/mupen64plus-rsp-parallel.${SO_EXT}
-)
-
 ExternalProject_Add(mupen64plus-input-raphnetraw
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mupen64plus-input-raphnetraw/
 
@@ -500,9 +487,6 @@ set(MUPEN64PLUS_PLUGIN_RSP_CXD4 ${BUILD_BYPRODUCTS} PARENT_SCOPE)
 
 ExternalProject_Get_property(mupen64plus-rsp-hle BUILD_BYPRODUCTS)
 set(MUPEN64PLUS_PLUGIN_RSP_HLE ${BUILD_BYPRODUCTS} PARENT_SCOPE)
-
-ExternalProject_Get_property(mupen64plus-rsp-parallel BUILD_BYPRODUCTS)
-set(MUPEN64PLUS_PLUGIN_RSP_PARALLEL ${BUILD_BYPRODUCTS} PARENT_SCOPE)
 
 ExternalProject_Get_property(mupen64plus-input-raphnetraw BUILD_BYPRODUCTS)
 set(MUPEN64PLUS_PLUGIN_INPUT_RAPHNET ${BUILD_BYPRODUCTS} PARENT_SCOPE)

@@ -666,13 +666,8 @@ static l_Setting get_setting(SettingsID settingId)
         setting = {SETTING_SECTION_RSP, "Version", 1.0f, "Mupen64Plus RSP HLE Plugin config parameter version number"};
         break;
     case SettingsID::RSP_Fallback:
-        setting = {SETTING_SECTION_RSP, "RspFallback", CoreGetPluginDirectory().string() +
-#ifdef _WIN32
-                    "\\RSP\\mupen64plus-rsp-parallel" CORE_LIBRARY_EXT_STR,
-#else
-                    "/RSP/mupen64plus-rsp-parallel" CORE_LIBRARY_EXT_STR,
-#endif // _WIN32
-                    "", false, true
+        setting = {SETTING_SECTION_RSP, "RspFallback", std::string(""),
+                    "Path to an LLE RSP plugin used when HLE cannot handle a task", false, true
                   };
         break;
     case SettingsID::RSP_GraphicsHLE:
