@@ -106,6 +106,7 @@ class BoardDownloaderDialog : public QDialog, private Ui::BoardDownloaderDialog
     void on_nextPageButton_clicked(void);
     void on_gameFilterComboBox_currentIndexChanged(int index);
     void on_resultsListWidget_itemDoubleClicked(void);
+    void on_uploadJsonButton_clicked(void);
     void on_romPatched(void);
 };
 

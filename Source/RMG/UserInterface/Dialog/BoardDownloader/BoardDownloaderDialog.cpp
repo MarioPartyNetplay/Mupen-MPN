@@ -12,9 +12,17 @@
 #include "BoardDownloaderCommon.hpp"
 #include "Utilities/QtMessageBox.hpp"
 
+#include <RMG-Core/Settings.hpp>
+
+#include <QDir>
+#include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QListWidgetItem>
+#include <QMessageBox>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -838,6 +846,126 @@ void BoardDownloaderDialog::on_resultsListWidget_itemDoubleClicked(void)
     }
 
     this->openProjectDetails(item->data(kProjectIdRole).toInt());
+}
+
+void BoardDownloaderDialog::on_uploadJsonButton_clicked(void)
+{
+    const QString boardFilePath = QFileDialog::getOpenFileName(
+        this,
+        QStringLiteral("Upload Board JSON"),
+        QString(),
+        QStringLiteral("JSON Files (*.json);;All Files (*)"));
+    if (boardFilePath.isEmpty())
+    {
+        return;
+    }
+
+    QString boardName = QFileInfo(boardFilePath).completeBaseName();
+    MarioPartyTarget target = MarioPartyTarget::Unknown;
+
+    QFile boardFile(boardFilePath);
+    if (boardFile.open(QIODevice::ReadOnly))
+    {
+        const QJsonObject boardObject = QJsonDocument::fromJson(boardFile.readAll()).object();
+        boardFile.close();
+
+        if (!boardObject.isEmpty())
+        {
+            target = marioPartyTargetFromGameId(gameIdFromJson(boardObject));
+            const QString jsonName = boardObject.value(QStringLiteral("name")).toString();
+            if (!jsonName.isEmpty())
+            {
+                boardName = jsonName;
+            }
+        }
+    }
+
+    if (target == MarioPartyTarget::Unknown)
+    {
+        const QStringList games = {
+            marioPartyTargetLabel(MarioPartyTarget::MarioParty1),
+            marioPartyTargetLabel(MarioPartyTarget::MarioParty2),
+            marioPartyTargetLabel(MarioPartyTarget::MarioParty3),
+        };
+
+        bool ok = false;
+        const QString choice = QInputDialog::getItem(
+            this,
+            QStringLiteral("Select Target Game"),
+            QStringLiteral("Which Mario Party game is this board for?"),
+            games,
+            0,
+            false,
+            &ok);
+        if (!ok || choice.isEmpty())
+        {
+            return;
+        }
+
+        if (choice == games.at(1))
+        {
+            target = MarioPartyTarget::MarioParty2;
+        }
+        else if (choice == games.at(2))
+        {
+            target = MarioPartyTarget::MarioParty3;
+        }
+        else
+        {
+            target = MarioPartyTarget::MarioParty1;
+        }
+    }
+
+    const std::optional<MarioPartyRomMatch> romMatch = findBestMarioPartyRom(target);
+    QString romFilePath;
+    if (romMatch.has_value())
+    {
+        romFilePath = romMatch->path;
+    }
+    else
+    {
+        romFilePath = QFileDialog::getOpenFileName(
+            this,
+            QStringLiteral("Select Base ROM"),
+            QString::fromStdString(CoreSettingsGetStringValue(SettingsID::RomBrowser_Directory)),
+            QStringLiteral("Nintendo 64 ROM (*.z64 *.n64 *.v64);;All Files (*)"));
+    }
+
+    if (romFilePath.isEmpty())
+    {
+        return;
+    }
+
+    const QString romDirectory = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::RomBrowser_Directory));
+    const QString defaultOutputName = sanitizeBoardFileName(boardName) + QStringLiteral(" (patched).z64");
+    const QString defaultOutputPath = QDir(romDirectory).filePath(defaultOutputName);
+
+    QString outputFilePath = QFileDialog::getSaveFileName(
+        this,
+        QStringLiteral("Save Patched ROM"),
+        defaultOutputPath,
+        QStringLiteral("Patched ROM (*.z64);;All Files (*)"));
+    if (outputFilePath.isEmpty())
+    {
+        return;
+    }
+
+    if (!outputFilePath.endsWith(QStringLiteral(".z64"), Qt::CaseInsensitive))
+    {
+        outputFilePath += QStringLiteral(".z64");
+    }
+
+    if (!patchMarioPartyBoardRom(this, boardFilePath, romFilePath, outputFilePath))
+    {
+        return;
+    }
+
+    QtMessageBox::Info(this,
+                       QStringLiteral("Patched ROM saved successfully"),
+                       romMatch.has_value()
+                           ? QStringLiteral("Used %1 from your ROM directory.").arg(romMatch->goodName)
+                           : QString());
+    this->on_romPatched();
 }
 
 void BoardDownloaderDialog::on_romPatched(void)

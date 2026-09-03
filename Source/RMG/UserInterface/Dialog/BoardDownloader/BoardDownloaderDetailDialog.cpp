@@ -24,8 +24,6 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QProcess>
-#include <QRegularExpression>
 #include <QTemporaryFile>
 #include <QUrlQuery>
 
@@ -70,138 +68,6 @@ QString difficultyStars(int difficulty)
 QString absoluteNativePath(const QString& path)
 {
     return QDir::toNativeSeparators(QFileInfo(path).absoluteFilePath());
-}
-
-QString sanitizeFileName(const QString& fileName)
-{
-    QString sanitized = fileName;
-    sanitized.replace(QRegularExpression(QStringLiteral(R"([\\/:*?"<>|])")), QStringLiteral("_"));
-    return sanitized.trimmed();
-}
-
-bool ensureParentDirectoryExists(const QString& filePath, QString& error)
-{
-    const QFileInfo fileInfo(filePath);
-    const QString directoryPath = fileInfo.absolutePath();
-    if (directoryPath.isEmpty())
-    {
-        error = QStringLiteral("Invalid output path.");
-        return false;
-    }
-
-    QDir directory(directoryPath);
-    if (directory.exists())
-    {
-        return true;
-    }
-
-    if (!directory.mkpath(QStringLiteral(".")))
-    {
-        error = QStringLiteral("Could not create directory: %1").arg(directoryPath);
-        return false;
-    }
-
-    return true;
-}
-
-bool replaceExistingFile(const QString& filePath, QString& error)
-{
-    if (!QFile::exists(filePath))
-    {
-        return true;
-    }
-
-    QFile existingFile(filePath);
-    existingFile.setPermissions(existingFile.permissions() | QFile::WriteOwner | QFile::WriteUser | QFile::WriteGroup |
-                                QFile::WriteOther);
-    if (QFile::remove(filePath))
-    {
-        return true;
-    }
-
-    error = QStringLiteral("Could not overwrite existing file: %1").arg(filePath);
-    return false;
-}
-
-struct PartyPlannerPatchResult
-{
-    bool success = false;
-    bool canForce = false;
-    QString output;
-};
-
-PartyPlannerPatchResult runPartyPlannerPatch(const PartyPlannerCliInfo& cli,
-                                             const QString& boardFilePath,
-                                             const QString& romFilePath,
-                                             const QString& outputFilePath,
-                                             bool force)
-{
-    PartyPlannerPatchResult result;
-
-    QProcess process;
-    QStringList arguments;
-    arguments << QStringLiteral("overwrite")
-              << QStringLiteral("--rom-file") << romFilePath
-              << QStringLiteral("--target-board-index") << QStringLiteral("0")
-              << QStringLiteral("--board-file") << boardFilePath
-              << QStringLiteral("--output-file") << outputFilePath;
-    if (force)
-    {
-        arguments << QStringLiteral("--force");
-    }
-
-    if (cli.usesWine)
-    {
-        process.setProgram(QStringLiteral("wine"));
-        QStringList wineArguments;
-        wineArguments << cli.path;
-        wineArguments.append(arguments);
-        process.setArguments(wineArguments);
-    }
-    else
-    {
-        process.setProgram(cli.path);
-        process.setArguments(arguments);
-        process.setWorkingDirectory(QFileInfo(cli.path).absolutePath());
-    }
-
-    process.setProcessChannelMode(QProcess::MergedChannels);
-    process.start();
-    if (!process.waitForStarted())
-    {
-        result.output = process.errorString();
-        return result;
-    }
-
-    if (!process.waitForFinished(-1))
-    {
-        result.output = QStringLiteral("PartyPlanner64 CLI timed out.");
-        return result;
-    }
-
-    result.output = QString::fromUtf8(process.readAll()).trimmed();
-    const QFileInfo outputInfo(outputFilePath);
-    const bool wroteOutput =
-        outputInfo.exists() && outputInfo.isFile() && outputInfo.size() > 0;
-    const bool exitedCleanly =
-        process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
-
-    result.canForce = result.output.contains(QStringLiteral("Use --force to overwrite anyway."));
-    result.success = exitedCleanly && wroteOutput;
-    return result;
-}
-
-QString partyPlannerPatchWarnings(const QString& cliOutput)
-{
-    QStringList warnings;
-    for (const QString& line : cliOutput.split(QRegularExpression(QStringLiteral("[\\r\\n]+"))))
-    {
-        if (line.startsWith(QStringLiteral("Warning:")))
-        {
-            warnings.push_back(line.mid(QStringLiteral("Warning:").size()).trimmed());
-        }
-    }
-    return warnings.join(QStringLiteral("\n"));
 }
 
 struct BoardVersionFile
@@ -511,69 +377,7 @@ bool BoardDownloaderDetailDialog::patchRom(const QString& boardFilePath,
                                            const QString& romFilePath,
                                            const QString& outputFilePath)
 {
-    const std::optional<PartyPlannerCliInfo> cli = resolvePartyPlannerCli();
-    if (!cli.has_value())
-    {
-        QtMessageBox::Error(this,
-                            QStringLiteral("PartyPlanner64 CLI not found"),
-                            QStringLiteral("Expected a bundled CLI in Data/pp64-cli."));
-        return false;
-    }
-
-    const QString nativeBoardPath = absoluteNativePath(boardFilePath);
-    const QString nativeRomPath = absoluteNativePath(romFilePath);
-    const QString nativeOutputPath = absoluteNativePath(outputFilePath);
-
-    QString directoryError;
-    if (!ensureParentDirectoryExists(nativeOutputPath, directoryError))
-    {
-        QtMessageBox::Error(this, QStringLiteral("Failed to save patched ROM"), directoryError);
-        return false;
-    }
-
-    QString replaceError;
-    if (!replaceExistingFile(nativeOutputPath, replaceError))
-    {
-        QtMessageBox::Error(this, QStringLiteral("Failed to save patched ROM"), replaceError);
-        return false;
-    }
-
-    PartyPlannerPatchResult patchResult =
-        runPartyPlannerPatch(*cli, nativeBoardPath, nativeRomPath, nativeOutputPath, false);
-    if (!patchResult.success && patchResult.canForce)
-    {
-        bool unusedCheckBox = false;
-        const bool forcePatch = QtMessageBox::Question(
-            this,
-            QStringLiteral("PartyPlanner64 reported issues with this board.\n\nOverwrite anyway?"),
-            QString(),
-            unusedCheckBox);
-        if (forcePatch)
-        {
-            patchResult =
-                runPartyPlannerPatch(*cli, nativeBoardPath, nativeRomPath, nativeOutputPath, true);
-        }
-    }
-
-    if (!patchResult.success)
-    {
-        QtMessageBox::Error(this,
-                            QStringLiteral("Failed to patch ROM"),
-                            patchResult.output.isEmpty()
-                                ? QStringLiteral("PartyPlanner64 CLI did not produce a patched ROM.")
-                                : patchResult.output);
-        return false;
-    }
-
-    const QString warnings = partyPlannerPatchWarnings(patchResult.output);
-    if (!warnings.isEmpty())
-    {
-        QtMessageBox::Info(this,
-                           QStringLiteral("Patched ROM saved with warnings"),
-                           warnings);
-    }
-
-    return true;
+    return patchMarioPartyBoardRom(this, boardFilePath, romFilePath, outputFilePath);
 }
 
 void BoardDownloaderDetailDialog::on_downloadButton_clicked(void)
@@ -648,7 +452,7 @@ void BoardDownloaderDetailDialog::on_patchButton_clicked(void)
     }
 
     const QString romDirectory = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::RomBrowser_Directory));
-    const QString defaultOutputName = sanitizeFileName(this->details.value(QStringLiteral("name")).toString()) +
+    const QString defaultOutputName = sanitizeBoardFileName(this->details.value(QStringLiteral("name")).toString()) +
                                       QStringLiteral(" (patched).z64");
     const QString defaultOutputPath = QDir(romDirectory).filePath(defaultOutputName);
 

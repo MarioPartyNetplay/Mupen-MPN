@@ -70,6 +70,12 @@ QString marioPartyTargetLabel(MarioPartyTarget target);
 std::optional<MarioPartyRomMatch> findBestMarioPartyRom(MarioPartyTarget target);
 QString formatBoardDate(const QString& date);
 
+QString sanitizeBoardFileName(const QString& fileName);
+bool patchMarioPartyBoardRom(QWidget* parent,
+                             const QString& boardFilePath,
+                             const QString& romFilePath,
+                             const QString& outputFilePath);
+
 } // namespace Dialog
 } // namespace UserInterface
 
