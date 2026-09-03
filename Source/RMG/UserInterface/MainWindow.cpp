@@ -1241,7 +1241,8 @@ void MainWindow::configureActions(void)
     {
         // System actions
         this->action_System_StartRom, this->action_System_OpenCombo,
-        this->action_System_OpenUserFolder, this->action_System_Shutdown, this->action_System_SoftReset,
+        this->action_System_OpenUserFolder, this->action_System_OpenUserDataFolder,
+        this->action_System_Shutdown, this->action_System_SoftReset,
         this->action_System_HardReset, this->action_System_Pause,
         this->action_System_Screenshot, this->action_System_LimitFPS,
         this->actionSpeed25, this->actionSpeed50, this->actionSpeed75,
@@ -1355,6 +1356,11 @@ void MainWindow::configureActions(void)
 
     // configure grid view options actions
     this->action_View_UniformSize->setChecked(CoreSettingsGetBoolValue(SettingsID::RomBrowser_GridViewUniformItemSizes));
+
+#if defined(__linux__)
+    this->action_System_OpenUserFolder->setText(tr("Open &Config Folder"));
+    this->action_System_OpenUserDataFolder->setVisible(true);
+#endif
 }
 
 void MainWindow::connectActionSignals(void)
@@ -1364,6 +1370,8 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_System_OpenCombo, &QAction::triggered, this, &MainWindow::on_Action_System_OpenCombo);
     connect(this->action_System_OpenUserFolder, &QAction::triggered, this,
             &MainWindow::on_Action_System_OpenUserFolder);
+    connect(this->action_System_OpenUserDataFolder, &QAction::triggered, this,
+            &MainWindow::on_Action_System_OpenUserDataFolder);
     connect(this->action_System_Exit, &QAction::triggered, this, &MainWindow::on_Action_System_Exit);
 
     connect(this->action_System_Shutdown, &QAction::triggered, this, &MainWindow::on_Action_System_Shutdown);
@@ -1854,40 +1862,52 @@ void MainWindow::on_Action_System_OpenCombo(void)
     this->launchEmulationThread(cartRom, diskRom);
 }
 
-void MainWindow::on_Action_System_OpenUserFolder(void)
+static void openDirectoryInFileManager(QWidget* parent, std::filesystem::path directory, const QString& errorTitle)
 {
-    std::filesystem::path dataPath = CoreGetUserDataDirectory();
-
 #ifdef PORTABLE_INSTALL
-    if (!dataPath.is_absolute())
+    if (!directory.is_absolute())
     {
-        dataPath = std::filesystem::absolute(dataPath);
+        directory = std::filesystem::absolute(directory);
     }
 #endif
 
     std::error_code errorCode;
-    if (!std::filesystem::exists(dataPath))
+    if (!std::filesystem::exists(directory))
     {
-        std::filesystem::create_directories(dataPath, errorCode);
+        std::filesystem::create_directories(directory, errorCode);
     }
 
-    const QString directory = QString::fromStdString(dataPath.make_preferred().string());
-    if (directory.isEmpty())
+    const QString path = QString::fromStdString(directory.make_preferred().string());
+    if (path.isEmpty())
     {
-        QtMessageBox::Error(this, "Failed to open user folder", "User data directory is empty.");
+        QtMessageBox::Error(parent, errorTitle, QObject::tr("Directory is empty."));
         return;
     }
 
     if (errorCode)
     {
-        QtMessageBox::Error(this, "Failed to open user folder", QString::fromStdString(errorCode.message()));
+        QtMessageBox::Error(parent, errorTitle, QString::fromStdString(errorCode.message()));
         return;
     }
 
-    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(directory)))
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
     {
-        QtMessageBox::Error(this, "Failed to open user folder", directory);
+        QtMessageBox::Error(parent, errorTitle, path);
     }
+}
+
+void MainWindow::on_Action_System_OpenUserFolder(void)
+{
+#if defined(__linux__)
+    openDirectoryInFileManager(this, CoreGetUserConfigDirectory(), tr("Failed to open config folder"));
+#else
+    openDirectoryInFileManager(this, CoreGetUserDirectory(), tr("Failed to open user folder"));
+#endif
+}
+
+void MainWindow::on_Action_System_OpenUserDataFolder(void)
+{
+    openDirectoryInFileManager(this, CoreGetUserDataDirectory(), tr("Failed to open user folder"));
 }
 
 void MainWindow::on_Action_System_Shutdown(void)

@@ -56,6 +56,10 @@ std::filesystem::path CoreGetDefaultScreenshotDirectory(void);
 // configuration files should be located
 std::filesystem::path CoreGetUserConfigDirectory(void);
 
+// returns the root user folder (portable install dir or
+// %APPDATA%/Mupen-MPN). Config, Data, Save, and Screenshots live here.
+std::filesystem::path CoreGetUserDirectory(void);
+
 // returns the user data directory where
 // data files should be located
 std::filesystem::path CoreGetUserDataDirectory(void);

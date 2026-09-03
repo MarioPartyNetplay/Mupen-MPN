@@ -87,6 +87,7 @@
     <addaction name="action_System_StartRom"/>
     <addaction name="action_System_OpenCombo"/>
     <addaction name="action_System_OpenUserFolder"/>
+    <addaction name="action_System_OpenUserDataFolder"/>
     <addaction name="separator"/>
     <addaction name="action_System_Shutdown"/>
     <addaction name="menuReset"/>
@@ -109,6 +110,7 @@
     <addaction name="action_System_GSButton"/>
     <addaction name="separator"/>
     <addaction name="action_System_OpenUserFolder"/>
+    <addaction name="action_System_OpenUserDataFolder"/>
     <addaction name="separator"/>
     <addaction name="action_System_Exit"/>
    </widget>
@@ -308,6 +310,17 @@
     </property>
     <property name="text">
      <string>Open User &amp;Folder</string>
+    </property>
+   </action>
+   <action name="action_System_OpenUserDataFolder">
+    <property name="icon">
+     <iconset theme="folder-open-line"/>
+    </property>
+    <property name="text">
+     <string>Open User Folder (&amp;Data)</string>
+    </property>
+    <property name="visible">
+     <bool>false</bool>
     </property>
    </action>
    <action name="action_System_Shutdown">

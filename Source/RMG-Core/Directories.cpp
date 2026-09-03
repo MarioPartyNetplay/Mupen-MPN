@@ -40,21 +40,6 @@ static std::filesystem::path l_PluginPathOverride;
 static std::filesystem::path l_SharedDataPathOverride;
 static std::filesystem::path l_PortableProfileRoot;
 
-static std::filesystem::path apply_portable_profile_root(std::filesystem::path relative)
-{
-#ifdef PORTABLE_INSTALL
-    if (!l_PortableProfileRoot.empty())
-    {
-        return (l_PortableProfileRoot / relative).make_preferred();
-    }
-#endif // PORTABLE_INSTALL
-    return relative.make_preferred();
-}
-
-//
-// Local Functions
-//
-
 #ifdef PORTABLE_INSTALL
 static std::filesystem::path get_exe_directory(void)
 {
@@ -100,6 +85,18 @@ static std::filesystem::path get_exe_directory(void)
 }
 #endif // PORTABLE_INSTALL
 
+static std::filesystem::path apply_portable_profile_root(std::filesystem::path relative)
+{
+#ifdef PORTABLE_INSTALL
+    const std::filesystem::path root = l_PortableProfileRoot.empty()
+        ? get_exe_directory()
+        : l_PortableProfileRoot;
+    return (root / relative).make_preferred();
+#else
+    return relative.make_preferred();
+#endif // PORTABLE_INSTALL
+}
+
 #ifdef _WIN32
 static std::filesystem::path get_appdata_directory(std::filesystem::path directory)
 {
@@ -122,11 +119,13 @@ static std::filesystem::path get_appdata_directory(std::filesystem::path directo
         }
     }
 
-    fullDirectory = appdataDirectory;
-    fullDirectory += "/RMG/";
-    fullDirectory += directory;
+    fullDirectory = appdataDirectory / "Mupen-MPN";
+    if (!directory.empty())
+    {
+        fullDirectory /= directory;
+    }
 
-    return fullDirectory;
+    return fullDirectory.make_preferred();
 }
 #elif defined(__APPLE__)
 static std::filesystem::path get_apple_support_directory(std::string subdirectory)
@@ -317,6 +316,36 @@ CORE_EXPORT std::filesystem::path CoreGetPluginDirectory(void)
     return directory.make_preferred();
 }
 
+CORE_EXPORT std::filesystem::path CoreGetUserDirectory(void)
+{
+#ifdef PORTABLE_INSTALL
+    if (CoreGetPortableDirectoryMode())
+    {
+        if (!l_PortableProfileRoot.empty())
+        {
+            return l_PortableProfileRoot.make_preferred();
+        }
+        return get_exe_directory();
+    }
+#endif // PORTABLE_INSTALL
+#ifdef _WIN32
+    return get_appdata_directory({});
+#elif defined(__APPLE__)
+    return get_apple_support_directory("");
+#else
+    return get_var_directory("XDG_CONFIG_HOME", "/RMG", "HOME", "/.config/RMG");
+#endif // _WIN32
+}
+
+static std::filesystem::path resolve_user_path(std::filesystem::path path)
+{
+    if (path.empty() || path.is_absolute())
+    {
+        return path.make_preferred();
+    }
+    return (CoreGetUserDirectory() / path).make_preferred();
+}
+
 CORE_EXPORT std::filesystem::path CoreGetUserConfigDirectory(void)
 {
     std::filesystem::path directory;
@@ -455,15 +484,7 @@ CORE_EXPORT std::filesystem::path CoreGetSharedDataDirectory(void)
 {
     std::filesystem::path directory;
 #ifdef PORTABLE_INSTALL
-    if (CoreGetPortableDirectoryMode())
-    {
-        directory = "Data";
-    }
-    else
-    {
-        directory = get_exe_directory();
-        directory += "/Data";
-    }
+    directory = get_exe_directory() / "Data";
 #else // Linux install
     if (!l_SharedDataPathOverride.empty())
     {
@@ -480,17 +501,17 @@ CORE_EXPORT std::filesystem::path CoreGetSharedDataDirectory(void)
 
 CORE_EXPORT std::filesystem::path CoreGetSaveDirectory(void)
 {
-    return CoreSettingsGetStringValue(SettingsID::Core_SaveSRAMPath);
+    return resolve_user_path(CoreSettingsGetStringValue(SettingsID::Core_SaveSRAMPath));
 }
 
 CORE_EXPORT std::filesystem::path CoreGetSaveStateDirectory(void)
 {
-    return CoreSettingsGetStringValue(SettingsID::Core_SaveStatePath);
+    return resolve_user_path(CoreSettingsGetStringValue(SettingsID::Core_SaveStatePath));
 }
 
 CORE_EXPORT std::filesystem::path CoreGetScreenshotDirectory(void)
 {
-    return CoreSettingsGetStringValue(SettingsID::Core_ScreenshotPath);
+    return resolve_user_path(CoreSettingsGetStringValue(SettingsID::Core_ScreenshotPath));
 }
 
 #ifndef PORTABLE_INSTALL
