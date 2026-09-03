@@ -36,6 +36,11 @@ if (APPLE)
     endif()
 endif()
 
+find_package(Vulkan QUIET)
+if (Vulkan_INCLUDE_DIRS AND NOT Vulkan_INCLUDE_DIR)
+    set(Vulkan_INCLUDE_DIR "${Vulkan_INCLUDE_DIRS}")
+endif()
+
 find_package(Qt6 COMPONENTS Gui Widgets Core Network REQUIRED)
 
 if (NOT WIN32 AND UNIX AND NOT APPLE)
@@ -260,6 +265,12 @@ target_include_directories(RMG PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../
     ${IMGUI_DIR}
 )
+
+# QVulkanInstance includes <vulkan/vulkan.h>. MacPorts/Homebrew Qt may
+# have the Qt header only if vulkan headers are also on the include path.
+if (Vulkan_INCLUDE_DIR)
+    target_include_directories(RMG PRIVATE ${Vulkan_INCLUDE_DIR})
+endif()
 
 target_link_libraries(RMG Qt6::Gui Qt6::Widgets Qt6::Network)
 

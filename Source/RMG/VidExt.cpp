@@ -18,12 +18,15 @@
 
 #include "OnScreenDisplay.hpp"
 
-#include <QVulkanInstance>
 #include <QOpenGLContext>
 #include <QApplication>
 #include <QImage>
 #include <QThread>
 #include <QScreen>
+#include <QtGui/qtguiglobal.h>
+#if QT_CONFIG(vulkan)
+#include <QVulkanInstance>
+#endif
 
 #include <cstdint>
 #include <vector>
@@ -46,9 +49,11 @@ static bool l_OsdInitialized                            = false;
 static QSurfaceFormat l_SurfaceFormat;
 static m64p_render_mode l_RenderMode;
 
+#if QT_CONFIG(vulkan)
 static QVulkanInstance l_VulkanInstance;
 static QVulkanInfoVector<QVulkanExtension> l_VulkanExtensions;
 static QVector<const char*> l_VulkanExtensionList;
+#endif
 
 //
 // VidExt Functions
@@ -88,6 +93,15 @@ static bool VidExt_OglSetup(void)
 
 static m64p_error VidExt_InitWithRenderMode(m64p_render_mode RenderMode)
 {
+#if !QT_CONFIG(vulkan)
+    if (RenderMode == M64P_RENDER_VULKAN)
+    {
+        CoreAddCallbackMessage(CoreDebugMessageType::Error,
+            "Vulkan video is unavailable because Qt was built without Vulkan support");
+        return M64ERR_UNSUPPORTED;
+    }
+#endif
+
     l_RenderMode = RenderMode;
     l_RenderThread = QThread::currentThread();
 
@@ -139,6 +153,7 @@ static m64p_error VidExt_Quit(void)
     }
     else
     {
+#if QT_CONFIG(vulkan)
         // remove vulkan instance from widget
         // and destroy the instance
         (*l_VulkanWidget)->setVulkanInstance(nullptr);
@@ -146,6 +161,7 @@ static m64p_error VidExt_Quit(void)
         {
             l_VulkanInstance.destroy();
         }
+#endif
     }
     l_EmuThread->on_VidExt_Quit();
 
@@ -525,6 +541,11 @@ static uint32_t VidExt_GLGetDefaultFramebuffer(void)
 
 static m64p_error VidExt_VK_GetSurface(void** Surface, void* Instance)
 {
+#if !QT_CONFIG(vulkan)
+    Q_UNUSED(Surface);
+    Q_UNUSED(Instance);
+    return M64ERR_UNSUPPORTED;
+#else
     if (l_RenderMode != M64P_RENDER_VULKAN)
     {
         return M64ERR_INVALID_STATE;
@@ -560,10 +581,16 @@ static m64p_error VidExt_VK_GetSurface(void** Surface, void* Instance)
 
     *Surface = (void*)vulkanSurface;
     return M64ERR_SUCCESS;
+#endif
 }
 
 static m64p_error VidExt_VK_GetInstanceExtensions(const char** Extensions[], uint32_t* NumExtensions)
 {
+#if !QT_CONFIG(vulkan)
+    Q_UNUSED(Extensions);
+    Q_UNUSED(NumExtensions);
+    return M64ERR_UNSUPPORTED;
+#else
     if (l_RenderMode != M64P_RENDER_VULKAN)
     {
         return M64ERR_INVALID_STATE;
@@ -593,6 +620,7 @@ static m64p_error VidExt_VK_GetInstanceExtensions(const char** Extensions[], uin
     *Extensions    = l_VulkanExtensionList.data();
     *NumExtensions = l_VulkanExtensionList.size();
     return M64ERR_SUCCESS;
+#endif
 }
 
 //
