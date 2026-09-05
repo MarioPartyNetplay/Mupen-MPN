@@ -8,8 +8,20 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "EventFilter.hpp"
+#include "Utilities/QtKeyToSdl3Key.hpp"
+
+#include <RMG-Core/Settings.hpp>
 
 using namespace UserInterface;
+
+namespace {
+bool isFullscreenToggleEvent(const QKeyEvent* event)
+{
+    const QString binding = QString::fromStdString(
+        CoreSettingsGetStringValue(SettingsID::KeyBinding_Fullscreen));
+    return Utilities::QtKeyEventMatchesBinding(event, binding);
+}
+}
 
 EventFilter::EventFilter(QObject *parent) : QObject(parent)
 {
@@ -23,6 +35,14 @@ bool EventFilter::eventFilter(QObject *object, QEvent *event)
 {
     switch (event->type())
     {
+    case QEvent::Type::ShortcutOverride:
+        // Keep Alt+Enter (or the configured fullscreen bind) out of the
+        // emulator/OSD Alt-hotkey path so it can still toggle fullscreen.
+        if (isFullscreenToggleEvent(static_cast<QKeyEvent*>(event))) {
+            event->accept();
+            return true;
+        }
+        break;
     case QEvent::Type::KeyPress:
         emit this->on_EventFilter_KeyPressed(static_cast<QKeyEvent*>(event));
         return true;

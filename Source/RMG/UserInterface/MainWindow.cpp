@@ -1581,6 +1581,17 @@ void MainWindow::timerEvent(QTimerEvent *event)
 
 void MainWindow::on_EventFilter_KeyPressed(QKeyEvent *event)
 {
+    const QString fullscreenBinding = QString::fromStdString(
+        CoreSettingsGetStringValue(SettingsID::KeyBinding_Fullscreen));
+    if (Utilities::QtKeyEventMatchesBinding(event, fullscreenBinding))
+    {
+        if (!event->isAutoRepeat() && CoreIsEmulationRunning())
+        {
+            this->on_Action_View_Fullscreen();
+        }
+        return;
+    }
+
     if (event->modifiers() & Qt::AltModifier)
     {
         OnScreenDisplaySetConfigureModifier(true);

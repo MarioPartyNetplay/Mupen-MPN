@@ -75,6 +75,7 @@
 #include <QTimerEvent>
 #include <RMG-Core/Netplay.hpp>
 #include <RMG-Core/Rom.hpp>
+#include <RMG-Core/Video.hpp>
 
 #include <algorithm>
 
@@ -94,6 +95,13 @@ QString formatPingLabel(int pingMs)
         return QStringLiteral("0 ms");
     }
     return QStringLiteral("%1 ms").arg(pingMs);
+}
+
+bool isFullscreenToggleKey(const QKeyEvent* event)
+{
+    const QString binding = QString::fromStdString(
+        CoreSettingsGetStringValue(SettingsID::KeyBinding_Fullscreen));
+    return Utilities::QtKeyEventMatchesBinding(event, binding);
 }
 
 QString netplayGameDisplayName(const QString& goodName, const QString& file)
@@ -2202,6 +2210,22 @@ bool NetplaySessionDialog::eventFilter(QObject* object, QEvent* event)
         return QDialog::eventFilter(object, event);
     }
 
+    auto* keyEvent = static_cast<QKeyEvent*>(event);
+    // OSD uses Alt as a configure modifier; do not let that (or this dialog's
+    // ShortcutOverride consume) block Alt+Enter / the configured fullscreen bind.
+    if (isFullscreenToggleKey(keyEvent)) {
+        if (event->type() == QEvent::ShortcutOverride) {
+            event->accept();
+            return true;
+        }
+        if (event->type() == QEvent::KeyPress &&
+            !keyEvent->isAutoRepeat() &&
+            CoreIsEmulationRunning()) {
+            CoreToggleFullscreen();
+        }
+        return true;
+    }
+
     // Netplay keeps this dialog open; always forward keys to the core while
     // embedded netplay is active unless the user is typing in chat/settings.
     if (CoreIsEmbeddedNetplayActive()) {
@@ -2210,7 +2234,6 @@ bool NetplaySessionDialog::eventFilter(QObject* object, QEvent* event)
             return QDialog::eventFilter(object, event);
         }
 
-        auto* keyEvent = static_cast<QKeyEvent*>(event);
         if (keyEvent->isAutoRepeat() && event->type() == QEvent::KeyRelease) {
             return true;
         }
@@ -2255,7 +2278,6 @@ bool NetplaySessionDialog::eventFilter(QObject* object, QEvent* event)
         return QDialog::eventFilter(object, event);
     }
 
-    auto* keyEvent = static_cast<QKeyEvent*>(event);
     const int key = Utilities::QtKeyToSdl3Key(keyEvent->key());
     const int mod = Utilities::QtModKeyToSdl3ModKey(keyEvent->modifiers());
 

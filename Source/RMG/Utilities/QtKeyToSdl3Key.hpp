@@ -10,12 +10,16 @@
 #ifndef QTKEYTOSDL3KEY_HPP
 #define QTKEYTOSDL3KEY_HPP
 
+#include <QKeyEvent>
 #include <QObject>
+#include <QString>
 
 namespace Utilities
 {
 int QtKeyToSdl3Key(int key);
 int QtModKeyToSdl3ModKey(Qt::KeyboardModifiers modifiers);
+/** True when the event matches a QKeySequence string (Alt+Enter and Alt+Return are equivalent). */
+bool QtKeyEventMatchesBinding(const QKeyEvent* event, const QString& binding);
 } // namespace Utilities
 
 #endif // QTKEYTOSDL3KEY_HPP

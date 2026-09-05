@@ -9,6 +9,7 @@
  */
 #include "QtKeyToSdl3Key.hpp"
 
+#include <QKeySequence>
 #include <SDL3/SDL.h>
 
 using namespace Utilities;
@@ -335,4 +336,37 @@ int Utilities::QtModKeyToSdl3ModKey(Qt::KeyboardModifiers modifiers)
     if (modifiers & Qt::MetaModifier)
         value |= SDL_KMOD_GUI;
     return value;
+}
+
+bool Utilities::QtKeyEventMatchesBinding(const QKeyEvent* event, const QString& binding)
+{
+    if (event == nullptr || binding.isEmpty()) {
+        return false;
+    }
+
+    const QKeySequence sequence(binding);
+    if (sequence.isEmpty()) {
+        return false;
+    }
+
+    const QKeySequence pressed(event->keyCombination());
+    if (sequence.matches(pressed) == QKeySequence::ExactMatch) {
+        return true;
+    }
+
+    const int key = event->key();
+    if (key != Qt::Key_Return && key != Qt::Key_Enter) {
+        return false;
+    }
+
+    const QKeySequence altReturn(Qt::ALT | Qt::Key_Return);
+    const QKeySequence altEnter(Qt::ALT | Qt::Key_Enter);
+    if (sequence.matches(altReturn) != QKeySequence::ExactMatch &&
+        sequence.matches(altEnter) != QKeySequence::ExactMatch) {
+        return false;
+    }
+
+    const Qt::KeyboardModifiers mods = event->modifiers();
+    return (mods & Qt::AltModifier) &&
+           !(mods & (Qt::ControlModifier | Qt::ShiftModifier | Qt::MetaModifier));
 }
