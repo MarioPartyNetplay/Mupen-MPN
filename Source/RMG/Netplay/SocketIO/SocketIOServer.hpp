@@ -117,7 +117,7 @@ private:
         QJsonObject activeCoreSettings;
         bool hasSaveSyncSnapshot = false;
         bool hasCheatSyncSnapshot = false;
-        int inputDelayFrames = 4;
+        int inputDelayFrames = 6;
         QMap<int, uint32_t> lastFrameSyncBySlot;
         QSet<int> emulationReadySlots;
         bool emulationBeginSent = false;
@@ -190,6 +190,8 @@ private:
     void emitToConnectedRoomClients(const QString& roomId, const QString& eventName, const QJsonObject& data);
     void emitToClient(const QString& clientId, const QString& eventName, const QJsonObject& data);
     void emitToClient(const QString& clientId, const QString& eventName, const QJsonArray& data);
+    void emitGameplayControllerInput(const QString& clientId, int slot, uint32_t frameNumber, uint32_t controllerState);
+    void applyControllerInput(ClientConnection* client, uint32_t frameNumber, uint32_t controllerState);
     void broadcastRoomUpdate(const QString& roomId);
     void rebuildLobbySlots(SignalingRoom& room);
     ClientConnection* findRoomPlayer(SignalingRoom* room, const QString& clientId);

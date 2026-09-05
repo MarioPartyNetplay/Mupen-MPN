@@ -78,7 +78,11 @@ public:
     void setDataChannel(int peerSlot, std::shared_ptr<UserInterface::Netplay::WebRTCDataChannel> channel);
     /** Stores local input and returns (frame, state) pairs that need network relay. */
     std::vector<std::pair<uint32_t, uint32_t>> submitLocalInput(uint32_t controllerState);
-    void submitRemoteInput(int fromSlot, uint32_t frameNumber, uint32_t controllerState);
+    void submitRemoteInput(
+        int fromSlot,
+        uint32_t frameNumber,
+        uint32_t controllerState,
+        bool gapFill = true);
     /** Peer-reported frame sync hash for a specific lockstep frame. */
     void submitPeerFrameSync(int fromSlot, uint32_t frameNumber, uint32_t stateHash);
     /** Stores this client's hash for a lockstep frame before broadcasting it. */

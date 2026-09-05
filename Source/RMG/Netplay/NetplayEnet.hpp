@@ -7,6 +7,8 @@
 
 #include <enet/enet.h>
 
+#include <cstdint>
+
 #include <QByteArray>
 #include <QHostAddress>
 #include <QJsonArray>
@@ -46,6 +48,10 @@ bool sendSignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonObj
 bool sendSignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonArray& payload);
 /** Unsequenced delivery for high-frequency gameplay events (latest input wins). */
 bool sendGameplaySignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonObject& payload);
+/** Compact unsequenced controller-input (10 bytes). slot < 0 omits the sender slot. */
+bool sendGameplayControllerInput(ENetPeer* peer, int slot, uint32_t frameNumber, uint32_t controllerState);
+/** True when data is a compact controller-input packet. slotOut is -1 when omitted. */
+bool parseGameplayControllerInput(const QByteArray& data, int* slotOut, uint32_t* frameOut, uint32_t* inputOut);
 
 /** Parses a UDP signaling packet: [2, "event-name", payload...] */
 bool parseSignalingPacket(const QByteArray& data, QString* eventNameOut, QJsonArray* argsOut);

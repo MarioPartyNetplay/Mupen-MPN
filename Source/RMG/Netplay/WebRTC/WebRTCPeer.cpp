@@ -20,6 +20,7 @@
 #include <QThread>
 #include <QTimer>
 
+#include <chrono>
 #include <sstream>
 
 using namespace UserInterface::Netplay;
@@ -213,7 +214,10 @@ std::shared_ptr<WebRTCDataChannel> WebRTCPeer::createDataChannel(const QString& 
         return nullptr;
     }
 
-    auto backendChannel = m_peerConnection->createDataChannel(label.toStdString());
+    rtc::DataChannelInit init;
+    init.reliability.unordered = true;
+    init.reliability.maxPacketLifeTime = std::chrono::milliseconds(100);
+    auto backendChannel = m_peerConnection->createDataChannel(label.toStdString(), init);
     registerDataChannel(backendChannel);
     auto channel = m_dataChannels.value(label);
     return channel;

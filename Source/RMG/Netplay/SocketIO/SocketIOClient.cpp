@@ -541,10 +541,6 @@ void SocketIOClient::sendControllerInput(uint32_t frameNumber, uint32_t controll
     m_lastSentControllerFrame = frameNumber;
     m_lastSentControllerState = controllerState;
 
-    QJsonObject payload;
-    payload["frame"] = static_cast<qint64>(frameNumber);
-    payload["input"] = static_cast<qint64>(controllerState);
-
     const bool canEmit =
         m_serverPeer &&
         (m_connectionState == Connected ||
@@ -554,7 +550,7 @@ void SocketIOClient::sendControllerInput(uint32_t frameNumber, uint32_t controll
         return;
     }
 
-    if (!sendGameplaySignalingEvent(m_serverPeer, QStringLiteral("controller-input"), payload)) {
+    if (!sendGameplayControllerInput(m_serverPeer, -1, frameNumber, controllerState)) {
         static auto lastWarn = std::chrono::steady_clock::now();
         const auto now = std::chrono::steady_clock::now();
         if (now - lastWarn > std::chrono::seconds(2)) {
@@ -902,6 +898,14 @@ void SocketIOClient::on_connectTimeout()
 
 void SocketIOClient::handleSignalingPacket(const QByteArray& payload)
 {
+    int slot = -1;
+    uint32_t frameNumber = 0;
+    uint32_t controllerState = 0;
+    if (parseGameplayControllerInput(payload, &slot, &frameNumber, &controllerState)) {
+        emit controllerInputReceived(slot, frameNumber, controllerState);
+        return;
+    }
+
     QString eventName;
     QJsonArray args;
     if (!parseSignalingPacket(payload, &eventName, &args)) {

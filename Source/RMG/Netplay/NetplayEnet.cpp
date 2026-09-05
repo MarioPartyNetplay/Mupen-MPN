@@ -341,6 +341,59 @@ bool sendGameplaySignalingEvent(ENetPeer* peer, const QString& eventName, const 
     return enet_peer_send(peer, 0, packet) == 0;
 }
 
+namespace {
+constexpr char kControllerInputMagic = static_cast<char>(0xC1);
+constexpr int kControllerInputPacketSize = 10;
+}
+
+bool sendGameplayControllerInput(
+    ENetPeer* peer,
+    int slot,
+    uint32_t frameNumber,
+    uint32_t controllerState)
+{
+    if (!peerIsConnected(peer)) {
+        return false;
+    }
+
+    char encoded[kControllerInputPacketSize];
+    encoded[0] = kControllerInputMagic;
+    encoded[1] = static_cast<char>(slot < 0 || slot > 254 ? 0xFF : slot);
+    std::memcpy(encoded + 2, &frameNumber, 4);
+    std::memcpy(encoded + 6, &controllerState, 4);
+
+    ENetPacket* packet = enet_packet_create(
+        encoded,
+        static_cast<size_t>(kControllerInputPacketSize),
+        ENET_PACKET_FLAG_UNSEQUENCED);
+    if (!packet) {
+        return false;
+    }
+
+    return enet_peer_send(peer, 0, packet) == 0;
+}
+
+bool parseGameplayControllerInput(
+    const QByteArray& data,
+    int* slotOut,
+    uint32_t* frameOut,
+    uint32_t* inputOut)
+{
+    if (data.size() != kControllerInputPacketSize ||
+        data[0] != kControllerInputMagic ||
+        !slotOut ||
+        !frameOut ||
+        !inputOut) {
+        return false;
+    }
+
+    const auto slotByte = static_cast<unsigned char>(data[1]);
+    *slotOut = (slotByte == 0xFF) ? -1 : static_cast<int>(slotByte);
+    std::memcpy(frameOut, data.constData() + 2, 4);
+    std::memcpy(inputOut, data.constData() + 6, 4);
+    return true;
+}
+
 bool sendSignalingEvent(ENetPeer* peer, const QString& eventName, const QJsonArray& payload)
 {
     QJsonArray message;

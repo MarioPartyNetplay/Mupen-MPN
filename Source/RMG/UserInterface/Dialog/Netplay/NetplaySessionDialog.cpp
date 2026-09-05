@@ -60,6 +60,7 @@
 #include <QBrush>
 #include <QFile>
 #include <QFileInfo>
+#include <QByteArray>
 #include <QHash>
 #include <QSignalBlocker>
 
@@ -231,10 +232,16 @@ void appendSaveFileIfExists(QJsonArray& saveFiles, const QDir& directory, const 
     const QByteArray data = file.readAll();
     file.close();
 
+    const QByteArray compressed = qCompress(data, 6);
     QJsonObject saveFile;
     saveFile["filename"] = filename;
     saveFile["size"] = static_cast<qint64>(data.size());
-    saveFile["data"] = QString::fromLatin1(data.toBase64());
+    if (!compressed.isEmpty() && compressed.size() < data.size()) {
+        saveFile["encoding"] = QStringLiteral("zlib");
+        saveFile["data"] = QString::fromLatin1(compressed.toBase64());
+    } else {
+        saveFile["data"] = QString::fromLatin1(data.toBase64());
+    }
     saveFiles.append(saveFile);
 }
 
@@ -1720,7 +1727,10 @@ void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& sav
             continue;
         }
 
-        const QByteArray decodedData = QByteArray::fromBase64(encodedData.toLatin1());
+        QByteArray decodedData = QByteArray::fromBase64(encodedData.toLatin1());
+        if (saveFile.value(QStringLiteral("encoding")).toString() == QStringLiteral("zlib")) {
+            decodedData = qUncompress(decodedData);
+        }
         if (expectedSize > 0 && decodedData.isEmpty() && !encodedData.isEmpty())
         {
             continue;

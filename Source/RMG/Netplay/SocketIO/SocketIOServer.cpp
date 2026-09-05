@@ -241,7 +241,7 @@ void SocketIOServer::createInitialRoom(const QString& roomId, const QString& hos
     room.activeSaves = QJsonArray();
     room.hasSaveSyncSnapshot = false;
     room.hasCheatSyncSnapshot = false;
-    room.inputDelayFrames = 4;
+    room.inputDelayFrames = 6;
     
     auto* hostClient = new ClientConnection();
     hostClient->id = "host";
@@ -540,17 +540,12 @@ void SocketIOServer::broadcastControllerInput(const QString& roomId, int slot, u
         return;
     }
 
-    QJsonObject payload;
-    payload["slot"] = slot;
-    payload["frame"] = static_cast<qint64>(frameNumber);
-    payload["input"] = static_cast<qint64>(controllerState);
-
     // Broadcast to all other players (not the originating player who already submitted locally)
     for (auto* player : room->players)
     {
         if (player && player->slotIndex != slot)
         {
-            emitToClient(player->id, "controller-input", payload);
+            emitGameplayControllerInput(player->id, slot, frameNumber, controllerState);
         }
     }
 }
@@ -1077,6 +1072,14 @@ void SocketIOServer::purgeExpiredDisconnectedClients()
 
 void SocketIOServer::handleSignalingPacket(ENetPeer* peer, const QByteArray& payload)
 {
+    int slot = -1;
+    uint32_t frameNumber = 0;
+    uint32_t controllerState = 0;
+    if (parseGameplayControllerInput(payload, &slot, &frameNumber, &controllerState)) {
+        applyControllerInput(getClientFromPeer(peer), frameNumber, controllerState);
+        return;
+    }
+
     QString eventName;
     QJsonArray args;
     if (!parseSignalingPacket(payload, &eventName, &args)) {
@@ -1792,16 +1795,22 @@ void SocketIOServer::handle_ChatMessage(ENetPeer* socket, const QJsonObject& msg
     }
 }
 
-void SocketIOServer::handle_ControllerInput(ENetPeer* socket, const QJsonObject& msg)
+void SocketIOServer::applyControllerInput(ClientConnection* client, uint32_t frameNumber, uint32_t controllerState)
 {
-    ClientConnection* client = getClientFromPeer(socket);
-    if (!client || client->roomId.isEmpty() || client->slotIndex < 0)
+    if (!client || client->roomId.isEmpty() || client->slotIndex < 0) {
         return;
+    }
 
-    uint32_t frameNumber = static_cast<uint32_t>(msg.value("frame").toInteger());
-    uint32_t controllerState = static_cast<uint32_t>(msg.value("input").toInteger());
     emit controllerInputReceived(client->roomId, client->slotIndex, frameNumber, controllerState);
     broadcastControllerInput(client->roomId, client->slotIndex, frameNumber, controllerState);
+}
+
+void SocketIOServer::handle_ControllerInput(ENetPeer* socket, const QJsonObject& msg)
+{
+    applyControllerInput(
+        getClientFromPeer(socket),
+        static_cast<uint32_t>(msg.value("frame").toInteger()),
+        static_cast<uint32_t>(msg.value("input").toInteger()));
 }
 
 void SocketIOServer::handle_FrameSync(ENetPeer* socket, const QJsonObject& msg)
@@ -1993,6 +2002,20 @@ void SocketIOServer::emitToClient(const QString& clientId, const QString& eventN
     }
 
     sendSignalingEvent(client->peer, eventName, data);
+}
+
+void SocketIOServer::emitGameplayControllerInput(
+    const QString& clientId,
+    int slot,
+    uint32_t frameNumber,
+    uint32_t controllerState)
+{
+    ClientConnection* client = getClientById(clientId);
+    if (!client || !peerIsConnected(client->peer)) {
+        return;
+    }
+
+    sendGameplayControllerInput(client->peer, slot, frameNumber, controllerState);
 }
 
 void SocketIOServer::emitToClient(const QString& clientId, const QString& eventName, const QJsonArray& data)

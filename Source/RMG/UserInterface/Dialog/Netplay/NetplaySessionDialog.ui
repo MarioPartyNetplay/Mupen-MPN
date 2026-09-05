@@ -239,7 +239,7 @@
      <item>
       <widget class="QSpinBox" name="bufferDelaySpinBox">
        <property name="toolTip">
-        <string>Input delay in frames (~17 ms each). Use 4–8 for regional play; higher values absorb network jitter at the cost of more input lag.</string>
+        <string>Input delay in frames (~17 ms each). Use 6–8 for regional play; 10–16 on weaker or high-ping connections. Higher values absorb jitter at the cost of more input lag.</string>
        </property>
        <property name="minimum">
         <number>1</number>

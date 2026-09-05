@@ -276,7 +276,8 @@ LockstepEngine::submitLocalInput(uint32_t controllerState)
 void LockstepEngine::submitRemoteInput(
     int fromSlot,
     uint32_t frameNumber,
-    uint32_t controllerState)
+    uint32_t controllerState,
+    bool gapFill)
 {
     if (!isAlive()) {
         return;
@@ -301,20 +302,22 @@ void LockstepEngine::submitRemoteInput(
         return;
     }
 
-    const auto lastKnownIt = m_lastKnownInputs.find(fromSlot);
-    const uint32_t gapFillState =
-        lastKnownIt != m_lastKnownInputs.end()
-            ? lastKnownIt->second
-            : controllerState;
+    if (gapFill) {
+        const auto lastKnownIt = m_lastKnownInputs.find(fromSlot);
+        const uint32_t gapFillState =
+            lastKnownIt != m_lastKnownInputs.end()
+                ? lastKnownIt->second
+                : controllerState;
 
-    for (uint32_t frame = m_currentFrameNumber; frame < frameNumber; ++frame) {
-        FrameInputs& priorFrameInputs = m_frameBuffer[frame];
-        if (priorFrameInputs.playerInputs.find(fromSlot) ==
-            priorFrameInputs.playerInputs.end()) {
-            priorFrameInputs.frameNumber = frame;
-            priorFrameInputs.playerInputs[fromSlot] = gapFillState;
-            if (frame == m_currentFrameNumber) {
-                m_frameReceived[fromSlot] = true;
+        for (uint32_t frame = m_currentFrameNumber; frame < frameNumber; ++frame) {
+            FrameInputs& priorFrameInputs = m_frameBuffer[frame];
+            if (priorFrameInputs.playerInputs.find(fromSlot) ==
+                priorFrameInputs.playerInputs.end()) {
+                priorFrameInputs.frameNumber = frame;
+                priorFrameInputs.playerInputs[fromSlot] = gapFillState;
+                if (frame == m_currentFrameNumber) {
+                    m_frameReceived[fromSlot] = true;
+                }
             }
         }
     }
