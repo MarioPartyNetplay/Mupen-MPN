@@ -220,9 +220,28 @@ jobs:
 
       - name: Prepare macOS Artifacts
         run: |
+          set -uo pipefail
           cd Bin/Release
-          hdiutil create -volname "Mupen-MPN" -srcfolder Mupen-MPN.app -ov -format UDZO MupenMPN-macOS-x86_64.dmg
-          rm -rf Mupen-MPN.app
+          # macos runners often fail the first hdiutil create with "Resource busy"
+          # while diskimages-helper still has the app open. Pack a staged copy and retry.
+          stage="$(mktemp -d)"
+          ditto Mupen-MPN.app "$stage/Mupen-MPN.app"
+          sync
+          dmg="MupenMPN-macOS-x86_64.dmg"
+          for i in 1 2 3 4 5 6 7 8; do
+            hdiutil detach "/Volumes/Mupen-MPN" >/dev/null 2>&1 || true
+            rm -f "$dmg"
+            if hdiutil create -volname "Mupen-MPN" -srcfolder "$stage/Mupen-MPN.app" -ov -format UDZO "$dmg"; then
+              rm -rf "$stage" Mupen-MPN.app
+              exit 0
+            fi
+            echo "hdiutil create failed (attempt $i), retrying..."
+            killall diskimages-helper >/dev/null 2>&1 || true
+            sleep $((i * 3))
+          done
+          rm -rf "$stage"
+          echo "hdiutil create failed after retries" >&2
+          exit 1
 
       - name: Upload macOS Artifact (Folder Build)
         uses: actions/upload-artifact@v4
