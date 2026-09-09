@@ -44,6 +44,8 @@ static bool l_HasNetplaySyncSettings = false;
 // Local Functions
 //
 
+static constexpr int kNetplayCpuEmulatorDynarec = 2;
+
 static void apply_synced_core_config(const CoreNetplaySyncSettings& sync)
 {
     CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
@@ -51,9 +53,7 @@ static void apply_synced_core_config(const CoreNetplaySyncSettings& sync)
     CoreSettingsSetValue(SettingsID::Core_CountPerOpDenomPot, sync.countPerOpDenomPot);
     CoreSettingsSetValue(SettingsID::Core_DisableExtraMem, sync.disableExtraMem);
     CoreSettingsSetValue(SettingsID::Core_SiDmaDuration, sync.siDmaDuration);
-    // Cached interpreter: dynarec is not cycle-identical across compilers/OS
-    // and is the usual source of a "looks fine then hard-desyncs" split.
-    CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, 1);
+    CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, kNetplayCpuEmulatorDynarec);
     CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
 }
 
@@ -376,7 +376,7 @@ CORE_EXPORT bool CoreBuildNetplaySyncSettings(std::filesystem::path romPath, Cor
     out.countPerOpDenomPot = countPerOpDenomPot;
     out.disableExtraMem = disableExtraMem;
     out.siDmaDuration = siDmaDuration;
-    out.cpuEmulator = 1;
+    out.cpuEmulator = kNetplayCpuEmulatorDynarec;
     out.saveType = gameSettings.SaveType;
     out.transferPak = gameSettings.TransferPak;
     out.valid = true;
@@ -386,6 +386,7 @@ CORE_EXPORT bool CoreBuildNetplaySyncSettings(std::filesystem::path romPath, Cor
 CORE_EXPORT void CoreSetNetplaySyncSettings(const CoreNetplaySyncSettings& settings)
 {
     l_NetplaySyncSettings = settings;
+    l_NetplaySyncSettings.cpuEmulator = kNetplayCpuEmulatorDynarec;
     l_HasNetplaySyncSettings = settings.valid;
 }
 

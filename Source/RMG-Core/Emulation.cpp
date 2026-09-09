@@ -67,6 +67,17 @@ static bool get_emulation_state(m64p_emu_state& state)
     return ret == M64ERR_SUCCESS;
 }
 
+// Dynamic recompiler (R4300Emulator >= 2). Forced for netplay so every peer
+// uses the same CPU backend; interpreter/cached-interp are not lockstep-safe.
+static constexpr int kNetplayCpuEmulatorDynarec = 2;
+
+static void apply_netplay_forced_core_settings(void)
+{
+    CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
+    CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, kNetplayCpuEmulatorDynarec);
+    CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
+}
+
 static void apply_coresettings_overlay(void)
 {
     const bool netplaySession =
@@ -78,10 +89,8 @@ static void apply_coresettings_overlay(void)
         CoreSettingsSetValue(SettingsID::Core_EnableDebugger, CoreSettingsGetBoolValue(SettingsID::CoreOverlay_EnableDebugger));
         CoreSettingsSetValue(SettingsID::Core_SaveFileNameFormat, CoreSettingsGetIntValue(SettingsID::CoreOverLay_SaveFileNameFormat));
         CoreSettingsSetValue(SettingsID::Core_GbCameraVideoCaptureBackend1, CoreSettingsGetStringValue(SettingsID::CoreOverlay_GbCameraVideoCaptureBackend1));
-        // Hardcoded off for lockstep — never trust host/client overlay divergence.
-        CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
-        CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, 1);
-        CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
+        // Hardcoded for lockstep — never trust host/client overlay divergence.
+        apply_netplay_forced_core_settings();
         return;
     }
 
@@ -97,9 +106,7 @@ static void apply_coresettings_overlay(void)
 
     if (netplaySession)
     {
-        CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
-        CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, 1);
-        CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
+        apply_netplay_forced_core_settings();
     }
 }
 
@@ -110,9 +117,7 @@ static void apply_game_coresettings_overlay(void)
 
     if (CoreHasNetplaySyncSettings())
     {
-        CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
-        CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, 1);
-        CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
+        apply_netplay_forced_core_settings();
         return;
     }
 
@@ -125,9 +130,7 @@ static void apply_game_coresettings_overlay(void)
     {
         if (netplaySession)
         {
-            CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
-            CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, 1);
-            CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
+            apply_netplay_forced_core_settings();
         }
         return;
     }
@@ -145,9 +148,7 @@ static void apply_game_coresettings_overlay(void)
     {
         if (netplaySession)
         {
-            CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
-            CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, 1);
-            CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
+            apply_netplay_forced_core_settings();
         }
         return;
     }
@@ -159,9 +160,7 @@ static void apply_game_coresettings_overlay(void)
 
     if (netplaySession)
     {
-        CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
-        CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, 1);
-        CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
+        apply_netplay_forced_core_settings();
     }
 }
 
