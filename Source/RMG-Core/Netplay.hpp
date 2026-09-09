@@ -73,7 +73,7 @@ struct CoreNetplaySyncSettings
     int countPerOpDenomPot = 0;
     bool disableExtraMem = false;
     int siDmaDuration = -1;
-    int cpuEmulator = 2;
+    int cpuEmulator = 2; // always dynarec for netplay (R4300Emulator >= 2)
     int saveType = 0;
     bool transferPak = false;
     bool valid = false;
