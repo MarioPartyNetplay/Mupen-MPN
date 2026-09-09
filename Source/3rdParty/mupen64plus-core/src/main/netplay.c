@@ -734,8 +734,10 @@ file_status_t netplay_read_storage(const char *filename, void *data, size_t size
         buffer_pos += strlen(file_extension) + 1;
 
         ret = read_from_file(filename, data, size);
-        if (ret == file_open_error)
+        if (ret != file_ok) {
             memset(data, 0, size); //all zeros means there is no save file
+            ret = file_open_error;
+        }
         netplay_write32((int32_t)size, &output_data[buffer_pos]); //file data size
         buffer_pos += 4;
         memcpy(&output_data[buffer_pos], data, size); //file data

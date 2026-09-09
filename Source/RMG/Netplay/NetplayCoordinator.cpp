@@ -1887,7 +1887,7 @@ void NetplayCoordinator::maybeSubmitCompletedFrameSync(uint32_t completedFrame)
         return;
     }
 
-    // ~1 Hz at 60 FPS; compare state hashes at the same lockstep frame.
+    // Default 180 frames (~3s at 60 FPS); compare hashes at the same lockstep frame.
     const uint32_t syncInterval = static_cast<uint32_t>(
         std::max(60, m_lockstepConfig.resyncCheckIntervalFrames));
 

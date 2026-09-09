@@ -22,6 +22,7 @@
 #include "file_storage.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "api/callbacks.h"
 #include "api/m64p_types.h"
@@ -42,6 +43,10 @@ int open_file_storage(struct file_storage* fstorage, size_t size, const char* fi
     if (fstorage->data == NULL) {
         return -1;
     }
+
+    /* Prefill so a short/empty file cannot leave uninitialized RAM in the save.
+     * Missing files still format in open_*_file; 0xFF matches EEPROM/SRAM/Flash. */
+    memset(fstorage->data, 0xff, fstorage->size);
 
     /* try to load storage file content */
     if (!netplay_is_init())

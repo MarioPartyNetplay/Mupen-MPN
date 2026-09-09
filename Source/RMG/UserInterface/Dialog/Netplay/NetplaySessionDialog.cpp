@@ -223,34 +223,77 @@ QStringList collectSaveSyncBaseNames(const QString& romFile)
     return saveBaseNames;
 }
 
-void appendSaveFileIfExists(QJsonArray& saveFiles, const QDir& directory, const QString& filename)
+constexpr int kEepromSize = 0x800;
+constexpr int kSramSize = 0x8000;
+constexpr int kFlashramSize = 0x20000;
+
+QByteArray canonicalBlankSave(const QString& extension)
+{
+    int size = 0;
+    if (extension.compare(QStringLiteral(".eep"), Qt::CaseInsensitive) == 0) {
+        size = kEepromSize;
+    } else if (extension.compare(QStringLiteral(".sra"), Qt::CaseInsensitive) == 0 ||
+               extension.compare(QStringLiteral(".srm"), Qt::CaseInsensitive) == 0) {
+        size = kSramSize;
+    } else if (extension.compare(QStringLiteral(".fla"), Qt::CaseInsensitive) == 0) {
+        size = kFlashramSize;
+    }
+
+    if (size <= 0) {
+        return {};
+    }
+
+    // Matches format_eeprom / format_sram / format_flashram (all 0xFF).
+    return QByteArray(size, '\xff');
+}
+
+bool saveFilesHaveExtension(const QJsonArray& saveFiles, const QString& extension)
 {
     for (const auto& value : saveFiles) {
-        if (value.toObject().value("filename").toString() == filename) {
+        const QString filename = value.toObject().value(QStringLiteral("filename")).toString();
+        if (filename.endsWith(extension, Qt::CaseInsensitive)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void appendSavePayload(QJsonArray& saveFiles, const QString& filename, const QByteArray& data)
+{
+    for (const auto& value : saveFiles) {
+        if (value.toObject().value(QStringLiteral("filename")).toString() == filename) {
             return;
         }
     }
 
+    QJsonObject saveFile;
+    saveFile[QStringLiteral("filename")] = filename;
+    saveFile[QStringLiteral("size")] = static_cast<qint64>(data.size());
+    const QByteArray compressed = qCompress(data, 6);
+    if (!compressed.isEmpty() && compressed.size() < data.size()) {
+        saveFile[QStringLiteral("encoding")] = QStringLiteral("zlib");
+        saveFile[QStringLiteral("data")] = QString::fromLatin1(compressed.toBase64());
+    } else {
+        saveFile[QStringLiteral("data")] = QString::fromLatin1(data.toBase64());
+    }
+    saveFiles.append(saveFile);
+}
+
+void appendSaveFileIfExists(QJsonArray& saveFiles, const QDir& directory, const QString& filename)
+{
     const QString filePath = directory.filePath(filename);
     QFile file(filePath);
-    if (!file.exists() || !file.open(QIODevice::ReadOnly)) {
+    if (!file.exists() || file.size() <= 0 || !file.open(QIODevice::ReadOnly)) {
         return;
     }
 
     const QByteArray data = file.readAll();
     file.close();
-
-    const QByteArray compressed = qCompress(data, 6);
-    QJsonObject saveFile;
-    saveFile["filename"] = filename;
-    saveFile["size"] = static_cast<qint64>(data.size());
-    if (!compressed.isEmpty() && compressed.size() < data.size()) {
-        saveFile["encoding"] = QStringLiteral("zlib");
-        saveFile["data"] = QString::fromLatin1(compressed.toBase64());
-    } else {
-        saveFile["data"] = QString::fromLatin1(data.toBase64());
+    if (data.isEmpty()) {
+        return;
     }
-    saveFiles.append(saveFile);
+
+    appendSavePayload(saveFiles, filename, data);
 }
 
 void clearLocalSaveSyncCandidates(const QString& romFile, QDir& directory)
@@ -264,7 +307,7 @@ void clearLocalSaveSyncCandidates(const QString& romFile, QDir& directory)
 
 bool writeSaveSyncFile(QDir& directory, const QString& filename, const QByteArray& data)
 {
-    if (filename.isEmpty()) {
+    if (filename.isEmpty() || data.isEmpty()) {
         return false;
     }
 
@@ -275,7 +318,7 @@ bool writeSaveSyncFile(QDir& directory, const QString& filename, const QByteArra
         return false;
     }
 
-    if (!data.isEmpty() && file.write(data) != data.size()) {
+    if (file.write(data) != data.size()) {
         qWarning() << "NetplaySessionDialog: Failed to fully write save file" << filePath;
         file.close();
         return false;
@@ -288,8 +331,71 @@ bool writeSaveSyncFile(QDir& directory, const QString& filename, const QByteArra
 void mirrorSaveDataToAllBaseNames(QDir& directory, const QStringList& baseNames,
                                   const QString& extension, const QByteArray& data)
 {
+    if (data.isEmpty()) {
+        return;
+    }
+
     for (const QString& baseName : baseNames) {
         writeSaveSyncFile(directory, baseName + extension, data);
+    }
+}
+
+void applyNetplaySaveSync(const QString& romFile, const QJsonArray& saveFiles)
+{
+    const auto saveDirectory = CoreGetSaveDirectory();
+    QDir directory(QString::fromStdString(saveDirectory.string()));
+    if (!directory.exists()) {
+        directory.mkpath(QStringLiteral("."));
+    }
+
+    const QStringList baseNames = collectSaveSyncBaseNames(romFile);
+    clearLocalSaveSyncCandidates(romFile, directory);
+
+    QHash<QString, QByteArray> dataByExtension;
+    for (const auto& value : saveFiles) {
+        const QJsonObject saveFile = value.toObject();
+        const QString filename = saveFile.value(QStringLiteral("filename")).toString();
+        const qint64 expectedSize = saveFile.value(QStringLiteral("size")).toVariant().toLongLong();
+        const QString encodedData = saveFile.value(QStringLiteral("data")).toString();
+        if (filename.isEmpty() || expectedSize <= 0) {
+            continue;
+        }
+
+        QByteArray decodedData = QByteArray::fromBase64(encodedData.toLatin1());
+        if (saveFile.value(QStringLiteral("encoding")).toString() == QStringLiteral("zlib")) {
+            decodedData = qUncompress(decodedData);
+        }
+        if (decodedData.isEmpty()) {
+            continue;
+        }
+        if (decodedData.size() != expectedSize) {
+            qWarning() << "NetplaySessionDialog: Save sync size mismatch for" << filename
+                       << "expected" << expectedSize << "got" << decodedData.size();
+        }
+
+        writeSaveSyncFile(directory, filename, decodedData);
+
+        for (const QString& extension : netplaySaveExtensions()) {
+            if (filename.endsWith(extension, Qt::CaseInsensitive) &&
+                !dataByExtension.contains(extension)) {
+                dataByExtension.insert(extension, decodedData);
+                break;
+            }
+        }
+    }
+
+    static const QStringList cartridgeExtensions = {
+        QStringLiteral(".eep"), QStringLiteral(".sra"),
+        QStringLiteral(".srm"), QStringLiteral(".fla")
+    };
+    for (const QString& extension : cartridgeExtensions) {
+        if (!dataByExtension.contains(extension)) {
+            dataByExtension.insert(extension, canonicalBlankSave(extension));
+        }
+    }
+
+    for (auto it = dataByExtension.constBegin(); it != dataByExtension.constEnd(); ++it) {
+        mirrorSaveDataToAllBaseNames(directory, baseNames, it.key(), it.value());
     }
 }
 
@@ -305,9 +411,22 @@ QJsonArray buildEnabledCheatsSnapshot(const QString& romFile)
 
     for (const auto& cheat : cheats)
     {
-        if (CoreIsCheatEnabled(romFile.toStdU32String(), cheat))
+        if (!CoreIsCheatEnabled(romFile.toStdU32String(), cheat))
         {
-            CheatsCommon::EnableCheat(true, hostCheats, romFile, cheat, true);
+            continue;
+        }
+
+        CheatsCommon::EnableCheat(true, hostCheats, romFile, cheat, true);
+
+        // Wildcard codes ('?' / '!') are skipped at apply time unless the selected
+        // option travels with the netplay payload.
+        if (cheat.HasOptions)
+        {
+            CoreCheatOption option;
+            if (CoreGetCheatOption(romFile.toStdU32String(), cheat, option))
+            {
+                CheatsCommon::SetCheatOption(true, hostCheats, romFile, cheat, option);
+            }
         }
     }
 
@@ -347,7 +466,8 @@ QJsonArray buildSaveSyncFiles(const QString& romFile)
         if (chosenFilename.isEmpty() && haveRomInfo) {
             const QString formattedName =
                 buildMupenSaveBaseNameForFormat(header, settings, format) + extension;
-            if (QFileInfo::exists(directory.filePath(formattedName))) {
+            const QFileInfo formattedInfo(directory.filePath(formattedName));
+            if (formattedInfo.exists() && formattedInfo.size() > 0) {
                 chosenFilename = formattedName;
             }
         }
@@ -355,7 +475,8 @@ QJsonArray buildSaveSyncFiles(const QString& romFile)
         if (chosenFilename.isEmpty()) {
             for (const QString& baseName : baseNames) {
                 const QString candidate = baseName + extension;
-                if (QFileInfo::exists(directory.filePath(candidate))) {
+                const QFileInfo candidateInfo(directory.filePath(candidate));
+                if (candidateInfo.exists() && candidateInfo.size() > 0) {
                     chosenFilename = candidate;
                     break;
                 }
@@ -365,6 +486,26 @@ QJsonArray buildSaveSyncFiles(const QString& romFile)
         if (!chosenFilename.isEmpty()) {
             appendSaveFileIfExists(saveFiles, directory, chosenFilename);
         }
+    }
+
+    // Missing cartridge saves must still travel as canonical 0xFF images. The
+    // core formats absent files to 0xFF, but a leftover 0-byte file becomes
+    // uninitialized RAM instead — and the host previously never wrote blanks.
+    QString blankBase;
+    if (haveRomInfo) {
+        blankBase = buildMupenSaveBaseNameForFormat(header, settings, format);
+    } else if (!baseNames.isEmpty()) {
+        blankBase = baseNames.first();
+    }
+    static const QStringList cartridgeExtensions = {
+        QStringLiteral(".eep"), QStringLiteral(".sra"),
+        QStringLiteral(".srm"), QStringLiteral(".fla")
+    };
+    for (const QString& extension : cartridgeExtensions) {
+        if (blankBase.isEmpty() || saveFilesHaveExtension(saveFiles, extension)) {
+            continue;
+        }
+        appendSavePayload(saveFiles, blankBase + extension, canonicalBlankSave(extension));
     }
 
     return saveFiles;
@@ -1709,62 +1850,7 @@ void NetplaySessionDialog::on_coordinator_cheatsUpdated(const QJsonArray& cheats
 
 void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& saveFiles)
 {
-    const auto saveDirectory = CoreGetSaveDirectory();
-    QDir directory(QString::fromStdString(saveDirectory.string()));
-    if (!directory.exists())
-    {
-        directory.mkpath(".");
-    }
-
-    const QStringList baseNames = collectSaveSyncBaseNames(this->romFile);
-
-    // Always wipe every path the core might open for this ROM. Custom boards keep
-    // stock GoodNames, so a leftover Mario Party .eep would otherwise win over the
-    // synced MD5-named file and desync on the save select screen.
-    clearLocalSaveSyncCandidates(this->romFile, directory);
-
-    QHash<QString, QByteArray> dataByExtension;
-    for (const auto& value : saveFiles)
-    {
-        const QJsonObject saveFile = value.toObject();
-        const QString filename = saveFile.value("filename").toString();
-        const qint64 expectedSize = saveFile.value("size").toVariant().toLongLong();
-        const QString encodedData = saveFile.value("data").toString();
-        if (filename.isEmpty() || expectedSize < 0)
-        {
-            continue;
-        }
-
-        QByteArray decodedData = QByteArray::fromBase64(encodedData.toLatin1());
-        if (saveFile.value(QStringLiteral("encoding")).toString() == QStringLiteral("zlib")) {
-            decodedData = qUncompress(decodedData);
-        }
-        if (expectedSize > 0 && decodedData.isEmpty() && !encodedData.isEmpty())
-        {
-            continue;
-        }
-        if (expectedSize >= 0 && decodedData.size() != expectedSize && expectedSize > 0)
-        {
-            qWarning() << "NetplaySessionDialog: Save sync size mismatch for" << filename
-                       << "expected" << expectedSize << "got" << decodedData.size();
-        }
-
-        writeSaveSyncFile(directory, filename, decodedData);
-
-        for (const QString& extension : netplaySaveExtensions()) {
-            if (filename.endsWith(extension, Qt::CaseInsensitive) && !dataByExtension.contains(extension)) {
-                dataByExtension.insert(extension, decodedData);
-                break;
-            }
-        }
-    }
-
-    // Mirror host save bytes onto every candidate basename so peers with different
-    // SaveFilenameFormat / leftover naming still open identical EEPROM contents.
-    for (auto it = dataByExtension.constBegin(); it != dataByExtension.constEnd(); ++it) {
-        mirrorSaveDataToAllBaseNames(directory, baseNames, it.key(), it.value());
-    }
-
+    applyNetplaySaveSync(this->romFile, saveFiles);
     this->m_sessionSavesApplied = true;
     this->requestSynchronizedEmulationStart();
     this->tryCompletePendingGameStart();
@@ -1785,8 +1871,16 @@ void NetplaySessionDialog::syncHostSessionState(void)
         return;
     }
 
-    // Always push cheats (including an empty list) so clients clear local-only codes.
-    const QJsonArray hostCheats = buildEnabledCheatsSnapshot(this->romFile);
+    // Prefer session JSON (including an empty list) so lobby cheat/option
+    // changes survive start. Fall back to locally enabled cheats until the
+    // first explicit sync.
+    std::vector<CoreCheat> cheats;
+    QJsonArray hostCheats;
+    if (!this->getCheats(cheats, hostCheats))
+    {
+        qWarning() << "NetplaySessionDialog: Failed to read host cheat snapshot for sync";
+        hostCheats = buildEnabledCheatsSnapshot(this->romFile);
+    }
     if (!this->setCheats(hostCheats))
     {
         qWarning() << "NetplaySessionDialog: Failed to store host cheat snapshot for sync";
@@ -1794,8 +1888,12 @@ void NetplaySessionDialog::syncHostSessionState(void)
     this->applyCheats();
     this->coordinator->sendCheatsUpdate(hostCheats);
 
-    // Always push saves (including empty) so clients wipe leftover GoodName/MD5 files.
-    this->coordinator->sendSaveSync(buildSaveSyncFiles(this->romFile));
+    // Capture host saves first, then apply the same wipe/write the clients will:
+    // leftover GoodName/MD5 files and 0-byte stubs must not survive only on the host.
+    const QJsonArray saveFiles = buildSaveSyncFiles(this->romFile);
+    applyNetplaySaveSync(this->romFile, saveFiles);
+    this->m_sessionSavesApplied = true;
+    this->coordinator->sendSaveSync(saveFiles);
 
     const QJsonObject coreSettings = buildCoreSettingsSyncPayload(this->romFile);
     CoreNetplaySyncSettings hostSyncSettings;

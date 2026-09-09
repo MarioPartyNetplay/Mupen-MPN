@@ -36,6 +36,10 @@ constexpr uint32_t kMaxInputPrefillPerSubmitCap = 16;
 // packet. Without this guard, the gap-fill loop below would try to allocate
 // one std::map node per skipped frame and exhaust the heap (malloc crash).
 constexpr uint32_t kMaxFutureFrameLead = 1024;
+// Keep more than one 180-frame sync interval so late peer hashes still match.
+constexpr uint32_t kFrameSyncRetainFrames = 720;
+// Checkpoints are ~3s apart; a short confirmed run still catches real splits.
+constexpr int kRequiredMismatchStreak = 3;
 
 uint32_t inputFrameSlackForDelay(int inputDelayFrames)
 {
@@ -396,7 +400,9 @@ void LockstepEngine::recordLocalFrameSync(uint32_t frameNumber, uint32_t stateHa
         }
 
         pruneOldFrameSyncDataUnlocked(
-            frameNumber > 120 ? frameNumber - 120 : 0);
+            frameNumber > kFrameSyncRetainFrames
+                ? frameNumber - kFrameSyncRetainFrames
+                : 0);
     }
     notifyPendingCallbacks();
 }
@@ -878,12 +884,20 @@ void LockstepEngine::comparePeerFrameSyncUnlocked(
 
     if (localIt->second == peerHash) {
         m_peerHashMismatchStreak[fromSlot] = 0;
+        m_peerHashLastMismatchFrame[fromSlot] = 0;
         m_pendingPeerFrameSyncHashes[fromSlot].erase(frameNumber);
+        maybeClearDesyncUnlocked();
         return;
     }
 
+    // Late/reordered hashes for an older checkpoint must not stack the streak.
+    uint32_t& lastMismatchFrame = m_peerHashLastMismatchFrame[fromSlot];
+    if (lastMismatchFrame != 0 && frameNumber <= lastMismatchFrame) {
+        return;
+    }
+    lastMismatchFrame = frameNumber;
+
     ++m_peerHashMismatchStreak[fromSlot];
-    constexpr int kRequiredMismatchStreak = 3;
     if (m_peerHashMismatchStreak[fromSlot] < kRequiredMismatchStreak) {
         return;
     }
@@ -895,23 +909,36 @@ void LockstepEngine::comparePeerFrameSyncUnlocked(
         peerHash);
 }
 
+void LockstepEngine::maybeClearDesyncUnlocked()
+{
+    for (const auto& [slot, streak] : m_peerHashMismatchStreak) {
+        if (streak > 0) {
+            return;
+        }
+    }
+
+    m_isDesynchronized = false;
+    m_desyncAlertSent = false;
+}
+
 void LockstepEngine::reportStateHashMismatchUnlocked(
     int fromSlot,
     uint32_t frameNumber,
     uint32_t localHash,
     uint32_t peerHash)
 {
-    const uint64_t mismatchKey =
-        (static_cast<uint64_t>(frameNumber) << 32) |
-        static_cast<uint32_t>(fromSlot);
-
-    if (m_reportedHashMismatches.count(mismatchKey) != 0) {
-        return;
-    }
-
-    m_reportedHashMismatches.insert(mismatchKey);
     m_stats.desyncDetections++;
     m_isDesynchronized = true;
+
+    if (m_config.resyncEnabled) {
+        m_pendingResync = true;
+    }
+
+    // One OSD/chat alert per desync episode; recovered sessions can alert again.
+    if (m_desyncAlertSent) {
+        return;
+    }
+    m_desyncAlertSent = true;
 
     char localHex[11];
     char peerHex[11];
@@ -927,10 +954,6 @@ void LockstepEngine::reportStateHashMismatchUnlocked(
             " (local=0x" + localHex +
             ", peer=0x" + peerHex + ")"};
     m_hasPendingDesyncNotification = true;
-
-    if (m_config.resyncEnabled) {
-        m_pendingResync = true;
-    }
 }
 
 void LockstepEngine::pruneOldFrameSyncDataUnlocked(uint32_t oldestFrameToKeep)
@@ -953,15 +976,6 @@ void LockstepEngine::pruneOldFrameSyncDataUnlocked(uint32_t oldestFrameToKeep)
             }
         }
         (void)slot;
-    }
-
-    for (auto it = m_reportedHashMismatches.begin();
-         it != m_reportedHashMismatches.end();) {
-        if ((*it >> 32) < oldestFrameToKeep) {
-            it = m_reportedHashMismatches.erase(it);
-        } else {
-            ++it;
-        }
     }
 }
 

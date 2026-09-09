@@ -35,6 +35,51 @@ static int find_json_cheat(const QJsonArray& json, const CoreCheat& cheat)
     return -1;
 }
 
+static QJsonObject cheat_option_to_json(const CoreCheatOption& option)
+{
+    QJsonObject optionObject;
+    optionObject["name"]  = QString::fromStdString(option.Name);
+    optionObject["size"]  = option.Size;
+    optionObject["value"] = static_cast<qint64>(option.Value);
+    return optionObject;
+}
+
+static bool json_has_valid_cheat_option(const QJsonObject& cheatObject)
+{
+    if (!cheatObject.contains(QStringLiteral("option")) || !cheatObject.value(QStringLiteral("option")).isObject())
+    {
+        return false;
+    }
+
+    const QJsonObject optionObject = cheatObject.value(QStringLiteral("option")).toObject();
+    return optionObject.contains(QStringLiteral("name")) &&
+           optionObject.contains(QStringLiteral("size")) &&
+           optionObject.contains(QStringLiteral("value"));
+}
+
+static void copy_netplay_cheat_option(QJsonObject& cheatObject, const QJsonObject& existingCheatObject,
+                                      const QString& file, const CoreCheat& cheat)
+{
+    if (json_has_valid_cheat_option(existingCheatObject))
+    {
+        cheatObject["option"] = existingCheatObject.value(QStringLiteral("option")).toObject();
+        return;
+    }
+
+    if (!cheat.HasOptions)
+    {
+        return;
+    }
+
+    CoreCheatOption option;
+    if (!CoreGetCheatOption(file.toStdU32String(), cheat, option))
+    {
+        return;
+    }
+
+    cheatObject["option"] = cheat_option_to_json(option);
+}
+
 //
 // Exported Function
 //
@@ -79,10 +124,11 @@ bool CheatsCommon::EnableCheat(bool netplay, QJsonArray& json, QString file, con
             cheatObject["has_options"] = cheat.HasOptions;
 
             int index = find_json_cheat(json, cheat);
+            const QJsonObject existingCheatObject = (index != -1) ? json[index].toObject() : QJsonObject();
+            copy_netplay_cheat_option(cheatObject, existingCheatObject, file, cheat);
+
             if (index != -1)
             {
-                // copy over the option object
-                cheatObject["option"] = json[index].toObject().value("option").toObject();
                 json[index] = cheatObject;
             }
             else
@@ -164,28 +210,19 @@ bool CheatsCommon::SetCheatOption(bool netplay, QJsonArray& json, QString file, 
     if (netplay)
     {
         QJsonObject cheatObject;
-        QJsonObject optionObject;
+        QJsonObject optionObject = cheat_option_to_json(option);
         QString targetCheatName = QString::fromStdString(cheat.Name);
 
         int index = find_json_cheat(json, cheat);
         if (index != -1)
         {
             cheatObject = json[index].toObject();
-            optionObject["name"]  = QString::fromStdString(option.Name);
-            optionObject["size"]  = option.Size;
-            optionObject["value"] = (qint64)option.Value;
-
             cheatObject["option"] = optionObject;
-
             json[index] = cheatObject;
         }
         else
         { // create dummy object when option has been set
           // without the user having the cheat enabled
-            optionObject["name"]  = QString::fromStdString(option.Name);
-            optionObject["size"]  = option.Size;
-            optionObject["value"] = (qint64)option.Value;
-
             cheatObject["name"]   = targetCheatName;
             cheatObject["option"] = optionObject;
 

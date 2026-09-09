@@ -1159,7 +1159,9 @@ static void open_mpk_file(struct file_storage* fstorage)
     unsigned int i;
     int ret = open_file_storage(fstorage, GAME_CONTROLLERS_COUNT*MEMPAK_SIZE, get_mempaks_path());
 
-    if (ret == (int)file_open_error) {
+    /* Format on any load failure. A 0-byte/short file returns file_read_error
+     * with uninitialized storage; netplay needs the same default as a missing file. */
+    if (ret != (int)file_ok && fstorage->data != NULL) {
         /* if file doesn't exists provide default content */
         for(i = 0; i < GAME_CONTROLLERS_COUNT; ++i) {
 
@@ -1183,7 +1185,7 @@ static void open_fla_file(struct file_storage* fstorage)
 {
     int ret = open_file_storage(fstorage, FLASHRAM_SIZE, get_flashram_path());
 
-    if (ret == (int)file_open_error) {
+    if (ret != (int)file_ok && fstorage->data != NULL) {
         /* if file doesn't exists provide default content */
         format_flashram(fstorage->data);
     }
@@ -1193,7 +1195,7 @@ static void open_sra_file(struct file_storage* fstorage)
 {
     int ret = open_file_storage(fstorage, SRAM_SIZE, get_sram_path());
 
-    if (ret == (int)file_open_error) {
+    if (ret != (int)file_ok && fstorage->data != NULL) {
         /* if file doesn't exists provide default content */
         format_sram(fstorage->data);
     }
@@ -1208,7 +1210,7 @@ static void open_eep_file(struct file_storage* fstorage)
 
     int ret = open_file_storage(fstorage, EEPROM_MAX_SIZE, get_eeprom_path());
 
-    if (ret == (int)file_open_error) {
+    if (ret != (int)file_ok && fstorage->data != NULL) {
         /* if file doesn't exists provide default content */
         format_eeprom(fstorage->data, EEPROM_MAX_SIZE);
     }
@@ -1695,6 +1697,8 @@ m64p_error main_run(void)
         : ConfigGetParamBool(g_CoreConfig, "RandomizeInterrupt");
     if (netplay_determinism_required()) {
         no_compiled_jump = 0;
+        /* Dynarec is not deterministic across compilers/OS. Cached interp is. */
+        emumode = 1;
     }
     count_per_op = ConfigGetParamInt(g_CoreConfig, "CountPerOp");
     count_per_op_denom_pot = ConfigGetParamInt(g_CoreConfig, "CountPerOpDenomPot");
@@ -1716,6 +1720,11 @@ m64p_error main_run(void)
 
     //During netplay, player 1 is the source of truth for these settings
     netplay_sync_settings(&count_per_op, &count_per_op_denom_pot, &disable_extra_mem, &si_dma_duration, &emumode, &no_compiled_jump);
+    if (netplay_determinism_required()) {
+        emumode = 1;
+        no_compiled_jump = 0;
+        randomize_interrupt = 0;
+    }
 
     rdram_size = (disable_extra_mem == 0) ? 0x800000 : 0x400000;
 

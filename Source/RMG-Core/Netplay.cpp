@@ -51,7 +51,9 @@ static void apply_synced_core_config(const CoreNetplaySyncSettings& sync)
     CoreSettingsSetValue(SettingsID::Core_CountPerOpDenomPot, sync.countPerOpDenomPot);
     CoreSettingsSetValue(SettingsID::Core_DisableExtraMem, sync.disableExtraMem);
     CoreSettingsSetValue(SettingsID::Core_SiDmaDuration, sync.siDmaDuration);
-    CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, sync.cpuEmulator);
+    // Cached interpreter: dynarec is not cycle-identical across compilers/OS
+    // and is the usual source of a "looks fine then hard-desyncs" split.
+    CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, 1);
     CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
 }
 
@@ -328,7 +330,6 @@ CORE_EXPORT bool CoreBuildNetplaySyncSettings(std::filesystem::path romPath, Cor
     int countPerOpDenomPot = CoreSettingsGetIntValue(SettingsID::CoreOverlay_CountPerOpDenomPot);
     bool disableExtraMem = CoreSettingsGetBoolValue(SettingsID::CoreOverlay_DisableExtraMem);
     int siDmaDuration = CoreSettingsGetIntValue(SettingsID::CoreOverlay_SiDmaDuration);
-    int cpuEmulator = CoreSettingsGetIntValue(SettingsID::CoreOverlay_CPU_Emulator);
 
     std::string section;
     const int format = CoreSettingsGetIntValue(SettingsID::Core_SaveFileNameFormat);
@@ -343,7 +344,6 @@ CORE_EXPORT bool CoreBuildNetplaySyncSettings(std::filesystem::path romPath, Cor
 
     if (CoreSettingsGetBoolValue(SettingsID::Game_OverrideCoreSettings, section))
     {
-        cpuEmulator = CoreSettingsGetIntValue(SettingsID::Game_CPU_Emulator, section);
         countPerOpDenomPot = CoreSettingsGetIntValue(SettingsID::Game_CountPerOpDenomPot, section);
     }
 
@@ -376,7 +376,7 @@ CORE_EXPORT bool CoreBuildNetplaySyncSettings(std::filesystem::path romPath, Cor
     out.countPerOpDenomPot = countPerOpDenomPot;
     out.disableExtraMem = disableExtraMem;
     out.siDmaDuration = siDmaDuration;
-    out.cpuEmulator = cpuEmulator;
+    out.cpuEmulator = 1;
     out.saveType = gameSettings.SaveType;
     out.transferPak = gameSettings.TransferPak;
     out.valid = true;
@@ -446,6 +446,9 @@ namespace {
 
 constexpr int kGprRegisterCount = 32;
 constexpr int kCp0RegisterCount = 32;
+// RANDOM is derived from COUNT and is extra-noisy; COUNT/COMPARE/CAUSE are
+// part of real lockstep timing and must stay in the hash.
+constexpr int kCp0RandomReg = 1;
 
 uint32_t fnv1a32(uint32_t hash, uint32_t value)
 {
@@ -454,14 +457,9 @@ uint32_t fnv1a32(uint32_t hash, uint32_t value)
     return hash;
 }
 
-uint32_t hashRegisterBlock(uint32_t hash, const uint32_t* registers, int count)
+bool isVolatileCp0Register(int index)
 {
-    for (int i = 0; i < count; ++i)
-    {
-        hash = fnv1a32(hash, registers[i]);
-    }
-
-    return hash;
+    return index == kCp0RandomReg;
 }
 
 } // namespace
@@ -478,12 +476,15 @@ CORE_EXPORT uint32_t CoreGetNetplayFrameSyncHash(void)
         return 0;
     }
 
+    // GPRs/HI/LO are int64_t. Hashing them as uint32_t[32] only covered the
+    // first 16 registers and mixed in dirty upper halves that dynarec does
+    // not keep consistent across machines.
     const auto* const gpr =
-        static_cast<const uint32_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_REG));
+        static_cast<const int64_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_REG));
     const auto* const hi =
-        static_cast<const uint32_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_HI));
+        static_cast<const int64_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_HI));
     const auto* const lo =
-        static_cast<const uint32_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_LO));
+        static_cast<const int64_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_LO));
     const auto* const cp0 =
         static_cast<const uint32_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_COP0));
     const auto* const pc =
@@ -499,10 +500,23 @@ CORE_EXPORT uint32_t CoreGetNetplayFrameSyncHash(void)
     }
 
     uint32_t hash = 2166136261u;
-    hash = hashRegisterBlock(hash, gpr, kGprRegisterCount);
-    hash = fnv1a32(hash, *hi);
-    hash = fnv1a32(hash, *lo);
-    hash = hashRegisterBlock(hash, cp0, kCp0RegisterCount);
+    for (int i = 0; i < kGprRegisterCount; ++i)
+    {
+        hash = fnv1a32(hash, static_cast<uint32_t>(gpr[i]));
+    }
+    hash = fnv1a32(hash, static_cast<uint32_t>(*hi));
+    hash = fnv1a32(hash, static_cast<uint32_t>(*lo));
 
-    return fnv1a32(hash, *pc);
+    for (int i = 0; i < kCp0RegisterCount; ++i)
+    {
+        if (isVolatileCp0Register(i))
+        {
+            continue;
+        }
+        hash = fnv1a32(hash, cp0[i]);
+    }
+
+    hash = fnv1a32(hash, *pc);
+
+    return hash;
 }

@@ -80,6 +80,7 @@ static void apply_coresettings_overlay(void)
         CoreSettingsSetValue(SettingsID::Core_GbCameraVideoCaptureBackend1, CoreSettingsGetStringValue(SettingsID::CoreOverlay_GbCameraVideoCaptureBackend1));
         // Hardcoded off for lockstep — never trust host/client overlay divergence.
         CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
+        CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, 1);
         CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
         return;
     }
@@ -97,6 +98,7 @@ static void apply_coresettings_overlay(void)
     if (netplaySession)
     {
         CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
+        CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, 1);
         CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
     }
 }
@@ -109,6 +111,7 @@ static void apply_game_coresettings_overlay(void)
     if (CoreHasNetplaySyncSettings())
     {
         CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
+        CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, 1);
         CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
         return;
     }
@@ -123,6 +126,7 @@ static void apply_game_coresettings_overlay(void)
         if (netplaySession)
         {
             CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
+            CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, 1);
             CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
         }
         return;
@@ -142,6 +146,7 @@ static void apply_game_coresettings_overlay(void)
         if (netplaySession)
         {
             CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
+            CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, 1);
             CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
         }
         return;
@@ -155,6 +160,7 @@ static void apply_game_coresettings_overlay(void)
     if (netplaySession)
     {
         CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
+        CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, 1);
         CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
     }
 }

@@ -20,7 +20,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <functional>
-#include <unordered_set>
 #include "../Library.hpp"
 
 namespace UserInterface::Netplay {
@@ -148,6 +147,7 @@ private:
         uint32_t localHash,
         uint32_t peerHash);
     void pruneOldFrameSyncDataUnlocked(uint32_t oldestFrameToKeep);
+    void maybeClearDesyncUnlocked();
     void applyTimeoutFallbackUnlocked(uint32_t frameNumber);
     void notifyPendingCallbacks();
     bool allMissingInputsAreFromDisconnectedPeersUnlocked(
@@ -173,8 +173,9 @@ private:
     std::map<int, bool> m_peerSessionActive;
     std::map<uint32_t, uint32_t> m_localFrameSyncHashes;
     std::map<int, std::map<uint32_t, uint32_t>> m_pendingPeerFrameSyncHashes;
-    std::unordered_set<uint64_t> m_reportedHashMismatches;
     std::map<int, int> m_peerHashMismatchStreak;
+    std::map<int, uint32_t> m_peerHashLastMismatchFrame;
+    bool m_desyncAlertSent = false;
     std::vector<std::pair<int, uint32_t>> m_pendingStallNotifications;
     std::pair<uint32_t, std::string> m_pendingDesyncNotification;
     bool m_hasPendingDesyncNotification = false;

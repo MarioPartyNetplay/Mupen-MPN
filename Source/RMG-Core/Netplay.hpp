@@ -94,7 +94,7 @@ void CoreApplyNetplaySyncedRomSettings(void);
 // applies synced core config values before emulation starts (clients only)
 void CoreApplyNetplaySyncedCoreSettings(void);
 
-// hashes emulated CPU state (CP0 + PC) for embedded netplay desync checks
+// hashes stable emulated CPU state for embedded netplay desync checks
 uint32_t CoreGetNetplayFrameSyncHash(void);
 
 #endif // CORE_NETPLAY_HPP
