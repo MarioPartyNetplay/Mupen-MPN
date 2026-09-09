@@ -446,9 +446,13 @@ namespace {
 
 constexpr int kGprRegisterCount = 32;
 constexpr int kCp0RegisterCount = 32;
-// RANDOM is derived from COUNT and is extra-noisy; COUNT/COMPARE/CAUSE are
-// part of real lockstep timing and must stay in the hash.
+// Timer/interrupt CP0 tracks cycle skew, not gameplay. MP1 extra SI polls
+// nudge COUNT/COMPARE/CAUSE/RANDOM even when GPRs and PC still match, which
+// showed up as on/off HUD desyncs. Skip r0 (hardwired 0) the same way.
 constexpr int kCp0RandomReg = 1;
+constexpr int kCp0CountReg = 9;
+constexpr int kCp0CompareReg = 11;
+constexpr int kCp0CauseReg = 13;
 
 uint32_t fnv1a32(uint32_t hash, uint32_t value)
 {
@@ -459,7 +463,10 @@ uint32_t fnv1a32(uint32_t hash, uint32_t value)
 
 bool isVolatileCp0Register(int index)
 {
-    return index == kCp0RandomReg;
+    return index == kCp0RandomReg ||
+           index == kCp0CountReg ||
+           index == kCp0CompareReg ||
+           index == kCp0CauseReg;
 }
 
 } // namespace
@@ -500,7 +507,7 @@ CORE_EXPORT uint32_t CoreGetNetplayFrameSyncHash(void)
     }
 
     uint32_t hash = 2166136261u;
-    for (int i = 0; i < kGprRegisterCount; ++i)
+    for (int i = 1; i < kGprRegisterCount; ++i)
     {
         hash = fnv1a32(hash, static_cast<uint32_t>(gpr[i]));
     }
