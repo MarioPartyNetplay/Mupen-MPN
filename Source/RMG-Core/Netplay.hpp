@@ -76,6 +76,9 @@ struct CoreNetplaySyncSettings
     int cpuEmulator = 2; // always dynarec for netplay (R4300Emulator >= 2)
     int saveType = 0;
     bool transferPak = false;
+    // Friendly plugin names (from PluginGetVersion). Empty means older peer.
+    std::string rspPluginName;
+    std::string gfxPluginName;
     bool valid = false;
 };
 

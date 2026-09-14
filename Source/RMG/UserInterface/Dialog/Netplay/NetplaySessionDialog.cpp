@@ -13,6 +13,7 @@
 #include "Utilities/QtKeyToSdl3Key.hpp"
 #include "OnScreenDisplay.hpp"
 #include "NetplaySessionDialog.hpp"
+#include "NetplayCommon.hpp"
 #include "Netplay/NetplayProtocol.hpp"
 #include "Netplay/SocketIO/SocketIOServer.hpp"
 #include "Netplay/WebRTC/TurnCredentialClient.hpp"
@@ -527,7 +528,47 @@ QJsonObject buildCoreSettingsSyncPayload(const QString& romFile)
     payload[QStringLiteral("cpuEmulator")] = settings.cpuEmulator;
     payload[QStringLiteral("saveType")] = settings.saveType;
     payload[QStringLiteral("transferPak")] = settings.transferPak;
+    if (!settings.rspPluginName.empty()) {
+        payload[QStringLiteral("rspPlugin")] =
+            QString::fromStdString(settings.rspPluginName);
+    }
+    if (!settings.gfxPluginName.empty()) {
+        payload[QStringLiteral("gfxPlugin")] =
+            QString::fromStdString(settings.gfxPluginName);
+    }
     return payload;
+}
+
+bool localPluginsMatchHostSync(const QJsonObject& coreSettings, const QString& romMd5, QString* mismatchOut)
+{
+    const QString hostRsp = coreSettings.value(QStringLiteral("rspPlugin")).toString().trimmed();
+    const QString hostGfx = coreSettings.value(QStringLiteral("gfxPlugin")).toString().trimmed();
+    // Older hosts omit plugin names — skip the check rather than block start.
+    if (hostRsp.isEmpty() && hostGfx.isEmpty()) {
+        return true;
+    }
+
+    const QList<QString> localPlugins = NetplayCommon::GetPluginNames(romMd5);
+    const QString localRsp = localPlugins.value(0).trimmed();
+    const QString localGfx = localPlugins.value(1).trimmed();
+
+    if (!hostRsp.isEmpty() && !localRsp.isEmpty() &&
+        QString::compare(hostRsp, localRsp, Qt::CaseInsensitive) != 0) {
+        if (mismatchOut) {
+            *mismatchOut = QStringLiteral("RSP plugin mismatch (host: %1, local: %2)")
+                               .arg(hostRsp, localRsp);
+        }
+        return false;
+    }
+    if (!hostGfx.isEmpty() && !localGfx.isEmpty() &&
+        QString::compare(hostGfx, localGfx, Qt::CaseInsensitive) != 0) {
+        if (mismatchOut) {
+            *mismatchOut = QStringLiteral("GFX plugin mismatch (host: %1, local: %2)")
+                               .arg(hostGfx, localGfx);
+        }
+        return false;
+    }
+    return true;
 }
 
 }
@@ -1858,7 +1899,20 @@ void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& sav
 
 void NetplaySessionDialog::on_coordinator_coreSettingsSyncReceived(const QJsonObject& coreSettings)
 {
-    Q_UNUSED(coreSettings);
+    QString mismatch;
+    if (!localPluginsMatchHostSync(coreSettings, this->expectedSessionMd5(), &mismatch)) {
+        this->m_sessionCoreSettingsApplied = false;
+        this->chatPlainTextEdit->appendHtml(
+            QStringLiteral("<span style=\"color:#ff6666;\"><b>Cannot start:</b> %1. "
+                           "Match the host RSP/GFX plugins, then rejoin.</span>")
+                .arg(mismatch.toHtmlEscaped()));
+        QtMessageBox::Error(
+            this,
+            QStringLiteral("Netplay plugin mismatch"),
+            mismatch + QStringLiteral("\nMatch the host's RSP and video plugins before starting."));
+        return;
+    }
+
     this->m_sessionCoreSettingsApplied = true;
     this->requestSynchronizedEmulationStart();
     this->tryCompletePendingGameStart();

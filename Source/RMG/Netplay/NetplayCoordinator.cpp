@@ -54,6 +54,14 @@ QJsonObject coreSettingsToJson(const CoreNetplaySyncSettings& settings)
     payload[QStringLiteral("cpuEmulator")] = settings.cpuEmulator;
     payload[QStringLiteral("saveType")] = settings.saveType;
     payload[QStringLiteral("transferPak")] = settings.transferPak;
+    if (!settings.rspPluginName.empty()) {
+        payload[QStringLiteral("rspPlugin")] =
+            QString::fromStdString(settings.rspPluginName);
+    }
+    if (!settings.gfxPluginName.empty()) {
+        payload[QStringLiteral("gfxPlugin")] =
+            QString::fromStdString(settings.gfxPluginName);
+    }
     return payload;
 }
 
@@ -75,6 +83,10 @@ bool coreSettingsFromJson(const QJsonObject& payload, CoreNetplaySyncSettings& s
     settings.cpuEmulator = payload.value(QStringLiteral("cpuEmulator")).toInt(2);
     settings.saveType = payload.value(QStringLiteral("saveType")).toInt(0);
     settings.transferPak = payload.value(QStringLiteral("transferPak")).toBool(false);
+    settings.rspPluginName =
+        payload.value(QStringLiteral("rspPlugin")).toString().toStdString();
+    settings.gfxPluginName =
+        payload.value(QStringLiteral("gfxPlugin")).toString().toStdString();
     settings.valid = true;
     return true;
 }

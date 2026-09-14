@@ -71,11 +71,29 @@ static bool get_emulation_state(m64p_emu_state& state)
 // uses the same CPU backend; interpreter/cached-interp are not lockstep-safe.
 static constexpr int kNetplayCpuEmulatorDynarec = 2;
 
+static void apply_netplay_forced_gliden64_settings(void)
+{
+    // Video-plugin RDRAM feedback must be identical across peers. FBInfo and
+    // async color/depth copies are a common source of rare mid-session splits.
+    const std::string section("Video-GLideN64");
+    CoreSettingsSetValue(section, std::string("DisableFBInfo"), true);
+    CoreSettingsSetValue(section, std::string("EnableCopyColorToRDRAM"), 0);
+    CoreSettingsSetValue(section, std::string("EnableCopyDepthToRDRAM"), 0);
+    CoreSettingsSetValue(section, std::string("EnableCopyAuxiliaryToRDRAM"), false);
+    CoreSettingsSetValue(section, std::string("EnableCopyColorFromRDRAM"), false);
+    CoreSettingsSetValue(section, std::string("EnableCustomSettings"), false);
+    CoreSettingsSetValue(section, std::string("ThreadedVideo"), false);
+}
+
 static void apply_netplay_forced_core_settings(void)
 {
     CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
     CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, kNetplayCpuEmulatorDynarec);
     CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
+    // Local overlays must not diverge peers (debugger traps / GB camera backends).
+    CoreSettingsSetValue(SettingsID::Core_EnableDebugger, true);
+    CoreSettingsSetValue(SettingsID::Core_GbCameraVideoCaptureBackend1, std::string(""));
+    apply_netplay_forced_gliden64_settings();
 }
 
 static void apply_coresettings_overlay(void)
@@ -86,9 +104,7 @@ static void apply_coresettings_overlay(void)
     if (CoreHasNetplaySyncSettings())
     {
         CoreApplyNetplaySyncedCoreSettings();
-        CoreSettingsSetValue(SettingsID::Core_EnableDebugger, CoreSettingsGetBoolValue(SettingsID::CoreOverlay_EnableDebugger));
         CoreSettingsSetValue(SettingsID::Core_SaveFileNameFormat, CoreSettingsGetIntValue(SettingsID::CoreOverLay_SaveFileNameFormat));
-        CoreSettingsSetValue(SettingsID::Core_GbCameraVideoCaptureBackend1, CoreSettingsGetStringValue(SettingsID::CoreOverlay_GbCameraVideoCaptureBackend1));
         // Hardcoded for lockstep — never trust host/client overlay divergence.
         apply_netplay_forced_core_settings();
         return;

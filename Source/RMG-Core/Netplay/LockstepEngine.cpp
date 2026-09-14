@@ -319,6 +319,7 @@ void LockstepEngine::submitRemoteInput(
                 priorFrameInputs.playerInputs.end()) {
                 priorFrameInputs.frameNumber = frame;
                 priorFrameInputs.playerInputs[fromSlot] = gapFillState;
+                m_inventedInputs[frame][fromSlot] = true;
                 if (frame == m_currentFrameNumber) {
                     m_frameReceived[fromSlot] = true;
                 }
@@ -331,13 +332,19 @@ void LockstepEngine::submitRemoteInput(
     if (existing != frameInputs.playerInputs.end() &&
         existing->second != controllerState &&
         frameNumber <= m_currentFrameNumber) {
-        // Allow replacing invented stall fallback (0 with no prior sample) so a
-        // late-but-valid first packet after releaseCurrentFrameWait / disconnect
-        // recovery does not hard-desync the session.
+        // Invented inputs are only safe to replace before the frame is consumed.
+        // Past frames already drove emulation — treat conflicts as real desyncs.
+        const auto inventedFrameIt = m_inventedInputs.find(frameNumber);
+        bool invented = false;
+        if (inventedFrameIt != m_inventedInputs.end()) {
+            const auto slotIt = inventedFrameIt->second.find(fromSlot);
+            invented = slotIt != inventedFrameIt->second.end() && slotIt->second;
+        }
         const bool replaceableFallback =
-            existing->second == FALLBACK_INPUT &&
-            m_lastKnownInputFrames.find(fromSlot) ==
-                m_lastKnownInputFrames.end();
+            (invented && frameNumber >= m_currentFrameNumber) ||
+            (existing->second == FALLBACK_INPUT &&
+             m_lastKnownInputFrames.find(fromSlot) ==
+                 m_lastKnownInputFrames.end());
         if (!replaceableFallback) {
             m_stats.desyncDetections++;
             m_isDesynchronized = true;
@@ -356,6 +363,13 @@ void LockstepEngine::submitRemoteInput(
     frameInputs.frameNumber = frameNumber;
     frameInputs.playerInputs[fromSlot] = controllerState;
     frameInputs.receivedTime = std::chrono::steady_clock::now();
+    if (auto inventedIt = m_inventedInputs.find(frameNumber);
+        inventedIt != m_inventedInputs.end()) {
+        inventedIt->second.erase(fromSlot);
+        if (inventedIt->second.empty()) {
+            m_inventedInputs.erase(inventedIt);
+        }
+    }
 
     m_lastKnownInputs[fromSlot] = controllerState;
     m_lastKnownInputFrames[fromSlot] = frameNumber;
@@ -711,6 +725,14 @@ void LockstepEngine::pruneOldFrames(uint32_t oldestFrameToKeep)
             ++it;
         }
     }
+
+    for (auto it = m_inventedInputs.begin(); it != m_inventedInputs.end();) {
+        if (it->first < oldestFrameToKeep) {
+            it = m_inventedInputs.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void LockstepEngine::onDataChannelBinaryMessageReceived(
@@ -1014,6 +1036,7 @@ void LockstepEngine::applyTimeoutFallbackUnlocked(uint32_t frameNumber)
             lastKnown != m_lastKnownInputs.end()
                 ? lastKnown->second
                 : FALLBACK_INPUT;
+        m_inventedInputs[frameNumber][slot] = true;
 
         m_stats.stallFrameNumbers.push_back(frameNumber);
 

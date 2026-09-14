@@ -169,6 +169,9 @@ private:
     std::map<int, bool> m_frameReceived;
     std::map<int, uint32_t> m_lastKnownInputs;
     std::map<int, uint32_t> m_lastKnownInputFrames;
+    // Gap-fill / stall fallbacks keyed by frame → slot. Authentic late packets
+    // may replace these without raising a conflicting-input desync.
+    std::map<uint32_t, std::map<int, bool>> m_inventedInputs;
     std::map<int, uint32_t> m_lastStallCallbackFrame;
     std::map<int, bool> m_peerSessionActive;
     std::map<uint32_t, uint32_t> m_localFrameSyncHashes;

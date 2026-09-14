@@ -19,9 +19,11 @@
 #include "Library.hpp"
 #include "Error.hpp"
 #include "Emulation.hpp"
+#include "Plugins.hpp"
 #include "Netplay/LockstepEngine.hpp"
 
 #include <algorithm>
+#include <cstring>
 
 #include "m64p/Api.hpp"
 
@@ -46,6 +48,51 @@ static bool l_HasNetplaySyncSettings = false;
 
 static constexpr int kNetplayCpuEmulatorDynarec = 2;
 
+static std::string basename_only(std::string path)
+{
+    const auto slash = path.find_last_of("/\\");
+    if (slash != std::string::npos)
+    {
+        path = path.substr(slash + 1);
+    }
+    return path;
+}
+
+static std::string resolve_plugin_name(CorePluginType type, const std::string& md5)
+{
+    SettingsID gameSetting = SettingsID::Game_GFX_Plugin;
+    SettingsID coreSetting = SettingsID::Core_GFX_Plugin;
+    if (type == CorePluginType::Rsp)
+    {
+        gameSetting = SettingsID::Game_RSP_Plugin;
+        coreSetting = SettingsID::Core_RSP_Plugin;
+    }
+
+    std::string fileName;
+    if (!md5.empty())
+    {
+        fileName = CoreSettingsGetStringValue(gameSetting, md5);
+    }
+    if (fileName.empty())
+    {
+        fileName = CoreSettingsGetStringValue(coreSetting);
+    }
+    fileName = basename_only(std::move(fileName));
+    if (fileName.empty())
+    {
+        return {};
+    }
+
+    for (const CorePlugin& plugin : CoreGetAllPlugins())
+    {
+        if (plugin.Type == type && plugin.File == fileName)
+        {
+            return plugin.Name;
+        }
+    }
+    return fileName;
+}
+
 static void apply_synced_core_config(const CoreNetplaySyncSettings& sync)
 {
     CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
@@ -55,6 +102,18 @@ static void apply_synced_core_config(const CoreNetplaySyncSettings& sync)
     CoreSettingsSetValue(SettingsID::Core_SiDmaDuration, sync.siDmaDuration);
     CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, kNetplayCpuEmulatorDynarec);
     CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
+    CoreSettingsSetValue(SettingsID::Core_EnableDebugger, false);
+    CoreSettingsSetValue(SettingsID::Core_GbCameraVideoCaptureBackend1, std::string(""));
+
+    // Keep GLideN64 RDRAM feedback identical even if Emulation overlay runs later.
+    const std::string glide("Video-GLideN64");
+    CoreSettingsSetValue(glide, std::string("DisableFBInfo"), true);
+    CoreSettingsSetValue(glide, std::string("EnableCopyColorToRDRAM"), 0);
+    CoreSettingsSetValue(glide, std::string("EnableCopyDepthToRDRAM"), 0);
+    CoreSettingsSetValue(glide, std::string("EnableCopyAuxiliaryToRDRAM"), false);
+    CoreSettingsSetValue(glide, std::string("EnableCopyColorFromRDRAM"), false);
+    CoreSettingsSetValue(glide, std::string("EnableCustomSettings"), false);
+    CoreSettingsSetValue(glide, std::string("ThreadedVideo"), false);
 }
 
 //
@@ -379,6 +438,8 @@ CORE_EXPORT bool CoreBuildNetplaySyncSettings(std::filesystem::path romPath, Cor
     out.cpuEmulator = kNetplayCpuEmulatorDynarec;
     out.saveType = gameSettings.SaveType;
     out.transferPak = gameSettings.TransferPak;
+    out.rspPluginName = resolve_plugin_name(CorePluginType::Rsp, gameSettings.MD5);
+    out.gfxPluginName = resolve_plugin_name(CorePluginType::Gfx, gameSettings.MD5);
     out.valid = true;
     return true;
 }
@@ -447,6 +508,7 @@ namespace {
 
 constexpr int kGprRegisterCount = 32;
 constexpr int kCp0RegisterCount = 32;
+constexpr int kCp1FgrCount = 32;
 // Timer/interrupt CP0 tracks cycle skew, not gameplay. MP1 extra SI polls
 // nudge COUNT/COMPARE/CAUSE/RANDOM even when GPRs and PC still match, which
 // showed up as on/off HUD desyncs. Skip r0 (hardwired 0) the same way.
@@ -454,11 +516,21 @@ constexpr int kCp0RandomReg = 1;
 constexpr int kCp0CountReg = 9;
 constexpr int kCp0CompareReg = 11;
 constexpr int kCp0CauseReg = 13;
+// Sparse RDRAM sample catches video-plugin feedback splits without hashing 4–8MB.
+constexpr size_t kRdramSampleStride = 4096;
+constexpr size_t kRdramSampleBytes = 4 * 1024 * 1024;
 
 uint32_t fnv1a32(uint32_t hash, uint32_t value)
 {
     hash ^= value;
     hash *= 16777619u;
+    return hash;
+}
+
+uint32_t fnv1a32_u64(uint32_t hash, uint64_t value)
+{
+    hash = fnv1a32(hash, static_cast<uint32_t>(value));
+    hash = fnv1a32(hash, static_cast<uint32_t>(value >> 32));
     return hash;
 }
 
@@ -497,6 +569,8 @@ CORE_EXPORT uint32_t CoreGetNetplayFrameSyncHash(void)
         static_cast<const uint32_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_COP0));
     const auto* const pc =
         static_cast<const uint32_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_PC));
+    const auto* const fgr =
+        static_cast<const uint64_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_COP1_FGR_64));
 
     if (gpr == nullptr ||
         hi == nullptr ||
@@ -510,6 +584,7 @@ CORE_EXPORT uint32_t CoreGetNetplayFrameSyncHash(void)
     uint32_t hash = 2166136261u;
     for (int i = 1; i < kGprRegisterCount; ++i)
     {
+        // Low 32 only: dynarec leaves dirty upper halves inconsistent across hosts.
         hash = fnv1a32(hash, static_cast<uint32_t>(gpr[i]));
     }
     hash = fnv1a32(hash, static_cast<uint32_t>(*hi));
@@ -525,6 +600,29 @@ CORE_EXPORT uint32_t CoreGetNetplayFrameSyncHash(void)
     }
 
     hash = fnv1a32(hash, *pc);
+
+    if (fgr != nullptr)
+    {
+        for (int i = 0; i < kCp1FgrCount; ++i)
+        {
+            hash = fnv1a32_u64(hash, fgr[i]);
+        }
+    }
+
+    if (m64p::Core.DebugMemGetPointer != nullptr)
+    {
+        const auto* const rdram =
+            static_cast<const uint8_t*>(m64p::Core.DebugMemGetPointer(M64P_DBG_PTR_RDRAM));
+        if (rdram != nullptr)
+        {
+            for (size_t offset = 0; offset + 4 <= kRdramSampleBytes; offset += kRdramSampleStride)
+            {
+                uint32_t word = 0;
+                std::memcpy(&word, rdram + offset, sizeof(word));
+                hash = fnv1a32(hash, word);
+            }
+        }
+    }
 
     return hash;
 }
