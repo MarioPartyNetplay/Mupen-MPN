@@ -163,7 +163,9 @@ void populateRomListFromBrowserDirectory(UserInterface::Widget::CreateNetplaySes
 
 const QStringList& netplaySaveExtensions()
 {
-    static const QStringList extensions = { ".eep", ".sra", ".srm", ".fla", ".mpk" };
+    // Do not sync controller mempaks (.mpk). Peers often have different
+    // controller-pak contents; forcing a shared image desyncs lockstep.
+    static const QStringList extensions = { ".eep", ".sra", ".srm", ".fla" };
     return extensions;
 }
 
@@ -359,6 +361,10 @@ void applyNetplaySaveSync(const QString& romFile, const QJsonArray& saveFiles)
         const qint64 expectedSize = saveFile.value(QStringLiteral("size")).toVariant().toLongLong();
         const QString encodedData = saveFile.value(QStringLiteral("data")).toString();
         if (filename.isEmpty() || expectedSize <= 0) {
+            continue;
+        }
+        // Ignore mempak payloads from older hosts — never wipe/overwrite .mpk.
+        if (filename.endsWith(QStringLiteral(".mpk"), Qt::CaseInsensitive)) {
             continue;
         }
 
