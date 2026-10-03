@@ -1916,13 +1916,15 @@ void NetplayCoordinator::maybeSubmitCompletedFrameSync(uint32_t completedFrame)
     }
 
     // Default 180 frames (~3s at 60 FPS); compare hashes at the same lockstep frame.
+    // Skip the first checkpoint. Frame 180 disagrees across dynarec hosts while
+    // gameplay still matches, and that was firing a false desync on startup.
     const uint32_t syncInterval = static_cast<uint32_t>(
         std::max(60, m_lockstepConfig.resyncCheckIntervalFrames));
 
     {
         std::lock_guard<std::recursive_mutex> lock(m_mutex);
-        const bool earlyCheckpoint = completedFrame == 60 || completedFrame == 120;
-        if ((!earlyCheckpoint && completedFrame % syncInterval != 0) ||
+        if (completedFrame < syncInterval * 2 ||
+            completedFrame % syncInterval != 0 ||
             completedFrame == m_lastBroadcastFrameSync) {
             return;
         }

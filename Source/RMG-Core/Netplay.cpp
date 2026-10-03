@@ -517,37 +517,12 @@ CORE_EXPORT void CoreApplyNetplaySyncedCoreSettings(void)
 namespace {
 
 constexpr int kGprRegisterCount = 32;
-constexpr int kCp0RegisterCount = 32;
-constexpr int kCp1FgrCount = 32;
-// Timer/interrupt CP0 tracks cycle skew, not gameplay. Mario Party's extra SI
-// polls nudge these even when GPRs and PC still match, which showed up as
-// on/off desync alerts at frames 180 and 1080. Skip r0 (hardwired 0) the same way.
-constexpr int kCp0RandomReg = 1;
-constexpr int kCp0BadVAddrReg = 8;
-constexpr int kCp0CountReg = 9;
-constexpr int kCp0CompareReg = 11;
-constexpr int kCp0StatusReg = 12;
-constexpr int kCp0CauseReg = 13;
-constexpr int kCp0EpcReg = 14;
-constexpr int kCp0ErrorEpcReg = 30;
 
 uint32_t fnv1a32(uint32_t hash, uint32_t value)
 {
     hash ^= value;
     hash *= 16777619u;
     return hash;
-}
-
-bool isVolatileCp0Register(int index)
-{
-    return index == kCp0RandomReg ||
-           index == kCp0BadVAddrReg ||
-           index == kCp0CountReg ||
-           index == kCp0CompareReg ||
-           index == kCp0StatusReg ||
-           index == kCp0CauseReg ||
-           index == kCp0EpcReg ||
-           index == kCp0ErrorEpcReg;
 }
 
 } // namespace
@@ -573,17 +548,12 @@ CORE_EXPORT uint32_t CoreGetNetplayFrameSyncHash(void)
         static_cast<const int64_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_HI));
     const auto* const lo =
         static_cast<const int64_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_LO));
-    const auto* const cp0 =
-        static_cast<const uint32_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_COP0));
     const auto* const pc =
         static_cast<const uint32_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_PC));
-    const auto* const fgr =
-        static_cast<const uint64_t*>(m64p::Core.DebugGetCPUDataPtr(M64P_CPU_REG_COP1_FGR_64));
 
     if (gpr == nullptr ||
         hi == nullptr ||
         lo == nullptr ||
-        cp0 == nullptr ||
         pc == nullptr)
     {
         return 0;
@@ -597,27 +567,7 @@ CORE_EXPORT uint32_t CoreGetNetplayFrameSyncHash(void)
     }
     hash = fnv1a32(hash, static_cast<uint32_t>(*hi));
     hash = fnv1a32(hash, static_cast<uint32_t>(*lo));
-
-    for (int i = 0; i < kCp0RegisterCount; ++i)
-    {
-        if (isVolatileCp0Register(i))
-        {
-            continue;
-        }
-        hash = fnv1a32(hash, cp0[i]);
-    }
-
     hash = fnv1a32(hash, *pc);
-
-    if (fgr != nullptr)
-    {
-        for (int i = 0; i < kCp1FgrCount; ++i)
-        {
-            // Low 32 only. FR=0 odd registers and host FP leftovers differ
-            // across machines without changing the game.
-            hash = fnv1a32(hash, static_cast<uint32_t>(fgr[i]));
-        }
-    }
 
     return hash;
 }

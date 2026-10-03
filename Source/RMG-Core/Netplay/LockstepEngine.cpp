@@ -38,8 +38,9 @@ constexpr uint32_t kMaxInputPrefillPerSubmitCap = 16;
 constexpr uint32_t kMaxFutureFrameLead = 1024;
 // Keep more than one 180-frame sync interval so late peer hashes still match.
 constexpr uint32_t kFrameSyncRetainFrames = 720;
-// Checkpoints are ~3s apart; a short confirmed run still catches real splits.
-constexpr int kRequiredMismatchStreak = 3;
+// Checkpoints are ~3s apart. Boot samples often disagree under dynarec without
+// the game actually splitting, so require a longer run before warning.
+constexpr int kRequiredMismatchStreak = 4;
 
 uint32_t inputFrameSlackForDelay(int inputDelayFrames)
 {
