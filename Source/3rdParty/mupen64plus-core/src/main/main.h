@@ -101,6 +101,8 @@ int        main_volume_get_muted(void);
 
 m64p_error main_reset(int do_hard_reset);
 
+void main_set_embedded_netplay(int active);
+
 m64p_error open_pif(const unsigned char* pifimage, unsigned int size);
 m64p_error close_pif(void);
 

@@ -1616,6 +1616,13 @@ void main_change_gb_cart(int control_id)
 * emulation thread - runs the core
 */
 
+static int l_rmg_embedded_netplay_active = 0;
+
+void main_set_embedded_netplay(int active)
+{
+    l_rmg_embedded_netplay_active = active ? 1 : 0;
+}
+
 static int rmg_embedded_netplay_is_active(void)
 {
     typedef int (*rmg_netplay_is_active_fn)(void);
@@ -1636,7 +1643,7 @@ static int rmg_embedded_netplay_is_active(void)
 
 static int netplay_determinism_required(void)
 {
-    return netplay_is_init() || rmg_embedded_netplay_is_active();
+    return netplay_is_init() || l_rmg_embedded_netplay_active || rmg_embedded_netplay_is_active();
 }
 
 m64p_error main_run(void)
@@ -1696,6 +1703,10 @@ m64p_error main_run(void)
         ? 0
         : ConfigGetParamBool(g_CoreConfig, "RandomizeInterrupt");
     if (netplay_determinism_required()) {
+        /* Both peers must run the debugger. Turning it off on one side
+         * changes interpreter timing and desyncs on the first VI. */
+        int enable_debugger = 1;
+        ConfigSetParameter(g_CoreConfig, "EnableDebugger", M64TYPE_BOOL, &enable_debugger);
         no_compiled_jump = 0;
         /* Dynarec is not deterministic across compilers/OS. Cached interp is. */
         emumode = 1;

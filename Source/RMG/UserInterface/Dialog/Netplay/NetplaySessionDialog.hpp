@@ -58,6 +58,9 @@ private:
     bool m_emulationBeginReceived = false;
     bool m_sessionSavesApplied = false;
     bool m_sessionCoreSettingsApplied = false;
+    int m_requiredSyncEpoch = 0;
+    int m_appliedSaveEpoch = 0;
+    int m_appliedSettingsEpoch = 0;
     int m_pendingPlayerSlot = 0;
     int m_lastDisplayedBufferDelay = -1;
     int m_clientSessionPrepWatchdogTimerId = -1;
@@ -103,9 +106,10 @@ private slots:
     void on_netplay_disconnected();
     void on_coordinator_stateChanged(Netplay::NetplayCoordinator::State state);
     void on_coordinator_playersUpdated(const QList<Netplay::SocketIOClient::PlayerInfo>& players);
-    void on_coordinator_gameStarted(int playerSlot);
+    void on_coordinator_gameStarted(int playerSlot, int syncEpoch);
     void on_coordinator_cheatsUpdated(const QJsonArray& cheats);
-    void on_coordinator_saveSyncReceived(const QJsonArray& saveFiles);
+    void on_coordinator_saveSyncReceived(const QJsonArray& saveFiles, int syncEpoch);
+    void refreshClientSessionPrepFlags(void);
     void on_coordinator_coreSettingsSyncReceived(const QJsonObject& coreSettings);
     void on_coordinator_chatMessageReceived(const QString& playerName, const QString& message);
     void on_coordinator_motdReceived(const QString& message);

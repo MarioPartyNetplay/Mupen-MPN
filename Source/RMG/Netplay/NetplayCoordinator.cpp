@@ -231,6 +231,7 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
                 }
 
                 setupPeerConnections(this->m_cachedPlayers);
+                m_gameSession.syncEpoch = m_sessionSyncEpoch;
                 emit gameStarted(m_gameSession);
             });
 
@@ -315,10 +316,13 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
             });
 
     connect(m_server.get(), &SocketIOServer::saveSyncReceived,
-            this, [this](const QString& roomId, const QJsonArray& saveFiles) {
+            this, [this](const QString& roomId, const QJsonArray& saveFiles, int syncEpoch) {
                 if (roomId != m_gameSession.roomId)
                     return;
-                emit saveSyncReceived(saveFiles);
+                if (syncEpoch > 0) {
+                    m_sessionSyncEpoch = syncEpoch;
+                }
+                emit saveSyncReceived(saveFiles, syncEpoch);
             });
 
     connect(m_server.get(), &SocketIOServer::coreSettingsSyncReceived,
@@ -506,7 +510,7 @@ void NetplayCoordinator::startGame(const QString& gameMode, bool resyncEnabled, 
         setState(StartingGame);
         if (!m_server->startHostedGame(m_gameSession.roomId, gameMode, resyncEnabled, romHash,
                                         m_sessionSyncCheats, m_sessionSyncSaves,
-                                        m_sessionSyncCoreSettings)) {
+                                        m_sessionSyncCoreSettings, m_sessionSyncEpoch)) {
             qWarning() << "NetplayCoordinator: Failed to start hosted game";
             setState(InLobby);
         }
@@ -1158,11 +1162,16 @@ void NetplayCoordinator::on_socketIO_roomsListed(const QJsonArray& rooms)
     m_socketIO->joinRoom(roomId, false);
 }
 
-void NetplayCoordinator::on_socketIO_gameStarted(const QString& mode, bool resync, const QString& matchId)
+void NetplayCoordinator::on_socketIO_gameStarted(const QString& mode, bool resync, const QString& matchId, int syncEpoch)
 {
     Q_UNUSED(mode);
     Q_UNUSED(resync);
     Q_UNUSED(matchId);
+
+    if (syncEpoch > 0) {
+        m_sessionSyncEpoch = syncEpoch;
+    }
+    m_gameSession.syncEpoch = m_sessionSyncEpoch;
 
     resetEmulationStartPrep();
     m_gameStartPrepTimer.start();
@@ -1700,7 +1709,7 @@ void NetplayCoordinator::sendSaveSync(const QJsonArray& saveFiles)
     if (isHostingServer()) {
         if (m_server && !m_gameSession.roomId.isEmpty()) {
             // Always broadcast, including an empty list, so clients can wipe leftovers.
-            m_server->broadcastSaveSync(m_gameSession.roomId, saveFiles);
+            m_server->broadcastSaveSync(m_gameSession.roomId, saveFiles, m_sessionSyncEpoch);
             if (saveFiles.isEmpty()) {
                 qDebug() << "NetplayCoordinator: Broadcasting empty save sync for this ROM";
             }
@@ -1730,7 +1739,7 @@ void NetplayCoordinator::sendCoreSettingsSync(const QJsonObject& coreSettings)
 
     if (isHostingServer()) {
         if (m_server && !m_gameSession.roomId.isEmpty()) {
-            m_server->broadcastCoreSettingsSync(m_gameSession.roomId, coreSettings);
+            m_server->broadcastCoreSettingsSync(m_gameSession.roomId, coreSettings, m_sessionSyncEpoch);
         }
         return;
     }
@@ -1793,9 +1802,12 @@ void NetplayCoordinator::on_socketIO_cheatsUpdated(const QJsonArray& cheats)
     emit cheatsUpdated(cheats);
 }
 
-void NetplayCoordinator::on_socketIO_saveSyncReceived(const QJsonArray& saveFiles)
+void NetplayCoordinator::on_socketIO_saveSyncReceived(const QJsonArray& saveFiles, int syncEpoch)
 {
-    emit saveSyncReceived(saveFiles);
+    if (syncEpoch > 0) {
+        m_sessionSyncEpoch = syncEpoch;
+    }
+    emit saveSyncReceived(saveFiles, syncEpoch);
 }
 
 void NetplayCoordinator::on_socketIO_coreSettingsSyncReceived(const QJsonObject& coreSettings)
@@ -1905,7 +1917,8 @@ void NetplayCoordinator::maybeSubmitCompletedFrameSync(uint32_t completedFrame)
 
     {
         std::lock_guard<std::recursive_mutex> lock(m_mutex);
-        if (completedFrame % syncInterval != 0 ||
+        const bool earlyCheckpoint = completedFrame == 60 || completedFrame == 120;
+        if ((!earlyCheckpoint && completedFrame % syncInterval != 0) ||
             completedFrame == m_lastBroadcastFrameSync) {
             return;
         }
@@ -2491,6 +2504,17 @@ void NetplayCoordinator::evaluateEmulationStartReadiness()
     }
 }
 
+void NetplayCoordinator::armSessionSyncEpoch()
+{
+    ++m_sessionSyncEpoch;
+    m_gameSession.syncEpoch = m_sessionSyncEpoch;
+}
+
+int NetplayCoordinator::sessionSyncEpoch() const
+{
+    return m_sessionSyncEpoch;
+}
+
 void NetplayCoordinator::rebroadcastSessionSync()
 {
     if (!isHostingServer() || m_gameSession.roomId.isEmpty() || !m_server) {
@@ -2527,7 +2551,7 @@ void NetplayCoordinator::sendEmulationReady()
 
     if (m_socketIO &&
         m_socketIO->getConnectionState() == SocketIOClient::Connected) {
-        m_socketIO->sendEmulationReady();
+        m_socketIO->sendEmulationReady(m_sessionSyncEpoch);
     }
 }
 

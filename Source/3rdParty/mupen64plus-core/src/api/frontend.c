@@ -379,6 +379,9 @@ EXPORT m64p_error CALL CoreDoCommand(m64p_command Command, int ParamInt, void *P
                 return M64ERR_INCOMPATIBLE;
         case M64CMD_NETPLAY_CLOSE:
             return netplay_stop();
+        case M64CMD_NETPLAY_SET_EMBEDDED:
+            main_set_embedded_netplay(ParamInt != 0);
+            return M64ERR_SUCCESS;
         default:
             return M64ERR_INPUT_INVALID;
     }

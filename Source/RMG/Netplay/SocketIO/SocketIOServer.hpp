@@ -42,13 +42,13 @@ public:
 
     bool startHostedGame(const QString& roomId, const QString& mode, bool resyncEnabled, const QString& romHash,
                          const QJsonArray& cheats = QJsonArray(), const QJsonArray& saveFiles = QJsonArray(),
-                         const QJsonObject& coreSettings = QJsonObject());
+                         const QJsonObject& coreSettings = QJsonObject(), int syncEpoch = 0);
 
     void broadcastControllerInput(const QString& roomId, int slot, uint32_t frameNumber, uint32_t controllerState);
     void broadcastFrameSync(const QString& roomId, int slot, uint32_t frameNumber, uint32_t stateHash);
     void broadcastCheatsUpdate(const QString& roomId, const QJsonArray& cheats);
-    void broadcastSaveSync(const QString& roomId, const QJsonArray& saveFiles);
-    void broadcastCoreSettingsSync(const QString& roomId, const QJsonObject& coreSettings);
+    void broadcastSaveSync(const QString& roomId, const QJsonArray& saveFiles, int syncEpoch = 0);
+    void broadcastCoreSettingsSync(const QString& roomId, const QJsonObject& coreSettings, int syncEpoch = 0);
     void broadcastChatMessage(const QString& roomId, const QString& playerName, const QString& message);
     void broadcastInputDelayUpdate(const QString& roomId, int frames);
     void broadcastEmulationPauseUpdate(const QString& roomId, bool paused);
@@ -75,7 +75,7 @@ signals:
     void chatMessageReceived(const QString& roomId, const QString& playerName, const QString& message);
     void cheatsUpdated(const QString& roomId, const QJsonArray& cheats);
     void coreSettingsSyncReceived(const QString& roomId, const QJsonObject& coreSettings);
-    void saveSyncReceived(const QString& roomId, const QJsonArray& saveFiles);
+    void saveSyncReceived(const QString& roomId, const QJsonArray& saveFiles, int syncEpoch);
     void hostedWebRTCSignalReceived(const QString& fromPlayerId, const QJsonObject& signal);
     void emulationBegin(const QString& roomId);
 
@@ -121,6 +121,7 @@ private:
         QMap<int, uint32_t> lastFrameSyncBySlot;
         QSet<int> emulationReadySlots;
         bool emulationBeginSent = false;
+        int syncEpoch = 0;
     };
 
     struct ChunkedCheatUpdate

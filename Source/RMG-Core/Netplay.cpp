@@ -46,7 +46,9 @@ static bool l_HasNetplaySyncSettings = false;
 // Local Functions
 //
 
-static constexpr int kNetplayCpuEmulatorDynarec = 2;
+// Cached interpreter. Dynarec is not deterministic across machines and
+// desyncs lockstep on the first few frames.
+static constexpr int kNetplayCpuEmulatorCachedInterp = 1;
 
 static std::string basename_only(std::string path)
 {
@@ -100,9 +102,10 @@ static void apply_synced_core_config(const CoreNetplaySyncSettings& sync)
     CoreSettingsSetValue(SettingsID::Core_CountPerOpDenomPot, sync.countPerOpDenomPot);
     CoreSettingsSetValue(SettingsID::Core_DisableExtraMem, sync.disableExtraMem);
     CoreSettingsSetValue(SettingsID::Core_SiDmaDuration, sync.siDmaDuration);
-    CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, kNetplayCpuEmulatorDynarec);
+    CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, kNetplayCpuEmulatorCachedInterp);
     CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
-    CoreSettingsSetValue(SettingsID::Core_EnableDebugger, false);
+    // Debugger stays on. One peer with it off takes a different VI path.
+    CoreSettingsSetValue(SettingsID::Core_EnableDebugger, true);
     CoreSettingsSetValue(SettingsID::Core_GbCameraVideoCaptureBackend1, std::string(""));
 
     // Keep GLideN64 RDRAM feedback identical even if Emulation overlay runs later.
@@ -248,6 +251,14 @@ CORE_EXPORT bool CoreShutdownNetplay(void)
 CORE_EXPORT void CoreSetEmbeddedNetplayState(bool active, int localPlayerSlot)
 {
     l_EmbeddedNetplayActive = active;
+
+    if (m64p::Core.IsHooked())
+    {
+        // Tell the core directly. dlsym(RMG_Netplay_IsActive) is not reliable
+        // from the core dylib, and a missed flag leaves dynarec + a time-based
+        // mempak seed in place — both desync on startup.
+        m64p::Core.DoCommand(M64CMD_NETPLAY_SET_EMBEDDED, active ? 1 : 0, nullptr);
+    }
 
     if (localPlayerSlot < 0)
     {
@@ -435,7 +446,7 @@ CORE_EXPORT bool CoreBuildNetplaySyncSettings(std::filesystem::path romPath, Cor
     out.countPerOpDenomPot = countPerOpDenomPot;
     out.disableExtraMem = disableExtraMem;
     out.siDmaDuration = siDmaDuration;
-    out.cpuEmulator = kNetplayCpuEmulatorDynarec;
+    out.cpuEmulator = kNetplayCpuEmulatorCachedInterp;
     out.saveType = gameSettings.SaveType;
     out.transferPak = gameSettings.TransferPak;
     out.rspPluginName = resolve_plugin_name(CorePluginType::Rsp, gameSettings.MD5);
@@ -447,7 +458,7 @@ CORE_EXPORT bool CoreBuildNetplaySyncSettings(std::filesystem::path romPath, Cor
 CORE_EXPORT void CoreSetNetplaySyncSettings(const CoreNetplaySyncSettings& settings)
 {
     l_NetplaySyncSettings = settings;
-    l_NetplaySyncSettings.cpuEmulator = kNetplayCpuEmulatorDynarec;
+    l_NetplaySyncSettings.cpuEmulator = kNetplayCpuEmulatorCachedInterp;
     l_HasNetplaySyncSettings = settings.valid;
 }
 

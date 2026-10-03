@@ -51,6 +51,7 @@
          QString romHash;
          int localSlot;
          int numPlayers;
+         int syncEpoch = 0;
      };
  
      explicit NetplayCoordinator(
@@ -100,6 +101,9 @@
 
      void sendEmulationPauseUpdate(bool paused);
      void sendEmulationReady();
+     /** Bump the save/settings generation that every peer must apply before boot. */
+     void armSessionSyncEpoch();
+     int sessionSyncEpoch() const;
     /** Send emulation-ready once session prep is done (optional quick P2P handshake). */
     void requestEmulationReadyWhenPrepared();
      /** Host: re-push cheats/saves/core settings for clients still waiting. */
@@ -165,7 +169,7 @@
      void roomsUpdated();
      void chatMessageReceived(const QString& playerName, const QString& message);
      void cheatsUpdated(const QJsonArray& cheats);
-     void saveSyncReceived(const QJsonArray& saveFiles);
+     void saveSyncReceived(const QJsonArray& saveFiles, int syncEpoch);
      void coreSettingsSyncReceived(const QJsonObject& coreSettings);
      void emulationBeginReceived();
      void playerKicked(const QString& reason);
@@ -187,10 +191,10 @@
      void on_socketIO_roomClosed(const QString& reason);
      void on_socketIO_playersUpdated(const QList<SocketIOClient::PlayerInfo>& players);
      void on_socketIO_roomsListed(const QJsonArray& rooms);
-     void on_socketIO_gameStarted(const QString& mode, bool resync, const QString& matchId);
+     void on_socketIO_gameStarted(const QString& mode, bool resync, const QString& matchId, int syncEpoch);
      void on_socketIO_gameEnded();
      void on_socketIO_cheatsUpdated(const QJsonArray& cheats);
-     void on_socketIO_saveSyncReceived(const QJsonArray& saveFiles);
+     void on_socketIO_saveSyncReceived(const QJsonArray& saveFiles, int syncEpoch);
      void on_socketIO_coreSettingsSyncReceived(const QJsonObject& coreSettings);
      void on_socketIO_controllerInputReceived(int slot, uint32_t frameNumber, uint32_t controllerState);
      void on_socketIO_inputDelayReceived(int frames);
@@ -286,10 +290,11 @@
      QJsonArray m_sessionSyncCheats;
      QJsonArray m_sessionSyncSaves;
      QJsonObject m_sessionSyncCoreSettings;
+     int m_sessionSyncEpoch = 0;
      uint32_t m_lastBroadcastFrameSync = 0;
-    std::atomic<uint32_t> m_pendingFrameSyncFrame{0};
-    std::atomic<bool> m_pumpNetworkQueued{false};
-    std::atomic<bool> m_relayInputQueued{false};
+     std::atomic<uint32_t> m_pendingFrameSyncFrame{0};
+     std::atomic<bool> m_pumpNetworkQueued{false};
+     std::atomic<bool> m_relayInputQueued{false};
      std::atomic<quint32> m_pendingRelayFrame{0};
      std::atomic<quint32> m_pendingRelayState{0};
 

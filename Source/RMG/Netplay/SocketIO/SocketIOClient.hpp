@@ -138,7 +138,7 @@ public:
     
     void sendInputDelayUpdate(int frames);
     void sendEmulationPauseUpdate(bool paused);
-    void sendEmulationReady();
+    void sendEmulationReady(int syncEpoch);
 
     QString getPlayerId() const;
     QString getRoomId() const;
@@ -164,7 +164,7 @@ signals:
     void spectatorCountUpdated(int count);
     void roomsListed(const QJsonArray& rooms);
 
-    void gameStarted(const QString& mode, bool resyncEnabled, const QString& matchId);
+    void gameStarted(const QString& mode, bool resyncEnabled, const QString& matchId, int syncEpoch);
     void gameEnded();
     void gameModeChanged(const QString& mode);
     void controllerInputReceived(int slot, uint32_t frameNumber, uint32_t controllerState);
@@ -183,7 +183,7 @@ signals:
 
     void chatMessageReceived(const QString& playerName, const QString& message);
     void cheatsUpdated(const QJsonArray& cheats);
-    void saveSyncReceived(const QJsonArray& saveFiles);
+    void saveSyncReceived(const QJsonArray& saveFiles, int syncEpoch);
     void coreSettingsSyncReceived(const QJsonObject& coreSettings);
     void inputDelayReceived(int frames);
     void emulationPauseReceived(bool paused);

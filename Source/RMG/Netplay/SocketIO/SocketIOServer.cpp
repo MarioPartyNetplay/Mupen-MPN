@@ -428,8 +428,14 @@ void SocketIOServer::handle_SaveSyncUpdate(ENetPeer* socket, const QJsonObject& 
     room->activeSaves = msg.value("files").toArray();
     room->hasSaveSyncSnapshot = true;
 
+    const int syncEpoch = msg.value(QStringLiteral("syncEpoch")).toInt(room->syncEpoch);
+    if (syncEpoch > 0) {
+        room->syncEpoch = syncEpoch;
+    }
+
     QJsonObject payload;
     payload["files"] = room->activeSaves;
+    payload["syncEpoch"] = room->syncEpoch;
 
     for (auto it = room->players.constBegin(); it != room->players.constEnd(); ++it)
     {
@@ -439,7 +445,7 @@ void SocketIOServer::handle_SaveSyncUpdate(ENetPeer* socket, const QJsonObject& 
             emitToClient(player->id, "save-sync", payload);
         }
     }
-    emit saveSyncReceived(client->roomId, room->activeSaves);
+    emit saveSyncReceived(client->roomId, room->activeSaves, room->syncEpoch);
 }
 
 void SocketIOServer::handle_InputDelayUpdate(ENetPeer* socket, const QJsonObject& msg)
@@ -485,7 +491,7 @@ void SocketIOServer::handle_EmulationPauseUpdate(ENetPeer* socket, const QJsonOb
 
 bool SocketIOServer::startHostedGame(const QString& roomId, const QString& mode, bool resyncEnabled, const QString& romHash,
                                      const QJsonArray& cheats, const QJsonArray& saveFiles,
-                                     const QJsonObject& coreSettings)
+                                     const QJsonObject& coreSettings, int syncEpoch)
 {
     SignalingRoom* room = getRoomById(roomId);
     if (!room)
@@ -508,12 +514,16 @@ bool SocketIOServer::startHostedGame(const QString& roomId, const QString& mode,
     room->started = true;
     room->emulationReadySlots.clear();
     room->emulationBeginSent = false;
+    if (syncEpoch > 0) {
+        room->syncEpoch = syncEpoch;
+    }
 
     QJsonObject payload;
     payload["mode"] = mode;
     payload["resyncEnabled"] = resyncEnabled;
     payload["romHash"] = romHash;
     payload["matchId"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    payload["syncEpoch"] = room->syncEpoch;
     room->activeSaves = saveFiles;
     room->hasSaveSyncSnapshot = true;
     emitToConnectedRoomClients(roomId, "game-started", payload);
@@ -522,9 +532,9 @@ bool SocketIOServer::startHostedGame(const QString& roomId, const QString& mode,
     // clients converge before emulation-begin. Core timing must match or lockstep
     // desyncs within the first few hash checks.
     broadcastCheatsUpdate(roomId, cheats);
-    broadcastSaveSync(roomId, saveFiles);
+    broadcastSaveSync(roomId, saveFiles, room->syncEpoch);
     if (!coreSettings.isEmpty()) {
-        broadcastCoreSettingsSync(roomId, coreSettings);
+        broadcastCoreSettingsSync(roomId, coreSettings, room->syncEpoch);
     }
 
     qInfo() << "SocketIOServer: Hosted game started in room" << roomId;
@@ -602,7 +612,7 @@ void SocketIOServer::broadcastCheatsUpdate(const QString& roomId, const QJsonArr
     emit cheatsUpdated(roomId, room->activeCheats);
 }
 
-void SocketIOServer::broadcastCoreSettingsSync(const QString& roomId, const QJsonObject& coreSettings)
+void SocketIOServer::broadcastCoreSettingsSync(const QString& roomId, const QJsonObject& coreSettings, int syncEpoch)
 {
     SignalingRoom* room = getRoomById(roomId);
     if (!room)
@@ -611,12 +621,18 @@ void SocketIOServer::broadcastCoreSettingsSync(const QString& roomId, const QJso
         return;
     }
 
-    room->activeCoreSettings = coreSettings;
-    emitToConnectedRoomClients(roomId, "core-settings-sync", coreSettings);
-    emit coreSettingsSyncReceived(roomId, coreSettings);
+    if (syncEpoch > 0) {
+        room->syncEpoch = syncEpoch;
+    }
+
+    QJsonObject payload = coreSettings;
+    payload[QStringLiteral("syncEpoch")] = room->syncEpoch;
+    room->activeCoreSettings = payload;
+    emitToConnectedRoomClients(roomId, "core-settings-sync", payload);
+    emit coreSettingsSyncReceived(roomId, payload);
 }
 
-void SocketIOServer::broadcastSaveSync(const QString& roomId, const QJsonArray& saveFiles)
+void SocketIOServer::broadcastSaveSync(const QString& roomId, const QJsonArray& saveFiles, int syncEpoch)
 {
     SignalingRoom* room = getRoomById(roomId);
     if (!room)
@@ -625,14 +641,19 @@ void SocketIOServer::broadcastSaveSync(const QString& roomId, const QJsonArray& 
         return;
     }
 
+    if (syncEpoch > 0) {
+        room->syncEpoch = syncEpoch;
+    }
+
     // Cache for late join / reconnect catch-up (same as handle_SaveSyncUpdate).
     room->activeSaves = saveFiles;
     room->hasSaveSyncSnapshot = true;
 
     QJsonObject payload;
     payload["files"] = saveFiles;
+    payload["syncEpoch"] = room->syncEpoch;
     emitToConnectedRoomClients(roomId, "save-sync", payload);
-    emit saveSyncReceived(roomId, saveFiles);
+    emit saveSyncReceived(roomId, saveFiles, room->syncEpoch);
 }
 
 void SocketIOServer::broadcastInputDelayUpdate(const QString& roomId, int frames)
@@ -686,13 +707,20 @@ void SocketIOServer::tryBroadcastEmulationBegin(SignalingRoom* room)
         return;
     }
 
-    const int requiredPlayers = room->lobbyOrder.size();
-    if (requiredPlayers < 1) {
+    if (room->lobbyOrder.isEmpty()) {
         return;
     }
 
-    for (int slot = 0; slot < requiredPlayers; ++slot) {
-        if (!room->emulationReadySlots.contains(slot)) {
+    // Wait on the slots players actually occupy. 0..count-1 misses a remapped
+    // port and lets the host boot before that peer has applied save state.
+    for (auto* player : room->lobbyOrder) {
+        if (!player || player->slotIndex < 0) {
+            return;
+        }
+        if (isTemporarilyDisconnected(player)) {
+            continue;
+        }
+        if (!room->emulationReadySlots.contains(player->slotIndex)) {
             return;
         }
     }
@@ -717,6 +745,13 @@ void SocketIOServer::handle_EmulationReady(ENetPeer* socket, const QJsonObject& 
 
     SignalingRoom* room = getRoomById(client->roomId);
     if (!room || !room->started) {
+        return;
+    }
+
+    const int syncEpoch = msg.value(QStringLiteral("syncEpoch")).toInt(0);
+    if (room->syncEpoch > 0 && syncEpoch != room->syncEpoch) {
+        qWarning() << "SocketIOServer: Ignoring emulation-ready from slot" << client->slotIndex
+                   << "sync epoch" << syncEpoch << "expected" << room->syncEpoch;
         return;
     }
 
@@ -962,6 +997,7 @@ void SocketIOServer::sendRoomCatchUp(const QString& roomId, ClientConnection* cl
     if (room->hasSaveSyncSnapshot) {
         QJsonObject savePayload;
         savePayload["files"] = room->activeSaves;
+        savePayload["syncEpoch"] = room->syncEpoch;
         emitToClient(client->id, "save-sync", savePayload);
     }
     if (!room->activeCoreSettings.isEmpty()) {

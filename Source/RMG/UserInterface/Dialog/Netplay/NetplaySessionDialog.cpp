@@ -690,7 +690,7 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
             this, &NetplaySessionDialog::refreshPlayersListWidget);
     connect(this->coordinator, &Netplay::NetplayCoordinator::gameStarted, this,
             [this](const Netplay::NetplayCoordinator::GameSession& session) {
-        this->on_coordinator_gameStarted(session.localSlot);
+        this->on_coordinator_gameStarted(session.localSlot, session.syncEpoch);
         this->publishHostSessionIndex(true);
     });
     connect(this->coordinator, &Netplay::NetplayCoordinator::chatMessageReceived,
@@ -1740,9 +1740,19 @@ void NetplaySessionDialog::refreshPlayersListWidget(void)
 
 bool NetplaySessionDialog::sessionPrepReadyForStart(void) const
 {
+    if (!this->coordinator || this->coordinator->sessionSyncEpoch() <= 0) {
+        return false;
+    }
+
     if (this->isLocalSessionHost()) {
         // Host must have applied its own synced timing before launching.
-        return this->coordinator && this->coordinator->hasAppliedCoreSettingsSync();
+        return this->coordinator->hasAppliedCoreSettingsSync();
+    }
+
+    if (this->m_requiredSyncEpoch <= 0 ||
+        this->m_appliedSaveEpoch != this->m_requiredSyncEpoch ||
+        this->m_appliedSettingsEpoch != this->m_requiredSyncEpoch) {
+        return false;
     }
 
     if (!this->m_sessionSavesApplied || !this->m_sessionCoreSettingsApplied) {
@@ -1750,7 +1760,20 @@ bool NetplaySessionDialog::sessionPrepReadyForStart(void) const
     }
 
     // Never launch without host timing — local overlays desync within ~3s of play.
-    return this->coordinator && this->coordinator->hasAppliedCoreSettingsSync();
+    return this->coordinator->hasAppliedCoreSettingsSync();
+}
+
+void NetplaySessionDialog::refreshClientSessionPrepFlags(void)
+{
+    if (this->isLocalSessionHost()) {
+        return;
+    }
+
+    const int required = this->m_requiredSyncEpoch;
+    this->m_sessionSavesApplied =
+        required > 0 && this->m_appliedSaveEpoch == required;
+    this->m_sessionCoreSettingsApplied =
+        required > 0 && this->m_appliedSettingsEpoch == required;
 }
 
 void NetplaySessionDialog::scheduleHostSessionSyncRetries(void)
@@ -1822,7 +1845,7 @@ void NetplaySessionDialog::tryStartPendingGame(void)
     emit OnPlayGame(romFile, "", 0, selectedSlot);
 }
 
-void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
+void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot, int syncEpoch)
 {
     if (this->isLocalSessionHost()) {
         this->syncHostSessionState();
@@ -1849,6 +1872,7 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
     this->m_emulationBeginReceived = false;
     this->m_clientSessionPrepRetries = 0;
     this->m_hostSessionSyncRetries = 0;
+    this->m_requiredSyncEpoch = syncEpoch;
 
     if (this->m_clientSessionPrepWatchdogTimerId != -1) {
         this->killTimer(this->m_clientSessionPrepWatchdogTimerId);
@@ -1864,8 +1888,9 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot)
         this->m_sessionCoreSettingsApplied = true;
         this->scheduleHostSessionSyncRetries();
     } else {
-        this->m_sessionSavesApplied = false;
-        this->m_sessionCoreSettingsApplied = false;
+        // A save/settings packet from this epoch may already have landed.
+        // Anything older must not count — that is the startup desync.
+        this->refreshClientSessionPrepFlags();
         this->m_clientSessionPrepWatchdogTimerId = this->startTimer(3000);
     }
 
@@ -1895,10 +1920,17 @@ void NetplaySessionDialog::on_coordinator_cheatsUpdated(const QJsonArray& cheats
     this->applyCheats();
 }
 
-void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& saveFiles)
+void NetplaySessionDialog::on_coordinator_saveSyncReceived(const QJsonArray& saveFiles, int syncEpoch)
 {
     applyNetplaySaveSync(this->romFile, saveFiles);
-    this->m_sessionSavesApplied = true;
+    if (syncEpoch > 0) {
+        this->m_appliedSaveEpoch = syncEpoch;
+    }
+    if (this->isLocalSessionHost()) {
+        this->m_sessionSavesApplied = true;
+    } else {
+        this->refreshClientSessionPrepFlags();
+    }
     this->requestSynchronizedEmulationStart();
     this->tryCompletePendingGameStart();
 }
@@ -1919,7 +1951,15 @@ void NetplaySessionDialog::on_coordinator_coreSettingsSyncReceived(const QJsonOb
         return;
     }
 
-    this->m_sessionCoreSettingsApplied = true;
+    const int syncEpoch = coreSettings.value(QStringLiteral("syncEpoch")).toInt(0);
+    if (syncEpoch > 0) {
+        this->m_appliedSettingsEpoch = syncEpoch;
+    }
+    if (this->isLocalSessionHost()) {
+        this->m_sessionCoreSettingsApplied = true;
+    } else {
+        this->refreshClientSessionPrepFlags();
+    }
     this->requestSynchronizedEmulationStart();
     this->tryCompletePendingGameStart();
 }

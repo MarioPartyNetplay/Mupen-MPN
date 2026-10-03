@@ -718,6 +718,7 @@ void SocketIOClient::sendSaveSync(const QJsonArray& saveFiles)
 
     QJsonObject payload;
     payload["files"] = saveFiles;
+    payload["syncEpoch"] = 0;
     emitEvent("save-sync", payload);
 }
 
@@ -741,13 +742,15 @@ void SocketIOClient::sendEmulationPauseUpdate(bool paused)
     emitEvent("emulation-paused", payload);
 }
 
-void SocketIOClient::sendEmulationReady()
+void SocketIOClient::sendEmulationReady(int syncEpoch)
 {
     if (m_connectionState != Connected) {
         return;
     }
 
-    emitEvent("emulation-ready", QJsonObject());
+    QJsonObject payload;
+    payload["syncEpoch"] = syncEpoch;
+    emitEvent("emulation-ready", payload);
 }
 
 void SocketIOClient::requestRoomList(bool waiting)
@@ -1009,12 +1012,13 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
         m_gameConfig.resyncEnabled = data["resyncEnabled"].toBool();
         m_gameConfig.romHash = data["romHash"].toString();
         QString matchId = data["matchId"].toString();
+        const int syncEpoch = data["syncEpoch"].toInt(0);
 
         if (data.contains("cheats")) {
             emit cheatsUpdated(data["cheats"].toArray());
         }
 
-        emit gameStarted(m_gameConfig.mode, m_gameConfig.resyncEnabled, matchId);
+        emit gameStarted(m_gameConfig.mode, m_gameConfig.resyncEnabled, matchId, syncEpoch);
 
     } else if (eventName == "game-ended") {
         emit gameEnded();
@@ -1110,7 +1114,7 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
 
     } else if (eventName == "save-sync" && args.size() > 0) {
         QJsonObject data = args[0].toObject();
-        emit saveSyncReceived(data["files"].toArray());
+        emit saveSyncReceived(data["files"].toArray(), data["syncEpoch"].toInt(0));
 
     } else if (eventName == "core-settings-sync" && args.size() > 0) {
         emit coreSettingsSyncReceived(args[0].toObject());

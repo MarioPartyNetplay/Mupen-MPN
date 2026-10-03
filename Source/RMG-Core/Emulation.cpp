@@ -67,9 +67,8 @@ static bool get_emulation_state(m64p_emu_state& state)
     return ret == M64ERR_SUCCESS;
 }
 
-// Dynamic recompiler (R4300Emulator >= 2). Forced for netplay so every peer
-// uses the same CPU backend; interpreter/cached-interp are not lockstep-safe.
-static constexpr int kNetplayCpuEmulatorDynarec = 2;
+// Cached interpreter (R4300Emulator == 1). Dynarec diverges across machines.
+static constexpr int kNetplayCpuEmulatorCachedInterp = 1;
 
 static void apply_netplay_forced_gliden64_settings(void)
 {
@@ -88,7 +87,7 @@ static void apply_netplay_forced_gliden64_settings(void)
 static void apply_netplay_forced_core_settings(void)
 {
     CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
-    CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, kNetplayCpuEmulatorDynarec);
+    CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, kNetplayCpuEmulatorCachedInterp);
     CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
     // Local overlays must not diverge peers (debugger traps / GB camera backends).
     CoreSettingsSetValue(SettingsID::Core_EnableDebugger, true);
