@@ -89,7 +89,7 @@ static void apply_netplay_forced_core_settings(void)
     CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
     CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, kNetplayCpuEmulatorCachedInterp);
     CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
-    // Local overlays must not diverge peers (debugger traps / GB camera backends).
+    // Debugger stays on. Peers that disagree on it desync on the first VI.
     CoreSettingsSetValue(SettingsID::Core_EnableDebugger, true);
     CoreSettingsSetValue(SettingsID::Core_GbCameraVideoCaptureBackend1, std::string(""));
     apply_netplay_forced_gliden64_settings();
