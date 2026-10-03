@@ -1774,7 +1774,7 @@ void NetplayCoordinator::sendEmulationPauseUpdate(bool paused)
     }
 }
 
-void NetplayCoordinator::setInputDelayFrames(int frames)
+void NetplayCoordinator::setInputDelayFrames(int frames, uint32_t applyAtFrame)
 {
     if (frames < 1) {
         frames = 1;
@@ -1786,8 +1786,12 @@ void NetplayCoordinator::setInputDelayFrames(int frames)
     m_lockstepConfig.stallTimeoutMilliseconds = 0;
     CoreSetEmbeddedNetplayInputDelayFrames(frames);
     if (auto engine = activeLockstepEngine()) {
-        engine->setInputDelayFrames(frames);
-        engine->wakeInputWaiters();
+        if (applyAtFrame > engine->getCurrentFrameNumber()) {
+            engine->scheduleInputDelayFrames(frames, applyAtFrame);
+        } else {
+            engine->setInputDelayFrames(frames);
+            engine->wakeInputWaiters();
+        }
     }
 }
 
@@ -2250,12 +2254,20 @@ void NetplayCoordinator::sendInputDelayUpdate(int frames)
         return;
     }
 
-    setInputDelayFrames(frames);
+    // In a running game, both peers must retag inputs on the same lockstep
+    // frame. Applying the new buffer as soon as the packet arrives desyncs
+    // Mario Party within the first hash check.
+    uint32_t applyAtFrame = 0;
+    if (const auto engine = activeLockstepEngine()) {
+        applyAtFrame = engine->getCurrentFrameNumber() + 90;
+    }
+
+    setInputDelayFrames(frames, applyAtFrame);
 
     if (isHostingServer() && m_server && !m_gameSession.roomId.isEmpty()) {
-        m_server->broadcastInputDelayUpdate(m_gameSession.roomId, frames);
+        m_server->broadcastInputDelayUpdate(m_gameSession.roomId, frames, applyAtFrame);
     } else if (m_socketIO) {
-        m_socketIO->sendInputDelayUpdate(frames);
+        m_socketIO->sendInputDelayUpdate(frames, applyAtFrame);
     }
 
     emit inputDelayChanged(frames);
@@ -2560,7 +2572,7 @@ void NetplayCoordinator::on_socketIO_emulationBeginReceived()
     emit emulationBeginReceived();
 }
 
-void NetplayCoordinator::on_socketIO_inputDelayReceived(int frames)
+void NetplayCoordinator::on_socketIO_inputDelayReceived(int frames, uint32_t applyAtFrame)
 {
     if (frames < 1) {
         frames = 1;
@@ -2568,7 +2580,7 @@ void NetplayCoordinator::on_socketIO_inputDelayReceived(int frames)
         frames = 99;
     }
 
-    setInputDelayFrames(frames);
+    setInputDelayFrames(frames, applyAtFrame);
     emit inputDelayChanged(frames);
 }
 

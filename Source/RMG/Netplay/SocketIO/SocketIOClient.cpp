@@ -1121,7 +1121,9 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
 
     } else if (eventName == "update-input-delay" && args.size() > 0) {
         QJsonObject data = args[0].toObject();
-        emit inputDelayReceived(data["frames"].toInt(4));
+        emit inputDelayReceived(
+            data["frames"].toInt(4),
+            static_cast<uint32_t>(data["applyAtFrame"].toInteger(0)));
 
     } else if (eventName == "emulation-paused" && args.size() > 0) {
         QJsonObject data = args[0].toObject();
@@ -1266,8 +1268,9 @@ void SocketIOClient::updatePlayerList(const QJsonArray& players)
     m_currentRoom.players = playerList;
 }
 
-void SocketIOClient::sendInputDelayUpdate(int frames) {
+void SocketIOClient::sendInputDelayUpdate(int frames, uint32_t applyAtFrame) {
     QJsonObject data;
     data["frames"] = frames;
+    data["applyAtFrame"] = static_cast<qint64>(applyAtFrame);
     this->emitEvent("update-input-delay", data); // It's okay to call it from here because it's internal
 }

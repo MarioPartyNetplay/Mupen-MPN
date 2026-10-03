@@ -136,7 +136,7 @@ public:
 
     void requestRoomList(bool waiting = false);
     
-    void sendInputDelayUpdate(int frames);
+    void sendInputDelayUpdate(int frames, uint32_t applyAtFrame = 0);
     void sendEmulationPauseUpdate(bool paused);
     void sendEmulationReady(int syncEpoch);
 
@@ -185,7 +185,7 @@ signals:
     void cheatsUpdated(const QJsonArray& cheats);
     void saveSyncReceived(const QJsonArray& saveFiles, int syncEpoch);
     void coreSettingsSyncReceived(const QJsonObject& coreSettings);
-    void inputDelayReceived(int frames);
+    void inputDelayReceived(int frames, uint32_t applyAtFrame);
     void emulationPauseReceived(bool paused);
     void emulationBeginReceived();
     void playerKicked(const QString& reason);

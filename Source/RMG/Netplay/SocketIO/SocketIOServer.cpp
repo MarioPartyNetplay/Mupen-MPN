@@ -460,9 +460,11 @@ void SocketIOServer::handle_InputDelayUpdate(ENetPeer* socket, const QJsonObject
 
     int frames = msg.value("frames").toInt(4);
     room->inputDelayFrames = qBound(1, frames, 99);
+    const uint32_t applyAtFrame = static_cast<uint32_t>(msg.value(QStringLiteral("applyAtFrame")).toInteger(0));
 
     QJsonObject payload;
     payload["frames"] = room->inputDelayFrames;
+    payload["applyAtFrame"] = static_cast<qint64>(applyAtFrame);
     
     // Distribute frame delay configuration across active clients securely
     for (auto* player : room->players)
@@ -656,7 +658,7 @@ void SocketIOServer::broadcastSaveSync(const QString& roomId, const QJsonArray& 
     emit saveSyncReceived(roomId, saveFiles, room->syncEpoch);
 }
 
-void SocketIOServer::broadcastInputDelayUpdate(const QString& roomId, int frames)
+void SocketIOServer::broadcastInputDelayUpdate(const QString& roomId, int frames, uint32_t applyAtFrame)
 {
     SignalingRoom* room = getRoomById(roomId);
     if (!room)
@@ -671,8 +673,11 @@ void SocketIOServer::broadcastInputDelayUpdate(const QString& roomId, int frames
         frames = 99;
     }
 
+    room->inputDelayFrames = frames;
+
     QJsonObject payload;
     payload["frames"] = frames;
+    payload["applyAtFrame"] = static_cast<qint64>(applyAtFrame);
     emitToRoom(roomId, "update-input-delay", payload);
 }
 

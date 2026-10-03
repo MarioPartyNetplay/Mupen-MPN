@@ -189,6 +189,8 @@ LockstepEngine::submitLocalInput(uint32_t controllerState)
     {
         std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
+        applyScheduledInputDelayUnlocked();
+
         const uint32_t sendFrame =
             m_currentFrameNumber +
             static_cast<uint32_t>(m_config.inputDelayFrames);
@@ -450,6 +452,7 @@ bool LockstepEngine::advanceFrame()
 
     if (m_config.numPlayers > 1) {
         std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        applyScheduledInputDelayUnlocked();
         if (!m_inputBootstrapComplete) {
             return false;
         }
@@ -668,8 +671,45 @@ void LockstepEngine::setInputDelayFrames(int frames)
         frames = 99;
     }
 
+    m_scheduledInputDelayFrames = -1;
     m_config.inputDelayFrames = frames;
     m_config.stallTimeoutMilliseconds = stallTimeoutForDelayFrames(frames);
+    m_inputCv.notify_all();
+}
+
+void LockstepEngine::scheduleInputDelayFrames(int frames, uint32_t applyAtFrame)
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    if (frames < static_cast<int>(kMinInputDelayFrames)) {
+        frames = static_cast<int>(kMinInputDelayFrames);
+    } else if (frames > 99) {
+        frames = 99;
+    }
+
+    if (applyAtFrame <= m_currentFrameNumber) {
+        m_scheduledInputDelayFrames = -1;
+        m_config.inputDelayFrames = frames;
+        m_config.stallTimeoutMilliseconds = stallTimeoutForDelayFrames(frames);
+        m_inputCv.notify_all();
+        return;
+    }
+
+    m_scheduledInputDelayFrames = frames;
+    m_scheduledInputDelayFrame = applyAtFrame;
+}
+
+void LockstepEngine::applyScheduledInputDelayUnlocked()
+{
+    if (m_scheduledInputDelayFrames < 0 ||
+        m_currentFrameNumber < m_scheduledInputDelayFrame) {
+        return;
+    }
+
+    m_config.inputDelayFrames = m_scheduledInputDelayFrames;
+    m_config.stallTimeoutMilliseconds =
+        stallTimeoutForDelayFrames(m_scheduledInputDelayFrames);
+    m_scheduledInputDelayFrames = -1;
     m_inputCv.notify_all();
 }
 

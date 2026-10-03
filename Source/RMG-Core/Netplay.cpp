@@ -520,16 +520,17 @@ namespace {
 constexpr int kGprRegisterCount = 32;
 constexpr int kCp0RegisterCount = 32;
 constexpr int kCp1FgrCount = 32;
-// Timer/interrupt CP0 tracks cycle skew, not gameplay. MP1 extra SI polls
-// nudge COUNT/COMPARE/CAUSE/RANDOM even when GPRs and PC still match, which
-// showed up as on/off HUD desyncs. Skip r0 (hardwired 0) the same way.
+// Timer/interrupt CP0 tracks cycle skew, not gameplay. Mario Party's extra SI
+// polls nudge these even when GPRs and PC still match, which showed up as
+// on/off desync alerts at frames 180 and 1080. Skip r0 (hardwired 0) the same way.
 constexpr int kCp0RandomReg = 1;
+constexpr int kCp0BadVAddrReg = 8;
 constexpr int kCp0CountReg = 9;
 constexpr int kCp0CompareReg = 11;
+constexpr int kCp0StatusReg = 12;
 constexpr int kCp0CauseReg = 13;
-// Sparse RDRAM sample catches video-plugin feedback splits without hashing 4–8MB.
-constexpr size_t kRdramSampleStride = 4096;
-constexpr size_t kRdramSampleBytes = 4 * 1024 * 1024;
+constexpr int kCp0EpcReg = 14;
+constexpr int kCp0ErrorEpcReg = 30;
 
 uint32_t fnv1a32(uint32_t hash, uint32_t value)
 {
@@ -538,19 +539,16 @@ uint32_t fnv1a32(uint32_t hash, uint32_t value)
     return hash;
 }
 
-uint32_t fnv1a32_u64(uint32_t hash, uint64_t value)
-{
-    hash = fnv1a32(hash, static_cast<uint32_t>(value));
-    hash = fnv1a32(hash, static_cast<uint32_t>(value >> 32));
-    return hash;
-}
-
 bool isVolatileCp0Register(int index)
 {
     return index == kCp0RandomReg ||
+           index == kCp0BadVAddrReg ||
            index == kCp0CountReg ||
            index == kCp0CompareReg ||
-           index == kCp0CauseReg;
+           index == kCp0StatusReg ||
+           index == kCp0CauseReg ||
+           index == kCp0EpcReg ||
+           index == kCp0ErrorEpcReg;
 }
 
 } // namespace
@@ -616,22 +614,9 @@ CORE_EXPORT uint32_t CoreGetNetplayFrameSyncHash(void)
     {
         for (int i = 0; i < kCp1FgrCount; ++i)
         {
-            hash = fnv1a32_u64(hash, fgr[i]);
-        }
-    }
-
-    if (m64p::Core.DebugMemGetPointer != nullptr)
-    {
-        const auto* const rdram =
-            static_cast<const uint8_t*>(m64p::Core.DebugMemGetPointer(M64P_DBG_PTR_RDRAM));
-        if (rdram != nullptr)
-        {
-            for (size_t offset = 0; offset + 4 <= kRdramSampleBytes; offset += kRdramSampleStride)
-            {
-                uint32_t word = 0;
-                std::memcpy(&word, rdram + offset, sizeof(word));
-                hash = fnv1a32(hash, word);
-            }
+            // Low 32 only. FR=0 odd registers and host FP leftovers differ
+            // across machines without changing the game.
+            hash = fnv1a32(hash, static_cast<uint32_t>(fgr[i]));
         }
     }
 

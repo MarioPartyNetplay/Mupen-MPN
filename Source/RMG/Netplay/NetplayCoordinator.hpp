@@ -95,7 +95,7 @@
      void sendCoreSettingsSync(const QJsonObject& coreSettings);
      
      // Input Delay (In-Game support)
-     void setInputDelayFrames(int frames);
+     void setInputDelayFrames(int frames, uint32_t applyAtFrame = 0);
      int getInputDelayFrames() const;
      void sendInputDelayUpdate(int frames);
 
@@ -197,7 +197,7 @@
      void on_socketIO_saveSyncReceived(const QJsonArray& saveFiles, int syncEpoch);
      void on_socketIO_coreSettingsSyncReceived(const QJsonObject& coreSettings);
      void on_socketIO_controllerInputReceived(int slot, uint32_t frameNumber, uint32_t controllerState);
-     void on_socketIO_inputDelayReceived(int frames);
+     void on_socketIO_inputDelayReceived(int frames, uint32_t applyAtFrame);
      void on_socketIO_emulationBeginReceived();
      void relayLocalControllerInput(quint32 sendFrameNumber, quint32 state);
      void flushPendingControllerRelay();

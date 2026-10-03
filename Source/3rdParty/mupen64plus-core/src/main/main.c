@@ -1828,6 +1828,18 @@ m64p_error main_run(void)
 
     netplay_read_registration(cin_compats);
 
+    /* Embedded lockstep: every peer must report the same ports and no pak.
+     * Mario Party branches on PIF status during boot, so a local mempak or a
+     * missing port desyncs by the first hash check. */
+    if (l_rmg_embedded_netplay_active || rmg_embedded_netplay_is_active()) {
+        for (i = 0; i < GAME_CONTROLLERS_COUNT; ++i) {
+            Controls[i].Present = 1;
+            Controls[i].Plugin = PLUGIN_NONE;
+            Controls[i].RawData = 0;
+            Controls[i].Type = CONT_TYPE_STANDARD;
+        }
+    }
+
     for (i = 0; i < GAME_CONTROLLERS_COUNT; ++i) {
 
         //During netplay, we "trick" the input plugin

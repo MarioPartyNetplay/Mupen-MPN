@@ -101,6 +101,8 @@ public:
     Stats getStatistics() const;
     void resetStatistics();
     void setInputDelayFrames(int frames);
+    /** Switch delay when lockstep reaches applyAtFrame so every peer retags inputs together. */
+    void scheduleInputDelayFrames(int frames, uint32_t applyAtFrame);
     void setNumPlayers(int numPlayers);
     void setLocalPlayerSlot(int slot);
     /** Unblock advanceFrame() waiters (e.g. after signaling loss). */
@@ -155,6 +157,7 @@ private:
     int computeInputWaitTimeoutMsUnlocked(uint32_t frameNumber) const;
     /** Re-send locally published inputs for the current delay window (WebRTC). */
     void rebroadcastLocalInputsUnlocked(uint32_t frameNumber);
+    void applyScheduledInputDelayUnlocked();
     bool isAlive() const { return !m_shutdown.load(); }
 
     Config m_config;
@@ -183,6 +186,8 @@ private:
     std::pair<uint32_t, std::string> m_pendingDesyncNotification;
     bool m_hasPendingDesyncNotification = false;
     bool m_pendingResync = false;
+    int m_scheduledInputDelayFrames = -1;
+    uint32_t m_scheduledInputDelayFrame = 0;
     std::vector<std::shared_ptr<UserInterface::Netplay::WebRTCDataChannel>> m_dataChannels;
     Callbacks m_callbacks;
 };

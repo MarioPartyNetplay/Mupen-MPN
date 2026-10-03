@@ -50,7 +50,7 @@ public:
     void broadcastSaveSync(const QString& roomId, const QJsonArray& saveFiles, int syncEpoch = 0);
     void broadcastCoreSettingsSync(const QString& roomId, const QJsonObject& coreSettings, int syncEpoch = 0);
     void broadcastChatMessage(const QString& roomId, const QString& playerName, const QString& message);
-    void broadcastInputDelayUpdate(const QString& roomId, int frames);
+    void broadcastInputDelayUpdate(const QString& roomId, int frames, uint32_t applyAtFrame = 0);
     void broadcastEmulationPauseUpdate(const QString& roomId, bool paused);
     void markEmulationReady(const QString& roomId, int slotIndex);
 
