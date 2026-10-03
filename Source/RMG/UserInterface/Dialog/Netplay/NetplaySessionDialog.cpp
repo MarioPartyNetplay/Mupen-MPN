@@ -2227,6 +2227,8 @@ void NetplaySessionDialog::accept()
         this->cheatsPushButton->setEnabled(false);
     }
 
+    // New generation so a lobby-era save snapshot cannot satisfy the start gate.
+    this->coordinator->armSessionSyncEpoch();
     this->syncHostSessionState();
 
     // Let save-sync reach clients before game-started.
