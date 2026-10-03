@@ -36,6 +36,7 @@ int open_file_storage(struct file_storage* fstorage, size_t size, const char* fi
     /* ! Take ownership of filename ! */
     fstorage->filename = filename;
     fstorage->size = size;
+    fstorage->disk_size = size;
     fstorage->first_access = 1;
 
     /* allocate memory for holding data */
@@ -71,6 +72,7 @@ int open_rom_file_storage(struct file_storage* fstorage, const char* filename)
     if (err == file_ok) {
         /* ! take ownsership of filename ! */
         fstorage->filename = filename;
+        fstorage->disk_size = fstorage->size;
     }
 
     return err;
@@ -105,10 +107,15 @@ static void file_storage_save(void* storage, size_t start, size_t size)
     file_status_t err;
 
     /* On first save access ignore start/size and write full storage content,
-     * otherwise write only updated chunk */
+     * otherwise write only updated chunk. disk_size stays at the allocated
+     * length when size was shrunk, so a 4kbit EEPROM is not truncated to
+     * 512 bytes (the next open would then fail its 2048-byte read). */
     if (fstorage->first_access) {
         fstorage->first_access = 0;
-        err = write_to_file(fstorage->filename, fstorage->data, fstorage->size);
+        const size_t bytes = fstorage->disk_size > fstorage->size
+            ? fstorage->disk_size
+            : fstorage->size;
+        err = write_to_file(fstorage->filename, fstorage->data, bytes);
     }
     else {
         err = write_chunk_to_file(fstorage->filename, fstorage->data + start, size, start);

@@ -32,6 +32,9 @@ struct file_storage
     size_t offset;
     const char* filename;
     int first_access;
+    /* Bytes allocated for data[]. size may be shrunk (4kbit EEPROM reports
+     * 0x200) while the file on disk stays this long. */
+    size_t disk_size;
 };
 
 

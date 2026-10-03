@@ -1210,8 +1210,10 @@ static void open_eep_file(struct file_storage* fstorage)
 
     int ret = open_file_storage(fstorage, EEPROM_MAX_SIZE, get_eeprom_path());
 
-    if (ret != (int)file_ok && fstorage->data != NULL) {
-        /* if file doesn't exists provide default content */
+    if (ret == (int)file_open_error && fstorage->data != NULL) {
+        /* Missing file only. A short .eep (512 bytes after a 4kbit save)
+         * already has its bytes in the buffer; formatting on file_read_error
+         * wiped Mario Party's save on the next launch. */
         format_eeprom(fstorage->data, EEPROM_MAX_SIZE);
     }
 
