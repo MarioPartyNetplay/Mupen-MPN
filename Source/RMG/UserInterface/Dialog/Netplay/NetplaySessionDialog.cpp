@@ -1490,8 +1490,11 @@ void NetplaySessionDialog::on_coordinator_roomClosed(const QString& reason)
         return;
     }
 
-    QtMessageBox::Error(this, QStringLiteral("Session closed"),
-                        reason.isEmpty() ? QStringLiteral("Host closed the session") : reason);
+    const QString closedMessage = reason.isEmpty()
+        ? QStringLiteral("Host disconnected")
+        : reason;
+    this->showMatchHudNotice(closedMessage, QStringLiteral("#ff6666"));
+    QtMessageBox::Error(this, QStringLiteral("Session closed"), closedMessage);
     this->reject();
 }
 
@@ -1607,9 +1610,96 @@ void NetplaySessionDialog::updateCheatsTreeWidget(void)
     CheatsCommon::AddCheatsToTreeWidget(true, cheatsArray, this->romFile, cheats, this->cheatsTreeWidget, true);
 }
 
+void NetplaySessionDialog::showMatchHudNotice(const QString& message, const QString& color)
+{
+    this->chatPlainTextEdit->appendHtml(
+        QStringLiteral("<span style=\"color:%1;\"><b>%2</b></span>")
+            .arg(color, message.toHtmlEscaped()));
+    OnScreenDisplaySetMessage(message.toStdString(), 8);
+}
+
+void NetplaySessionDialog::announceMatchRosterChanges(
+    const QList<Netplay::SocketIOClient::PlayerInfo>& previousPlayers,
+    const QList<Netplay::SocketIOClient::PlayerInfo>& currentPlayers)
+{
+    auto identityOf = [](const Netplay::SocketIOClient::PlayerInfo& player) {
+        if (!player.clientId.isEmpty()) {
+            return player.clientId;
+        }
+        if (!player.id.isEmpty()) {
+            return player.id;
+        }
+        return player.name;
+    };
+    auto labelOf = [](const Netplay::SocketIOClient::PlayerInfo& player) {
+        const QString name = player.name.trimmed();
+        if (!name.isEmpty()) {
+            return name;
+        }
+        if (player.slot >= 0) {
+            return QStringLiteral("Player %1").arg(player.slot + 1);
+        }
+        return QStringLiteral("A player");
+    };
+
+    QHash<QString, QString> previous;
+    for (const auto& player : previousPlayers) {
+        const QString identity = identityOf(player);
+        if (!identity.isEmpty()) {
+            previous.insert(identity, labelOf(player));
+        }
+    }
+    if (previous.isEmpty()) {
+        return;
+    }
+
+    QSet<QString> currentIds;
+    QStringList joined;
+    for (const auto& player : currentPlayers) {
+        const QString identity = identityOf(player);
+        if (identity.isEmpty() || currentIds.contains(identity)) {
+            continue;
+        }
+        currentIds.insert(identity);
+        if (this->m_matchDisconnectedIds.remove(identity)) {
+            joined.append(labelOf(player));
+        }
+    }
+
+    QStringList dropped;
+    for (auto it = previous.cbegin(); it != previous.cend(); ++it) {
+        if (!currentIds.contains(it.key())) {
+            dropped.append(it.value());
+            this->m_matchDisconnectedIds.insert(it.key());
+        }
+    }
+
+    QStringList hudLines;
+    if (!dropped.isEmpty()) {
+        const QString message = QStringLiteral("%1 disconnected").arg(dropped.join(QStringLiteral(", ")));
+        this->chatPlainTextEdit->appendHtml(
+            QStringLiteral("<span style=\"color:#ff6666;\"><b>%1</b></span>")
+                .arg(message.toHtmlEscaped()));
+        hudLines.append(message);
+    }
+    if (!joined.isEmpty()) {
+        const QString message = QStringLiteral("%1 reconnected").arg(joined.join(QStringLiteral(", ")));
+        this->chatPlainTextEdit->appendHtml(
+            QStringLiteral("<span style=\"color:#8fd18f;\"><b>%1</b></span>")
+                .arg(message.toHtmlEscaped()));
+        hudLines.append(message);
+    }
+    if (!hudLines.isEmpty()) {
+        OnScreenDisplaySetMessage(hudLines.join("\n").toStdString(), 8);
+    }
+}
+
 void NetplaySessionDialog::on_coordinator_playersUpdated(
     const QList<Netplay::SocketIOClient::PlayerInfo>& players)
 {
+    if (this->coordinator && this->coordinator->isInGame()) {
+        this->announceMatchRosterChanges(this->m_cachedPlayers, players);
+    }
     this->m_cachedPlayers = players;
     if (this->coordinator) {
         this->sessionSlot = this->coordinator->getGameSession().localSlot;
@@ -1847,6 +1937,7 @@ void NetplaySessionDialog::tryStartPendingGame(void)
 
 void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot, int syncEpoch)
 {
+    this->m_matchDisconnectedIds.clear();
     if (this->isLocalSessionHost()) {
         this->syncHostSessionState();
     }
@@ -2342,6 +2433,8 @@ void NetplaySessionDialog::on_netplay_disconnected()
         return;
     }
 
+    this->showMatchHudNotice(QStringLiteral("You disconnected from the match"),
+                             QStringLiteral("#ff6666"));
     QtMessageBox::Error(this, QStringLiteral("Disconnected"),
                         QStringLiteral("Lost connection to the netplay session."));
     this->reject();

@@ -25,7 +25,8 @@ void OnScreenDisplayLoadSettings(void);
 bool OnScreenDisplaySetDisplaySize(int width, int height);
 
 // sets the current message to the OSD
-void OnScreenDisplaySetMessage(std::string message);
+// durationSeconds <= 0 uses the configured OSD duration
+void OnScreenDisplaySetMessage(std::string message, int durationSeconds = 0);
 
 // sets a persistent overlay text in the top-right (empty string clears it)
 void OnScreenDisplaySetOverlayText(std::string text);

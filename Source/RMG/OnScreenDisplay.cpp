@@ -62,6 +62,7 @@ static float       l_TextGreen       = 1.0f;
 static float       l_TextBlue        = 1.0f;
 static float       l_TextAlpha       = 1.0f;
 static int         l_MessageDuration = 3;
+static int         l_ActiveMessageDuration = 3;
 static float       l_Scale           = 1.0f;
 static bool        l_CustomLayout    = false;
 static int         l_CustomPosPermille[static_cast<int>(OsdElement::Count)][2] = {};
@@ -427,7 +428,7 @@ bool OnScreenDisplaySetDisplaySize(int width, int height)
     return true;
 }
 
-void OnScreenDisplaySetMessage(std::string message)
+void OnScreenDisplaySetMessage(std::string message, int durationSeconds)
 {
     if (!l_Initialized)
     {
@@ -436,6 +437,7 @@ void OnScreenDisplaySetMessage(std::string message)
 
     l_Message     = message;
     l_MessageTime = std::chrono::high_resolution_clock::now();
+    l_ActiveMessageDuration = durationSeconds > 0 ? durationSeconds : l_MessageDuration;
 }
 
 void OnScreenDisplaySetOverlayText(std::string text)
@@ -570,7 +572,7 @@ void OnScreenDisplayRender(void)
     {
         const auto currentTime  = std::chrono::high_resolution_clock::now();
         const int secondsPassed = std::chrono::duration_cast<std::chrono::seconds>(currentTime - l_MessageTime).count();
-        showMessage = (secondsPassed < l_MessageDuration);
+        showMessage = (secondsPassed < l_ActiveMessageDuration);
     }
 
     const bool showOverlay = !l_OverlayText.empty();

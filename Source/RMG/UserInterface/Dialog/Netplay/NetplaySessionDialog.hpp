@@ -12,6 +12,7 @@
 
 #include <QJsonObject>
 #include <QDialog>
+#include <QSet>
 #include <QString>
 #include <QPair>
 #include <memory>
@@ -69,6 +70,7 @@ private:
     int m_hostSessionSyncRetries = 0;
 
     QList<Netplay::SocketIOClient::PlayerInfo> m_cachedPlayers;
+    QSet<QString> m_matchDisconnectedIds;
     QStringList m_publishedSessionPlayerIds;
     bool m_updatingPlayerList = false;
 
@@ -106,6 +108,9 @@ private slots:
     void on_netplay_disconnected();
     void on_coordinator_stateChanged(Netplay::NetplayCoordinator::State state);
     void on_coordinator_playersUpdated(const QList<Netplay::SocketIOClient::PlayerInfo>& players);
+    void showMatchHudNotice(const QString& message, const QString& color);
+    void announceMatchRosterChanges(const QList<Netplay::SocketIOClient::PlayerInfo>& previousPlayers,
+                                    const QList<Netplay::SocketIOClient::PlayerInfo>& currentPlayers);
     void on_coordinator_gameStarted(int playerSlot, int syncEpoch);
     void on_coordinator_cheatsUpdated(const QJsonArray& cheats);
     void on_coordinator_saveSyncReceived(const QJsonArray& saveFiles, int syncEpoch);
