@@ -1708,8 +1708,8 @@ m64p_error main_run(void)
         int enable_debugger = 1;
         ConfigSetParameter(g_CoreConfig, "EnableDebugger", M64TYPE_BOOL, &enable_debugger);
         no_compiled_jump = 0;
-        /* Dynarec is not deterministic across compilers/OS. Cached interp is. */
-        emumode = 1;
+        /* Dynamic recompiler (R4300Emulator >= 2) on every netplay peer. */
+        emumode = 2;
     }
     count_per_op = ConfigGetParamInt(g_CoreConfig, "CountPerOp");
     count_per_op_denom_pot = ConfigGetParamInt(g_CoreConfig, "CountPerOpDenomPot");
@@ -1732,7 +1732,7 @@ m64p_error main_run(void)
     //During netplay, player 1 is the source of truth for these settings
     netplay_sync_settings(&count_per_op, &count_per_op_denom_pot, &disable_extra_mem, &si_dma_duration, &emumode, &no_compiled_jump);
     if (netplay_determinism_required()) {
-        emumode = 1;
+        emumode = 2;
         no_compiled_jump = 0;
         randomize_interrupt = 0;
     }

@@ -46,9 +46,8 @@ static bool l_HasNetplaySyncSettings = false;
 // Local Functions
 //
 
-// Cached interpreter. Dynarec is not deterministic across machines and
-// desyncs lockstep on the first few frames.
-static constexpr int kNetplayCpuEmulatorCachedInterp = 1;
+// Dynamic recompiler (R4300Emulator >= 2). Forced for every netplay peer.
+static constexpr int kNetplayCpuEmulatorDynarec = 2;
 
 static std::string basename_only(std::string path)
 {
@@ -102,7 +101,7 @@ static void apply_synced_core_config(const CoreNetplaySyncSettings& sync)
     CoreSettingsSetValue(SettingsID::Core_CountPerOpDenomPot, sync.countPerOpDenomPot);
     CoreSettingsSetValue(SettingsID::Core_DisableExtraMem, sync.disableExtraMem);
     CoreSettingsSetValue(SettingsID::Core_SiDmaDuration, sync.siDmaDuration);
-    CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, kNetplayCpuEmulatorCachedInterp);
+    CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, kNetplayCpuEmulatorDynarec);
     CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
     // Debugger stays on. One peer with it off takes a different VI path.
     CoreSettingsSetValue(SettingsID::Core_EnableDebugger, true);
@@ -446,7 +445,7 @@ CORE_EXPORT bool CoreBuildNetplaySyncSettings(std::filesystem::path romPath, Cor
     out.countPerOpDenomPot = countPerOpDenomPot;
     out.disableExtraMem = disableExtraMem;
     out.siDmaDuration = siDmaDuration;
-    out.cpuEmulator = kNetplayCpuEmulatorCachedInterp;
+    out.cpuEmulator = kNetplayCpuEmulatorDynarec;
     out.saveType = gameSettings.SaveType;
     out.transferPak = gameSettings.TransferPak;
     out.rspPluginName = resolve_plugin_name(CorePluginType::Rsp, gameSettings.MD5);
@@ -458,7 +457,7 @@ CORE_EXPORT bool CoreBuildNetplaySyncSettings(std::filesystem::path romPath, Cor
 CORE_EXPORT void CoreSetNetplaySyncSettings(const CoreNetplaySyncSettings& settings)
 {
     l_NetplaySyncSettings = settings;
-    l_NetplaySyncSettings.cpuEmulator = kNetplayCpuEmulatorCachedInterp;
+    l_NetplaySyncSettings.cpuEmulator = kNetplayCpuEmulatorDynarec;
     l_HasNetplaySyncSettings = settings.valid;
 }
 

@@ -67,8 +67,8 @@ static bool get_emulation_state(m64p_emu_state& state)
     return ret == M64ERR_SUCCESS;
 }
 
-// Cached interpreter (R4300Emulator == 1). Dynarec diverges across machines.
-static constexpr int kNetplayCpuEmulatorCachedInterp = 1;
+// Dynamic recompiler (R4300Emulator >= 2). Forced for every netplay peer.
+static constexpr int kNetplayCpuEmulatorDynarec = 2;
 
 static void apply_netplay_forced_gliden64_settings(void)
 {
@@ -87,7 +87,7 @@ static void apply_netplay_forced_gliden64_settings(void)
 static void apply_netplay_forced_core_settings(void)
 {
     CoreSettingsSetValue(SettingsID::Core_RandomizeInterrupt, false);
-    CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, kNetplayCpuEmulatorCachedInterp);
+    CoreSettingsSetValue(SettingsID::Core_CPU_Emulator, kNetplayCpuEmulatorDynarec);
     CoreSettingsSetValue(std::string("Core"), std::string("NoCompiledJump"), false);
     // Debugger stays on. Peers that disagree on it desync on the first VI.
     CoreSettingsSetValue(SettingsID::Core_EnableDebugger, true);
