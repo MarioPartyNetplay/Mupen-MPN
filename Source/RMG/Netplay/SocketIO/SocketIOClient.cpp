@@ -1130,7 +1130,11 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
         emit emulationPauseReceived(data["paused"].toBool(false));
 
     } else if (eventName == "emulation-begin") {
-        emit emulationBeginReceived();
+        QJsonArray liveSlots;
+        if (!args.isEmpty()) {
+            liveSlots = args[0].toObject().value(QStringLiteral("slots")).toArray();
+        }
+        emit emulationBeginReceived(liveSlots);
 
     } else if (eventName == "kicked" && args.size() > 0) {
         const QString reason = args[0].toObject().value(QStringLiteral("reason")).toString(

@@ -77,7 +77,7 @@ signals:
     void coreSettingsSyncReceived(const QString& roomId, const QJsonObject& coreSettings);
     void saveSyncReceived(const QString& roomId, const QJsonArray& saveFiles, int syncEpoch);
     void hostedWebRTCSignalReceived(const QString& fromPlayerId, const QJsonObject& signal);
-    void emulationBegin(const QString& roomId);
+    void emulationBegin(const QString& roomId, const QJsonArray& liveSlots);
 
 private slots:
     void onServiceTimer();

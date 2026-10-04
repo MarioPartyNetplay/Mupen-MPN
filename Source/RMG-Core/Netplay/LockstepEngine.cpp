@@ -1435,10 +1435,20 @@ void LockstepEngine::setNumPlayers(int numPlayers)
     m_config.numPlayers = numPlayers;
 
     m_dataChannels.resize(numPlayers);
+    // Keep activity for seats that already exist. Newly added seats stay
+    // inactive until the coordinator names them; marking every hole active
+    // makes frame 0 wait on a ghost who already left.
+    std::map<int, bool> previous = m_peerSessionActive;
     m_peerSessionActive.clear();
     for (int slot = 0; slot < numPlayers; ++slot) {
-        m_peerSessionActive[slot] = true;
+        const auto it = previous.find(slot);
+        if (it != previous.end()) {
+            m_peerSessionActive[slot] = it->second;
+        } else {
+            m_peerSessionActive[slot] = (slot == m_config.localPlayerSlot);
+        }
     }
+    m_inputCv.notify_all();
 }
 
 void LockstepEngine::setLocalPlayerSlot(int slot)

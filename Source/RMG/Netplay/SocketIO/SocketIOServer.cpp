@@ -730,13 +730,26 @@ void SocketIOServer::tryBroadcastEmulationBegin(SignalingRoom* room)
         }
     }
 
+    // Snapshot only seats that will actually send frame 0. A disconnected
+    // ghost keeps its lobby slot for reconnect grace, but must not be part of
+    // the boot roster or every peer waits on input that never arrives.
+    QJsonArray liveSlots;
+    for (auto* player : room->lobbyOrder) {
+        if (!player || isTemporarilyDisconnected(player)) {
+            continue;
+        }
+        liveSlots.append(player->slotIndex);
+    }
+
     room->emulationBeginSent = true;
 
     qInfo() << "SocketIOServer: All players ready in room" << room->id
-            << "- broadcasting emulation-begin";
+            << "- broadcasting emulation-begin slots" << liveSlots;
 
-    emitToConnectedRoomClients(room->id, "emulation-begin", QJsonObject());
-    emit emulationBegin(room->id);
+    QJsonObject beginPayload;
+    beginPayload.insert(QStringLiteral("slots"), liveSlots);
+    emitToConnectedRoomClients(room->id, "emulation-begin", beginPayload);
+    emit emulationBegin(room->id, liveSlots);
 }
 
 void SocketIOServer::handle_EmulationReady(ENetPeer* socket, const QJsonObject& msg)
@@ -914,8 +927,10 @@ void SocketIOServer::onClientDisconnected(ENetPeer* peer)
     peer->data = nullptr;
 
     SignalingRoom* room = roomId.isEmpty() ? nullptr : getRoomById(roomId);
-    // Keep in-game seats reserved for reconnect, but never leave lobby ghosts.
-    if (room && room->started && !client->reconnectToken.isEmpty()) {
+    // Reserve a seat only after lockstep has started. A drop while saves and
+    // settings are still syncing is a lobby leave — keeping that ghost makes
+    // frame 0 wait on input that will never arrive.
+    if (room && room->started && room->emulationBeginSent && !client->reconnectToken.isEmpty()) {
         m_disconnectedClientsByToken.insert(client->reconnectToken, client);
         broadcastRoomUpdate(roomId);
         qInfo() << "Client disconnected (grace period):" << clientId << "room:" << roomId;

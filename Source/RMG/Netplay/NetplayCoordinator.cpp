@@ -277,7 +277,8 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
                     setupPeerConnections(players);
                 }
 
-                if (m_state == InGame) {
+                if (m_lockstepEngine &&
+                    (m_state == StartingGame || m_state == InGame)) {
                     syncLockstepPeerSessionActive();
                 }
 
@@ -335,10 +336,11 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
     connect(m_server.get(), &SocketIOServer::hostedWebRTCSignalReceived,
             this, &NetplayCoordinator::on_hostedWebRTCSignalReceived);
     connect(m_server.get(), &SocketIOServer::emulationBegin,
-            this, [this](const QString& roomId) {
+            this, [this](const QString& roomId, const QJsonArray& liveSlots) {
                 if (roomId != m_gameSession.roomId) {
                     return;
                 }
+                applyBootLiveSlots(liveSlots);
                 emit emulationBeginReceived();
             });
     connect(m_server.get(), &SocketIOServer::playerPingsUpdated,
@@ -1060,6 +1062,25 @@ void NetplayCoordinator::on_socketIO_roomClosed(const QString& reason)
     emit roomClosed(reason);
 }
 
+void NetplayCoordinator::clearBootLiveSlots()
+{
+    m_bootLiveSlots.clear();
+}
+
+void NetplayCoordinator::applyBootLiveSlots(const QJsonArray& liveSlots)
+{
+    m_bootLiveSlots.clear();
+    for (const auto& value : liveSlots) {
+        const int slot = value.toInt(-1);
+        if (slot < 0 || slot >= 4 || m_bootLiveSlots.contains(slot)) {
+            continue;
+        }
+        m_bootLiveSlots.append(slot);
+    }
+
+    qInfo() << "NetplayCoordinator: Boot roster slots" << m_bootLiveSlots;
+}
+
 void NetplayCoordinator::syncLockstepPeerSessionActive()
 {
     if (!m_lockstepEngine) {
@@ -1071,10 +1092,18 @@ void NetplayCoordinator::syncLockstepPeerSessionActive()
     // An empty list is often a transient signaling blip — do not mark everyone
     // inactive or frame 0 will advance with zeros and desync when peers return.
     const bool trustAbsences = !players.isEmpty();
+    const bool bootRoster = !m_bootLiveSlots.isEmpty();
 
     for (int slot = 0; slot < numPlayers; ++slot) {
         if (slot == m_lockstepConfig.localPlayerSlot) {
             m_lockstepEngine->setPeerSessionActive(slot, true);
+            continue;
+        }
+
+        // Seats left by a ghost before emulation-begin are not in the shared
+        // boot snapshot. Keep them inactive even if a stale roster still lists them.
+        if (bootRoster && !m_bootLiveSlots.contains(slot)) {
+            m_lockstepEngine->setPeerSessionActive(slot, false);
             continue;
         }
 
@@ -1122,7 +1151,8 @@ void NetplayCoordinator::on_socketIO_playersUpdated(const QList<SocketIOClient::
         setupPeerConnections(players);
     }
 
-    if (m_state == InGame) {
+    if (m_lockstepEngine &&
+        (m_state == StartingGame || m_state == InGame)) {
         syncLockstepPeerSessionActive();
     }
 
@@ -1197,14 +1227,22 @@ void NetplayCoordinator::synchronizeLockstepPlayerCount()
 {
     int numPlayers = 1;
 
-    if (isHostingServer()) {
-        numPlayers = std::max(1, m_server ? (m_server->getConnectedClientCount() + 1) : 1);
-    }
+    if (!m_bootLiveSlots.isEmpty()) {
+        // The emulation-begin snapshot is the only roster every peer shares.
+        // Connected-peer counts and leftover ghost slots disagree across machines.
+        for (const int slot : m_bootLiveSlots) {
+            numPlayers = std::max(numPlayers, slot + 1);
+        }
+    } else {
+        if (isHostingServer()) {
+            numPlayers = std::max(1, m_server ? (m_server->getConnectedClientCount() + 1) : 1);
+        }
 
-    numPlayers = std::max(numPlayers, static_cast<int>(m_cachedPlayers.size()));
-    for (const auto& player : m_cachedPlayers) {
-        if (player.slot >= 0) {
-            numPlayers = std::max(numPlayers, player.slot + 1);
+        numPlayers = std::max(numPlayers, static_cast<int>(m_cachedPlayers.size()));
+        for (const auto& player : m_cachedPlayers) {
+            if (player.slot >= 0) {
+                numPlayers = std::max(numPlayers, player.slot + 1);
+            }
         }
     }
     if (numPlayers > 4) {
@@ -1216,6 +1254,7 @@ void NetplayCoordinator::synchronizeLockstepPlayerCount()
 
     if (m_lockstepEngine) {
         m_lockstepEngine->setNumPlayers(numPlayers);
+        syncLockstepPeerSessionActive();
     }
 }
 
@@ -1266,6 +1305,7 @@ void NetplayCoordinator::resetEmulationSync()
     m_pendingRelayFrame.store(0, std::memory_order_relaxed);
     m_pendingRelayState.store(0, std::memory_order_relaxed);
     resetEmulationStartPrep();
+    clearBootLiveSlots();
 }
 
 void NetplayCoordinator::initializeLockstepEngine()
@@ -2567,8 +2607,9 @@ void NetplayCoordinator::sendEmulationReady()
     }
 }
 
-void NetplayCoordinator::on_socketIO_emulationBeginReceived()
+void NetplayCoordinator::on_socketIO_emulationBeginReceived(const QJsonArray& liveSlots)
 {
+    applyBootLiveSlots(liveSlots);
     emit emulationBeginReceived();
 }
 

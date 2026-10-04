@@ -198,7 +198,7 @@
      void on_socketIO_coreSettingsSyncReceived(const QJsonObject& coreSettings);
      void on_socketIO_controllerInputReceived(int slot, uint32_t frameNumber, uint32_t controllerState);
      void on_socketIO_inputDelayReceived(int frames, uint32_t applyAtFrame);
-     void on_socketIO_emulationBeginReceived();
+     void on_socketIO_emulationBeginReceived(const QJsonArray& liveSlots);
      void relayLocalControllerInput(quint32 sendFrameNumber, quint32 state);
      void flushPendingControllerRelay();
      void relayLocalControllerInputBurst(
@@ -229,6 +229,8 @@
      void setupPeerConnections(const QList<SocketIOClient::PlayerInfo>& players);
      void synchronizeLockstepPlayerCount();
      void syncLockstepPeerSessionActive();
+     void applyBootLiveSlots(const QJsonArray& liveSlots);
+     void clearBootLiveSlots();
      void initializeLockstepEngine();
      void applyPlayerPings(const QJsonArray& pings);
      void queueFrameSyncCheck(uint32_t frameNumber);
@@ -277,6 +279,7 @@
      GameSession m_gameSession;
      QString m_playerName;
      QList<SocketIOClient::PlayerInfo> m_cachedPlayers;
+     QList<int> m_bootLiveSlots;
      QMap<int, int> m_playerPingMs;
      bool m_shouldAutoJoinRoom = false;
      QString m_autoJoinRoomId;

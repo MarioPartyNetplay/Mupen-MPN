@@ -187,7 +187,7 @@ signals:
     void coreSettingsSyncReceived(const QJsonObject& coreSettings);
     void inputDelayReceived(int frames, uint32_t applyAtFrame);
     void emulationPauseReceived(bool paused);
-    void emulationBeginReceived();
+    void emulationBeginReceived(const QJsonArray& liveSlots);
     void playerKicked(const QString& reason);
     void sessionGameChanged(const QString& gameName, const QString& md5);
 
