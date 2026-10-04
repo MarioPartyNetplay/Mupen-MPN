@@ -161,39 +161,60 @@ jobs:
             Source/3rdParty/angle
           git -C Source/3rdParty/libdatachannel submodule update --init --depth 1 --recursive
 
+      # actions/cache runs as the runner and cannot write /opt (root) or read
+      # every MacPorts file. Cache a tarball the runner owns, then sudo-extract
+      # it. Bump the key when the package list or MacPorts version changes;
+      # restore-keys still reuses the previous prefix so `port install` only
+      # fills in what is missing.
+      - name: Restore MacPorts prefix
+        id: macports-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/macports-prefix.tar.gz
+          key: macos-15-intel-macports-prefix-v1
+          restore-keys: |
+            macos-15-intel-macports-prefix-
+
       - name: Install MacPorts
         run: |
           set -euo pipefail
-          MP_VERSION=2.12.6
-          curl -fsSL -o macports.pkg \
-            "https://github.com/macports/macports-base/releases/download/v${MP_VERSION}/MacPorts-${MP_VERSION}-15-Sequoia.pkg"
-          sudo installer -pkg macports.pkg -target /
-          rm -f macports.pkg
-          # Force Intel packages even if the runner process reports arm64.
-          printf '\nbuild_arch x86_64\nui_interactive no\n' | sudo tee -a /opt/local/etc/macports/macports.conf
+          archive="${RUNNER_TEMP}/macports-prefix.tar.gz"
+          if [[ -f "$archive" ]]; then
+            echo "Restoring MacPorts prefix from cache"
+            sudo tar -C / -xzf "$archive"
+            if [[ ! -x /opt/local/bin/port || ! -x /opt/local/bin/ccache || ! -x /opt/local/bin/cmake || ! -d /opt/local/libexec/qt6 ]]; then
+              echo "Cached MacPorts prefix is incomplete. Bump macos-15-intel-macports-prefix-v1 in .github/workflows/build.yml." >&2
+              exit 1
+            fi
+          else
+            echo "Installing MacPorts base"
+            MP_VERSION=2.12.6
+            curl -fsSL -o macports.pkg \
+              "https://github.com/macports/macports-base/releases/download/v${MP_VERSION}/MacPorts-${MP_VERSION}-15-Sequoia.pkg"
+            sudo installer -pkg macports.pkg -target /
+            rm -f macports.pkg
+            # Force Intel packages even if the runner process reports arm64.
+            printf '\nbuild_arch x86_64\nui_interactive no\n' | sudo tee -a /opt/local/etc/macports/macports.conf
+            sudo /opt/local/bin/port -q selfupdate
+          fi
           echo "/opt/local/libexec/qt6/bin" >> "$GITHUB_PATH"
           echo "/opt/local/bin" >> "$GITHUB_PATH"
           echo "/opt/local/sbin" >> "$GITHUB_PATH"
           echo "PKG_CONFIG_PATH=/opt/local/lib/pkgconfig" >> "$GITHUB_ENV"
           echo "CMAKE_PREFIX_PATH=/opt/local/libexec/qt6:/opt/local" >> "$GITHUB_ENV"
           echo "MPN_OSX_ARCH=x86_64" >> "$GITHUB_ENV"
-          sudo /opt/local/bin/port -q selfupdate
+          # Exact hit: drop the archive before the build. A prefix match still
+          # needs the tree on disk until dependencies are repacked below.
+          if [[ "${{ steps.macports-cache.outputs.cache-hit }}" == "true" ]]; then
+            rm -f "$archive"
+          fi
 
-      - name: Install ccache
-        run: sudo /opt/local/bin/port -N install ccache
-
-      - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1.2.19
-        with:
-          key: macos-15-intel-macports
-          # append-timestamp stores a new cache every run; this prefix
-          # restores the newest MacPorts cache instead of freezing the first one.
-          restore-keys: macos-15-intel-macports
-          max-size: 2G
-
-      - name: Install Build Dependencies
+      - name: Install build dependencies
+        if: success() && steps.macports-cache.outputs.cache-hit != 'true'
         run: |
+          set -euo pipefail
           sudo /opt/local/bin/port -N install \
+            ccache \
             cmake \
             nasm \
             pkgconfig \
@@ -215,6 +236,40 @@ jobs:
             vulkan-headers \
             hidapi \
             libenet
+          test -x /opt/local/bin/ccache
+          test -x /opt/local/bin/cmake
+          test -d /opt/local/libexec/qt6
+          sudo /opt/local/bin/port -N clean --all installed
+          archive="${RUNNER_TEMP}/macports-prefix.tar.gz"
+          # Include var/macports/software: installed files are hardlinked there.
+          sudo env COPYFILE_DISABLE=1 tar -C / -czf "$archive" \
+            --exclude='opt/local/var/macports/distfiles' \
+            --exclude='opt/local/var/macports/build' \
+            --exclude='opt/local/var/macports/logs' \
+            opt/local
+          sudo chown "$(id -un):$(id -gn)" "$archive"
+          echo "MacPorts cache archive: $(du -h "$archive" | awk '{print $1}')"
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2.19
+        with:
+          key: macos-15-intel-macports
+          # append-timestamp stores a new cache every run; this prefix
+          # restores the newest compiler cache instead of freezing the first one.
+          restore-keys: macos-15-intel-macports
+          max-size: 2G
+
+      - name: Save MacPorts prefix
+        if: success() && steps.macports-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/macports-prefix.tar.gz
+          key: macos-15-intel-macports-prefix-v1
+
+      - name: Free MacPorts archive disk
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/macports-prefix.tar.gz"
 
       - name: Build RMG (x86_64)
         run: |
