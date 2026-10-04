@@ -28,6 +28,7 @@ public:
     bool isValid() const;
     bool makeCurrent(QWindow* window);
     void doneCurrent();
+    void setSwapInterval(int interval);
     void swapBuffers(QWindow* window);
     void* getProcAddress(const char* name) const;
     std::uint32_t defaultFramebufferObject() const;

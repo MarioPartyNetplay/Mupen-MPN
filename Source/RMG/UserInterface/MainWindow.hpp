@@ -26,6 +26,8 @@
 #include "Dialog/LogDialog.hpp"
 
 #ifdef UPDATER
+#include <QByteArray>
+#include <QJsonObject>
 #include <QNetworkReply>
 #endif // UPDATER
 #include <QGuiApplication>
@@ -177,6 +179,10 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 
 #ifdef UPDATER
     void checkForUpdates(bool silent, bool force);
+    void presentUpdateDialog(const QJsonObject& jsonObject, bool forced);
+    bool ui_HasPendingUpdate = false;
+    bool ui_PendingUpdateForced = false;
+    QByteArray ui_PendingUpdateJson;
 #endif // UPDATER
 
 #ifdef NETPLAY

@@ -459,6 +459,17 @@ void AngleContext::doneCurrent()
     }
 }
 
+void AngleContext::setSwapInterval(int interval)
+{
+    this->swapInterval = interval;
+
+    EGLDisplay eglDisplay = static_cast<EGLDisplay>(this->display);
+    if (eglDisplay != EGL_NO_DISPLAY)
+    {
+        eglSwapInterval(eglDisplay, interval);
+    }
+}
+
 void AngleContext::swapBuffers(QWindow* window)
 {
     Q_UNUSED(window);

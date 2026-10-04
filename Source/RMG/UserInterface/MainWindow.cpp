@@ -1764,9 +1764,25 @@ void MainWindow::on_networkAccessManager_Finished(QNetworkReply* reply)
         return;
     }
 
+    this->presentUpdateDialog(jsonObject, !this->ui_SilentUpdateCheck);
+}
+
+void MainWindow::presentUpdateDialog(const QJsonObject& jsonObject, bool forced)
+{
+    // A modal update dialog on macOS runs a native modal session. ANGLE's
+    // buffer swap then waits on the main thread forever, and lockstep waits
+    // on the next input, so the match never resumes.
+    if (CoreIsEmulationRunning() || CoreIsEmbeddedNetplayActive())
+    {
+        this->ui_PendingUpdateJson = QJsonDocument(jsonObject).toJson(QJsonDocument::Compact);
+        this->ui_PendingUpdateForced = forced;
+        this->ui_HasPendingUpdate = true;
+        return;
+    }
+
     int ret = 0;
 
-    Dialog::UpdateDialog updateDialog(this, jsonObject, !this->ui_SilentUpdateCheck);
+    Dialog::UpdateDialog updateDialog(this, jsonObject, forced);
     ret = updateDialog.exec();
     if (ret != QDialog::Accepted)
     {
@@ -2476,6 +2492,30 @@ void MainWindow::on_Emulation_Finished(bool ret, QString error)
     {
         this->showErrorMessage("EmulationThread::run Failed", error);
     }
+
+#ifdef UPDATER
+    if (this->ui_HasPendingUpdate)
+    {
+        QTimer::singleShot(0, this, [this]() {
+            if (!this->ui_HasPendingUpdate ||
+                CoreIsEmulationRunning() ||
+                CoreIsEmbeddedNetplayActive())
+            {
+                return;
+            }
+
+            const QJsonObject jsonObject =
+                QJsonDocument::fromJson(this->ui_PendingUpdateJson).object();
+            const bool forced = this->ui_PendingUpdateForced;
+            this->ui_HasPendingUpdate = false;
+            this->ui_PendingUpdateJson.clear();
+            if (!jsonObject.isEmpty())
+            {
+                this->presentUpdateDialog(jsonObject, forced);
+            }
+        });
+    }
+#endif // UPDATER
 }
 
 void MainWindow::on_RomBrowser_PlayGame(QString file)

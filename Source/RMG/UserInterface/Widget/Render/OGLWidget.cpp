@@ -24,6 +24,7 @@
 
 #include <RMG-Core/Video.hpp>
 #include <RMG-Core/Callback.hpp>
+#include <RMG-Core/Netplay.hpp>
 
 #include <QOpenGLFunctions>
 
@@ -361,6 +362,19 @@ bool OGLWidget::MakeContextCurrent()
 void OGLWidget::SwapContextBuffers()
 {
 #ifdef __APPLE__
+    // A macOS system dialog (permission prompt, notification, update) takes the
+    // app out of the foreground. ANGLE then blocks forever inside eglSwapBuffers
+    // waiting for a Metal drawable, and lockstep stops sending inputs.
+    if (CoreIsEmbeddedNetplayActive())
+    {
+        this->angleContext.setSwapInterval(0);
+
+        if (QGuiApplication::applicationState() != Qt::ApplicationActive)
+        {
+            return;
+        }
+    }
+
     this->angleContext.swapBuffers(this);
     this->angleContext.makeCurrent(this);
 #else

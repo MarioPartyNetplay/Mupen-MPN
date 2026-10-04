@@ -301,7 +301,8 @@ static m64p_error VidExt_GLSetAttr(m64p_GLattr Attr, int Value)
         l_SurfaceFormat.setAlphaBufferSize(Value);
         break;
     case M64P_GL_SWAP_CONTROL: // vsync should be disabled during netplay
-        l_SurfaceFormat.setSwapInterval((!CoreHasInitNetplay() && Value) ? 1 : 0);
+        l_SurfaceFormat.setSwapInterval(
+            (!CoreHasInitNetplay() && !CoreIsEmbeddedNetplayActive() && Value) ? 1 : 0);
         break;
     case M64P_GL_MULTISAMPLEBUFFERS:
         break;

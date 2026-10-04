@@ -1474,8 +1474,15 @@ void NetplaySessionDialog::on_coordinator_playerKicked(const QString& reason)
         return;
     }
 
-    QtMessageBox::Error(this, QStringLiteral("Kicked from session"),
-                        reason.isEmpty() ? QStringLiteral("Kicked by host") : reason);
+    const QString kickedMessage = reason.isEmpty()
+        ? QStringLiteral("Kicked by host")
+        : reason;
+    this->showMatchHudNotice(kickedMessage, QStringLiteral("#ff6666"));
+    // A modal alert blocks the macOS main thread. ANGLE's present waits on that
+    // thread, so the emulation thread never comes back and lockstep freezes.
+    if (!CoreIsEmulationRunning()) {
+        QtMessageBox::Error(this, QStringLiteral("Kicked from session"), kickedMessage);
+    }
     this->reject();
 }
 
@@ -1494,7 +1501,9 @@ void NetplaySessionDialog::on_coordinator_roomClosed(const QString& reason)
         ? QStringLiteral("Host disconnected")
         : reason;
     this->showMatchHudNotice(closedMessage, QStringLiteral("#ff6666"));
-    QtMessageBox::Error(this, QStringLiteral("Session closed"), closedMessage);
+    if (!CoreIsEmulationRunning()) {
+        QtMessageBox::Error(this, QStringLiteral("Session closed"), closedMessage);
+    }
     this->reject();
 }
 
@@ -2435,8 +2444,10 @@ void NetplaySessionDialog::on_netplay_disconnected()
 
     this->showMatchHudNotice(QStringLiteral("You disconnected from the match"),
                              QStringLiteral("#ff6666"));
-    QtMessageBox::Error(this, QStringLiteral("Disconnected"),
-                        QStringLiteral("Lost connection to the netplay session."));
+    if (!CoreIsEmulationRunning()) {
+        QtMessageBox::Error(this, QStringLiteral("Disconnected"),
+                            QStringLiteral("Lost connection to the netplay session."));
+    }
     this->reject();
 }
 
