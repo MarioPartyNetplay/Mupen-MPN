@@ -84,9 +84,11 @@ jobs:
           git -C Source/3rdParty/libdatachannel submodule update --init --depth 1 --recursive
 
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.19
         with:
           key: windows-ucrt64
+          restore-keys: windows-ucrt64
+          max-size: 2G
 
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
@@ -135,6 +137,16 @@ jobs:
 
   macos:
     runs-on: macos-15-intel
+    env:
+      # Keep the cache inside the workspace so the action saves the same
+      # directory MacPorts ccache writes. Header mtimes change whenever
+      # `port install` refreshes packages; sloppiness still hashes contents.
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPRESS: "true"
+      CCACHE_MAXSIZE: 2G
+      CCACHE_COMPILERCHECK: content
+      CCACHE_SLOPPINESS: time_macros,include_file_mtime,include_file_ctime,pch_defines,clang_index_store
 
     steps:
       - name: Checkout Repository
@@ -171,10 +183,13 @@ jobs:
         run: sudo /opt/local/bin/port -N install ccache
 
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.19
         with:
           key: macos-15-intel-macports
-          install: no
+          # append-timestamp stores a new cache every run; this prefix
+          # restores the newest MacPorts cache instead of freezing the first one.
+          restore-keys: macos-15-intel-macports
+          max-size: 2G
 
       - name: Install Build Dependencies
         run: |
@@ -205,6 +220,7 @@ jobs:
         run: |
           chmod +x ./Source/Script/Build.sh
           ./Source/Script/Build.sh Release
+          ccache -s
 
       - name: Verify x86_64 binary
         run: |
