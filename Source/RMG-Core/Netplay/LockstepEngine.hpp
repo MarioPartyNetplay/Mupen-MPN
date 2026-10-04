@@ -81,7 +81,7 @@ public:
         int fromSlot,
         uint32_t frameNumber,
         uint32_t controllerState,
-        bool gapFill = true);
+        bool gapFill = false);
     /** Peer-reported frame sync hash for a specific lockstep frame. */
     void submitPeerFrameSync(int fromSlot, uint32_t frameNumber, uint32_t stateHash);
     /** Stores this client's hash for a lockstep frame before broadcasting it. */

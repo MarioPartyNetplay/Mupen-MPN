@@ -557,9 +557,8 @@ void NetplayCoordinator::submitFrameInput(uint32_t controllerState)
             ? socketDispatchConnectionType(m_server.get())
             : socketDispatchConnectionType(m_socketIO.get());
 
-    // Relay the full outbound burst on compact signaling as a lossy backup
-    // for the WebRTC stream. Receivers hole-fill only (no gap-fill) while a
-    // peer's data channel is open, so this cannot invent mid-window inputs.
+    // Relay every frame on reliable signaling as well as WebRTC. A ping spike
+    // must delay the match, not replace the spiked player's buttons.
     for (const auto& [frame, state] : outbound) {
         const quint32 frameNumber = frame;
         const quint32 frameState = state;
@@ -1884,10 +1883,9 @@ void NetplayCoordinator::on_socketIO_controllerInputReceived(int slot, uint32_t 
         return;
     }
 
-    // While WebRTC is up, signaling is a hole-fill backup only. Gap-filling
-    // from a late/tip packet invents wrong mid-window inputs and desyncs.
-    const bool gapFill = !engine->hasOpenDataChannelForPeer(resolvedSlot);
-    engine->submitRemoteInput(resolvedSlot, frameNumber, controllerState, gapFill);
+    // Never invent the frames a ping spike skipped. A late packet is stored
+    // on its own frame number; lockstep waits until the real one shows up.
+    engine->submitRemoteInput(resolvedSlot, frameNumber, controllerState, false);
 }
 
 void NetplayCoordinator::on_peerFrameSyncReceived(int slot, uint32_t frameNumber, uint32_t stateHash)

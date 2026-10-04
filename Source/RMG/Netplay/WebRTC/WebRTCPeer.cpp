@@ -215,8 +215,10 @@ std::shared_ptr<WebRTCDataChannel> WebRTCPeer::createDataChannel(const QString& 
     }
 
     rtc::DataChannelInit init;
-    init.reliability.unordered = true;
-    init.reliability.maxPacketLifeTime = std::chrono::milliseconds(100);
+    // Lockstep needs every frame's real buttons. An unreliable channel drops
+    // them when ping spikes past the packet lifetime, and the other side then
+    // plays something else — that is the desync on the player who spiked.
+    init.reliability.unordered = false;
     auto backendChannel = m_peerConnection->createDataChannel(label.toStdString(), init);
     registerDataChannel(backendChannel);
     auto channel = m_dataChannels.value(label);

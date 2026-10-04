@@ -365,7 +365,7 @@ bool sendGameplayControllerInput(
     ENetPacket* packet = enet_packet_create(
         encoded,
         static_cast<size_t>(kControllerInputPacketSize),
-        ENET_PACKET_FLAG_UNSEQUENCED);
+        ENET_PACKET_FLAG_RELIABLE);
     if (!packet) {
         return false;
     }
