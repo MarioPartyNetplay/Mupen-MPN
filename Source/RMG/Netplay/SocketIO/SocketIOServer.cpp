@@ -865,7 +865,6 @@ void SocketIOServer::dropDisconnectedLobbyPlayers(SignalingRoom* room)
         rebuildLobbySlots(*room);
     }
 }
-}
 
 void SocketIOServer::handle_EmulationReady(ENetPeer* socket, const QJsonObject& msg)
 {
