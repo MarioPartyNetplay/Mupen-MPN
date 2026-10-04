@@ -139,6 +139,7 @@ public:
     void sendInputDelayUpdate(int frames, uint32_t applyAtFrame = 0);
     void sendEmulationPauseUpdate(bool paused);
     void sendEmulationReady(int syncEpoch);
+    void sendEmulationClosed();
 
     QString getPlayerId() const;
     QString getRoomId() const;
@@ -188,6 +189,7 @@ signals:
     void inputDelayReceived(int frames, uint32_t applyAtFrame);
     void emulationPauseReceived(bool paused);
     void emulationBeginReceived(const QJsonArray& liveSlots);
+    void closeGameReceived();
     void playerKicked(const QString& reason);
     void sessionGameChanged(const QString& gameName, const QString& md5);
 

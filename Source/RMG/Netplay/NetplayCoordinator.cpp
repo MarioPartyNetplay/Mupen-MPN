@@ -206,6 +206,9 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
             this, [this](const QString& roomId) {
                 qInfo() << "Hosting: Game started in room" << roomId;
 
+                m_roomMatchActive = true;
+                m_closePending = false;
+                m_reportedLocalClose = false;
                 resetEmulationStartPrep();
                 m_gameStartPrepTimer.start();
 
@@ -335,6 +338,24 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
 
     connect(m_server.get(), &SocketIOServer::hostedWebRTCSignalReceived,
             this, &NetplayCoordinator::on_hostedWebRTCSignalReceived);
+    connect(m_server.get(), &SocketIOServer::matchNeedsClose,
+            this, [this](const QString& roomId) {
+                if (roomId != m_gameSession.roomId) {
+                    return;
+                }
+                emit askCloseGameForAll();
+            });
+    connect(m_server.get(), &SocketIOServer::hostedGameReturnedToLobby,
+            this, [this](const QString& roomId) {
+                if (roomId != m_gameSession.roomId) {
+                    return;
+                }
+                m_roomMatchActive = false;
+                m_closePending = false;
+                m_reportedLocalClose = false;
+                clearBootLiveSlots();
+                emit lobbyReadyForNextMatch();
+            });
     connect(m_server.get(), &SocketIOServer::emulationBegin,
             this, [this](const QString& roomId, const QJsonArray& liveSlots) {
                 if (roomId != m_gameSession.roomId) {
@@ -495,6 +516,14 @@ void NetplayCoordinator::leaveRoom()
 void NetplayCoordinator::startGame(const QString& gameMode, bool resyncEnabled, const QString& romHash)
 {
     if (isHostingServer()) {
+        if (m_roomMatchActive) {
+            qWarning() << "NetplayCoordinator: A match is still open. Close it for every player before starting another.";
+            if (!m_closePending) {
+                emit askCloseGameForAll();
+            }
+            return;
+        }
+
         if (m_state != InLobby && m_state != Connected && m_state != StartingGame) {
             qWarning() << "NetplayCoordinator: Cannot start hosted game in state" << getCurrentStateString();
             return;
@@ -526,6 +555,49 @@ void NetplayCoordinator::startGame(const QString& gameMode, bool resyncEnabled, 
 
     setState(StartingGame);
     m_socketIO->startGame(gameMode, resyncEnabled, romHash);
+}
+
+void NetplayCoordinator::notifyLocalEmulationStopped()
+{
+    if (!m_roomMatchActive || m_reportedLocalClose) {
+        return;
+    }
+
+    m_reportedLocalClose = true;
+    if (isHostingServer() && m_server) {
+        m_server->noteEmulationClosed(m_gameSession.roomId, QStringLiteral("host"));
+    } else if (m_socketIO) {
+        m_socketIO->sendEmulationClosed();
+    }
+    emit localMatchEmulationStopped();
+}
+
+void NetplayCoordinator::closeGameForEveryone()
+{
+    if (!isHostingServer() || !m_server) {
+        return;
+    }
+
+    m_closePending = true;
+    emit closingGameForAll();
+    m_server->requestCloseGameForAll(m_gameSession.roomId);
+
+    if (CoreIsEmulationRunning() || CoreIsEmulationPaused()) {
+        CoreStopEmulation();
+        return;
+    }
+
+    notifyLocalEmulationStopped();
+}
+
+bool NetplayCoordinator::isRoomMatchActive() const
+{
+    return m_roomMatchActive;
+}
+
+bool NetplayCoordinator::isClosePending() const
+{
+    return m_closePending;
 }
 
 void NetplayCoordinator::endGame()
@@ -894,6 +966,8 @@ void NetplayCoordinator::connectSocketIOClientSignals(SocketIOClient* client)
             this, &NetplayCoordinator::on_socketIO_emulationPauseReceived);
     connect(client, &SocketIOClient::emulationBeginReceived,
             this, &NetplayCoordinator::on_socketIO_emulationBeginReceived);
+    connect(client, &SocketIOClient::closeGameReceived,
+            this, &NetplayCoordinator::on_socketIO_closeGameReceived);
     connect(client, &SocketIOClient::playerKicked,
             this, [this](const QString& reason) {
         qInfo() << "NetplayCoordinator: Kicked from session:" << reason;
@@ -1202,6 +1276,9 @@ void NetplayCoordinator::on_socketIO_gameStarted(const QString& mode, bool resyn
     }
     m_gameSession.syncEpoch = m_sessionSyncEpoch;
 
+    m_roomMatchActive = true;
+    m_closePending = false;
+    m_reportedLocalClose = false;
     resetEmulationStartPrep();
     m_gameStartPrepTimer.start();
 
@@ -1219,8 +1296,25 @@ void NetplayCoordinator::on_socketIO_gameStarted(const QString& mode, bool resyn
 void NetplayCoordinator::on_socketIO_gameEnded()
 {
     qDebug() << "NetplayCoordinator: Game ended";
+    m_roomMatchActive = false;
+    m_closePending = false;
+    m_reportedLocalClose = false;
     resetEmulationSync();
     emit gameEnded();
+    emit lobbyReadyForNextMatch();
+}
+
+void NetplayCoordinator::on_socketIO_closeGameReceived()
+{
+    m_closePending = true;
+    emit closingGameForAll();
+
+    if (CoreIsEmulationRunning() || CoreIsEmulationPaused()) {
+        CoreStopEmulation();
+        return;
+    }
+
+    notifyLocalEmulationStopped();
 }
 
 void NetplayCoordinator::synchronizeLockstepPlayerCount()

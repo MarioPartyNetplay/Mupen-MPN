@@ -510,10 +510,15 @@ bool SocketIOServer::startHostedGame(const QString& roomId, const QString& mode,
 
     if (room->started)
     {
-        return true;
+        qWarning() << "SocketIOServer: Room" << roomId
+                   << "still has a match open. Close it for every player before starting another.";
+        return false;
     }
 
     room->started = true;
+    room->closePending = false;
+    room->closePromptSent = false;
+    room->closedPlayerIds.clear();
     room->emulationReadySlots.clear();
     room->emulationBeginSent = false;
     if (syncEpoch > 0) {
@@ -752,6 +757,116 @@ void SocketIOServer::tryBroadcastEmulationBegin(SignalingRoom* room)
     emit emulationBegin(room->id, liveSlots);
 }
 
+bool SocketIOServer::requestCloseGameForAll(const QString& roomId)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room || !room->started) {
+        return false;
+    }
+
+    room->closePending = true;
+    qInfo() << "SocketIOServer: Closing match for every player in room" << roomId;
+    emitToConnectedRoomClients(roomId, QStringLiteral("close-game"), QJsonObject());
+    tryFinishMatchClose(room);
+    return true;
+}
+
+void SocketIOServer::noteEmulationClosed(const QString& roomId, const QString& clientId)
+{
+    SignalingRoom* room = getRoomById(roomId);
+    if (!room || !room->started || clientId.isEmpty()) {
+        return;
+    }
+
+    room->closedPlayerIds.insert(clientId);
+    if (!room->closePending) {
+        if (!room->closePromptSent) {
+            room->closePromptSent = true;
+            emit matchNeedsClose(roomId);
+        }
+        return;
+    }
+
+    tryFinishMatchClose(room);
+}
+
+bool SocketIOServer::isRoomMatchActive(const QString& roomId) const
+{
+    const SignalingRoom* room = nullptr;
+    const auto it = m_rooms.constFind(roomId);
+    if (it == m_rooms.constEnd()) {
+        return false;
+    }
+    room = &it.value();
+    return room->started;
+}
+
+bool SocketIOServer::isClosePending(const QString& roomId) const
+{
+    const auto it = m_rooms.constFind(roomId);
+    if (it == m_rooms.constEnd()) {
+        return false;
+    }
+    return it->closePending;
+}
+
+void SocketIOServer::tryFinishMatchClose(SignalingRoom* room)
+{
+    if (!room || !room->started || !room->closePending) {
+        return;
+    }
+
+    for (auto* player : room->lobbyOrder) {
+        if (!player || isTemporarilyDisconnected(player)) {
+            continue;
+        }
+        if (!room->closedPlayerIds.contains(player->id)) {
+            return;
+        }
+    }
+
+    dropDisconnectedLobbyPlayers(room);
+    room->started = false;
+    room->emulationBeginSent = false;
+    room->emulationReadySlots.clear();
+    room->closePending = false;
+    room->closePromptSent = false;
+    room->closedPlayerIds.clear();
+    broadcastRoomUpdate(room->id);
+    emitToConnectedRoomClients(room->id, QStringLiteral("game-ended"), QJsonObject());
+    qInfo() << "SocketIOServer: Every player closed. Room" << room->id << "can start another game";
+    emit hostedGameReturnedToLobby(room->id);
+}
+
+void SocketIOServer::dropDisconnectedLobbyPlayers(SignalingRoom* room)
+{
+    if (!room) {
+        return;
+    }
+
+    QList<ClientConnection*> ghosts;
+    for (auto* player : room->lobbyOrder) {
+        if (player && isTemporarilyDisconnected(player)) {
+            ghosts.append(player);
+        }
+    }
+
+    for (auto* ghost : ghosts) {
+        m_disconnectedClientsByToken.remove(ghost->reconnectToken);
+        room->lobbyOrder.removeAll(ghost);
+        if (ghost->slotIndex >= 0 && room->players.value(ghost->slotIndex) == ghost) {
+            room->players.remove(ghost->slotIndex);
+        }
+        m_clientsById.remove(ghost->id);
+        delete ghost;
+    }
+
+    if (!ghosts.isEmpty()) {
+        rebuildLobbySlots(*room);
+    }
+}
+}
+
 void SocketIOServer::handle_EmulationReady(ENetPeer* socket, const QJsonObject& msg)
 {
     Q_UNUSED(msg);
@@ -774,6 +889,18 @@ void SocketIOServer::handle_EmulationReady(ENetPeer* socket, const QJsonObject& 
     }
 
     markEmulationReady(client->roomId, client->slotIndex);
+}
+
+void SocketIOServer::handle_EmulationClosed(ENetPeer* socket, const QJsonObject& msg)
+{
+    Q_UNUSED(msg);
+
+    ClientConnection* client = getClientFromPeer(socket);
+    if (!client || client->roomId.isEmpty()) {
+        return;
+    }
+
+    noteEmulationClosed(client->roomId, client->id);
 }
 
 void SocketIOServer::broadcastChatMessage(const QString& roomId, const QString& playerName, const QString& message)
@@ -930,7 +1057,8 @@ void SocketIOServer::onClientDisconnected(ENetPeer* peer)
     // Reserve a seat only after lockstep has started. A drop while saves and
     // settings are still syncing is a lobby leave — keeping that ghost makes
     // frame 0 wait on input that will never arrive.
-    if (room && room->started && room->emulationBeginSent && !client->reconnectToken.isEmpty()) {
+    if (room && room->started && room->emulationBeginSent && !room->closePending &&
+        !client->reconnectToken.isEmpty()) {
         m_disconnectedClientsByToken.insert(client->reconnectToken, client);
         broadcastRoomUpdate(roomId);
         qInfo() << "Client disconnected (grace period):" << clientId << "room:" << roomId;
@@ -942,6 +1070,10 @@ void SocketIOServer::onClientDisconnected(ENetPeer* peer)
     removeClientFromRoom(client);
     m_clientsById.remove(clientId);
     delete client;
+
+    if (SignalingRoom* stillThere = getRoomById(roomId); stillThere && stillThere->closePending) {
+        tryFinishMatchClose(stillThere);
+    }
 
     qInfo() << "Client disconnected:" << clientId;
     emit clientDisconnected(clientId);
@@ -1214,6 +1346,8 @@ void SocketIOServer::handleEvent(ENetPeer* socket, const QJsonArray& args)
             handle_EmulationPauseUpdate(socket, data);
         else if (eventName == "emulation-ready")
             handle_EmulationReady(socket, data);
+        else if (eventName == "emulation-closed")
+            handle_EmulationClosed(socket, data);
     }
 }
 
@@ -1735,7 +1869,15 @@ void SocketIOServer::handle_StartGame(ENetPeer* socket, const QJsonObject& msg)
     if (room->players.isEmpty())
         return;
 
+    if (room->started) {
+        qWarning() << "SocketIOServer: Ignoring start-game while a match is still open in" << room->id;
+        return;
+    }
+
     room->started = true;
+    room->closePending = false;
+    room->closePromptSent = false;
+    room->closedPlayerIds.clear();
     room->emulationReadySlots.clear();
     room->emulationBeginSent = false;
 

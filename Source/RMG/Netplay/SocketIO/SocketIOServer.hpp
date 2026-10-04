@@ -53,6 +53,12 @@ public:
     void broadcastInputDelayUpdate(const QString& roomId, int frames, uint32_t applyAtFrame = 0);
     void broadcastEmulationPauseUpdate(const QString& roomId, bool paused);
     void markEmulationReady(const QString& roomId, int slotIndex);
+    /** Host asks every player to leave the current match before another can start. */
+    bool requestCloseGameForAll(const QString& roomId);
+    /** A player has left emulation. The lobby reopens only after every live player has. */
+    void noteEmulationClosed(const QString& roomId, const QString& clientId);
+    bool isRoomMatchActive(const QString& roomId) const;
+    bool isClosePending(const QString& roomId) const;
 
     bool relayHostedWebRTCSignal(const QString& roomId, const QString& fromPlayerId, const QJsonObject& signal);
 
@@ -78,6 +84,8 @@ signals:
     void saveSyncReceived(const QString& roomId, const QJsonArray& saveFiles, int syncEpoch);
     void hostedWebRTCSignalReceived(const QString& fromPlayerId, const QJsonObject& signal);
     void emulationBegin(const QString& roomId, const QJsonArray& liveSlots);
+    void matchNeedsClose(const QString& roomId);
+    void hostedGameReturnedToLobby(const QString& roomId);
 
 private slots:
     void onServiceTimer();
@@ -122,6 +130,9 @@ private:
         QSet<int> emulationReadySlots;
         bool emulationBeginSent = false;
         int syncEpoch = 0;
+        bool closePending = false;
+        bool closePromptSent = false;
+        QSet<QString> closedPlayerIds;
     };
 
     struct ChunkedCheatUpdate
@@ -163,6 +174,7 @@ private:
     void handle_InputDelayUpdate(ENetPeer* peer, const QJsonObject& msg);
     void handle_EmulationPauseUpdate(ENetPeer* peer, const QJsonObject& msg);
     void handle_EmulationReady(ENetPeer* peer, const QJsonObject& msg);
+    void handle_EmulationClosed(ENetPeer* peer, const QJsonObject& msg);
     void handle_DirectRamPatch(ENetPeer* peer, const QJsonObject& msg);
 
     void onClientDisconnected(ENetPeer* peer);
@@ -177,6 +189,8 @@ private:
 
     void broadcastRoomPlayerPings(const QString& roomId);
     void tryBroadcastEmulationBegin(SignalingRoom* room);
+    void tryFinishMatchClose(SignalingRoom* room);
+    void dropDisconnectedLobbyPlayers(SignalingRoom* room);
 
     QTimer* m_serviceTimer = nullptr;
     QTimer* m_pingTimer = nullptr;

@@ -742,6 +742,15 @@ void SocketIOClient::sendEmulationPauseUpdate(bool paused)
     emitEvent("emulation-paused", payload);
 }
 
+void SocketIOClient::sendEmulationClosed()
+{
+    if (m_connectionState != Connected) {
+        return;
+    }
+
+    emitEvent(QStringLiteral("emulation-closed"), QJsonObject());
+}
+
 void SocketIOClient::sendEmulationReady(int syncEpoch)
 {
     if (m_connectionState != Connected) {
@@ -1135,6 +1144,9 @@ void SocketIOClient::handleEvent(const QString& eventName, const QJsonArray& arg
             liveSlots = args[0].toObject().value(QStringLiteral("slots")).toArray();
         }
         emit emulationBeginReceived(liveSlots);
+
+    } else if (eventName == "close-game") {
+        emit closeGameReceived();
 
     } else if (eventName == "kicked" && args.size() > 0) {
         const QString reason = args[0].toObject().value(QStringLiteral("reason")).toString(

@@ -787,6 +787,14 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
         }
         this->tryCompletePendingGameStart();
     });
+    connect(this->coordinator, &Netplay::NetplayCoordinator::askCloseGameForAll,
+            this, &NetplaySessionDialog::on_askCloseGameForAll);
+    connect(this->coordinator, &Netplay::NetplayCoordinator::closingGameForAll,
+            this, &NetplaySessionDialog::on_closingGameForAll);
+    connect(this->coordinator, &Netplay::NetplayCoordinator::lobbyReadyForNextMatch,
+            this, &NetplaySessionDialog::on_lobbyReadyForNextMatch);
+    connect(this->coordinator, &Netplay::NetplayCoordinator::localMatchEmulationStopped,
+            this, &NetplaySessionDialog::on_localMatchEmulationStopped);
     connect(this->coordinator, &Netplay::NetplayCoordinator::playerKicked,
             this, &NetplaySessionDialog::on_coordinator_playerKicked);
     connect(this->coordinator, &Netplay::NetplayCoordinator::roomClosed,
@@ -1824,7 +1832,12 @@ void NetplaySessionDialog::refreshPlayersListWidget(void)
         this->playerTreeWidget->addTopLevelItem(item);
     }
 
-    if (isHost && !players.isEmpty() && this->coordinator && !this->coordinator->isInGame()) {
+    const bool matchBusy =
+        this->coordinator &&
+        (this->coordinator->isInGame() ||
+         this->coordinator->isClosePending() ||
+         this->coordinator->getCurrentState() == Netplay::NetplayCoordinator::StartingGame);
+    if (isHost && !players.isEmpty() && this->coordinator && !matchBusy) {
         if (this->startPushButton) {
             this->startPushButton->setEnabled(true);
         }
@@ -2313,10 +2326,90 @@ void NetplaySessionDialog::on_cheatsPushButton_clicked(void)
     }
 }
 
+void NetplaySessionDialog::on_askCloseGameForAll(void)
+{
+    this->m_closePromptNeeded = true;
+    this->showMatchHudNotice(
+        QStringLiteral("The game stopped. Close it for every player before starting another."),
+        QStringLiteral("#ffaa44"));
+    this->maybePromptCloseGameForAll();
+}
+
+void NetplaySessionDialog::on_closingGameForAll(void)
+{
+    this->m_pendingGameStart = false;
+    this->m_emulationBeginReceived = false;
+    this->showMatchHudNotice(
+        QStringLiteral("Closing the game for everyone."),
+        QStringLiteral("#ffaa44"));
+    this->refreshPlayersListWidget();
+}
+
+void NetplaySessionDialog::on_lobbyReadyForNextMatch(void)
+{
+    this->m_pendingGameStart = false;
+    this->m_emulationBeginReceived = false;
+    this->m_closePromptNeeded = false;
+    this->showMatchHudNotice(
+        QStringLiteral("Everyone has closed. The host can start another game."),
+        QStringLiteral("#8fd18f"));
+    this->refreshPlayersListWidget();
+}
+
+void NetplaySessionDialog::on_localMatchEmulationStopped(void)
+{
+    this->maybePromptCloseGameForAll();
+}
+
+void NetplaySessionDialog::maybePromptCloseGameForAll(void)
+{
+    if (!this->m_closePromptNeeded || !this->isLocalSessionHost() || !this->coordinator) {
+        return;
+    }
+
+    if (CoreIsEmulationRunning() || CoreIsEmulationPaused()) {
+        return;
+    }
+
+    if (this->coordinator->isClosePending()) {
+        return;
+    }
+
+    this->m_closePromptNeeded = false;
+    const auto answer = QMessageBox::question(
+        this,
+        QStringLiteral("Close game"),
+        QStringLiteral("This game stopped. Close it for every player?\n\n"
+                       "You can start another match after everyone has closed."),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::Yes);
+    if (answer == QMessageBox::Yes) {
+        this->coordinator->closeGameForEveryone();
+        return;
+    }
+
+    this->showMatchHudNotice(
+        QStringLiteral("The match stays up until you close it for everyone. Press Start to ask again."),
+        QStringLiteral("#ffaa44"));
+}
+
 void NetplaySessionDialog::accept()
 {
     if (!this->isLocalSessionHost())
     {
+        return;
+    }
+
+    if (this->coordinator && this->coordinator->isRoomMatchActive()) {
+        if (this->coordinator->isClosePending()) {
+            this->showMatchHudNotice(
+                QStringLiteral("Waiting for every player to close the game."),
+                QStringLiteral("#ffaa44"));
+            return;
+        }
+
+        this->m_closePromptNeeded = true;
+        this->maybePromptCloseGameForAll();
         return;
     }
 

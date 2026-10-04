@@ -2447,9 +2447,9 @@ void MainWindow::on_Emulation_Finished(bool ret, QString error)
 
 #ifdef NETPLAY
     if (this->netplayCoordinator != nullptr &&
-        (this->netplayCoordinator->isInGame() ||
-         this->netplayCoordinator->getCurrentState() == Netplay::NetplayCoordinator::StartingGame))
+        this->netplayCoordinator->isRoomMatchActive())
     {
+        this->netplayCoordinator->notifyLocalEmulationStopped();
         this->netplayCoordinator->resetEmulationSync();
     }
 #endif // NETPLAY

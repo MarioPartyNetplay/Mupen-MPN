@@ -73,6 +73,7 @@ private:
     QSet<QString> m_matchDisconnectedIds;
     QStringList m_publishedSessionPlayerIds;
     bool m_updatingPlayerList = false;
+    bool m_closePromptNeeded = false;
 
     void syncHostSessionState(void);
     void beginHostBrowserRegistration(uint16_t hostingPort, bool listInBrowser);
@@ -112,6 +113,11 @@ private slots:
     void announceMatchRosterChanges(const QList<Netplay::SocketIOClient::PlayerInfo>& previousPlayers,
                                     const QList<Netplay::SocketIOClient::PlayerInfo>& currentPlayers);
     void on_coordinator_gameStarted(int playerSlot, int syncEpoch);
+    void on_askCloseGameForAll(void);
+    void on_closingGameForAll(void);
+    void on_lobbyReadyForNextMatch(void);
+    void on_localMatchEmulationStopped(void);
+    void maybePromptCloseGameForAll(void);
     void on_coordinator_cheatsUpdated(const QJsonArray& cheats);
     void on_coordinator_saveSyncReceived(const QJsonArray& saveFiles, int syncEpoch);
     void refreshClientSessionPrepFlags(void);

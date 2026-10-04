@@ -76,6 +76,12 @@
      void leaveRoom();
      void startGame(const QString& gameMode = "lockstep", bool resyncEnabled = false, const QString& romHash = "");
      void endGame();
+     /** Local emulation stopped or crashed during a match. */
+     void notifyLocalEmulationStopped();
+     /** Host: tell every player to leave this match, then wait until they have. */
+     void closeGameForEveryone();
+     bool isRoomMatchActive() const;
+     bool isClosePending() const;
  
      // Game Input & Emulation
      void beginEmulationSync();
@@ -172,6 +178,10 @@
      void saveSyncReceived(const QJsonArray& saveFiles, int syncEpoch);
      void coreSettingsSyncReceived(const QJsonObject& coreSettings);
      void emulationBeginReceived();
+     void askCloseGameForAll();
+     void closingGameForAll();
+     void lobbyReadyForNextMatch();
+     void localMatchEmulationStopped();
      void playerKicked(const QString& reason);
      void sessionGameChanged(const QString& gameName, const QString& md5);
  
@@ -199,6 +209,7 @@
      void on_socketIO_controllerInputReceived(int slot, uint32_t frameNumber, uint32_t controllerState);
      void on_socketIO_inputDelayReceived(int frames, uint32_t applyAtFrame);
      void on_socketIO_emulationBeginReceived(const QJsonArray& liveSlots);
+     void on_socketIO_closeGameReceived();
      void relayLocalControllerInput(quint32 sendFrameNumber, quint32 state);
      void flushPendingControllerRelay();
      void relayLocalControllerInputBurst(
@@ -280,6 +291,9 @@
      QString m_playerName;
      QList<SocketIOClient::PlayerInfo> m_cachedPlayers;
      QList<int> m_bootLiveSlots;
+     bool m_roomMatchActive = false;
+     bool m_closePending = false;
+     bool m_reportedLocalClose = false;
      QMap<int, int> m_playerPingMs;
      bool m_shouldAutoJoinRoom = false;
      QString m_autoJoinRoomId;
