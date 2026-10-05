@@ -928,7 +928,7 @@ void BoardDownloaderDialog::on_uploadJsonButton_clicked(void)
             this,
             QStringLiteral("Select Base ROM"),
             QString::fromStdString(CoreSettingsGetStringValue(SettingsID::RomBrowser_Directory)),
-            QStringLiteral("Nintendo 64 ROM (*.z64 *.n64 *.v64);;All Files (*)"));
+            QStringLiteral("Nintendo 64 ROM (*.z64 *.n64 *.v64 *.zip *.7z);;All Files (*)"));
     }
 
     if (romFilePath.isEmpty())

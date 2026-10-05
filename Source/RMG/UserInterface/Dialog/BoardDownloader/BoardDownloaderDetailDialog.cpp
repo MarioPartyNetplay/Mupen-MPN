@@ -265,9 +265,10 @@ void BoardDownloaderDetailDialog::populateDetails(void)
         }
         else
         {
-            this->baseRomLabel->setText(QStringLiteral("Base ROM: not found in ROM directory for %1")
+            this->baseRomLabel->setText(QStringLiteral("Base ROM: not found in ROM directory for %1. You can choose one when patching.")
                                             .arg(marioPartyTargetLabel(target)));
-            this->patchButton->setEnabled(false);
+            this->patchButton->setEnabled(true);
+            this->patchButton->setToolTip(QStringLiteral("Choose a Mario Party ROM when patching."));
         }
     }
 
@@ -436,7 +437,7 @@ void BoardDownloaderDetailDialog::on_patchButton_clicked(void)
             this,
             QStringLiteral("Select Base ROM"),
             QString::fromStdString(CoreSettingsGetStringValue(SettingsID::RomBrowser_Directory)),
-            QStringLiteral("Nintendo 64 ROM (*.z64 *.n64 *.v64);;All Files (*)"));
+            QStringLiteral("Nintendo 64 ROM (*.z64 *.n64 *.v64 *.zip *.7z);;All Files (*)"));
     }
 
     if (romFilePath.isEmpty())

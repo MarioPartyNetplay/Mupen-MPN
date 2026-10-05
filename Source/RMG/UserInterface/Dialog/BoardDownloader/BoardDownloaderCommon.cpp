@@ -10,8 +10,10 @@
 #include "BoardDownloaderCommon.hpp"
 #include "Utilities/QtMessageBox.hpp"
 
+#include <RMG-Core/Archive.hpp>
 #include <RMG-Core/CachedRomHeaderAndSettings.hpp>
 #include <RMG-Core/Directories.hpp>
+#include <RMG-Core/Error.hpp>
 #include <RMG-Core/Settings.hpp>
 
 #include <QDate>
@@ -21,6 +23,10 @@
 #include <QFileInfo>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QTemporaryFile>
+
+#include <cstring>
+#include <vector>
 
 namespace UserInterface
 {
@@ -30,14 +36,42 @@ namespace Dialog
 namespace
 {
 
+QString lettersAndNumbersLower(const QString& value)
+{
+    QString normalized;
+    normalized.reserve(value.size());
+    for (const QChar character : value)
+    {
+        if (character.isLetterOrNumber())
+        {
+            normalized.append(character.toLower());
+        }
+    }
+    return normalized;
+}
+
 bool containsTitle(const std::string& haystack, const char* needle)
 {
-    return haystack.find(needle) != std::string::npos;
+    const QString normalizedHaystack = lettersAndNumbersLower(QString::fromStdString(haystack));
+    const QString normalizedNeedle = lettersAndNumbersLower(QString::fromUtf8(needle));
+    return !normalizedNeedle.isEmpty() && normalizedHaystack.contains(normalizedNeedle);
 }
 
 bool containsTitle(const QString& haystack, const char* needle)
 {
-    return haystack.contains(QString::fromUtf8(needle), Qt::CaseInsensitive);
+    return containsTitle(haystack.toStdString(), needle);
+}
+
+bool romTextContains(const CoreRomHeader& header, const CoreRomSettings& settings, const char* needle)
+{
+    return containsTitle(settings.GoodName, needle) ||
+           containsTitle(settings.InternalName, needle) ||
+           containsTitle(header.Name, needle);
+}
+
+bool gameIdHasPrefix(const std::string& gameId, const char* prefix)
+{
+    return QString::fromStdString(gameId).startsWith(QString::fromUtf8(prefix), Qt::CaseInsensitive);
 }
 
 } // namespace
@@ -91,18 +125,21 @@ std::optional<PartyPlannerCliInfo> resolvePartyPlannerCli(void)
 
 bool isMarioParty3(const CoreRomHeader& header, const CoreRomSettings& settings)
 {
-    return header.GameID == "NMVE" ||
-           containsTitle(settings.GoodName, "MarioParty3") ||
-           containsTitle(settings.GoodName, "Mario Party 3") ||
-           containsTitle(settings.InternalName, "MARIO PARTY 3");
+    return gameIdHasPrefix(header.GameID, "NMV") ||
+           romTextContains(header, settings, "Mario Party 3") ||
+           romTextContains(header, settings, "MarioParty3");
 }
 
 bool isMarioParty2(const CoreRomHeader& header, const CoreRomSettings& settings)
 {
-    return containsTitle(settings.GoodName, "MarioParty2") ||
-           containsTitle(settings.GoodName, "Mario Party 2") ||
-           containsTitle(settings.InternalName, "MARIO PARTY 2") ||
-           header.GameID == "NMWE";
+    if (isMarioParty3(header, settings))
+    {
+        return false;
+    }
+
+    return gameIdHasPrefix(header.GameID, "NMW") ||
+           romTextContains(header, settings, "Mario Party 2") ||
+           romTextContains(header, settings, "MarioParty2");
 }
 
 bool isMarioParty1(const CoreRomHeader& header, const CoreRomSettings& settings)
@@ -112,10 +149,9 @@ bool isMarioParty1(const CoreRomHeader& header, const CoreRomSettings& settings)
         return false;
     }
 
-    return containsTitle(settings.GoodName, "MarioParty") ||
-           containsTitle(settings.GoodName, "Mario Party") ||
-           containsTitle(settings.InternalName, "MARIO PARTY") ||
-           header.GameID == "CLBE";
+    return gameIdHasPrefix(header.GameID, "CLB") ||
+           romTextContains(header, settings, "Mario Party") ||
+           romTextContains(header, settings, "MarioParty");
 }
 
 MarioPartyTarget marioPartyTargetForRom(const CoreRomHeader& header, const CoreRomSettings& settings)
@@ -245,11 +281,10 @@ std::optional<MarioPartyRomMatch> findBestMarioPartyRom(MarioPartyTarget target)
 
     const QStringList filters = {
         QStringLiteral("*.z64"),
-        QStringLiteral("*.Z64"),
         QStringLiteral("*.n64"),
-        QStringLiteral("*.N64"),
         QStringLiteral("*.v64"),
-        QStringLiteral("*.V64"),
+        QStringLiteral("*.zip"),
+        QStringLiteral("*.7z"),
     };
 
     QDirIterator iterator(directory, filters, QDir::Files, QDirIterator::Subdirectories);
@@ -262,21 +297,54 @@ std::optional<MarioPartyRomMatch> findBestMarioPartyRom(MarioPartyTarget target)
         CoreRomType type;
         CoreRomHeader header;
         CoreRomSettings settings;
+        MarioPartyTarget identified = MarioPartyTarget::Unknown;
+        QString goodName;
+        int qualityScore = 0;
 
-        if (!CoreGetCachedRomHeaderAndSettings(filePath.toStdU32String(), &type, &header, nullptr, &settings))
+        if (CoreGetCachedRomHeaderAndSettings(filePath.toStdU32String(), &type, &header, nullptr, &settings))
+        {
+            if (type != CoreRomType::Cartridge)
+            {
+                continue;
+            }
+
+            identified = marioPartyTargetForRom(header, settings);
+            goodName = QString::fromStdString(settings.GoodName);
+            qualityScore = goodNameQualityScore(goodName);
+            if (header.CountryCode == static_cast<uint32_t>('E'))
+            {
+                qualityScore += 1000;
+            }
+        }
+
+        if (identified == MarioPartyTarget::Unknown)
+        {
+            CoreRomHeader fileNameHeader;
+            CoreRomSettings fileNameSettings;
+            fileNameSettings.GoodName = QFileInfo(filePath).completeBaseName().toStdString();
+            identified = marioPartyTargetForRom(fileNameHeader, fileNameSettings);
+            if (goodName.isEmpty())
+            {
+                goodName = QString::fromStdString(fileNameSettings.GoodName);
+            }
+            qualityScore += goodNameQualityScore(goodName);
+            qualityScore -= 25;
+        }
+
+        if (identified != target)
         {
             continue;
         }
 
-        if (marioPartyTargetForRom(header, settings) != target)
+        if (QFileInfo(filePath).suffix().compare(QStringLiteral("z64"), Qt::CaseInsensitive) == 0)
         {
-            continue;
+            qualityScore += 5;
         }
 
         MarioPartyRomMatch match;
         match.path = filePath;
-        match.goodName = QString::fromStdString(settings.GoodName);
-        match.qualityScore = goodNameQualityScore(match.goodName);
+        match.goodName = goodName;
+        match.qualityScore = qualityScore;
 
         if (!bestMatch.has_value() || match.qualityScore > bestMatch->qualityScore)
         {
@@ -431,6 +499,156 @@ QString partyPlannerPatchWarnings(const QString& cliOutput)
     return warnings.join(QStringLiteral("\n"));
 }
 
+bool romMagicEquals(const QByteArray& bytes, unsigned char a, unsigned char b, unsigned char c, unsigned char d)
+{
+    return bytes.size() >= 4 &&
+           static_cast<unsigned char>(bytes.at(0)) == a &&
+           static_cast<unsigned char>(bytes.at(1)) == b &&
+           static_cast<unsigned char>(bytes.at(2)) == c &&
+           static_cast<unsigned char>(bytes.at(3)) == d;
+}
+
+void reverseByteGroups(QByteArray& bytes, int groupSize)
+{
+    for (int index = 0; index + groupSize <= bytes.size(); index += groupSize)
+    {
+        for (int offset = 0; offset < groupSize / 2; ++offset)
+        {
+            const char left = bytes.at(index + offset);
+            bytes[index + offset] = bytes.at(index + groupSize - 1 - offset);
+            bytes[index + groupSize - 1 - offset] = left;
+        }
+    }
+}
+
+bool readRomBytes(const QString& romFilePath, QByteArray& bytes, QString& error)
+{
+    const QString suffix = QFileInfo(romFilePath).suffix().toLower();
+    if (suffix == QStringLiteral("zip") || suffix == QStringLiteral("7z"))
+    {
+        std::filesystem::path extractedName;
+        bool isDisk = false;
+        std::vector<char> buffer;
+        const std::filesystem::path archivePath(romFilePath.toStdU32String());
+        if (!CoreReadArchiveFile(archivePath, extractedName, isDisk, buffer) || isDisk || buffer.empty())
+        {
+            error = QStringLiteral("Could not read a cartridge ROM from %1").arg(romFilePath);
+            const std::string coreError = CoreGetError();
+            if (!coreError.empty())
+            {
+                error += QStringLiteral("\n%1").arg(QString::fromStdString(coreError));
+            }
+            return false;
+        }
+
+        bytes.resize(static_cast<int>(buffer.size()));
+        std::memcpy(bytes.data(), buffer.data(), buffer.size());
+        return true;
+    }
+
+    QFile romFile(romFilePath);
+    if (!romFile.open(QIODevice::ReadOnly))
+    {
+        error = QStringLiteral("Could not read base ROM: %1").arg(romFilePath);
+        return false;
+    }
+
+    bytes = romFile.readAll();
+    if (bytes.isEmpty())
+    {
+        error = QStringLiteral("Base ROM is empty: %1").arg(romFilePath);
+        return false;
+    }
+
+    return true;
+}
+
+bool normalizeRomToBigEndian(QByteArray& bytes, QString& error)
+{
+    if (romMagicEquals(bytes, 0x80, 0x37, 0x12, 0x40))
+    {
+        return true;
+    }
+
+    if (romMagicEquals(bytes, 0x37, 0x80, 0x40, 0x12))
+    {
+        reverseByteGroups(bytes, 2);
+        return true;
+    }
+
+    if (romMagicEquals(bytes, 0x40, 0x12, 0x37, 0x80))
+    {
+        reverseByteGroups(bytes, 4);
+        return true;
+    }
+
+    error = QStringLiteral("Base ROM is not a Nintendo 64 cartridge image.");
+    return false;
+}
+
+struct PreparedBaseRom
+{
+    QString path;
+    bool removeAfter = false;
+
+    ~PreparedBaseRom()
+    {
+        if (this->removeAfter && !this->path.isEmpty())
+        {
+            QFile::remove(this->path);
+        }
+    }
+};
+
+bool prepareBaseRomForCli(const QString& romFilePath, PreparedBaseRom& prepared, QString& error)
+{
+    const QString suffix = QFileInfo(romFilePath).suffix().toLower();
+    const bool archive = suffix == QStringLiteral("zip") || suffix == QStringLiteral("7z");
+    if (!archive)
+    {
+        QFile probe(romFilePath);
+        if (probe.open(QIODevice::ReadOnly))
+        {
+            const QByteArray magic = probe.read(4);
+            probe.close();
+            if (romMagicEquals(magic, 0x80, 0x37, 0x12, 0x40))
+            {
+                prepared.path = romFilePath;
+                prepared.removeAfter = false;
+                return true;
+            }
+        }
+    }
+
+    QByteArray bytes;
+    if (!readRomBytes(romFilePath, bytes, error) || !normalizeRomToBigEndian(bytes, error))
+    {
+        return false;
+    }
+
+    QTemporaryFile temporaryFile(QDir::temp().filePath(QStringLiteral("mupen-mpn-base-XXXXXX.z64")));
+    temporaryFile.setAutoRemove(false);
+    if (!temporaryFile.open())
+    {
+        error = QStringLiteral("Could not create a temporary base ROM.");
+        return false;
+    }
+
+    if (temporaryFile.write(bytes) != bytes.size())
+    {
+        const QString temporaryPath = temporaryFile.fileName();
+        temporaryFile.close();
+        QFile::remove(temporaryPath);
+        error = QStringLiteral("Could not write a temporary base ROM.");
+        return false;
+    }
+
+    prepared.path = temporaryFile.fileName();
+    prepared.removeAfter = true;
+    temporaryFile.close();
+    return true;
+}
+
 } // namespace
 
 QString sanitizeBoardFileName(const QString& fileName)
@@ -455,8 +673,17 @@ bool patchMarioPartyBoardRom(QWidget* parent,
     }
 
     const QString nativeBoardPath = absoluteNativePath(boardFilePath);
-    const QString nativeRomPath = absoluteNativePath(romFilePath);
     const QString nativeOutputPath = absoluteNativePath(outputFilePath);
+
+    PreparedBaseRom preparedRom;
+    QString prepareError;
+    if (!prepareBaseRomForCli(romFilePath, preparedRom, prepareError))
+    {
+        Utilities::QtMessageBox::Error(parent, QStringLiteral("Failed to read base ROM"), prepareError);
+        return false;
+    }
+
+    const QString nativeRomPath = absoluteNativePath(preparedRom.path);
 
     QString directoryError;
     if (!ensureParentDirectoryExists(nativeOutputPath, directoryError))
