@@ -19,6 +19,8 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 
+#include <CoreFoundation/CoreFoundation.h>
+
 #include <sstream>
 
 #ifndef EGL_PLATFORM_ANGLE_ANGLE
@@ -350,6 +352,8 @@ bool AngleContext::create(QWindow* window, int swapInterval_, int majorVersion, 
 
         // ANGLE's Metal backend expects a CAMetalLayer*, not an NSView*.
         EGLSurface eglSurface = eglCreateWindowSurface(eglDisplay, eglConfig, metalLayer, nullptr);
+        // Surface init can flip the layer back to framebuffer-only storage.
+        metalLayer.framebufferOnly = NO;
         if (eglSurface == EGL_NO_SURFACE)
         {
             std::ostringstream message;
@@ -388,6 +392,8 @@ bool AngleContext::create(QWindow* window, int swapInterval_, int majorVersion, 
         this->display = eglDisplay;
         this->surface = eglSurface;
         this->context = eglContext;
+        this->metalLayer = (__bridge_retained void*)metalLayer;
+        metalLayer.framebufferOnly = NO;
 
         // Leave the context unbound so the render thread can make it current.
         eglMakeCurrent(eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -403,12 +409,26 @@ void AngleContext::destroy()
     EGLSurface eglSurface = static_cast<EGLSurface>(this->surface);
     EGLContext eglContext = static_cast<EGLContext>(this->context);
 
+    void* layerToRelease = this->metalLayer;
+    this->metalLayer = nullptr;
+
     if (eglDisplay == EGL_NO_DISPLAY)
     {
+        if (layerToRelease != nullptr)
+        {
+            runOnMainThread(^{
+                CFRelease(layerToRelease);
+            });
+        }
         return;
     }
 
     runOnMainThread(^{
+        if (layerToRelease != nullptr)
+        {
+            CFRelease(layerToRelease);
+        }
+
         eglMakeCurrent(eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 
         if (eglContext != EGL_NO_CONTEXT)
@@ -447,6 +467,7 @@ bool AngleContext::makeCurrent(QWindow* window)
         return false;
     }
 
+    this->prepareFramebufferReadback();
     return eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext) == EGL_TRUE;
 }
 
@@ -482,7 +503,22 @@ void AngleContext::swapBuffers(QWindow* window)
         return;
     }
 
+    this->prepareFramebufferReadback();
     eglSwapBuffers(eglDisplay, eglSurface);
+}
+
+void AngleContext::prepareFramebufferReadback()
+{
+    if (this->metalLayer == nullptr)
+    {
+        return;
+    }
+
+    CAMetalLayer* layer = (__bridge CAMetalLayer*)this->metalLayer;
+    if (layer != nil && layer.framebufferOnly)
+    {
+        layer.framebufferOnly = NO;
+    }
 }
 
 void* AngleContext::getProcAddress(const char* name) const

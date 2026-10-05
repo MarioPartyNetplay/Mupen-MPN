@@ -33,6 +33,9 @@ public:
     void* getProcAddress(const char* name) const;
     std::uint32_t defaultFramebufferObject() const;
     bool querySurfaceSize(int& width, int& height) const;
+    // Metal display textures are not readable unless the layer opts out of
+    // framebuffer-only storage. Reapply before draw and before glReadPixels.
+    void prepareFramebufferReadback();
 
     void moveToThread(QThread* thread);
 
@@ -42,6 +45,7 @@ private:
     void* display = nullptr;
     void* surface = nullptr;
     void* context = nullptr;
+    void* metalLayer = nullptr;
     int swapInterval = 0;
     std::string lastError;
 };

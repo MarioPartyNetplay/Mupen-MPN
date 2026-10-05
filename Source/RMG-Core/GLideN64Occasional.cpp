@@ -25,7 +25,9 @@ constexpr const char* l_HalosRemovalKey = "EnableHalosRemoval";
 constexpr const char* l_NativeResTexrectsKey = "EnableNativeResTexrects";
 constexpr int l_NoOverride = -1;
 constexpr int l_DepthCompareCompatible = 2;
+#ifndef __APPLE__
 constexpr uint8_t l_Mp3CurtainCallId = 0x22;
+#endif
 constexpr uint8_t l_Mp2LightsOutId = 0x16;
 #if defined(_MSC_VER) || defined(__LITTLE_ENDIAN__) || \
     (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
@@ -144,6 +146,7 @@ static uint8_t mp2_lights_out_id(void)
     return l_Mp2LightsOutId;
 }
 
+#ifndef __APPLE__
 static uint8_t mp3_curtain_call_id(void)
 {
     for (uint8_t i = 0; i < static_cast<uint8_t>(sizeof(MP3_MINIS) / sizeof(MP3_MINIS[0])); ++i)
@@ -155,6 +158,7 @@ static uint8_t mp3_curtain_call_id(void)
     }
     return l_Mp3CurtainCallId;
 }
+#endif
 
 static void hook_gliden64_overrides(void)
 {
@@ -249,7 +253,13 @@ CORE_EXPORT void CoreGLideN64OccasionalUpdateFrame(void)
 
     if (l_IsMarioParty3)
     {
+        // Curtain Call needs N64 depth compare in compatible mode, which uses
+        // shader image load/store. ANGLE's Metal backend does not support that.
+#ifdef __APPLE__
+        const bool wantOverride = false;
+#else
         const bool wantOverride = minigame_id_is(MP3_MEM_MINI_STATE, mp3_curtain_call_id());
+#endif
         if (wantOverride != l_Mp3OverrideActive)
         {
             l_Mp3OverrideActive = wantOverride;

@@ -162,6 +162,74 @@ bool cropScreenshotBorders(const std::vector<std::uint8_t>& source, int sourceWi
     return true;
 }
 
+#ifdef __APPLE__
+// OpenGL ES (ANGLE on macOS) rejects GL_RGB for glReadPixels. The spec only
+// guarantees GL_RGBA, or the implementation's preferred format.
+constexpr unsigned int kGlRgb              = 0x1907;
+constexpr unsigned int kGlRgba             = 0x1908;
+constexpr unsigned int kGlBgra             = 0x80E1;
+constexpr unsigned int kGlBgr              = 0x80E0;
+constexpr unsigned int kGlUnsignedByte     = 0x1401;
+constexpr unsigned int kGlPackAlignment    = 0x0D05;
+constexpr unsigned int kGlPackRowLength    = 0x0D02;
+constexpr unsigned int kGlPackSkipRows     = 0x0D03;
+constexpr unsigned int kGlPackSkipPixels   = 0x0D04;
+constexpr unsigned int kGlReadFramebuffer  = 0x8CA8;
+constexpr unsigned int kGlColorAttachment0 = 0x8CE0;
+constexpr unsigned int kGlBack             = 0x0405;
+
+int readbackBytesPerPixel(unsigned int format)
+{
+    if (format == kGlRgb || format == kGlBgr)
+    {
+        return 3;
+    }
+    if (format == kGlRgba || format == kGlBgra)
+    {
+        return 4;
+    }
+    return 0;
+}
+
+bool packReadbackToRgb(const std::vector<std::uint8_t>& source, int sourceWidth, int sourceHeight,
+                       unsigned int format, std::vector<std::uint8_t>& rgb)
+{
+    const int bytesPerPixel = readbackBytesPerPixel(format);
+    if (bytesPerPixel == 0 || sourceWidth <= 0 || sourceHeight <= 0)
+    {
+        return false;
+    }
+
+    const size_t pixelCount = static_cast<size_t>(sourceWidth) * static_cast<size_t>(sourceHeight);
+    if (source.size() < pixelCount * static_cast<size_t>(bytesPerPixel))
+    {
+        return false;
+    }
+
+    rgb.resize(pixelCount * 3u);
+    const bool swapRedBlue = format == kGlBgra || format == kGlBgr;
+    for (size_t pixel = 0; pixel < pixelCount; ++pixel)
+    {
+        const std::uint8_t* src = source.data() + pixel * static_cast<size_t>(bytesPerPixel);
+        std::uint8_t* dst = rgb.data() + pixel * 3u;
+        if (swapRedBlue)
+        {
+            dst[0] = src[2];
+            dst[1] = src[1];
+            dst[2] = src[0];
+        }
+        else
+        {
+            dst[0] = src[0];
+            dst[1] = src[1];
+            dst[2] = src[2];
+        }
+    }
+
+    return true;
+}
+#endif // __APPLE__
+
 } // namespace
 
 OGLWidget::OGLWidget(QWidget *parent, bool dedicatedWindow)
@@ -546,6 +614,8 @@ bool OGLWidget::CaptureScreenshot(std::vector<std::uint8_t>& rgbData, int& width
         return false;
     }
 
+    this->angleContext.prepareFramebufferReadback();
+
     using BindFramebufferFn = void (*)(unsigned int, unsigned int);
     using ReadBufferFn = void (*)(unsigned int);
     using ReadPixelsFn = void (*)(int, int, int, int, unsigned int, unsigned int, void*);
@@ -562,51 +632,122 @@ bool OGLWidget::CaptureScreenshot(std::vector<std::uint8_t>& rgbData, int& width
     const auto glGetIntegerv = reinterpret_cast<GetIntegervFn>(this->angleContext.getProcAddress("glGetIntegerv"));
     const auto glPixelStorei = reinterpret_cast<PixelStoreiFn>(this->angleContext.getProcAddress("glPixelStorei"));
 
-    if (glBindFramebuffer == nullptr || glReadBuffer == nullptr || glReadPixels == nullptr || glFinish == nullptr)
+    if (glBindFramebuffer == nullptr || glReadPixels == nullptr || glFinish == nullptr)
     {
         return false;
     }
 
-    std::vector<std::uint8_t> fullBuffer(static_cast<size_t>(captureWidth) * static_cast<size_t>(captureHeight) * 3u);
+    const auto drainErrors = [&]() {
+        if (glGetError == nullptr)
+        {
+            return;
+        }
+        while (glGetError() != 0)
+        {
+        }
+    };
 
     const std::uint32_t framebuffer = this->DefaultFramebufferObject();
     if (framebuffer != 0)
     {
-        glBindFramebuffer(0x8CA8, framebuffer); // GL_READ_FRAMEBUFFER
-        glReadBuffer(0x8CE0);                  // GL_COLOR_ATTACHMENT0
+        glBindFramebuffer(kGlReadFramebuffer, framebuffer);
+        if (glReadBuffer != nullptr)
+        {
+            glReadBuffer(kGlColorAttachment0);
+        }
     }
     else
     {
-        glBindFramebuffer(0x8CA8, 0);
-        glReadBuffer(0x0405); // GL_BACK
-    }
-
-    if (glGetError != nullptr)
-    {
-        while (glGetError() != 0)
+        glBindFramebuffer(kGlReadFramebuffer, 0);
+        if (glReadBuffer != nullptr)
         {
+            glReadBuffer(kGlBack);
         }
     }
 
+    drainErrors();
+
     int previousPackAlignment = 4;
+    int previousPackRowLength = 0;
+    int previousPackSkipRows = 0;
+    int previousPackSkipPixels = 0;
     if (glGetIntegerv != nullptr)
     {
-        glGetIntegerv(0x0D05, &previousPackAlignment); // GL_PACK_ALIGNMENT
+        glGetIntegerv(kGlPackAlignment, &previousPackAlignment);
+        glGetIntegerv(kGlPackRowLength, &previousPackRowLength);
+        glGetIntegerv(kGlPackSkipRows, &previousPackSkipRows);
+        glGetIntegerv(kGlPackSkipPixels, &previousPackSkipPixels);
     }
     if (glPixelStorei != nullptr)
     {
-        glPixelStorei(0x0D05, 1);
+        glPixelStorei(kGlPackAlignment, 1);
+        glPixelStorei(kGlPackRowLength, 0);
+        glPixelStorei(kGlPackSkipRows, 0);
+        glPixelStorei(kGlPackSkipPixels, 0);
     }
 
-    glReadPixels(0, 0, captureWidth, captureHeight, 0x1907, 0x1401, fullBuffer.data()); // GL_RGB, GL_UNSIGNED_BYTE
-    glFinish();
+    const auto readFormat = [&](unsigned int format, std::vector<std::uint8_t>& destination) -> bool {
+        const int bytesPerPixel = readbackBytesPerPixel(format);
+        if (bytesPerPixel == 0)
+        {
+            return false;
+        }
+
+        destination.resize(static_cast<size_t>(captureWidth) * static_cast<size_t>(captureHeight) * static_cast<size_t>(bytesPerPixel));
+        drainErrors();
+        glReadPixels(0, 0, captureWidth, captureHeight, format, kGlUnsignedByte, destination.data());
+        glFinish();
+        if (glGetError != nullptr && glGetError() != 0)
+        {
+            drainErrors();
+            return false;
+        }
+        return true;
+    };
+
+    unsigned int capturedFormat = kGlRgba;
+    if (glGetIntegerv != nullptr)
+    {
+        int implementationFormat = 0;
+        int implementationType = 0;
+        glGetIntegerv(0x8B9B, &implementationFormat); // GL_IMPLEMENTATION_COLOR_READ_FORMAT
+        glGetIntegerv(0x8B9A, &implementationType);   // GL_IMPLEMENTATION_COLOR_READ_TYPE
+        drainErrors();
+        if (implementationType == static_cast<int>(kGlUnsignedByte) &&
+            readbackBytesPerPixel(static_cast<unsigned int>(implementationFormat)) != 0)
+        {
+            capturedFormat = static_cast<unsigned int>(implementationFormat);
+        }
+    }
+
+    std::vector<std::uint8_t> readBuffer;
+    bool readOk = readFormat(capturedFormat, readBuffer);
+    if (!readOk && capturedFormat != kGlRgba)
+    {
+        capturedFormat = kGlRgba;
+        readOk = readFormat(capturedFormat, readBuffer);
+    }
+    if (!readOk && capturedFormat != kGlBgra)
+    {
+        capturedFormat = kGlBgra;
+        readOk = readFormat(capturedFormat, readBuffer);
+    }
 
     if (glPixelStorei != nullptr)
     {
-        glPixelStorei(0x0D05, previousPackAlignment);
+        glPixelStorei(kGlPackAlignment, previousPackAlignment);
+        glPixelStorei(kGlPackRowLength, previousPackRowLength);
+        glPixelStorei(kGlPackSkipRows, previousPackSkipRows);
+        glPixelStorei(kGlPackSkipPixels, previousPackSkipPixels);
     }
 
-    if (glGetError != nullptr && glGetError() != 0)
+    if (!readOk)
+    {
+        return false;
+    }
+
+    std::vector<std::uint8_t> fullBuffer;
+    if (!packReadbackToRgb(readBuffer, captureWidth, captureHeight, capturedFormat, fullBuffer))
     {
         return false;
     }
