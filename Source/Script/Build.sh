@@ -57,6 +57,7 @@ if [[ $(uname -s) = Darwin ]]; then
   else
     cmake_extra_args+=(-DCMAKE_PREFIX_PATH="$(brew --prefix)" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3)
   fi
+  cmake_extra_args+=(-DUPDATER=ON)
 elif [[ $(uname -s) = *MINGW64* ]]; then
     generator="MSYS Makefiles"
     threads="${2:-$(nproc)}"

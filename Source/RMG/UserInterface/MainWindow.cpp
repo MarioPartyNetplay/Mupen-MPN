@@ -1862,6 +1862,13 @@ void MainWindow::presentUpdateDialog(const QJsonObject& jsonObject, bool forced)
         {
             return;
         }
+#ifdef __APPLE__
+        if (downloadUpdateDialog.GetFileName().endsWith(QStringLiteral(".dmg"), Qt::CaseInsensitive))
+        {
+            this->ui_ForceClose = true;
+            this->close();
+        }
+#endif
     }
 }
 #endif // UPDATER

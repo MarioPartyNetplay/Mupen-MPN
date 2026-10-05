@@ -31,9 +31,12 @@ class InstallUpdateDialog : public QDialog, private Ui::InstallUpdateDialog
     QString filename;
 
     void install(void);
+#ifdef __APPLE__
+    bool installMacOSDiskImage(const QString& diskImagePath, const QString& appPid, const QString& logPath);
+#endif
 
-    void writeAndRunScript(QStringList stringList);
-    void launchProcess(QString file, QStringList arguments);
+    bool writeAndRunScript(QStringList stringList);
+    bool launchProcess(QString file, QStringList arguments);
 
   protected:
     void timerEvent(QTimerEvent *) Q_DECL_OVERRIDE;

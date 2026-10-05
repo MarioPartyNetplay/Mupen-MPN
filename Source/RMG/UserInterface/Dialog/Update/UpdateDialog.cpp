@@ -73,6 +73,23 @@ bool matchesLinuxUpdateAsset(const QString& filename)
            lowerFilename.endsWith(QStringLiteral(".zip"));
 }
 
+bool matchesMacOSUpdateAsset(const QString& filename)
+{
+    const QString lowerFilename = filename.toLower();
+    const bool macPackage =
+        lowerFilename.contains(QStringLiteral("macos")) ||
+        lowerFilename.contains(QStringLiteral("darwin")) ||
+        lowerFilename.contains(QStringLiteral("osx"));
+
+    if (!macPackage || !lowerFilename.endsWith(QStringLiteral(".dmg"))) {
+        return false;
+    }
+
+    return matchesCpuArchitecture(lowerFilename, QStringLiteral("macos")) ||
+           matchesCpuArchitecture(lowerFilename, QStringLiteral("darwin")) ||
+           matchesCpuArchitecture(lowerFilename, QStringLiteral("osx"));
+}
+
 } // namespace
 
 using namespace UserInterface::Dialog;
@@ -133,21 +150,18 @@ void UpdateDialog::accept(void)
         const bool isWin32Setup =
             QFile::exists(QStringLiteral("unins000.exe")) &&
             QFile::exists(QStringLiteral("unins000.dat"));
-
-        if (matchesWindowsUpdateAsset(filename, isWin32Setup))
-        {
-            filenameToDownload = filename;
-            urlToDownload = QUrl(url);
-            break;
-        }
+        const bool matched = matchesWindowsUpdateAsset(filename, isWin32Setup);
+#elif defined(__APPLE__)
+        const bool matched = matchesMacOSUpdateAsset(filename);
 #else
-        if (matchesLinuxUpdateAsset(filename))
+        const bool matched = matchesLinuxUpdateAsset(filename);
+#endif
+        if (matched)
         {
             filenameToDownload = filename;
             urlToDownload = QUrl(url);
             break;
         }
-#endif // _WIN32
     }
 
     if (filenameToDownload.isEmpty())
