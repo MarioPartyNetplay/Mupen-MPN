@@ -74,6 +74,8 @@
 #include <RMG-Core/Key.hpp>
 #include <QTimer>
 #include <QTimerEvent>
+#include <QEventLoop>
+#include <QPointer>
 #include <RMG-Core/Netplay.hpp>
 #include <RMG-Core/Rom.hpp>
 #include <RMG-Core/Video.hpp>
@@ -916,6 +918,105 @@ NetplaySessionDialog::~NetplaySessionDialog(void)
     this->shutdownSession();
 }
 
+bool NetplaySessionDialog::isSessionShutdown() const
+{
+    return this->m_sessionShutdown;
+}
+
+void NetplaySessionDialog::notifyEmulationFullyStopped()
+{
+    if (!this->m_sessionShutdown) {
+        return;
+    }
+
+    if (this->m_emulationStopLoop) {
+        this->m_emulationStopLoop->quit();
+    }
+}
+
+bool NetplaySessionDialog::netplayExitNeedsConfirmation() const
+{
+    if (CoreIsEmulationRunning() || CoreIsEmulationPaused()) {
+        return true;
+    }
+
+    if (!this->coordinator) {
+        return false;
+    }
+
+    const auto state = this->coordinator->getCurrentState();
+    return state == Netplay::NetplayCoordinator::InGame ||
+           state == Netplay::NetplayCoordinator::StartingGame;
+}
+
+bool NetplaySessionDialog::beginLeaveNetplay()
+{
+    if (this->m_sessionShutdown || !this->netplayExitNeedsConfirmation()) {
+        return true;
+    }
+
+    this->showLeaveNetplayConfirmation();
+    return false;
+}
+
+void NetplaySessionDialog::showLeaveNetplayConfirmation()
+{
+    if (this->m_leavePromptBox) {
+        this->m_leavePromptBox->raise();
+        this->m_leavePromptBox->activateWindow();
+        return;
+    }
+
+    auto* box = new QMessageBox(this);
+    box->setIcon(QMessageBox::Question);
+    box->setWindowTitle(QStringLiteral("Leave netplay"));
+    box->setText(QStringLiteral("A game is running. Leave this netplay session?"));
+    box->setInformativeText(QStringLiteral("The game will stop. The save on disk stays where you left off."));
+    box->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+    box->setDefaultButton(QMessageBox::No);
+    box->setWindowModality(Qt::NonModal);
+    box->setWindowFlag(Qt::WindowStaysOnTopHint, true);
+    this->m_leavePromptBox = box;
+
+    connect(box, &QDialog::finished, this, [this, box](int result) {
+        if (this->m_leavePromptBox == box) {
+            this->m_leavePromptBox = nullptr;
+        }
+        box->deleteLater();
+        if (result == QMessageBox::Yes && !this->m_sessionShutdown) {
+            this->reject();
+        }
+    });
+    box->show();
+    box->raise();
+    box->activateWindow();
+}
+
+void NetplaySessionDialog::stopLocalEmulationForExit()
+{
+    if (!(CoreIsEmulationRunning() || CoreIsEmulationPaused())) {
+        return;
+    }
+
+    if (CoreIsEmulationPaused()) {
+        CoreResumeEmulation();
+    }
+    CoreStopEmulation();
+
+    // VidExt_Quit blocks on the GUI thread, so this wait has to keep pumping
+    // events or the emulation thread never finishes and the window never restores.
+    // Stopping also lets the core flush the current save, which is what a later
+    // session resumes from.
+    QEventLoop loop;
+    this->m_emulationStopLoop = &loop;
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+    timeout.start(15000);
+    loop.exec(QEventLoop::ExcludeUserInputEvents);
+    this->m_emulationStopLoop = nullptr;
+}
+
 void NetplaySessionDialog::shutdownSession(void)
 {
     if (this->m_sessionShutdown)
@@ -923,6 +1024,17 @@ void NetplaySessionDialog::shutdownSession(void)
         return;
     }
     this->m_sessionShutdown = true;
+
+    if (this->m_leavePromptBox) {
+        this->m_leavePromptBox->close();
+    }
+    if (this->m_closePromptBox) {
+        this->m_closePromptBox->close();
+    }
+
+    // Stop the match before tearing down netplay so the main window can
+    // restore and the core can flush the save you would resume from.
+    this->stopLocalEmulationForExit();
 
     if (this->hostRegistry)
     {
@@ -935,6 +1047,10 @@ void NetplaySessionDialog::shutdownSession(void)
 
     if (this->coordinator)
     {
+        if (this->coordinator->isRoomMatchActive() && !this->coordinator->isClosePending()) {
+            this->coordinator->notifyLocalEmulationStopped();
+        }
+
         if (this->coordinator->isInGame())
         {
             this->coordinator->endGame();
@@ -1935,6 +2051,12 @@ void NetplaySessionDialog::tryStartPendingGame(void)
         return;
     }
 
+    if (this->m_sessionShutdown ||
+        (this->coordinator && this->coordinator->isClosePending())) {
+        this->m_pendingGameStart = false;
+        return;
+    }
+
     if (!this->sessionPrepReadyForStart()) {
         return;
     }
@@ -1947,6 +2069,11 @@ void NetplaySessionDialog::tryStartPendingGame(void)
     if (romFile.isEmpty() || !QFileInfo::exists(romFile)) {
         QtMessageBox::Error(this, "ROM Missing", "The ROM path from this netplay session does not exist locally. Please reselect the ROM.");
         this->m_pendingGameStart = true;
+        return;
+    }
+
+    if (this->m_sessionShutdown ||
+        (this->coordinator && this->coordinator->isClosePending())) {
         return;
     }
 
@@ -2304,6 +2431,9 @@ void NetplaySessionDialog::on_startPushButton_clicked(void)
 
 void NetplaySessionDialog::on_quitPushButton_clicked(void)
 {
+    if (!this->beginLeaveNetplay()) {
+        return;
+    }
     this->reject();
 }
 
@@ -2328,6 +2458,10 @@ void NetplaySessionDialog::on_cheatsPushButton_clicked(void)
 
 void NetplaySessionDialog::on_askCloseGameForAll(void)
 {
+    if (this->m_sessionShutdown) {
+        return;
+    }
+
     this->m_closePromptNeeded = true;
     this->showMatchHudNotice(
         QStringLiteral("The game stopped. Close it for every player before starting another."),
@@ -2358,39 +2492,65 @@ void NetplaySessionDialog::on_lobbyReadyForNextMatch(void)
 
 void NetplaySessionDialog::on_localMatchEmulationStopped(void)
 {
+    if (this->m_sessionShutdown) {
+        return;
+    }
+
     this->maybePromptCloseGameForAll();
 }
 
 void NetplaySessionDialog::maybePromptCloseGameForAll(void)
 {
+    if (this->m_sessionShutdown) {
+        return;
+    }
+
     if (!this->m_closePromptNeeded || !this->isLocalSessionHost() || !this->coordinator) {
         return;
     }
 
-    if (CoreIsEmulationRunning() || CoreIsEmulationPaused()) {
-        return;
-    }
-
-    if (this->coordinator->isClosePending()) {
+    if (this->coordinator->isClosePending() || this->m_closePromptBox) {
         return;
     }
 
     this->m_closePromptNeeded = false;
-    const auto answer = QMessageBox::question(
-        this,
-        QStringLiteral("Close game"),
-        QStringLiteral("This game stopped. Close it for every player?\n\n"
-                       "You can start another match after everyone has closed."),
-        QMessageBox::Yes | QMessageBox::No,
-        QMessageBox::Yes);
-    if (answer == QMessageBox::Yes) {
-        this->coordinator->closeGameForEveryone();
-        return;
-    }
 
-    this->showMatchHudNotice(
-        QStringLiteral("The match stays up until you close it for everyone. Press Start to ask again."),
-        QStringLiteral("#ffaa44"));
+    const bool gameRunning = CoreIsEmulationRunning() || CoreIsEmulationPaused();
+    auto* box = new QMessageBox(this);
+    box->setIcon(QMessageBox::Question);
+    box->setWindowTitle(QStringLiteral("Close game"));
+    box->setText(gameRunning
+                     ? QStringLiteral("Close this game for every player?")
+                     : QStringLiteral("This game stopped. Close it for every player?"));
+    box->setInformativeText(
+        QStringLiteral("You can start another match after everyone has closed."));
+    box->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+    box->setDefaultButton(QMessageBox::Yes);
+    // Non-modal so a running match keeps pumping input until the host answers.
+    box->setWindowModality(Qt::NonModal);
+    box->setWindowFlag(Qt::WindowStaysOnTopHint, true);
+    this->m_closePromptBox = box;
+
+    connect(box, &QDialog::finished, this, [this, box](int result) {
+        if (this->m_closePromptBox == box) {
+            this->m_closePromptBox = nullptr;
+        }
+        box->deleteLater();
+        if (this->m_sessionShutdown || !this->coordinator) {
+            return;
+        }
+        if (result == QMessageBox::Yes) {
+            this->coordinator->closeGameForEveryone();
+            return;
+        }
+
+        this->showMatchHudNotice(
+            QStringLiteral("The match stays up until you close it for everyone. Press Start to ask again."),
+            QStringLiteral("#ffaa44"));
+    });
+    box->show();
+    box->raise();
+    box->activateWindow();
 }
 
 void NetplaySessionDialog::accept()
@@ -2442,6 +2602,11 @@ void NetplaySessionDialog::reject(void)
 
 void NetplaySessionDialog::closeEvent(QCloseEvent* event)
 {
+    if (!this->beginLeaveNetplay()) {
+        event->ignore();
+        return;
+    }
+
     this->shutdownSession();
     QDialog::closeEvent(event);
 }

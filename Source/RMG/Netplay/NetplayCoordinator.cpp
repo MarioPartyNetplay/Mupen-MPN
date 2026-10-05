@@ -33,6 +33,18 @@ using namespace RMGCore;
 
 namespace {
 
+bool stopEmbeddedNetplayEmulation()
+{
+    if (CoreIsEmulationPaused()) {
+        CoreResumeEmulation();
+    }
+    if (CoreIsEmulationRunning() || CoreIsEmulationPaused()) {
+        CoreStopEmulation();
+        return true;
+    }
+    return false;
+}
+
 Qt::ConnectionType socketDispatchConnectionType(const QObject* target)
 {
     if (QThread::currentThread() == target->thread()) {
@@ -488,6 +500,10 @@ void NetplayCoordinator::leaveRoom()
     const bool wasInGame = (m_state == InGame || m_state == StartingGame);
     const bool hosting = isHostingServer();
 
+    m_roomMatchActive = false;
+    m_closePending = false;
+    m_reportedLocalClose = false;
+
     if (wasInGame) {
         resetEmulationSync();
         emit gameEnded();
@@ -582,8 +598,7 @@ void NetplayCoordinator::closeGameForEveryone()
     emit closingGameForAll();
     m_server->requestCloseGameForAll(m_gameSession.roomId);
 
-    if (CoreIsEmulationRunning() || CoreIsEmulationPaused()) {
-        CoreStopEmulation();
+    if (stopEmbeddedNetplayEmulation()) {
         return;
     }
 
@@ -1309,8 +1324,7 @@ void NetplayCoordinator::on_socketIO_closeGameReceived()
     m_closePending = true;
     emit closingGameForAll();
 
-    if (CoreIsEmulationRunning() || CoreIsEmulationPaused()) {
-        CoreStopEmulation();
+    if (stopEmbeddedNetplayEmulation()) {
         return;
     }
 

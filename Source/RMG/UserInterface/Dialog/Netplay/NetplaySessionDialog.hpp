@@ -10,12 +10,18 @@
 #ifndef NETPLAYSESSIONDIALOG_HPP
 #define NETPLAYSESSIONDIALOG_HPP
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QDialog>
+#include <QList>
+#include <QPointer>
 #include <QSet>
 #include <QString>
 #include <QPair>
 #include <memory>
+
+class QEventLoop;
+class QMessageBox;
 
 #include <QCloseEvent>
 #include <QEvent>
@@ -42,8 +48,14 @@ public:
     ~NetplaySessionDialog(void);
 
     void shutdownSession();
+    bool isSessionShutdown() const;
+    void notifyEmulationFullyStopped();
 
 private:
+    bool netplayExitNeedsConfirmation() const;
+    bool beginLeaveNetplay();
+    void showLeaveNetplayConfirmation();
+    void stopLocalEmulationForExit();
     QString sessionFile;
     QJsonObject sessionJson;
     QString romFile;
@@ -74,6 +86,9 @@ private:
     QStringList m_publishedSessionPlayerIds;
     bool m_updatingPlayerList = false;
     bool m_closePromptNeeded = false;
+    QEventLoop* m_emulationStopLoop = nullptr;
+    QPointer<QMessageBox> m_leavePromptBox;
+    QPointer<QMessageBox> m_closePromptBox;
 
     void syncHostSessionState(void);
     void beginHostBrowserRegistration(uint16_t hostingPort, bool listInBrowser);

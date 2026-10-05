@@ -170,25 +170,58 @@ void MainWindow::OpenROM(QString file, QString disk, bool fullscreen, bool quitA
     this->launchEmulationThread(file, disk, true, stateSlot);
 }
 
+static bool confirmNetplayExitWhileGameRunning(QWidget* parent, const QString& question)
+{
+    const auto answer = QMessageBox::question(
+        parent,
+        QStringLiteral("Leave netplay"),
+        question,
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No);
+    return answer == QMessageBox::Yes;
+}
+
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     bool inEmulation = this->emulationThread->isRunning();
 
+#ifdef NETPLAY
+    const bool netplayGameRunning =
+        inEmulation &&
+        (this->netplaySessionDialog != nullptr || CoreIsEmbeddedNetplayActive());
+#else
+    const bool netplayGameRunning = false;
+#endif // NETPLAY
+
     if (this->ui_ShowUI &&
         !this->ui_ForceClose &&
         inEmulation &&
-        CoreSettingsGetBoolValue(SettingsID::GUI_ConfirmExitWhileInGame))
+        (netplayGameRunning ||
+         CoreSettingsGetBoolValue(SettingsID::GUI_ConfirmExitWhileInGame)))
     {
-        bool skipExitConfirmation = false;
-        bool ret = QtMessageBox::Question(this, "Are you sure you want to exit Mupen-MPN?", "Don't ask for confirmation again", skipExitConfirmation);
-        if (!ret)
+        if (netplayGameRunning)
         {
-            event->ignore();
-            return;
+            if (!confirmNetplayExitWhileGameRunning(
+                    this,
+                    QStringLiteral("A game is running. Exit Mupen-MPN and leave netplay?")))
+            {
+                event->ignore();
+                return;
+            }
         }
+        else
+        {
+            bool skipExitConfirmation = false;
+            bool ret = QtMessageBox::Question(this, "Are you sure you want to exit Mupen-MPN?", "Don't ask for confirmation again", skipExitConfirmation);
+            if (!ret)
+            {
+                event->ignore();
+                return;
+            }
 
-        // only save setting when user accepted
-        CoreSettingsSetValue(SettingsID::GUI_ConfirmExitWhileInGame, !skipExitConfirmation);
+            // only save setting when user accepted
+            CoreSettingsSetValue(SettingsID::GUI_ConfirmExitWhileInGame, !skipExitConfirmation);
+        }
     }
 
     // we have to make sure we save the geomtry
@@ -664,6 +697,13 @@ void MainWindow::loadGeometry(void)
         return;
     }
 
+    // Leave fullscreen before restoring the saved ROM browser size. Restoring
+    // first, then dropping fullscreen, leaves the window at the wrong size.
+    if (this->isFullScreen())
+    {
+        this->showNormal();
+    }
+
     if (this->ui_Geometry_Maximized)
     {
         this->showMaximized();
@@ -676,6 +716,10 @@ void MainWindow::loadGeometry(void)
     if (this->isFullScreen())
     {
         this->showNormal();
+        if (!this->ui_Geometry_Maximized)
+        {
+            this->restoreGeometry(this->ui_Geometry);
+        }
     }
 
     if (this->ui_ShowMenubar && this->menuBar()->isHidden())
@@ -1962,21 +2006,42 @@ void MainWindow::on_DedicatedRenderWindow_CloseRequested(void)
         return;
     }
 
-    if (this->ui_ShowUI && CoreSettingsGetBoolValue(SettingsID::GUI_ConfirmExitWhileInGame))
-    {
-        bool skipConfirmation = false;
-        const bool accepted = QtMessageBox::Question(
-            this,
-            QStringLiteral("Are you sure you want to stop the game?"),
-            QStringLiteral("Don't ask for confirmation again"),
-            skipConfirmation);
-        if (!accepted)
-        {
-            this->showActiveRenderSurface();
-            return;
-        }
+#ifdef NETPLAY
+    const bool netplayGameRunning =
+        this->netplaySessionDialog != nullptr || CoreIsEmbeddedNetplayActive();
+#else
+    const bool netplayGameRunning = false;
+#endif // NETPLAY
 
-        CoreSettingsSetValue(SettingsID::GUI_ConfirmExitWhileInGame, !skipConfirmation);
+    if (this->ui_ShowUI &&
+        (netplayGameRunning || CoreSettingsGetBoolValue(SettingsID::GUI_ConfirmExitWhileInGame)))
+    {
+        if (netplayGameRunning)
+        {
+            if (!confirmNetplayExitWhileGameRunning(
+                    this,
+                    QStringLiteral("A netplay game is running. Stop it?")))
+            {
+                this->showActiveRenderSurface();
+                return;
+            }
+        }
+        else
+        {
+            bool skipConfirmation = false;
+            const bool accepted = QtMessageBox::Question(
+                this,
+                QStringLiteral("Are you sure you want to stop the game?"),
+                QStringLiteral("Don't ask for confirmation again"),
+                skipConfirmation);
+            if (!accepted)
+            {
+                this->showActiveRenderSurface();
+                return;
+            }
+
+            CoreSettingsSetValue(SettingsID::GUI_ConfirmExitWhileInGame, !skipConfirmation);
+        }
     }
 
     this->on_Action_System_Shutdown();
@@ -2446,10 +2511,13 @@ void MainWindow::on_Emulation_Finished(bool ret, QString error)
     }
 
 #ifdef NETPLAY
-    if (this->netplayCoordinator != nullptr &&
-        this->netplayCoordinator->isRoomMatchActive())
+    // Drop lockstep before restoring the window. Report the close after the
+    // lobby is back in front so the close-for-all prompt is not covered.
+    const bool reportNetplayMatchClose =
+        this->netplayCoordinator != nullptr &&
+        this->netplayCoordinator->isRoomMatchActive();
+    if (reportNetplayMatchClose)
     {
-        this->netplayCoordinator->notifyLocalEmulationStopped();
         this->netplayCoordinator->resetEmulationSync();
     }
 #endif // NETPLAY
@@ -2479,12 +2547,42 @@ void MainWindow::on_Emulation_Finished(bool ret, QString error)
         }
 
         this->ui_ForceClose = true;
+#ifdef NETPLAY
+        if (reportNetplayMatchClose)
+        {
+            this->netplayCoordinator->notifyLocalEmulationStopped();
+        }
+#endif // NETPLAY
         this->close();
         return;
     }
 
     // always refresh UI
     this->updateUI(false, false);
+
+#ifdef NETPLAY
+    if (this->netplaySessionDialog != nullptr &&
+        !this->netplaySessionDialog->isSessionShutdown())
+    {
+        if (this->isMinimized())
+        {
+            this->showNormal();
+        }
+        this->show();
+        this->raise();
+        this->netplaySessionDialog->show();
+        this->netplaySessionDialog->raise();
+        this->netplaySessionDialog->activateWindow();
+    }
+    if (reportNetplayMatchClose)
+    {
+        this->netplayCoordinator->notifyLocalEmulationStopped();
+    }
+    if (this->netplaySessionDialog != nullptr)
+    {
+        this->netplaySessionDialog->notifyEmulationFullyStopped();
+    }
+#endif // NETPLAY
 
     // show error message to the user
     // after switching back to the ROM browser
