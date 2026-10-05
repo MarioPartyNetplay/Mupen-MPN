@@ -430,17 +430,21 @@ bool OGLWidget::MakeContextCurrent()
 void OGLWidget::SwapContextBuffers()
 {
 #ifdef __APPLE__
-    // A macOS system dialog (permission prompt, notification, update) takes the
-    // app out of the foreground. ANGLE then blocks forever inside eglSwapBuffers
-    // waiting for a Metal drawable, and lockstep stops sending inputs.
-    if (CoreIsEmbeddedNetplayActive())
+    // Always present, including while the window is in the background and
+    // during netplay. Skipping the swap left the last image on screen while
+    // emulation and audio kept running, so clicking back looked like a jump.
+    // Vsync is dropped while unfocused (and always during netplay) because an
+    // inactive app may never get the display link eglSwapBuffers waits on.
+    // CAMetalLayer.allowsNextDrawableTimeout keeps a missing drawable from
+    // blocking this thread when a system dialog is up.
+    const bool unsyncedPresent =
+        CoreIsEmbeddedNetplayActive() ||
+        QGuiApplication::applicationState() != Qt::ApplicationActive;
+    const int interval = unsyncedPresent ? 0 : this->swapInterval;
+    if (interval != this->appliedSwapInterval)
     {
-        this->angleContext.setSwapInterval(0);
-
-        if (QGuiApplication::applicationState() != Qt::ApplicationActive)
-        {
-            return;
-        }
+        this->angleContext.setSwapInterval(interval);
+        this->appliedSwapInterval = interval;
     }
 
     this->angleContext.swapBuffers(this);

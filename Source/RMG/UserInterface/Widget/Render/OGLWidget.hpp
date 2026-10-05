@@ -86,6 +86,7 @@ class OGLWidget : public QWindow
 #ifdef __APPLE__
     mutable AngleContext angleContext;
     int swapInterval = 0;
+    int appliedSwapInterval = -1;
     int contextMajorVersion = 3;
     int contextMinorVersion = 0;
 #endif

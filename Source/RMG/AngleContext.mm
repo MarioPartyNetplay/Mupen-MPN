@@ -76,6 +76,13 @@ static void configureMetalLayer(CAMetalLayer* metalLayer, QWindow* window)
     // readback can assert/crash ("texture must not be a framebufferOnly texture").
     metalLayer.framebufferOnly = NO;
     metalLayer.drawableSize    = CGSizeMake(width, height);
+    // nextDrawable must time out when a system dialog has no drawable.
+    // Otherwise eglSwapBuffers waits forever and netplay lockstep stalls.
+    // A timeout returns instead of freezing the emulation thread.
+    if ([metalLayer respondsToSelector:@selector(setAllowsNextDrawableTimeout:)])
+    {
+        metalLayer.allowsNextDrawableTimeout = YES;
+    }
 }
 
 static CAMetalLayer* findMetalLayerInLayer(CALayer* layer)
@@ -515,9 +522,19 @@ void AngleContext::prepareFramebufferReadback()
     }
 
     CAMetalLayer* layer = (__bridge CAMetalLayer*)this->metalLayer;
-    if (layer != nil && layer.framebufferOnly)
+    if (layer == nil)
+    {
+        return;
+    }
+
+    if (layer.framebufferOnly)
     {
         layer.framebufferOnly = NO;
+    }
+
+    if ([layer respondsToSelector:@selector(setAllowsNextDrawableTimeout:)])
+    {
+        layer.allowsNextDrawableTimeout = YES;
     }
 }
 
