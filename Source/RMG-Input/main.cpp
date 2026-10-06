@@ -48,6 +48,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <mutex>
 
 //
 // Local Defines
@@ -83,6 +84,9 @@ struct InputMapping
 struct InputProfile
 {
     bool PluggedIn    = false;
+    // PluggedIn from settings. Runtime hotplug must not forget this, or a
+    // controller that drops during netplay can never be opened again.
+    bool ConfiguredPluggedIn = false;
     double DeadzoneValue = 0.0;
     double SensitivityValue = 100.0;
 
@@ -209,6 +213,7 @@ static void *l_DebugCallContext                           = nullptr;
 
 // keyboard state
 static bool l_KeyboardState[SDL_SCANCODE_COUNT];
+static std::mutex l_DeviceMutex;
 
 // config GUI state
 static bool l_IsConfigGuiOpen = false;
@@ -319,10 +324,12 @@ static void load_settings(void)
         if (!CoreSettingsSectionExists(section))
         {
             profile->PluggedIn = false;
+            profile->ConfiguredPluggedIn = false;
             continue;
         }
 
         profile->PluggedIn = CoreSettingsGetBoolValue(SettingsID::Input_PluggedIn, section);
+        profile->ConfiguredPluggedIn = profile->PluggedIn;
         profile->DeadzoneValue = static_cast<double>(CoreSettingsGetIntValue(SettingsID::Input_Deadzone, section)) / 100.0;
         profile->ControllerPak = static_cast<N64ControllerPak>(CoreSettingsGetIntValue(SettingsID::Input_Pak, section));
         profile->DeviceName = CoreSettingsGetStringValue(SettingsID::Input_DeviceName, section);
@@ -538,7 +545,76 @@ static std::string string_from_const_char(const char* str)
     return string;
 }
 
-static void open_controller_automatic(int index, InputProfile* profile, SDL_JoystickID* joysticks, int joysticksCount)
+static bool profile_device_connected(const InputProfile* profile)
+{
+    if (profile->SDLGamepad != nullptr)
+    {
+        return SDL_GamepadConnected(profile->SDLGamepad);
+    }
+    if (profile->SDLJoystick != nullptr)
+    {
+        return SDL_JoystickConnected(profile->SDLJoystick);
+    }
+    return false;
+}
+
+static SDL_JoystickID profile_joystick_id(const InputProfile* profile)
+{
+    if (profile->SDLGamepad != nullptr)
+    {
+        return SDL_GetGamepadID(profile->SDLGamepad);
+    }
+    if (profile->SDLJoystick != nullptr)
+    {
+        return SDL_GetJoystickID(profile->SDLJoystick);
+    }
+    return 0;
+}
+
+static bool joystick_id_in_use(SDL_JoystickID joystickId, const InputProfile* except)
+{
+    for (int i = 0; i < NUM_CONTROLLERS; i++)
+    {
+        const InputProfile* profile = &l_InputProfiles[i];
+        if (profile == except || !profile_device_connected(profile))
+        {
+            continue;
+        }
+        if (profile_joystick_id(profile) == joystickId)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool device_matches_profile(const InputProfile* profile, const std::string& name, const std::string& path, const std::string& serial)
+{
+    if (name != profile->DeviceName)
+    {
+        return false;
+    }
+
+    const bool pathMatches = profile->DevicePath.empty() || path == profile->DevicePath;
+    const bool serialMatches = profile->DeviceSerial.empty() || serial == profile->DeviceSerial;
+    if (pathMatches && serialMatches)
+    {
+        return true;
+    }
+
+    // USB reconnect often keeps the serial and changes the path.
+    if (!profile->DeviceSerial.empty() && serial == profile->DeviceSerial)
+    {
+        return true;
+    }
+    if (!profile->DevicePath.empty() && path == profile->DevicePath)
+    {
+        return true;
+    }
+    return profile->DeviceSerial.empty() && profile->DevicePath.empty();
+}
+
+static void open_controller_automatic(int index, InputProfile* profile, SDL_JoystickID* joysticks, int joysticksCount, bool allowUnplug)
 {
     bool foundJoystick = false;
     SDL_JoystickID joystickId;
@@ -549,9 +625,13 @@ static void open_controller_automatic(int index, InputProfile* profile, SDL_Joys
     debugMessageBase += std::to_string(index);
     debugMessageBase += "): ";
 
-    for (int i = index; i < joysticksCount; i++)
+    for (int i = 0; i < joysticksCount; i++)
     {
         joystickId = joysticks[i];
+        if (joystick_id_in_use(joystickId, profile))
+        {
+            continue;
+        }
 
         if (SDL_IsGamepad(joystickId))
         {
@@ -601,27 +681,30 @@ static void open_controller_automatic(int index, InputProfile* profile, SDL_Joys
     }
 
     if (!foundJoystick)
-    { // fallback to keyboard
-        if (index == 0)
-        {
-            debugMessage = debugMessageBase + "falling back to keyboard";
-            PluginDebugMessage(M64MSG_VERBOSE, debugMessage);
-
-            profile->DeviceType = InputDeviceType::Keyboard;
-        }
-        else
+    {
+        // Keep Automatic so a pad plugged in later can be opened again.
+        // Keyboard bindings are still read while no pad is attached.
+        if (index != 0 && allowUnplug)
         {
             debugMessage = debugMessageBase + "no device found";
             PluginDebugMessage(M64MSG_VERBOSE, debugMessage);
 
             profile->PluggedIn = false;
 
-            // only override present in core
-            // when we have the control info
-            if (l_HasControlInfo)
+            if (l_HasControlInfo && !CoreIsEmbeddedNetplayActive())
             {
                 l_ControlInfo.Controls[index].Present = 0;
             }
+        }
+        return;
+    }
+
+    if (profile->ConfiguredPluggedIn)
+    {
+        profile->PluggedIn = true;
+        if (l_HasControlInfo && !CoreIsEmbeddedNetplayActive())
+        {
+            l_ControlInfo.Controls[index].Present = 1;
         }
     }
 }
@@ -637,9 +720,19 @@ static void open_controller(InputProfile* profile, SDL_JoystickID* joysticks, in
     std::string devicePath;
     std::string deviceSerial;
 
+    SDL_Joystick* nameOnlyJoystick = nullptr;
+    SDL_Gamepad* nameOnlyGamepad = nullptr;
+    std::string nameOnlyPath;
+    std::string nameOnlySerial;
+    int nameOnlyMatches = 0;
+
     for (int i = 0; i < joysticksCount; i++)
     {
         joystickId = joysticks[i];
+        if (joystick_id_in_use(joystickId, profile))
+        {
+            continue;
+        }
 
         if (SDL_IsGamepad(joystickId))
         {
@@ -681,13 +774,38 @@ static void open_controller(InputProfile* profile, SDL_JoystickID* joysticks, in
             deviceSerial = string_from_const_char(SDL_GetJoystickSerial(joystick));
         }
 
-        if (deviceName   == profile->DeviceName &&
-            devicePath   == profile->DevicePath &&
-            deviceSerial == profile->DeviceSerial)
+        if (device_matches_profile(profile, deviceName, devicePath, deviceSerial))
         {
             profile->SDLJoystick = joystick;
             profile->SDLGamepad = gamepad;
+            profile->DevicePath = devicePath;
+            profile->DeviceSerial = deviceSerial;
             return;
+        }
+
+        if (deviceName == profile->DeviceName)
+        {
+            nameOnlyMatches++;
+            if (nameOnlyMatches == 1)
+            {
+                nameOnlyJoystick = joystick;
+                nameOnlyGamepad = gamepad;
+                nameOnlyPath = devicePath;
+                nameOnlySerial = deviceSerial;
+                joystick = nullptr;
+                gamepad = nullptr;
+            }
+            else if (nameOnlyGamepad != nullptr)
+            {
+                SDL_CloseGamepad(nameOnlyGamepad);
+                nameOnlyGamepad = nullptr;
+                nameOnlyJoystick = nullptr;
+            }
+            else if (nameOnlyJoystick != nullptr)
+            {
+                SDL_CloseJoystick(nameOnlyJoystick);
+                nameOnlyJoystick = nullptr;
+            }
         }
 
         if (gamepad != nullptr)
@@ -701,6 +819,16 @@ static void open_controller(InputProfile* profile, SDL_JoystickID* joysticks, in
             SDL_CloseJoystick(joystick);
             joystick = nullptr;
         }
+    }
+
+    // Path and serial both change on some reconnects. Use the device when it
+    // is the only one with this name.
+    if (nameOnlyMatches == 1 && (nameOnlyJoystick != nullptr || nameOnlyGamepad != nullptr))
+    {
+        profile->SDLJoystick = nameOnlyJoystick;
+        profile->SDLGamepad = nameOnlyGamepad;
+        profile->DevicePath = nameOnlyPath;
+        profile->DeviceSerial = nameOnlySerial;
     }
 }
 
@@ -721,6 +849,8 @@ static void close_controller(InputProfile* profile)
 
 static void controller_rumble_start(InputProfile* profile)
 {
+    std::lock_guard<std::mutex> lock(l_DeviceMutex);
+
     if (profile->SDLGamepad != nullptr)
     {
         SDL_RumbleGamepad(profile->SDLGamepad, 0xFFFF, 0xFFFF, SDL_HAPTIC_INFINITY);
@@ -733,6 +863,8 @@ static void controller_rumble_start(InputProfile* profile)
 
 static void controller_rumble_stop(InputProfile* profile)
 {
+    std::lock_guard<std::mutex> lock(l_DeviceMutex);
+
     if (profile->SDLGamepad != nullptr)
     {
         SDL_RumbleGamepad(profile->SDLGamepad,  0, 0, 0);
@@ -745,6 +877,8 @@ static void controller_rumble_stop(InputProfile* profile)
 
 static void open_controllers(void)
 {
+    std::lock_guard<std::mutex> lock(l_DeviceMutex);
+
     // force re-fresh joystick list
     SDL_UpdateJoysticks();
 
@@ -759,7 +893,7 @@ static void open_controllers(void)
 
         if (profile->DeviceType == InputDeviceType::Automatic)
         {
-            open_controller_automatic(i, profile, joysticks, joysticksCount);
+            open_controller_automatic(i, profile, joysticks, joysticksCount, true);
         }
         else if (profile->DeviceType == InputDeviceType::Joystick)
         {
@@ -773,8 +907,81 @@ static void open_controllers(void)
     }
 }
 
+static void reconnect_controllers(void)
+{
+    bool needsScan = false;
+    for (int i = 0; i < NUM_CONTROLLERS; i++)
+    {
+        InputProfile* profile = &l_InputProfiles[i];
+        const bool managesDevice =
+            profile->DeviceType == InputDeviceType::Automatic ||
+            profile->DeviceType == InputDeviceType::Joystick;
+        if (!managesDevice || !profile->ConfiguredPluggedIn)
+        {
+            continue;
+        }
+
+        if (profile_device_connected(profile))
+        {
+            continue;
+        }
+
+        if (profile->SDLGamepad != nullptr || profile->SDLJoystick != nullptr)
+        {
+            close_controller(profile);
+        }
+        needsScan = true;
+    }
+
+    if (!needsScan)
+    {
+        return;
+    }
+
+    static std::chrono::steady_clock::time_point lastScan{};
+    const auto now = std::chrono::steady_clock::now();
+    if (now - lastScan < std::chrono::milliseconds(500))
+    {
+        return;
+    }
+    lastScan = now;
+
+    SDL_UpdateJoysticks();
+    int joysticksCount = 0;
+    SDL_JoystickID* joysticks = SDL_GetJoysticks(&joysticksCount);
+
+    for (int i = 0; i < NUM_CONTROLLERS; i++)
+    {
+        InputProfile* profile = &l_InputProfiles[i];
+        if (!profile->ConfiguredPluggedIn || profile_device_connected(profile))
+        {
+            continue;
+        }
+
+        if (profile->DeviceType == InputDeviceType::Automatic)
+        {
+            open_controller_automatic(i, profile, joysticks, joysticksCount, false);
+        }
+        else if (profile->DeviceType == InputDeviceType::Joystick)
+        {
+            open_controller(profile, joysticks, joysticksCount);
+            if (profile_device_connected(profile))
+            {
+                profile->PluggedIn = true;
+            }
+        }
+    }
+
+    if (joysticks != nullptr)
+    {
+        SDL_free(joysticks);
+    }
+}
+
 static void close_controllers(void)
 {
+    std::lock_guard<std::mutex> lock(l_DeviceMutex);
+
     for (int i = 0; i < NUM_CONTROLLERS; i++)
     {
         InputProfile* profile = &l_InputProfiles[i];
@@ -896,6 +1103,8 @@ static int resolve_embedded_netplay_local_profile(void)
 
 static int get_button_state(InputProfile* profile, const InputMapping* inputMapping, const bool allPressed = false)
 {
+    std::lock_guard<std::mutex> lock(l_DeviceMutex);
+
     int state = 0;
     int full_state = 0;
 
@@ -908,25 +1117,40 @@ static int get_button_state(InputProfile* profile, const InputMapping* inputMapp
         {
             case InputType::GamepadButton:
             {
-                state = SDL_GetGamepadButton(profile->SDLGamepad, static_cast<SDL_GamepadButton>(data));
+                if (profile->SDLGamepad != nullptr)
+                {
+                    state = SDL_GetGamepadButton(profile->SDLGamepad, static_cast<SDL_GamepadButton>(data));
+                }
             } break;
             case InputType::GamepadAxis:
             {
-                int axis_value = SDL_GetGamepadAxis(profile->SDLGamepad, static_cast<SDL_GamepadAxis>(data));
-                state = (abs(axis_value) >= (SDL_AXIS_PEAK / 2) && (extraData ? axis_value > 0 : axis_value < 0)) ? 1 : 0;
+                if (profile->SDLGamepad != nullptr)
+                {
+                    int axis_value = SDL_GetGamepadAxis(profile->SDLGamepad, static_cast<SDL_GamepadAxis>(data));
+                    state = (abs(axis_value) >= (SDL_AXIS_PEAK / 2) && (extraData ? axis_value > 0 : axis_value < 0)) ? 1 : 0;
+                }
             } break;
             case InputType::JoystickButton:
             {
-                state = SDL_GetJoystickButton(profile->SDLJoystick, data);
+                if (profile->SDLJoystick != nullptr)
+                {
+                    state = SDL_GetJoystickButton(profile->SDLJoystick, data);
+                }
             } break;
             case InputType::JoystickHat:
             {
-                state = (SDL_GetJoystickHat(profile->SDLJoystick, data) & extraData) ? 1 : 0;
+                if (profile->SDLJoystick != nullptr)
+                {
+                    state = (SDL_GetJoystickHat(profile->SDLJoystick, data) & extraData) ? 1 : 0;
+                }
             } break;
             case InputType::JoystickAxis:
             {
-                int axis_value = SDL_GetJoystickAxis(profile->SDLJoystick, data);
-                state = (abs(axis_value) >= (SDL_AXIS_PEAK / 2) && (extraData ? axis_value > 0 : axis_value < 0)) ? 1 : 0;
+                if (profile->SDLJoystick != nullptr)
+                {
+                    int axis_value = SDL_GetJoystickAxis(profile->SDLJoystick, data);
+                    state = (abs(axis_value) >= (SDL_AXIS_PEAK / 2) && (extraData ? axis_value > 0 : axis_value < 0)) ? 1 : 0;
+                }
             } break;
             case InputType::Keyboard:
             {
@@ -958,6 +1182,8 @@ static int get_button_state(InputProfile* profile, const InputMapping* inputMapp
 // returns axis input scaled to the range [-1, 1]
 static double get_axis_state(InputProfile* profile, const InputMapping* inputMapping, const int direction, const double value, bool& useButtonMapping)
 {
+    std::lock_guard<std::mutex> lock(l_DeviceMutex);
+
     double axis_state   = value;
     bool   button_state = false;
 
@@ -970,10 +1196,17 @@ static double get_axis_state(InputProfile* profile, const InputMapping* inputMap
         {
             case InputType::GamepadButton:
             {
-                button_state |= SDL_GetGamepadButton(profile->SDLGamepad, static_cast<SDL_GamepadButton>(data));
+                if (profile->SDLGamepad != nullptr)
+                {
+                    button_state |= SDL_GetGamepadButton(profile->SDLGamepad, static_cast<SDL_GamepadButton>(data));
+                }
             } break;
             case InputType::GamepadAxis:
             {
+                if (profile->SDLGamepad == nullptr)
+                {
+                    break;
+                }
                 double axis_value = SDL_GetGamepadAxis(profile->SDLGamepad, static_cast<SDL_GamepadAxis>(data));
                 if (axis_value < -32767.0) axis_value = -32767.0;
                 if (extraData ? axis_value > 0 : axis_value < 0)
@@ -985,14 +1218,24 @@ static double get_axis_state(InputProfile* profile, const InputMapping* inputMap
             } break;
             case InputType::JoystickButton:
             {
-                button_state |= SDL_GetJoystickButton(profile->SDLJoystick, data);
+                if (profile->SDLJoystick != nullptr)
+                {
+                    button_state |= SDL_GetJoystickButton(profile->SDLJoystick, data);
+                }
             } break;
             case InputType::JoystickHat:
             {
-                button_state |= (SDL_GetJoystickHat(profile->SDLJoystick, data) & extraData) ? 1 : 0;
+                if (profile->SDLJoystick != nullptr)
+                {
+                    button_state |= (SDL_GetJoystickHat(profile->SDLJoystick, data) & extraData) ? 1 : 0;
+                }
             } break;
             case InputType::JoystickAxis:
             {
+                if (profile->SDLJoystick == nullptr)
+                {
+                    break;
+                }
                 double axis_value = SDL_GetJoystickAxis(profile->SDLJoystick, data);
                 if (axis_value < -32767.0) axis_value = -32767.0;
                 if (extraData ? axis_value > 0 : axis_value < 0)
@@ -1484,6 +1727,9 @@ void RefreshSdlInputState(void)
 {
     SDL_UpdateGamepads();
     SDL_UpdateJoysticks();
+
+    std::lock_guard<std::mutex> lock(l_DeviceMutex);
+    reconnect_controllers();
 }
 
 EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
