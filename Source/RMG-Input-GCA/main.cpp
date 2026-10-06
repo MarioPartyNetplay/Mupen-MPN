@@ -535,7 +535,7 @@ EXPORT m64p_error CALL PluginGetVersion(m64p_plugin_type *pluginType, int *plugi
 
     if (pluginNamePtr != nullptr)
     {
-        *pluginNamePtr = "Mupen MPN - GameCube Adapter Input Plugin";
+        *pluginNamePtr = "GameCube Adapter";
     }
 
     if (capabilities != nullptr)

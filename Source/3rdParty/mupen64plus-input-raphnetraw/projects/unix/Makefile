@@ -152,22 +152,30 @@ ifeq ($(origin PKG_CONFIG), undefined)
   endif
 endif
 
-ifeq ($(OS), LINUX)
-    HIDAPI_NAME=hidapi-hidraw
+ifeq ($(OS), OSX)
+  # Build HIDAPI's macOS backend into the plugin. A system libhidapi is
+  # often the wrong architecture (for example x86_64 Homebrew on arm64),
+  # which makes this plugin fail to link and disappear from the input list.
+  CFLAGS += -I$(SRCDIR)/hidapi
+  LDLIBS += -framework IOKit -framework CoreFoundation
 else
+  ifeq ($(OS), LINUX)
+    HIDAPI_NAME=hidapi-hidraw
+  else
     HIDAPI_NAME=hidapi
-endif
-
-# test for presence of HIDLIB
-ifeq ($(origin HID_CFLAGS) $(origin HID_LDLIBS), undefined undefined)
-  ifeq ($(shell $(PKG_CONFIG) --modversion $(HIDAPI_NAME) 2>/dev/null),)
-    $(error No HIDAPI development libraries found!)
   endif
-  HID_CFLAGS = $(shell $(PKG_CONFIG) --cflags $(HIDAPI_NAME))
-  HID_LDLIBS = $(shell $(PKG_CONFIG) --libs $(HIDAPI_NAME))
+
+  # test for presence of HIDLIB
+  ifeq ($(origin HID_CFLAGS) $(origin HID_LDLIBS), undefined undefined)
+    ifeq ($(shell $(PKG_CONFIG) --modversion $(HIDAPI_NAME) 2>/dev/null),)
+      $(error No HIDAPI development libraries found!)
+    endif
+    HID_CFLAGS = $(shell $(PKG_CONFIG) --cflags $(HIDAPI_NAME))
+    HID_LDLIBS = $(shell $(PKG_CONFIG) --libs $(HIDAPI_NAME))
+  endif
+  CFLAGS += $(HID_CFLAGS)
+  LDLIBS += $(HID_LDLIBS)
 endif
-CFLAGS += $(HID_CFLAGS)
-LDLIBS += $(HID_LDLIBS)
 
 # set mupen64plus core API header path
 ifneq ("$(APIDIR)","")
@@ -250,6 +258,9 @@ ifeq ($(OS),MINGW)
 SOURCE += $(SRCDIR)/osal_dynamiclib_win32.c
 else
 SOURCE += $(SRCDIR)/osal_dynamiclib_unix.c
+endif
+ifeq ($(OS), OSX)
+SOURCE += $(SRCDIR)/hidapi/hid.c
 endif
 
 # generate a list of object files build, make a temporary directory for them

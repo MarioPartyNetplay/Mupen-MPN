@@ -98,6 +98,7 @@ set(RMG_SOURCES
     UserInterface/Widget/KeybindButton.cpp
     UserInterface/Dialog/SettingsDialog.cpp
     UserInterface/Dialog/SettingsDialog.ui
+    UserInterface/Dialog/InputPluginDialog.cpp
     UserInterface/Dialog/Cheats/CheatsCommon.cpp
     UserInterface/Dialog/Cheats/CheatsDialog.cpp
     UserInterface/Dialog/Cheats/CheatsDialog.ui

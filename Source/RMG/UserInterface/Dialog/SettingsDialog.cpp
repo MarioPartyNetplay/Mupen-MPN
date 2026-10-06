@@ -8,6 +8,7 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 #include "UserInterface/Dialog/Netplay/NetplayCommon.hpp"
+#include "Utilities/PluginDisplayName.hpp"
 #include "UserInterface/Widget/KeybindButton.hpp"
 #include "Utilities/QtMessageBox.hpp"
 #include "OnScreenDisplay.hpp"
@@ -381,11 +382,16 @@ void SettingsDialog::loadGamePluginSettings(void)
         index = (static_cast<int>(p.Type) - 1);
 
         comboBox = comboBoxArray[index];
-        comboBox->addItem(QString::fromStdString(p.Name), QString::fromStdString(p.File));
+        pluginName = QString::fromStdString(p.Name);
+        if (p.Type == CorePluginType::Input)
+        {
+            pluginName = InputPluginDisplayName(QString::fromStdString(p.File), pluginName);
+        }
+        comboBox->addItem(pluginName, QString::fromStdString(p.File));
 
         if (pluginFileNames[index] == QString::fromStdString(p.File))
         {
-            comboBox->setCurrentText(QString::fromStdString(p.Name));
+            comboBox->setCurrentText(pluginName);
             pluginFound[index] = true;
         }
     }
@@ -402,6 +408,10 @@ void SettingsDialog::loadGamePluginSettings(void)
         if (!pluginFound[i])
         {
             pluginName = pluginFileNames[i] + " (not found)";
+            if (settingsId[i] == SettingsID::Game_INPUT_Plugin)
+            {
+                pluginName = InputPluginDisplayName(pluginFileNames[i], pluginFileNames[i]) + " (not found)";
+            }
 
             comboBox->addItem(pluginName, pluginFileNames[i]);
             comboBox->setCurrentText(pluginName);
@@ -1165,6 +1175,10 @@ void SettingsDialog::commonPluginSettings(SettingsDialogAction action)
         comboBox = comboBoxArray[index];
         pluginFileName = pluginFileNames[index];
         pluginName = QString::fromStdString(p.Name);
+        if (p.Type == CorePluginType::Input)
+        {
+            pluginName = InputPluginDisplayName(QString::fromStdString(p.File), pluginName);
+        }
 
         comboBox->addItem(pluginName, QString::fromStdString(p.File));
 
@@ -1181,6 +1195,10 @@ void SettingsDialog::commonPluginSettings(SettingsDialogAction action)
         if (!pluginFound[i])
         {
             pluginName = pluginFileNames[i] + " (not found)";
+            if (settingsIdArray[i] == SettingsID::Core_INPUT_Plugin)
+            {
+                pluginName = InputPluginDisplayName(pluginFileNames[i], pluginFileNames[i]) + " (not found)";
+            }
 
             comboBox->addItem(pluginName, pluginFileNames[i]);
             comboBox->setCurrentText(pluginName);

@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Mupen MPN - GameCube Adapter Input Plugin</string>
+   <string>GameCube Adapter</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_5">
    <item>

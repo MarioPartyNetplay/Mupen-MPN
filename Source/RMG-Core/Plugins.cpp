@@ -428,8 +428,17 @@ CORE_EXPORT std::vector<CorePlugin> CoreGetAllPlugins(void)
             path.ends_with(CORE_LIBRARY_EXT_STR))
         {
             handle = CoreOpenLibrary(path.c_str());
-            if (handle == nullptr || !plugin.Hook(handle))
-            { // skip invalid libs
+            if (handle == nullptr)
+            {
+                CoreAddCallbackMessage(CoreDebugMessageType::Error,
+                    "Failed to load plugin " + file + ": " + CoreGetLibraryError());
+                continue;
+            }
+            if (!plugin.Hook(handle))
+            {
+                CoreAddCallbackMessage(CoreDebugMessageType::Error,
+                    "Failed to load plugin " + file + ": " + plugin.GetLastError());
+                CoreCloseLibrary(handle);
                 continue;
             }
 

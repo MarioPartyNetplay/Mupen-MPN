@@ -14,6 +14,7 @@
 #include "Dialog/Modifications/ModificationsDialog.hpp"
 #include "Dialog/BoardDownloader/BoardDownloaderDialog.hpp"
 #include "Dialog/SettingsDialog.hpp"
+#include "Dialog/InputPluginDialog.hpp"
 #include "Dialog/RomInfoDialog.hpp"
 #ifdef UPDATER
 #include "UserInterface/Dialog/Update/DownloadUpdateDialog.hpp"
@@ -1093,9 +1094,9 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     this->action_Settings_Rsp->setEnabled(CorePluginsHasConfig(CorePluginType::Rsp));
     this->action_Settings_Rsp->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_InputSettings));
-    this->action_Settings_Input->setEnabled(CorePluginsHasConfig(CorePluginType::Input) && !netplayRestrictions);
+    this->action_Settings_Input->setEnabled(!netplayRestrictions);
     this->action_Settings_Input->setShortcut(QKeySequence(keyBinding));
-    this->action_Settings_Input2->setEnabled(CorePluginsHasConfig(CorePluginType::Input) && !netplayRestrictions);
+    this->action_Settings_Input2->setEnabled(!netplayRestrictions);
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Settings));
     this->action_Settings_Settings->setShortcut(QKeySequence(keyBinding));
 
@@ -2313,7 +2314,8 @@ void MainWindow::on_Action_Settings_Input(void)
         return;
     }
 
-    CorePluginsOpenConfig(CorePluginType::Input, this);
+    Dialog::InputPluginDialog dialog(this);
+    dialog.exec();
 }
 
 void MainWindow::on_Action_Settings_Settings(void)
