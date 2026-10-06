@@ -766,7 +766,7 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
         }
     });
     
-    // Auto-enable pre-toggled cheats for host
+    // Publish the host's already-enabled cheats as the session list.
     if (this->isLocalSessionHost())
     {
         this->syncHostSessionState();
