@@ -766,7 +766,7 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
         }
     });
     
-    // Auto-enable pre-toggled cheats for host
+    // Host sync turns local codes off, then publishes the session list.
     if (this->isLocalSessionHost())
     {
         this->syncHostSessionState();
@@ -2149,6 +2149,8 @@ void NetplaySessionDialog::on_coordinator_gameStarted(int playerSlot, int syncEp
 
 void NetplaySessionDialog::on_coordinator_cheatsUpdated(const QJsonArray& cheats)
 {
+    CoreDisableLocalCodes(this->romFile.toStdU32String());
+
     if (!this->setCheats(cheats))
     {
         return;
@@ -2211,9 +2213,12 @@ void NetplaySessionDialog::syncHostSessionState(void)
         return;
     }
 
+    // Local codes must be off before the snapshot, or they get synced.
+    CoreDisableLocalCodes(this->romFile.toStdU32String());
+
     // Prefer session JSON (including an empty list) so lobby cheat/option
-    // changes survive start. Fall back to locally enabled cheats until the
-    // first explicit sync.
+    // changes survive start. Until that list exists, the snapshot is empty
+    // because local codes were just turned off.
     std::vector<CoreCheat> cheats;
     QJsonArray hostCheats;
     if (!this->getCheats(cheats, hostCheats))
@@ -2452,6 +2457,7 @@ void NetplaySessionDialog::on_cheatsPushButton_clicked(void)
         }
 
         this->updateCheatsTreeWidget();
+        CoreDisableLocalCodes(this->romFile.toStdU32String());
         this->coordinator->sendCheatsUpdate(dialog.GetJson());
     }
 }

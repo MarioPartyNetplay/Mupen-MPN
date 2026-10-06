@@ -1142,6 +1142,9 @@ CORE_EXPORT bool CoreApplyNetplayCheats(void)
         return false;
     }
 
+    // Local codes must be off before the synced set is applied.
+    CoreDisableLocalCodes("");
+
     for (const CoreCheat& cheat : l_NetplayCheats)
     {
         m64p_cheatCodes.clear();
@@ -1629,4 +1632,48 @@ CORE_EXPORT bool CoreRemoveModificationCheat(const std::string& internalName, Co
     }
 
     return write_cheat_file(l_UserCheatFile, get_modification_user_cheat_path(*profile));
+}
+
+CORE_EXPORT bool CoreDisableLocalCodes(std::filesystem::path file)
+{
+    std::vector<CoreCheat> cheats;
+    if (CoreGetCurrentCheats(file, cheats))
+    {
+        for (const CoreCheat& cheat : cheats)
+        {
+            if (!CoreIsCheatEnabled(file, cheat))
+            {
+                continue;
+            }
+
+            CoreEnableCheat(file, cheat, false);
+        }
+    }
+
+    std::vector<CoreModificationGame> games;
+    if (!CoreGetModificationGames(games))
+    {
+        return true;
+    }
+
+    for (const CoreModificationGame& game : games)
+    {
+        std::vector<CoreCheat> codes;
+        if (!CoreGetModificationCheats(game.internalName, codes))
+        {
+            continue;
+        }
+
+        for (const CoreCheat& code : codes)
+        {
+            if (!CoreIsModificationCheatEnabled(game.internalName, code))
+            {
+                continue;
+            }
+
+            CoreEnableModificationCheat(game.internalName, code, false);
+        }
+    }
+
+    return true;
 }

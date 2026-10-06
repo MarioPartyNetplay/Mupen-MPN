@@ -152,6 +152,9 @@ bool CoreClearCheats(void);
 // attempts to set netplay cheats
 bool CoreSetNetplayCheats(const std::vector<CoreCheat>& cheats);
 
+// turns off every locally enabled cheat and modification code
+bool CoreDisableLocalCodes(std::filesystem::path file);
+
 // attempts to apply the enabled netplay cheats
 bool CoreApplyNetplayCheats(void);
 
