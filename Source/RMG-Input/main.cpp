@@ -776,6 +776,14 @@ static void open_controller(InputProfile* profile, SDL_JoystickID* joysticks, in
 
         if (device_matches_profile(profile, deviceName, devicePath, deviceSerial))
         {
+            if (nameOnlyGamepad != nullptr)
+            {
+                SDL_CloseGamepad(nameOnlyGamepad);
+            }
+            else if (nameOnlyJoystick != nullptr)
+            {
+                SDL_CloseJoystick(nameOnlyJoystick);
+            }
             profile->SDLJoystick = joystick;
             profile->SDLGamepad = gamepad;
             profile->DevicePath = devicePath;
@@ -992,6 +1000,7 @@ static void close_controllers(void)
 
 static bool profile_has_open_pad(const InputProfile* profile)
 {
+    std::lock_guard<std::mutex> lock(l_DeviceMutex);
     return profile->SDLGamepad != nullptr || profile->SDLJoystick != nullptr;
 }
 

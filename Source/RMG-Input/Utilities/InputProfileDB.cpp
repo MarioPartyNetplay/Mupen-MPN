@@ -133,13 +133,28 @@ InputProfileDBEntry Utilities::InputProfileDB::FindEntry(const InputDevice& devi
 {
 	QString deviceName = QString::fromStdString(device.name);
 
+	auto nameMatches = [](const QString& left, const QString& right) {
+		if (left.compare(right, Qt::CaseInsensitive) == 0)
+		{
+			return true;
+		}
+
+		const QString leftLower = left.toLower();
+		const QString rightLower = right.toLower();
+		const bool leftIsGameCube = leftLower.contains(QStringLiteral("gamecube")) ||
+		                             leftLower.contains(QStringLiteral("game cube"));
+		const bool rightIsGameCube = rightLower.contains(QStringLiteral("gamecube")) ||
+		                              rightLower.contains(QStringLiteral("game cube"));
+		return leftIsGameCube && rightIsGameCube;
+	};
+
 	for (const auto& dbEntry : this->entries)
 	{
 		if (dbEntry.deviceType == device.type)
 		{
 			for (const auto& name : dbEntry.deviceNames)
 			{
-				if (name == deviceName)
+				if (nameMatches(name, deviceName))
 				{
 					return dbEntry;
 				}

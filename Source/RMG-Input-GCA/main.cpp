@@ -179,22 +179,22 @@ static void gca_reset_state(void)
     l_ControllerStateMutex.unlock();
 }
 
-static bool gca_init(void)
+static bool gca_controller_connected(uint8_t status)
+{
+    return (status & (GCA_IS_WAVEBIRD_MASK | GCA_IS_WIRED_GC_CONTROLLER_MASK)) != 0;
+}
+
+static bool gca_open_device(void)
 {
     std::string debugMessage;
     int ret;
 
-    // reset state
     gca_reset_state();
-    l_PolledState.store(false);
-    l_PollThreadRunning.store(true);
 
     // attempt open device
     l_DeviceHandle = libusb_open_device_with_vid_pid(nullptr, GCA_VENDOR_ID, GCA_PRODUCT_ID);
     if (l_DeviceHandle == nullptr)
     {
-        debugMessage = "gca_init(): failed to open adapter!";
-        PluginDebugMessage(M64MSG_ERROR, debugMessage);
         return false;
     }
 
@@ -209,7 +209,8 @@ static bool gca_init(void)
         if (ret != LIBUSB_SUCCESS)
         {
             libusb_close(l_DeviceHandle);
-            debugMessage = "gca_init(): failed to detach kernel driver: ";
+            l_DeviceHandle = nullptr;
+            debugMessage = "gca_open_device(): failed to detach kernel driver: ";
             debugMessage += libusb_error_name(ret);
             PluginDebugMessage(M64MSG_ERROR, debugMessage);
             return false;
@@ -220,7 +221,8 @@ static bool gca_init(void)
     if (ret != LIBUSB_SUCCESS)
     {
         libusb_close(l_DeviceHandle);
-        debugMessage = "gca_init(): failed to claim interface: ";
+        l_DeviceHandle = nullptr;
+        debugMessage = "gca_open_device(): failed to claim interface: ";
         debugMessage += libusb_error_name(ret);
         PluginDebugMessage(M64MSG_ERROR, debugMessage);
         return false;
@@ -233,18 +235,19 @@ static bool gca_init(void)
     {
         libusb_release_interface(l_DeviceHandle, 0);
         libusb_close(l_DeviceHandle);
-        debugMessage = "gca_init(): failed to send polling cmd: ";
+        l_DeviceHandle = nullptr;
+        debugMessage = "gca_open_device(): failed to send polling cmd: ";
         debugMessage += libusb_error_name(ret);
         PluginDebugMessage(M64MSG_ERROR, debugMessage);
         return false;
     }
 
-    debugMessage = "gca_init(): successfully opened adapter";
+    debugMessage = "gca_open_device(): successfully opened adapter";
     PluginDebugMessage(M64MSG_INFO, debugMessage);
     return true;
 }
 
-static void gca_quit(void)
+static void gca_close_device(void)
 {
     if (l_DeviceHandle != nullptr)
     {
@@ -252,6 +255,16 @@ static void gca_quit(void)
         libusb_close(l_DeviceHandle);
         l_DeviceHandle = nullptr;
     }
+}
+
+static bool gca_device_lost(int usbError)
+{
+    return usbError == LIBUSB_ERROR_NO_DEVICE ||
+           usbError == LIBUSB_ERROR_IO ||
+           usbError == LIBUSB_ERROR_PIPE ||
+           usbError == LIBUSB_ERROR_NOT_FOUND ||
+           usbError == LIBUSB_ERROR_ACCESS ||
+           usbError == LIBUSB_ERROR_OTHER;
 }
 
 static void gca_poll_thread(void)
@@ -265,19 +278,27 @@ static void gca_poll_thread(void)
 
     while (l_PollThreadRunning.load(std::memory_order_relaxed))
     {
-        ret = libusb_interrupt_transfer(l_DeviceHandle, GCA_ENDPOINT_IN, readBuf, sizeof(readBuf), &transferred, 16);
-        if (ret == LIBUSB_ERROR_NO_DEVICE)
+        if (l_DeviceHandle == nullptr)
         {
-            debugMessage = "gca_poll_thread(): adapter disconnected, stopping polling thread";
+            if (!gca_open_device())
+            {
+                l_PolledState.store(true, std::memory_order_relaxed);
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                continue;
+            }
+        }
+
+        ret = libusb_interrupt_transfer(l_DeviceHandle, GCA_ENDPOINT_IN, readBuf, sizeof(readBuf), &transferred, 16);
+        if (gca_device_lost(ret))
+        {
+            debugMessage = "gca_poll_thread(): adapter disconnected, waiting to reconnect";
             PluginDebugMessage(M64MSG_WARNING, debugMessage);
 
-            // reset state
             gca_reset_state();
-
-            // ensure that we don't get stuck in InitiateControllers(),
-            // because that might be waiting on l_PolledState to be set
-            l_PolledState.store(true);
-            return;
+            gca_close_device();
+            l_PolledState.store(true, std::memory_order_relaxed);
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            continue;
         }
         else if (ret != LIBUSB_SUCCESS || transferred != sizeof(readBuf))
         {
@@ -341,7 +362,7 @@ static void fillLocalKeysFromGCState(int control, BUTTONS* keys)
     GameCubeAdapterControllerState state = l_ControllerState[control];
     l_ControllerStateMutex.unlock();
 
-    if (!state.Status)
+    if (!gca_controller_connected(state.Status))
     {
         return;
     }
@@ -389,21 +410,32 @@ static bool gca_port_has_live_input(int control)
     }
 
     std::lock_guard<std::mutex> lock(l_ControllerStateMutex);
-    return l_ControllerState[control].Status != 0;
+    return gca_controller_connected(l_ControllerState[control].Status);
 }
+
+static int l_EmbeddedNetplayBoundGcaPort = -1;
 
 static int resolve_embedded_netplay_local_gca_port(void)
 {
-    // Prefer the assigned local slot when that adapter port is active.
+    // Prefer the assigned local slot when that adapter port has a controller.
     const int localSlot = CoreGetEmbeddedNetplayLocalPlayerSlot();
     if (gca_port_has_live_input(localSlot))
     {
+        l_EmbeddedNetplayBoundGcaPort = localSlot;
         return localSlot;
     }
 
-    // Keep compatibility with setups that use adapter port 1.
+    // Stay on the port that was already feeding this player so an unplug
+    // and replug resumes there instead of jumping to a different pad.
+    if (l_EmbeddedNetplayBoundGcaPort >= 0 &&
+        gca_port_has_live_input(l_EmbeddedNetplayBoundGcaPort))
+    {
+        return l_EmbeddedNetplayBoundGcaPort;
+    }
+
     if (gca_port_has_live_input(0))
     {
+        l_EmbeddedNetplayBoundGcaPort = 0;
         return 0;
     }
 
@@ -411,10 +443,19 @@ static int resolve_embedded_netplay_local_gca_port(void)
     {
         if (gca_port_has_live_input(i))
         {
+            l_EmbeddedNetplayBoundGcaPort = i;
             return i;
         }
     }
 
+    if (l_EmbeddedNetplayBoundGcaPort >= 0)
+    {
+        return l_EmbeddedNetplayBoundGcaPort;
+    }
+    if (localSlot >= 0 && localSlot < NUM_CONTROLLERS)
+    {
+        return localSlot;
+    }
     return 0;
 }
 
@@ -567,16 +608,19 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
 
 EXPORT void CALL InitiateControllers(CONTROL_INFO ControlInfo)
 {
-    if (!gca_init())
+    if (l_PollThread.joinable())
     {
-        return;
+        l_PollThreadRunning.store(false);
+        l_PollThread.join();
     }
 
-    // start polling thread
+    l_PolledState.store(false);
+    l_PollThreadRunning.store(true);
     l_PollThread = std::thread(gca_poll_thread);
 
-    // wait for initial state to be polled
-    while (!l_PolledState.load())
+    // The adapter may be unplugged at boot. Don't block the match on it;
+    // the poll thread keeps trying and input starts once it enumerates.
+    for (int i = 0; i < 200 && !l_PolledState.load(); i++)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
@@ -596,7 +640,7 @@ EXPORT void CALL InitiateControllers(CONTROL_INFO ControlInfo)
         }
         else
         {
-            ControlInfo.Controls[i].Present = state.Status & (GCA_IS_WAVEBIRD_MASK | GCA_IS_WIRED_GC_CONTROLLER_MASK) ? 1 : 0;
+            ControlInfo.Controls[i].Present = gca_controller_connected(state.Status) ? 1 : 0;
         }
     }
     l_ControllerStateMutex.unlock();
@@ -614,6 +658,7 @@ EXPORT int CALL RomOpen(void)
     l_EmbeddedNetplayLocalSubmitted = false;
     l_EmbeddedNetplayFrameAdvanced = false;
     l_EmbeddedNetplayLastControl = -1;
+    l_EmbeddedNetplayBoundGcaPort = -1;
     for (int i = 0; i < NUM_CONTROLLERS; i++)
     {
         l_EmbeddedNetplaySyncedState[i] = 0;
@@ -630,7 +675,7 @@ EXPORT void CALL RomClosed(void)
         l_PollThread.join();
     }
 
-    gca_quit();
+    gca_close_device();
 }
 
 EXPORT void CALL SDL_KeyDown(int keymod, int keysym)
