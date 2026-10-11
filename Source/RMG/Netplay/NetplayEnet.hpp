@@ -36,6 +36,10 @@ ENetHost* createSignalingEnetHost(const ENetAddress* address, size_t peerCount, 
 
 void installNetplayEnetIntercept(ENetHost* host);
 
+/** ICE/TURN tunnels carry ENet, so keep datagrams under a typical relay MTU. */
+constexpr enet_uint32 kTunneledSignalingMtu = 1100;
+void applyTunneledSignalingMtu(ENetHost* host);
+
 bool peerIsConnected(ENetPeer* peer);
 
 /** Apply signaling peer timeouts tolerant of high-latency internet play. */

@@ -26,7 +26,9 @@
  
  namespace UserInterface::Netplay {
  
- class NetplayCoordinator : public QObject {
+ class JuiceTraversal;
+
+class NetplayCoordinator : public QObject {
      Q_OBJECT
  
  public:
@@ -69,8 +71,15 @@
  
      // Session Lifecycle
      void connectToServer(const QString& playerName);
-     void connectToDirectIPServer(const QString& ipAddress, int port, const QString& playerName,
-                                  const QString& roomId = QString());
+    void connectToDirectIPServer(const QString& ipAddress, int port, const QString& playerName,
+                                 const QString& roomId = QString());
+    /** Host: answer libjuice ICE offers for this room code. */
+    void startJuiceHosting(const QString& hostCode, quint16 signalingPort);
+    /** Joiner: open a libjuice tunnel and emit juiceJoinSucceeded with the local proxy port. */
+    void beginJuiceJoin(const QString& hostCode);
+    void cancelJuiceJoin();
+    /** Drop a joiner tunnel after signaling has had a chance to flush. */
+    void stopJuiceJoinSoon();
      void createRoom(const QString& roomName, const QString& gameId = "ssb64", int maxPlayers = 4);
      void joinRoom(const QString& roomId, bool asSpectator = false, const QString& password = "");
      void leaveRoom();
@@ -153,6 +162,8 @@
      void connected();
      void disconnected();
      void connectionError(const QString& error);
+    void juiceJoinSucceeded(quint16 localProxyPort);
+    void juiceJoinFailed(const QString& reason);
      void inputDelayChanged(int frames);
 
      void motdReceived(const QString& motd);
@@ -270,6 +281,8 @@
          int peerSlot,
          const std::shared_ptr<WebRTCDataChannel>& channel);
      void connectSocketIOClientSignals(SocketIOClient* client);
+    void ensureJuiceTraversal();
+    void stopJuiceTraversal();
      void sendWebRTCOffer(const QString& targetPlayerId, const QString& sdpOffer);
      void sendWebRTCAnswer(const QString& targetPlayerId, const QString& sdpAnswer);
      void sendWebRTCIceCandidate(const QString& targetPlayerId, const QString& candidate, int mLineIndex);
@@ -277,8 +290,10 @@
      std::shared_ptr<RMGCore::LockstepEngine> activeLockstepEngine();
  
      // Internal components
-     std::unique_ptr<SocketIOClient> m_socketIO;
-     std::unique_ptr<SocketIOServer> m_server;
+    std::unique_ptr<SocketIOClient> m_socketIO;
+    std::unique_ptr<SocketIOServer> m_server;
+    std::unique_ptr<JuiceTraversal> m_juiceTraversal;
+    int m_juiceStopToken = 0;
      QString m_lastHostingError;
      std::shared_ptr<RMGCore::LockstepEngine> m_lockstepEngine;
      QMap<int, std::shared_ptr<WebRTCPeer>> m_peers;

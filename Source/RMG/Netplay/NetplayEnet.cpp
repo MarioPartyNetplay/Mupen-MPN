@@ -213,6 +213,13 @@ void installNetplayEnetIntercept(ENetHost* host)
     }
 }
 
+void applyTunneledSignalingMtu(ENetHost* host)
+{
+    if (host && host->mtu > kTunneledSignalingMtu) {
+        host->mtu = kTunneledSignalingMtu;
+    }
+}
+
 void setEnetRegistryDatagramHandler(ENetHost* host, EnetRegistryDatagramHandler handler, void* userData)
 {
     if (!host) {

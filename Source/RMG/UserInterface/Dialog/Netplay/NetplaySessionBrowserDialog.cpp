@@ -29,6 +29,7 @@
 #include <QSharedPointer>
 #include <QDateTime>
 #include <QTimer>
+#include <QDebug>
 
 #include <RMG-Core/Settings.hpp>
 #include <RMG-Core/Rom.hpp>
@@ -44,8 +45,9 @@ namespace {
 
 Netplay::NetplayConnectionMode connectionModeForJoin(const QJsonObject& indexSession, const QString& address)
 {
-    Q_UNUSED(indexSession);
-    Q_UNUSED(address);
+    if (Netplay::sessionUsesNatTraversal(indexSession) || !Netplay::isUsableConnectAddress(address)) {
+        return Netplay::NetplayConnectionMode::TraversalServer;
+    }
     return Netplay::NetplayConnectionMode::Direct;
 }
 
@@ -191,6 +193,10 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
             this, &NetplaySessionBrowserDialog::onCoordinatorConnectionError);
     connect(this->coordinator, &Netplay::NetplayCoordinator::roomJoined,
             this, &NetplaySessionBrowserDialog::onCoordinatorRoomJoined);
+    connect(this->coordinator, &Netplay::NetplayCoordinator::juiceJoinSucceeded,
+            this, &NetplaySessionBrowserDialog::onJuiceJoinSucceeded);
+    connect(this->coordinator, &Netplay::NetplayCoordinator::juiceJoinFailed,
+            this, &NetplaySessionBrowserDialog::onJuiceJoinFailed);
 
     this->networkManager = new QNetworkAccessManager(this);
     connect(this->networkManager, &QNetworkAccessManager::finished,
@@ -232,6 +238,11 @@ bool NetplaySessionBrowserDialog::canSubmit(void) const
 
 NetplaySessionBrowserDialog::~NetplaySessionBrowserDialog(void)
 {
+    if (this->m_traversalPending && this->coordinator) {
+        this->coordinator->cancelJuiceJoin();
+        this->m_traversalPending = false;
+    }
+
     QString nickname = this->nickNameLineEdit->text();
     if (!nickname.isEmpty())
     {
@@ -522,9 +533,12 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
     const Netplay::NetplayConnectionMode mode =
         connectionModeForJoin(this->pendingIndexSession, this->targetAddress);
     sessionJson.insert("connection_mode", Netplay::netplayConnectionModeToString(mode));
-    sessionJson.insert("use_nat_traversal", false);
+    sessionJson.insert("use_nat_traversal", this->m_joinedViaTraversal);
     sessionJson.insert("use_connection_reversal", false);
-    const QString hostCode = Netplay::sessionTraversalHostCode(this->pendingIndexSession);
+    QString hostCode = Netplay::sessionTraversalHostCode(this->pendingIndexSession);
+    if (hostCode.isEmpty()) {
+        hostCode = this->m_traversalHostCode;
+    }
     if (!hostCode.isEmpty()) {
         sessionJson.insert("host_code", hostCode);
     }
@@ -538,9 +552,52 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
 
 void NetplaySessionBrowserDialog::connectToResolvedHost(const QString& address, int port, const QString& roomId)
 {
+    const QString hostCode = Netplay::sessionTraversalHostCode(this->pendingIndexSession);
+    const bool useTraversal = Netplay::sessionUsesNatTraversal(this->pendingIndexSession) ||
+                              (!hostCode.isEmpty() && !Netplay::isUsableConnectAddress(address));
+    if (useTraversal && !hostCode.isEmpty()) {
+        beginTraversalJoin(hostCode, roomId);
+        return;
+    }
+
     const Netplay::NetplayConnectionMode mode = connectionModeForJoin(this->pendingIndexSession, address);
     Netplay::applyNetplayConnectionSettings(mode, false);
     beginJoinConnect(address, port, roomId);
+}
+
+void NetplaySessionBrowserDialog::beginTraversalJoin(const QString& hostCode, const QString& roomId)
+{
+    this->m_traversalHostCode = Netplay::normalizeTraversalCode(hostCode);
+    this->m_traversalPending = true;
+    this->m_joinedViaTraversal = false;
+    this->joinRoomId = roomId;
+    this->isWaitingForConnection = true;
+    emit this->canSubmitChanged(false);
+    Netplay::applyNetplayConnectionSettings(Netplay::NetplayConnectionMode::TraversalServer, false);
+    qInfo() << "Joining" << this->m_traversalHostCode << "with libjuice NAT traversal";
+    this->coordinator->beginJuiceJoin(this->m_traversalHostCode);
+}
+
+void NetplaySessionBrowserDialog::onJuiceJoinSucceeded(quint16 localPort)
+{
+    if (!this->m_traversalPending) {
+        return;
+    }
+
+    this->m_traversalPending = false;
+    this->m_joinedViaTraversal = true;
+    this->beginJoinConnect(QStringLiteral("127.0.0.1"), localPort, this->joinRoomId);
+}
+
+void NetplaySessionBrowserDialog::onJuiceJoinFailed(const QString& reason)
+{
+    if (!this->m_traversalPending) {
+        return;
+    }
+
+    this->m_traversalPending = false;
+    this->isWaitingForConnection = false;
+    this->finishJoinFailure(reason);
 }
 
 void NetplaySessionBrowserDialog::beginJoinConnect(const QString& address, int port, const QString& roomId)
@@ -576,6 +633,10 @@ void NetplaySessionBrowserDialog::finishJoinFailure(const QString& error)
 {
     this->joinRetryActive = false;
     this->isWaitingForConnection = false;
+    this->m_traversalPending = false;
+    if (this->coordinator) {
+        this->coordinator->cancelJuiceJoin();
+    }
     this->validateJoinButton();
     QtMessageBox::Error(this, "Connection Failed", "Failed to connect to server: " + error);
 }
@@ -612,6 +673,10 @@ void NetplaySessionBrowserDialog::submit(void)
                 indexReply->deleteLater();
 
                 QString roomId = this->pendingIndexSession.value(QStringLiteral("room_id")).toString();
+                if (this->pendingIndexSession.value(QStringLiteral("host_code")).toString().isEmpty() &&
+                    !selectedSession.HostCode.isEmpty()) {
+                    this->pendingIndexSession.insert(QStringLiteral("host_code"), selectedSession.HostCode);
+                }
                 QString address = selectedSession.Address;
                 int connectPort = port;
                 if (Netplay::sessionConnectEndpoint(this->pendingIndexSession, &address, &connectPort)) {
@@ -628,6 +693,48 @@ void NetplaySessionBrowserDialog::submit(void)
     }
 
     QString addressInput = this->ipAddressLineEdit->text().trimmed();
+    if (Netplay::looksLikeTraversalCode(addressInput)) {
+        const QString hostCode = Netplay::normalizeTraversalCode(addressInput);
+        this->pendingIndexSession = QJsonObject();
+        const QUrl indexUrl = Netplay::netplaySessionIndexUrl(hostCode);
+        if (indexUrl.isEmpty()) {
+            this->pendingIndexSession.insert(QStringLiteral("host_code"), hostCode);
+            this->pendingIndexSession.insert(QStringLiteral("use_nat_traversal"), true);
+            this->beginTraversalJoin(hostCode, QString());
+            return;
+        }
+
+        emit this->canSubmitChanged(false);
+        QNetworkRequest request(indexUrl);
+        request.setTransferTimeout(5000);
+        QNetworkReply* indexReply = this->networkManager->get(request);
+        connect(indexReply, &QNetworkReply::finished, this, [this, indexReply, hostCode]() {
+            if (indexReply->error() == QNetworkReply::NoError) {
+                const QJsonDocument indexDoc = QJsonDocument::fromJson(indexReply->readAll());
+                if (indexDoc.isObject()) {
+                    this->pendingIndexSession = indexDoc.object();
+                }
+            }
+            indexReply->deleteLater();
+            if (this->pendingIndexSession.value(QStringLiteral("host_code")).toString().isEmpty()) {
+                this->pendingIndexSession.insert(QStringLiteral("host_code"), hostCode);
+            }
+            if (!this->pendingIndexSession.contains(QStringLiteral("use_nat_traversal"))) {
+                this->pendingIndexSession.insert(QStringLiteral("use_nat_traversal"), true);
+            }
+
+            QString address;
+            int connectPort = Netplay::kDefaultNetplayHostingPort;
+            const QString roomId = this->pendingIndexSession.value(QStringLiteral("room_id")).toString();
+            if (!Netplay::sessionConnectEndpoint(this->pendingIndexSession, &address, &connectPort)) {
+                address.clear();
+            }
+            this->connectToResolvedHost(address, connectPort, roomId);
+            this->validateJoinButton();
+        });
+        return;
+    }
+
     if (addressInput.isEmpty()) {
         addressInput = "localhost";
     }

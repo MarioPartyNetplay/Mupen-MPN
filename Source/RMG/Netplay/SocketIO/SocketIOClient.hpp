@@ -97,6 +97,7 @@ public:
 
 
     void connectToServer(const QString& playerName);
+    void setTransportMtu(enet_uint32 mtu);
     void disconnect();
     ConnectionState getConnectionState() const;
 
@@ -221,6 +222,7 @@ private:
     bool setEnetPeerAddress(ENetAddress* addressOut) const;
 
     ENetHost* m_enetHost = nullptr;
+    enet_uint32 m_transportMtu = 0;
     ENetPeer* m_serverPeer = nullptr;
     QTimer* m_serviceTimer = nullptr;
     QTimer* m_connectTimer = nullptr;

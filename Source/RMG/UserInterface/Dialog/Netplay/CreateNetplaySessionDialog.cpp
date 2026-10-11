@@ -144,7 +144,8 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     this->hostingPortSpinBox->setMinimum(1024);
     this->hostingPortSpinBox->setMaximum(65535);
     this->hostingPortSpinBox->setValue(Netplay::kDefaultNetplayHostingPort);
-    this->hostingPortSpinBox->setToolTip("Valid ports: 1024-65535. Forward this port on your router for WAN play.");
+    this->hostingPortSpinBox->setToolTip(
+        "Valid ports: 1024-65535. Browser rooms use NAT traversal. Forward this port when joining by direct IP.");
     
     connect(this->hostingPortSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [this](int port) { this->hostingPort = port; });
@@ -320,8 +321,11 @@ void CreateNetplaySessionDialog::createSession(void)
     json.insert("server_port", this->hostingPort);
     json.insert("public_port", this->hostingPort);
     json.insert("connect_port", this->hostingPort);
-    json.insert("use_nat_traversal", false);
-    json.insert("connection_mode", Netplay::netplayConnectionModeToString(Netplay::NetplayConnectionMode::Direct));
+    const Netplay::NetplayConnectionMode connectionMode = showInBrowser
+        ? Netplay::NetplayConnectionMode::TraversalServer
+        : Netplay::NetplayConnectionMode::Direct;
+    json.insert("use_nat_traversal", showInBrowser);
+    json.insert("connection_mode", Netplay::netplayConnectionModeToString(connectionMode));
     json.insert("use_upnp", useUpnp);
     json.insert("use_connection_reversal", false);
     json.insert("show_in_browser", showInBrowser);

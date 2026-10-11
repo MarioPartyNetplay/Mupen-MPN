@@ -191,6 +191,11 @@ bool SocketIOClient::setEnetPeerAddress(ENetAddress* addressOut) const
     return enet_address_set_host(addressOut, hostBytes.constData()) == 0;
 }
 
+void SocketIOClient::setTransportMtu(enet_uint32 mtu)
+{
+    m_transportMtu = mtu;
+}
+
 void SocketIOClient::connectToServer(const QString& playerName)
 {
     m_playerName = playerName;
@@ -230,6 +235,12 @@ void SocketIOClient::connectToServer(const QString& playerName)
 bool SocketIOClient::startTransportConnect()
 {
     m_enetHost = createSignalingEnetHost(nullptr, 1, 1, 0, 0);
+    if (m_enetHost && m_transportMtu > 0) {
+        applyTunneledSignalingMtu(m_enetHost);
+        if (m_transportMtu < m_enetHost->mtu) {
+            m_enetHost->mtu = m_transportMtu;
+        }
+    }
     if (!m_enetHost) {
         m_connectionState = Error;
         shutdownEnetIfIdle();

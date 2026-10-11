@@ -357,6 +357,24 @@ if (NETPLAY)
 
     set(ENET_EXTERNAL_TARGET enet PARENT_SCOPE)
 
+    # Same libjuice commit libdatachannel 9ddf889 vendors. Built once so RMG can
+    # open ICE agents directly and libdatachannel links this copy instead of a
+    # second static archive.
+    include(FetchContent)
+    set(NO_TESTS ON)
+    set(NO_SERVER ON)
+    FetchContent_Declare(
+        libjuice
+        GIT_REPOSITORY https://github.com/paullouisageneau/libjuice.git
+        GIT_TAG 5948a4162d37bc213d6051b67ee2876ccc5a99a6
+    )
+    FetchContent_MakeAvailable(libjuice)
+    unset(NO_TESTS)
+    unset(NO_SERVER)
+    if (TARGET juice)
+        set_target_properties(juice PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endif()
+
     set(LIBDATACHANNEL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libdatachannel")
     
     # MinGW-specific flags for libdatachannel
@@ -472,12 +490,12 @@ if (NETPLAY)
             OpenSSL::SSL
             libSRTP::srtp2
             Threads::Threads
-            "${_LIBDATACHANNEL_JUICE_LIB}"
             "${_LIBDATACHANNEL_USRSCTP_LIB}"
         )
         set_target_properties(libdatachannel_external PROPERTIES
             INTERFACE_LINK_LIBRARIES "${_LIBDATACHANNEL_DEPS}"
         )
+        target_link_libraries(libdatachannel_external INTERFACE juice)
     endif()
     
 endif(NETPLAY)
