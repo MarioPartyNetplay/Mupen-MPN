@@ -1151,6 +1151,10 @@ void NetplaySessionDialog::updateConnectInfoDisplay(void)
 
     if (!hostCode.isEmpty()) {
         this->publicIpLineEdit->setText(hostCode);
+        if (this->sessionJson.value(QStringLiteral("use_nat_traversal")).toBool(false)) {
+            this->publicIpLineEdit->setToolTip(QStringLiteral(
+                "NAT traversal is running. Share this code. The lobby is not published again until it changes."));
+        }
     } else if (publicAddress.isEmpty()) {
         this->publicIpLineEdit->setText(QStringLiteral("Resolving..."));
     } else {

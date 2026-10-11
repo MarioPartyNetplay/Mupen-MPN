@@ -617,7 +617,6 @@ static void index_set(socket_t sock, const struct sockaddr_in* client, socklen_t
 
     if (strncmp(value_field, "B64:", 4) == 0) {
         decoded_len = b64_decode(value_field + 4, decoded, sizeof(decoded));
-        printf("[idx] Decoded B64 length=%zu for key=%s from %s:%u\n", decoded_len, key, inet_ntoa(client->sin_addr), (unsigned)ntohs(client->sin_port));
     } else {
         decoded_len = strlen(value_field);
         if (decoded_len >= sizeof(decoded)) {
@@ -626,6 +625,17 @@ static void index_set(socket_t sock, const struct sockaddr_in* client, socklen_t
             return;
         }
         memcpy(decoded, value_field, decoded_len);
+    }
+
+    {
+        index_entry_t* existing = find_index(key);
+        if (existing != NULL && existing->value_len == decoded_len &&
+            memcmp(existing->value, decoded, decoded_len) == 0) {
+            existing->last_seen = now_seconds();
+            snprintf(reply, sizeof(reply), INDEX_PROTOCOL "|SETOK|%s", key);
+            send_reply(sock, (const struct sockaddr*)client, client_len, reply);
+            return;
+        }
     }
 
     if (upsert_index(key, decoded, decoded_len, now_seconds()) == NULL) {

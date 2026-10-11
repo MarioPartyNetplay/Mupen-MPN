@@ -26,9 +26,12 @@ namespace UserInterface::Netplay {
 namespace {
 
 constexpr int kJoinTimeoutMs = 25000;
-constexpr int kOfferIntervalMs = 1000;
-constexpr int kAnswerPollMs = 500;
-constexpr int kListIntervalMs = 1000;
+constexpr int kOfferIntervalMs = 4000;
+constexpr int kOfferPublishLimit = 3;
+constexpr int kAnswerPollMs = 2000;
+constexpr int kListIntervalMs = 3000;
+constexpr int kAnswerRepublishCount = 2;
+constexpr int kAnswerRepublishGapMs = 2000;
 constexpr int kMaxTurnServers = 2;
 
 qint64 monotonicMs()
@@ -407,7 +410,8 @@ void JuiceTraversal::startHosting(const QString& hostCode, quint16 signalingPort
     if (!m_timer.isActive()) {
         m_timer.start();
     }
-    qInfo() << "libjuice NAT traversal listening for joiners on" << m_hostCode;
+    qInfo() << "NAT traversal is running for" << m_hostCode
+            << "— checking for joiners every" << (kListIntervalMs / 1000) << "seconds";
     onTick();
 }
 
@@ -454,6 +458,7 @@ void JuiceTraversal::joinHost(const QString& hostCode)
     m_joinProxyPort = 0;
     m_joinCode = normalized;
     m_joinerId = makeJoinerId();
+    m_offerPublishes = 0;
     m_joinDeadlineMs = monotonicMs() + kJoinTimeoutMs;
     m_nextOfferMs = 0;
     m_nextAnswerPollMs = 0;
@@ -490,7 +495,8 @@ void JuiceTraversal::joinHost(const QString& hostCode)
     if (!m_timer.isActive()) {
         m_timer.start();
     }
-    qInfo() << "libjuice joining" << m_joinCode << "as" << m_joinerId;
+    qInfo() << "NAT traversal is running for" << m_joinCode << "as" << m_joinerId
+            << "— the ICE offer is sent at most" << kOfferPublishLimit << "times";
 }
 
 void JuiceTraversal::cancelJoin()
@@ -537,8 +543,10 @@ void JuiceTraversal::onTick()
         return;
     }
 
-    if (m_offerGathered && !m_answerApplied && (m_nextOfferMs == 0 || now >= m_nextOfferMs)) {
+    if (m_offerGathered && !m_answerApplied && m_offerPublishes < kOfferPublishLimit &&
+        (m_nextOfferMs == 0 || now >= m_nextOfferMs)) {
         publishValue(offerKey(m_joinCode, m_joinerId), m_localOffer);
+        ++m_offerPublishes;
         m_nextOfferMs = now + kOfferIntervalMs;
     }
 
@@ -697,6 +705,7 @@ void JuiceTraversal::failJoin(const QString& reason)
     m_localOffer.clear();
     m_offerGathered = false;
     m_answerApplied = false;
+    m_offerPublishes = 0;
     m_joinProxyPort = 0;
     if (m_joiner != nullptr) {
         m_joiner->deleteLater();
@@ -728,6 +737,7 @@ void JuiceTraversal::resetJoin()
     m_joinFinished = false;
     m_offerGathered = false;
     m_answerApplied = false;
+    m_offerPublishes = 0;
     m_localOffer.clear();
     m_joinCode.clear();
     m_joinerId.clear();
@@ -747,9 +757,10 @@ void JuiceTraversal::acceptOffer(const QString& joinerId, const QByteArray& sdp)
         if (!m_hosting) {
             return;
         }
-        qInfo() << "libjuice answering joiner" << joinerId;
-        for (int attempt = 0; attempt < 8; ++attempt) {
-            QTimer::singleShot(attempt * 400, this, [this, joinerId, answer]() {
+        qInfo() << "NAT traversal answering" << joinerId
+                << "— sending the ICE answer" << kAnswerRepublishCount << "times";
+        for (int attempt = 0; attempt < kAnswerRepublishCount; ++attempt) {
+            QTimer::singleShot(attempt * kAnswerRepublishGapMs, this, [this, joinerId, answer]() {
                 if (m_hosting && m_hostPeers.contains(joinerId)) {
                     publishValue(answerKey(m_hostCode, joinerId), answer);
                 }

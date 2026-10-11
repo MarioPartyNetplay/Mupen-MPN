@@ -11,6 +11,7 @@
 #define NETPLAYSESSIONBROWSERDIALOG_HPP
 
 #include <QJsonObject>
+#include <QLabel>
 #include <QWidget>
 #include <QString>
 
@@ -69,6 +70,10 @@ class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBr
     bool m_traversalPending = false;
     bool m_joinedViaTraversal = false;
     QString m_traversalHostCode;
+    QLabel* m_traversalStatusLabel = nullptr;
+
+    void setTraversalStatus(const QString& text);
+    bool isTraversalBusy(void) const;
 
     QString showROMDialog(QString name, QString md5);
 

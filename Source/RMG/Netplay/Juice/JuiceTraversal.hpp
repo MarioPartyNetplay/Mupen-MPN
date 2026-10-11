@@ -79,6 +79,7 @@ private:
     QByteArray m_localOffer;
     bool m_offerGathered = false;
     bool m_answerApplied = false;
+    int m_offerPublishes = 0;
     quint16 m_joinProxyPort = 0;
     qint64 m_joinDeadlineMs = 0;
     qint64 m_nextOfferMs = 0;
