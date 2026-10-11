@@ -446,6 +446,16 @@ void NetplayCoordinator::startJuiceHosting(const QString& hostCode, quint16 sign
     }
 }
 
+void NetplayCoordinator::setPunchHostCode(const QString& hostCode)
+{
+    m_punchHostCode = normalizeTraversalCode(hostCode);
+}
+
+void NetplayCoordinator::clearPunchJoin()
+{
+    m_punchHostCode.clear();
+}
+
 void NetplayCoordinator::beginJuiceJoin(const QString& hostCode)
 {
     ++m_juiceStopToken;
@@ -525,6 +535,13 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
         m_socketIO->setTransportMtu(kTunneledSignalingMtu);
     }
     connectSocketIOClientSignals(m_socketIO.get());
+
+    const bool loopback = connectAddress.compare(QStringLiteral("127.0.0.1")) == 0 ||
+                          connectAddress.compare(QStringLiteral("localhost"), Qt::CaseInsensitive) == 0 ||
+                          connectAddress.compare(QStringLiteral("::1")) == 0;
+    if (!m_punchHostCode.isEmpty() && !loopback) {
+        m_socketIO->setPunchHostCode(m_punchHostCode);
+    }
     
     // Now connect to the server
     setState(Connecting);

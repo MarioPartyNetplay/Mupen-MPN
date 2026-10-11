@@ -7,6 +7,11 @@
 
 #include <QJsonDocument>
 #include <QAbstractSocket>
+#include <QDateTime>
+#include <QDebug>
+#include <QElapsedTimer>
+#include <QHostInfo>
+#include <QList>
 #include <algorithm>
 #include <atomic>
 #include <cstring>
@@ -255,6 +260,226 @@ bool sendEnetDatagram(ENetHost* host, const QHostAddress& target, quint16 port, 
     buffer.data = const_cast<char*>(payload.constData());
     buffer.dataLength = static_cast<size_t>(payload.size());
     return enet_socket_send(host->socket, &address, &buffer, 1) >= 0;
+}
+
+void sendNatPunch(ENetHost* host, const QHostAddress& target, quint16 port)
+{
+    if (!host || target.isNull() || port == 0) {
+        return;
+    }
+
+    const QByteArray payload(1, '\0');
+    for (int i = 0; i < 4; ++i) {
+        sendEnetDatagram(host, target, port, payload);
+    }
+}
+
+namespace {
+
+struct PunchExchange {
+    ENetHost* host = nullptr;
+    QHostAddress peerAddress;
+    quint16 peerPort = 0;
+    bool ready = false;
+    qint64 lastPunchMs = 0;
+    QString error;
+};
+
+bool bindPunchSocket(ENetHost* host)
+{
+    if (!host || host->socket == ENET_SOCKET_NULL) {
+        return false;
+    }
+    if (host->address.port != 0) {
+        return true;
+    }
+
+    ENetAddress any;
+    any.host = ENET_HOST_ANY;
+    any.port = 0;
+    if (enet_socket_bind(host->socket, &any) < 0) {
+        return false;
+    }
+    enet_socket_get_address(host->socket, &host->address);
+    return true;
+}
+
+bool resolveTraversalServer(QHostAddress* addressOut, QString* errorOut)
+{
+    if (!addressOut) {
+        return false;
+    }
+
+    const QString hostname = netplayIndexServerHostname();
+    QHostAddress literal;
+    if (literal.setAddress(hostname) && literal.protocol() == QAbstractSocket::IPv4Protocol) {
+        *addressOut = literal;
+        return true;
+    }
+
+    const QHostInfo info = QHostInfo::fromName(hostname);
+    if (info.error() != QHostInfo::NoError) {
+        if (errorOut) {
+            *errorOut = QStringLiteral("Failed to resolve the NAT traversal server");
+        }
+        return false;
+    }
+
+    for (const QHostAddress& resolved : info.addresses()) {
+        if (resolved.protocol() == QAbstractSocket::IPv4Protocol) {
+            *addressOut = resolved;
+            return true;
+        }
+    }
+
+    if (errorOut) {
+        *errorOut = QStringLiteral("NAT traversal server has no IPv4 address");
+    }
+    return false;
+}
+
+bool rememberPunchPeer(PunchExchange* state, const QHostAddress& address, quint16 port)
+{
+    if (!state || !state->host || address.isNull() || address.protocol() != QAbstractSocket::IPv4Protocol ||
+        port == 0 || address == QHostAddress::AnyIPv4) {
+        return false;
+    }
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const bool same = state->ready && state->peerAddress == address && state->peerPort == port;
+    state->peerAddress = address;
+    state->peerPort = port;
+    state->ready = true;
+    state->error.clear();
+    if (!same || now - state->lastPunchMs >= 50) {
+        sendNatPunch(state->host, address, port);
+        state->lastPunchMs = now;
+    }
+    return true;
+}
+
+void onPunchExchangeDatagram(const QByteArray& datagram, void* userData)
+{
+    auto* state = static_cast<PunchExchange*>(userData);
+    const QList<QByteArray> parts = datagram.split('|');
+    if (!state || parts.size() < 2 || parts.at(0) != QByteArray(kNetplayRegistryProtocol)) {
+        return;
+    }
+
+    if (parts.at(1) == "LOOKUPOK" && parts.size() >= 5) {
+        QHostAddress address;
+        if (!address.setAddress(QString::fromUtf8(parts.at(3)).trimmed())) {
+            return;
+        }
+        bool ok = false;
+        const uint port = parts.at(4).trimmed().toUInt(&ok);
+        if (!ok || port == 0 || port > 65535) {
+            return;
+        }
+        rememberPunchPeer(state, address, static_cast<quint16>(port));
+        return;
+    }
+
+    if (parts.at(1) == "PUNCH" && parts.size() >= 4) {
+        QHostAddress address;
+        if (!address.setAddress(QString::fromUtf8(parts.at(2)).trimmed())) {
+            return;
+        }
+        bool ok = false;
+        const uint port = parts.at(3).trimmed().toUInt(&ok);
+        if (!ok || port == 0 || port > 65535) {
+            return;
+        }
+        rememberPunchPeer(state, address, static_cast<quint16>(port));
+        return;
+    }
+
+    if (parts.at(1) == "LOOKUPFAIL" && !state->ready) {
+        const QByteArray reason = parts.size() >= 4 ? parts.at(3) : QByteArray();
+        if (reason == "NOTFOUND") {
+            state->error = QStringLiteral("Host is not registered for NAT traversal");
+        } else {
+            state->error = QStringLiteral("NAT traversal lookup failed");
+        }
+    }
+}
+
+} // namespace
+
+bool exchangeTraversalPunch(ENetHost* host, const QString& hostCode, QString* addressOut, quint16* portOut,
+                            QString* errorOut)
+{
+    if (errorOut) {
+        errorOut->clear();
+    }
+    if (!host || !addressOut || !portOut) {
+        if (errorOut) {
+            *errorOut = QStringLiteral("NAT punch failed");
+        }
+        return false;
+    }
+
+    const QString code = normalizeTraversalCode(hostCode);
+    if (code.isEmpty()) {
+        if (errorOut) {
+            *errorOut = QStringLiteral("Invalid host code");
+        }
+        return false;
+    }
+
+    QString resolveError;
+    QHostAddress serverAddress;
+    if (!resolveTraversalServer(&serverAddress, &resolveError)) {
+        if (errorOut) {
+            *errorOut = resolveError;
+        }
+        return false;
+    }
+
+    if (!bindPunchSocket(host)) {
+        if (errorOut) {
+            *errorOut = QStringLiteral("Failed to bind the NAT punch socket");
+        }
+        return false;
+    }
+
+    PunchExchange state;
+    state.host = host;
+    setEnetRegistryDatagramHandler(host, &onPunchExchangeDatagram, &state);
+
+    const QByteArray lookup =
+        QByteArray(kNetplayRegistryProtocol) + "|LOOKUP|" + code.toUtf8();
+    QElapsedTimer elapsed;
+    elapsed.start();
+    qint64 nextLookupAt = 0;
+    while (elapsed.elapsed() < 1200 && !state.ready && state.error.isEmpty()) {
+        if (elapsed.elapsed() >= nextLookupAt) {
+            sendEnetDatagram(host, serverAddress, static_cast<quint16>(kNetplayRegistryPort), lookup);
+            nextLookupAt = elapsed.elapsed() + 400;
+        }
+        ENetEvent event;
+        enet_host_service(host, &event, 20);
+    }
+
+    if (state.ready) {
+        sendNatPunch(host, state.peerAddress, state.peerPort);
+        sendEnetDatagram(host, serverAddress, static_cast<quint16>(kNetplayRegistryPort), lookup);
+    }
+
+    clearEnetSideChannel(host);
+
+    if (!state.ready) {
+        if (errorOut) {
+            *errorOut = state.error.isEmpty() ? QStringLiteral("NAT traversal server did not answer")
+                                              : state.error;
+        }
+        return false;
+    }
+
+    *addressOut = state.peerAddress.toString();
+    *portOut = state.peerPort;
+    qInfo() << "NAT punch opened toward" << *addressOut << *portOut << "for" << code;
+    return true;
 }
 
 bool peerIsConnected(ENetPeer* peer)

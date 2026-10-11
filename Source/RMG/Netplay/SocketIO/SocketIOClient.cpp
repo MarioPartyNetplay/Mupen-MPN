@@ -29,6 +29,8 @@ using namespace UserInterface::Netplay;
 namespace {
 constexpr int kCheatsChunkSize = 32;
 constexpr int kConnectTimeoutMs = 10000;
+constexpr int kPunchConnectTimeoutMs = 3500;
+constexpr int kPunchKeepBursts = 20;
 constexpr int kServiceIntervalMs = 16;
 constexpr int kReconnectIntervalMs = 2000;
 constexpr int kReconnectFirstAttemptMs = 500;
@@ -148,6 +150,7 @@ bool SocketIOClient::parseServerEndpoint(const QString& serverUrl, QHostAddress*
 
 void SocketIOClient::destroyEnetClient()
 {
+    stopPunchKeep();
     if (m_serviceTimer) {
         m_serviceTimer->stop();
     }
@@ -194,6 +197,19 @@ bool SocketIOClient::setEnetPeerAddress(ENetAddress* addressOut) const
 void SocketIOClient::setTransportMtu(enet_uint32 mtu)
 {
     m_transportMtu = mtu;
+}
+
+void SocketIOClient::setPunchHostCode(const QString& hostCode)
+{
+    m_punchHostCode = normalizeTraversalCode(hostCode);
+}
+
+void SocketIOClient::stopPunchKeep()
+{
+    m_punchBurstsLeft = 0;
+    if (m_punchKeepTimer) {
+        m_punchKeepTimer->stop();
+    }
 }
 
 void SocketIOClient::connectToServer(const QString& playerName)
@@ -248,6 +264,42 @@ bool SocketIOClient::startTransportConnect()
         return false;
     }
 
+    m_punchPeerPort = 0;
+    if (!m_punchHostCode.isEmpty()) {
+        QString punchedAddress;
+        quint16 punchedPort = 0;
+        QString punchError;
+        if (!exchangeTraversalPunch(m_enetHost, m_punchHostCode, &punchedAddress, &punchedPort, &punchError)) {
+            destroyEnetClient();
+            m_connectionState = Error;
+            emit connectionError(punchError.isEmpty() ? QStringLiteral("NAT punch failed") : punchError);
+            return false;
+        }
+
+        m_serverHostname = punchedAddress;
+        m_serverPort = punchedPort;
+        m_serverAddress.setAddress(punchedAddress);
+        m_punchPeer.setAddress(punchedAddress);
+        m_punchPeerPort = punchedPort;
+        m_punchBurstsLeft = kPunchKeepBursts;
+        if (!m_punchKeepTimer) {
+            m_punchKeepTimer = new QTimer(this);
+            m_punchKeepTimer->setInterval(100);
+            connect(m_punchKeepTimer, &QTimer::timeout, this, [this]() {
+                if (m_punchBurstsLeft <= 0 || m_enetHost == nullptr || m_punchPeerPort == 0) {
+                    stopPunchKeep();
+                    return;
+                }
+                sendNatPunch(m_enetHost, m_punchPeer, m_punchPeerPort);
+                --m_punchBurstsLeft;
+                if (m_punchBurstsLeft <= 0) {
+                    stopPunchKeep();
+                }
+            });
+        }
+        m_punchKeepTimer->start();
+    }
+
     ENetAddress address;
     if (!setEnetPeerAddress(&address)) {
         destroyEnetClient();
@@ -268,7 +320,7 @@ bool SocketIOClient::startTransportConnect()
     applySignalingPeerTimeout(m_serverPeer);
 
     m_serviceTimer->start();
-    m_connectTimer->start(kConnectTimeoutMs);
+    m_connectTimer->start(m_punchPeerPort != 0 ? kPunchConnectTimeoutMs : kConnectTimeoutMs);
 
     return true;
 }
@@ -844,6 +896,7 @@ void SocketIOClient::on_serviceTimer()
     while (enet_host_service(m_enetHost, &event, 0) > 0) {
         switch (event.type) {
         case ENET_EVENT_TYPE_CONNECT:
+            stopPunchKeep();
             if (m_connectTimer) {
                 m_connectTimer->stop();
             }

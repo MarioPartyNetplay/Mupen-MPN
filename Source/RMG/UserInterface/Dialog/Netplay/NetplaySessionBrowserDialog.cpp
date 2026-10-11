@@ -29,6 +29,7 @@
 #include <QDateTime>
 #include <QTimer>
 #include <QDebug>
+#include <QCoreApplication>
 
 #include <RMG-Core/Settings.hpp>
 #include <RMG-Core/Rom.hpp>
@@ -247,6 +248,9 @@ bool NetplaySessionBrowserDialog::canSubmit(void) const
 
 NetplaySessionBrowserDialog::~NetplaySessionBrowserDialog(void)
 {
+    if (this->coordinator) {
+        this->coordinator->clearPunchJoin();
+    }
     if (this->m_traversalPending && this->coordinator) {
         this->coordinator->cancelJuiceJoin();
         this->m_traversalPending = false;
@@ -455,11 +459,34 @@ void NetplaySessionBrowserDialog::onCoordinatorConnected(void)
     if (isWaitingForConnection)
     {
         qDebug() << "Connected to server successfully, waiting for room join...";
+        if (this->m_punchActive) {
+            this->setTraversalStatus(QStringLiteral("Direct connection open. Joining the lobby…"));
+        }
     }
 }
 
 void NetplaySessionBrowserDialog::onCoordinatorConnectionError(const QString& error)
 {
+    if (this->m_punchActive) {
+        ++this->m_punchFailures;
+        const bool holeDidNotOpen = error == QStringLiteral("UDP signaling connection timed out");
+        if (holeDidNotOpen || this->m_punchFailures >= 2) {
+            this->m_punchActive = false;
+            this->joinRetryActive = false;
+            if (!this->coordinator) {
+                finishJoinFailure(error);
+                return;
+            }
+            this->coordinator->clearPunchJoin();
+            qInfo() << "Direct NAT punch did not connect, trying TURN";
+            this->setTraversalStatus(QStringLiteral("Direct connection did not open. Trying relay…"));
+            this->m_traversalPending = true;
+            this->isWaitingForConnection = true;
+            this->coordinator->beginJuiceJoin(this->m_traversalHostCode);
+            return;
+        }
+    }
+
     if (joinRetryActive && QDateTime::currentMSecsSinceEpoch() < joinDeadlineMs) {
         qDebug() << "Join connect failed, retrying:" << error;
         isWaitingForConnection = true;
@@ -484,8 +511,21 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
         return;
     }
 
+    if (this->m_punchActive && this->coordinator && this->coordinator->getSocketIOClient()) {
+        Netplay::SocketIOClient* client = this->coordinator->getSocketIOClient();
+        if (!client->signalingHost().isEmpty() && client->signalingPort() > 0) {
+            this->targetAddress = client->signalingHost();
+            this->targetPort = client->signalingPort();
+        }
+        this->m_joinedViaTraversal = true;
+    }
+
     joinRetryActive = false;
     isWaitingForConnection = false;
+    this->m_punchActive = false;
+    if (this->coordinator) {
+        this->coordinator->clearPunchJoin();
+    }
     this->setTraversalStatus(QString());
 
     QJsonObject roomData = this->coordinator->getAutoJoinRoomData();
@@ -615,15 +655,23 @@ void NetplaySessionBrowserDialog::beginTraversalJoin(const QString& hostCode, co
 
     this->m_traversalHostCode = Netplay::normalizeTraversalCode(hostCode);
     this->m_traversalPending = true;
+    this->m_punchActive = true;
+    this->m_punchFailures = 0;
     this->m_joinedViaTraversal = false;
     this->joinRoomId = roomId;
     this->isWaitingForConnection = true;
     emit this->canSubmitChanged(false);
     Netplay::applyNetplayConnectionSettings(Netplay::NetplayConnectionMode::TraversalServer, false);
-    qInfo() << "Joining" << this->m_traversalHostCode << "with libjuice NAT traversal";
-    this->setTraversalStatus(QStringLiteral(
-        "NAT traversal is running. Refresh and another join are paused so this does not load the netplay server."));
-    this->coordinator->beginJuiceJoin(this->m_traversalHostCode);
+    this->coordinator->cancelJuiceJoin();
+    this->coordinator->setPunchHostCode(this->m_traversalHostCode);
+    qInfo() << "Joining" << this->m_traversalHostCode << "by UDP hole punch";
+    this->setTraversalStatus(QStringLiteral("Opening a direct connection…"));
+    QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    if (!this->m_punchActive) {
+        return;
+    }
+    this->m_punchFailures = 0;
+    this->beginJoinConnect(QStringLiteral("0.0.0.0"), 1, roomId);
 }
 
 void NetplaySessionBrowserDialog::onJuiceJoinSucceeded(quint16 localPort)
@@ -632,6 +680,10 @@ void NetplaySessionBrowserDialog::onJuiceJoinSucceeded(quint16 localPort)
         return;
     }
 
+    this->m_punchActive = false;
+    if (this->coordinator) {
+        this->coordinator->clearPunchJoin();
+    }
     this->m_traversalPending = false;
     this->m_joinedViaTraversal = true;
     this->setTraversalStatus(QStringLiteral("NAT traversal connected. Joining the lobby…"));
@@ -640,6 +692,11 @@ void NetplaySessionBrowserDialog::onJuiceJoinSucceeded(quint16 localPort)
 
 void NetplaySessionBrowserDialog::onJuiceJoinFailed(const QString& reason)
 {
+    // A punch attempt owns the join until it gives up and starts juice.
+    if (this->m_punchActive) {
+        return;
+    }
+
     // joinRetryActive covers the window after ICE reports connected and the
     // dialog is dialing the local proxy. The tunnel can still die in that window.
     if (!this->m_traversalPending && !this->joinRetryActive) {
@@ -688,8 +745,11 @@ void NetplaySessionBrowserDialog::finishJoinFailure(const QString& error)
     this->joinRetryActive = false;
     this->isWaitingForConnection = false;
     this->m_traversalPending = false;
+    this->m_punchActive = false;
+    this->m_punchFailures = 0;
     this->setTraversalStatus(QString());
     if (this->coordinator) {
+        this->coordinator->clearPunchJoin();
         this->coordinator->cancelJuiceJoin();
     }
     this->validateJoinButton();

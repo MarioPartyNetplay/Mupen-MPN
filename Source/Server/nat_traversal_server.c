@@ -734,21 +734,34 @@ static void trav_lookup(socket_t sock, const struct sockaddr_in* client, socklen
     }
 
     addr.s_addr = entry->host_ip;
-    snprintf(reply, sizeof(reply), TRAV_PROTOCOL "|LOOKUPOK|%s|%s|%u", code_text, inet_ntoa(addr),
-             (unsigned)entry->signaling_port);
-    send_reply(sock, (const struct sockaddr*)client, client_len, reply);
+    /* Joiners punch the NAT mapping of the host's ENet socket, not the port the
+       host asked to be listed on. signaling_port is the private listen port. */
+    const unsigned mapped_port = entry->traversal_port > 0 ? (unsigned)entry->traversal_port
+                                                            : (unsigned)entry->signaling_port;
+    char host_ip[INET_ADDRSTRLEN];
+    char joiner_ip[INET_ADDRSTRLEN];
+    if (inet_ntop(AF_INET, &addr, host_ip, sizeof(host_ip)) == NULL) {
+        snprintf(host_ip, sizeof(host_ip), "0.0.0.0");
+    }
+    if (inet_ntop(AF_INET, &client->sin_addr, joiner_ip, sizeof(joiner_ip)) == NULL) {
+        snprintf(joiner_ip, sizeof(joiner_ip), "0.0.0.0");
+    }
 
-    /* Coordinate UDP hole punching for port-restricted cone NAT (Dolphin-style). */
+    snprintf(reply, sizeof(reply), TRAV_PROTOCOL "|LOOKUPOK|%s|%s|%u", code_text, host_ip, mapped_port);
+    send_reply(sock, (const struct sockaddr*)client, client_len, reply);
+    printf("[trav] LOOKUP %s -> %s:%u (joiner %s:%u)\n", code_text, host_ip, mapped_port, joiner_ip,
+           (unsigned)ntohs(client->sin_port));
+
+    /* Tell each side the other's public mapping so both can punch (Dolphin-style). */
     {
         struct sockaddr_in host_addr;
         memset(&host_addr, 0, sizeof(host_addr));
         host_addr.sin_family = AF_INET;
         host_addr.sin_addr.s_addr = entry->host_ip;
-        host_addr.sin_port = htons(entry->traversal_port > 0 ? entry->traversal_port : entry->signaling_port);
+        host_addr.sin_port = htons((uint16_t)mapped_port);
 
-        trav_send_punch(sock, &host_addr, sizeof(host_addr), inet_ntoa(client->sin_addr),
-                        (unsigned)ntohs(client->sin_port));
-        trav_send_punch(sock, client, client_len, inet_ntoa(addr), (unsigned)entry->signaling_port);
+        trav_send_punch(sock, &host_addr, sizeof(host_addr), joiner_ip, (unsigned)ntohs(client->sin_port));
+        trav_send_punch(sock, client, client_len, host_ip, mapped_port);
     }
 }
 
@@ -1029,6 +1042,10 @@ static void handle_udp_locked(socket_t sock, const char* buffer, int length, con
                 if (entry != NULL) {
                     const uint64_t now = now_seconds();
                     entry->last_seen = now;
+                    /* KEEP is sent from the ENet socket, so the observed source is the
+                       mapping joiners must punch. Refresh it every heartbeat. */
+                    entry->host_ip = client->sin_addr.s_addr;
+                    entry->traversal_port = ntohs(client->sin_port);
                     /* Client sends KEEP|code|port|list. Older clients used KEEP|code|list. */
                     if (part_count >= 5) {
                         entry->list_in_browser = (strcmp(parts[4], "0") != 0);

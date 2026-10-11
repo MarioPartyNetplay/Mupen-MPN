@@ -1118,6 +1118,14 @@ void NetplaySessionDialog::beginHostBrowserRegistration(uint16_t hostingPort, bo
         }
     });
 
+    if (this->coordinator && this->coordinator->getHostingServer()) {
+        if (ENetHost* signalingHost = this->coordinator->getHostingServer()->enetHost()) {
+            this->hostRegistry->attachSignalingHost(signalingHost);
+        } else {
+            qWarning() << "NAT punch registry has no signaling socket";
+        }
+    }
+
     const QString hostCode = this->sessionJson.value("host_code").toString();
     if (!hostCode.isEmpty()) {
         this->hostRegistry->resumeHosting(hostCode, hostingPort, listInBrowser);

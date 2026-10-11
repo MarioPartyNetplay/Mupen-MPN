@@ -62,6 +62,16 @@ bool parseSignalingPacket(const QByteArray& data, QString* eventNameOut, QJsonAr
 
 bool sendEnetDatagram(ENetHost* host, const QHostAddress& target, quint16 port, const QByteArray& payload);
 
+/** Several 1-byte datagrams. The ENet intercept drops them so they only open NAT. */
+void sendNatPunch(ENetHost* host, const QHostAddress& target, quint16 port);
+
+/**
+ * From this socket, ask the traversal server for hostCode and punch the public
+ * mapping it returns. addressOut is the address enet_host_connect must use.
+ */
+bool exchangeTraversalPunch(ENetHost* host, const QString& hostCode, QString* addressOut, quint16* portOut,
+                            QString* errorOut);
+
 using EnetRegistryDatagramHandler = void (*)(const QByteArray& datagram, void* userData);
 void setEnetRegistryDatagramHandler(ENetHost* host, EnetRegistryDatagramHandler handler, void* userData);
 void clearEnetSideChannel(ENetHost* host);

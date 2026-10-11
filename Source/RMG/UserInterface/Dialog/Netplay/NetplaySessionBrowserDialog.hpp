@@ -68,6 +68,8 @@ class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBr
     QString joinRoomId;
 
     bool m_traversalPending = false;
+    bool m_punchActive = false;
+    int m_punchFailures = 0;
     bool m_joinedViaTraversal = false;
     QString m_traversalHostCode;
     QLabel* m_traversalStatusLabel = nullptr;

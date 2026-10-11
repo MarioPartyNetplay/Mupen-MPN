@@ -75,6 +75,9 @@ class NetplayCoordinator : public QObject {
                                  const QString& roomId = QString());
     /** Host: answer libjuice ICE offers for this room code. */
     void startJuiceHosting(const QString& hostCode, quint16 signalingPort);
+    /** Joiner: punch this host code on the next direct connect, then dial the mapped address. */
+    void setPunchHostCode(const QString& hostCode);
+    void clearPunchJoin();
     /** Joiner: open a libjuice tunnel and emit juiceJoinSucceeded with the local proxy port. */
     void beginJuiceJoin(const QString& hostCode);
     void cancelJuiceJoin();
@@ -312,6 +315,7 @@ class NetplayCoordinator : public QObject {
      QMap<int, int> m_playerPingMs;
      bool m_shouldAutoJoinRoom = false;
      QString m_autoJoinRoomId;
+     QString m_punchHostCode;
      QJsonObject m_autoJoinRoomData;
  
      // CRITICAL: Scoped configuration type
