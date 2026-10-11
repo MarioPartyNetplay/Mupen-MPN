@@ -133,6 +133,7 @@ static uint64_t g_turn_cache_expires = 0;
 static int g_turn_credential_ttl_sec = DEFAULT_TURN_CREDENTIAL_TTL_SEC;
 static uint64_t g_turn_next_refresh_attempt = 0;
 static int g_turn_initial_done = 0;
+static int g_curl_ready = 0;
 static int g_force_nat_traversal = 0;
 
 #ifdef _WIN32
@@ -2155,6 +2156,12 @@ static void http_reply_turn_ice_servers(socket_t client)
     char payload[MAX_TURN_RESPONSE];
     size_t payload_len = 0;
 
+    if (!g_curl_ready) {
+        http_reply_json(client, 503, "Service Unavailable",
+                        "{\"error\":\"TURN broker requires server built with libcurl\"}");
+        return;
+    }
+
     if (!turn_is_configured()) {
         http_reply_json(client, 503, "Service Unavailable",
                         "{\"error\":\"Cloudflare TURN is not configured on this server\"}");
@@ -2220,8 +2227,6 @@ static void handle_http_client(socket_t client)
         }
     }
 
-    prune_index();
-
     if (strcmp(path, "/") == 0 || strcmp(path, "/index") == 0 || strcmp(path, "/index/") == 0) {
         http_reply_index_page(client);
         return;
@@ -2254,6 +2259,9 @@ static void handle_http_client(socket_t client)
         size_t offset = 0;
         const uint64_t now = now_seconds();
 
+        state_lock();
+        prune_hosts();
+        prune_index();
         offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "{\"index\":[");
         int wrote = 0;
         for (int i = 0; i < g_index_count; ++i) {
@@ -2300,6 +2308,7 @@ static void handle_http_client(socket_t client)
             if (offset >= sizeof(body) - 256) break;
         }
         offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "]}");
+        state_unlock();
 
         char header[256];
         snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n", offset);
@@ -2335,10 +2344,17 @@ static void handle_http_client(socket_t client)
                 printf("[http] PUT /index/%s rejected: %zu bytes (max %d)\n", key, body_len, MAX_VALUE_LEN - 1);
                 return;
             }
-            if (upsert_index(key, (const unsigned char*)body, body_len, now_seconds()) != NULL) {
-                http_send_all(client, "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n");
-                printf("[http] PUT /index/%s (%zu bytes)\n", key, body_len);
-                return;
+            {
+                index_entry_t* stored;
+                state_lock();
+                prune_index();
+                stored = upsert_index(key, (const unsigned char*)body, body_len, now_seconds());
+                state_unlock();
+                if (stored != NULL) {
+                    http_send_all(client, "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n");
+                    printf("[http] PUT /index/%s (%zu bytes)\n", key, body_len);
+                    return;
+                }
             }
             printf("[http] PUT /index/%s failed: index store full\n", key);
         } else {
@@ -2374,6 +2390,85 @@ static void net_shutdown(void)
 }
 #endif
 
+static void http_queue_push(socket_t sock)
+{
+    mutex_lock(&g_http_q_mu);
+    while (g_http_q_count == HTTP_QUEUE_CAP) {
+        (void)cond_wait_ms(&g_http_q_cv, &g_http_q_mu, -1);
+    }
+    g_http_queue[(g_http_q_head + g_http_q_count) % HTTP_QUEUE_CAP] = sock;
+    ++g_http_q_count;
+    cond_signal(&g_http_q_cv);
+    mutex_unlock(&g_http_q_mu);
+}
+
+static socket_t http_queue_pop(void)
+{
+    socket_t sock;
+
+    mutex_lock(&g_http_q_mu);
+    while (g_http_q_count == 0) {
+        (void)cond_wait_ms(&g_http_q_cv, &g_http_q_mu, -1);
+    }
+    sock = g_http_queue[g_http_q_head];
+    g_http_q_head = (g_http_q_head + 1) % HTTP_QUEUE_CAP;
+    --g_http_q_count;
+    cond_signal(&g_http_q_cv);
+    mutex_unlock(&g_http_q_mu);
+    return sock;
+}
+
+static void* http_worker_main(void* unused)
+{
+    (void)unused;
+    for (;;) {
+        socket_t client = http_queue_pop();
+        (void)socket_set_nonblocking(client, 0);
+        socket_set_io_timeout(client, HTTP_CLIENT_TIMEOUT_SEC);
+        handle_http_client(client);
+        socket_close(client);
+    }
+    return NULL;
+}
+
+static void* http_accept_main(void* unused)
+{
+    (void)unused;
+    for (;;) {
+        struct sockaddr_in client;
+        socklen_t client_len = sizeof(client);
+        socket_t client_sock = accept(g_http_listen, (struct sockaddr*)&client, &client_len);
+        char peer_ip[INET_ADDRSTRLEN];
+
+        if (client_sock == SOCKET_INVALID) {
+            thread_sleep_ms(10);
+            continue;
+        }
+        if (inet_ntop(AF_INET, &client.sin_addr, peer_ip, sizeof(peer_ip)) == NULL) {
+            strncpy(peer_ip, "0.0.0.0", sizeof(peer_ip) - 1);
+            peer_ip[sizeof(peer_ip) - 1] = '\0';
+        }
+        printf("[http] connection from %s:%u\n", peer_ip, (unsigned)ntohs(client.sin_port));
+        http_queue_push(client_sock);
+    }
+    return NULL;
+}
+
+static int start_http_threads(void)
+{
+    for (int i = 0; i < HTTP_WORKERS; ++i) {
+        if (thread_spawn(http_worker_main, NULL) != 0) {
+            fprintf(stderr, "http worker thread failed\n");
+            return -1;
+        }
+    }
+    if (thread_spawn(http_accept_main, NULL) != 0) {
+        fprintf(stderr, "http accept thread failed\n");
+        return -1;
+    }
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
     const char* bind_host = "0.0.0.0";
@@ -2404,6 +2499,12 @@ int main(int argc, char** argv)
         fprintf(stderr, "network init failed\n");
         return 1;
     }
+
+    mutex_init(&g_state_mu);
+    mutex_init(&g_turn_mu);
+    cond_init(&g_turn_cv);
+    mutex_init(&g_http_q_mu);
+    cond_init(&g_http_q_cv);
 
     udp_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (udp_sock == SOCKET_INVALID) {
@@ -2445,10 +2546,8 @@ int main(int argc, char** argv)
             inet_pton(AF_INET, bind_host, &http_addr.sin_addr);
             if (bind(http_sock, (struct sockaddr*)&http_addr, sizeof(http_addr)) == 0 &&
                 listen(http_sock, HTTP_LISTEN_BACKLOG) == 0) {
-                if (socket_set_nonblocking(http_sock, 1) != 0) {
-                    fprintf(stderr, "warning: failed to set HTTP listen non-blocking\n");
-                }
-                printf("HTTP index on http://%s:%d/\n", bind_host, http_port);
+                g_http_listen = http_sock;
+                printf("HTTP index on http://%s:%d/ (%d workers)\n", bind_host, http_port, HTTP_WORKERS);
             } else {
                 fprintf(stderr, "http bind failed, continuing without HTTP\n");
                 socket_close(http_sock);
