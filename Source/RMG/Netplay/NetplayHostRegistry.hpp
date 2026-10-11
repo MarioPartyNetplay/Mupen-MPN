@@ -40,6 +40,7 @@ signals:
 
 private:
     void sendToServer(const QByteArray& message);
+    void sendSignalingKeep();
     bool ensureSocketBound(QString* errorOut = nullptr);
     bool ensureServerResolved(QString* errorOut = nullptr);
     void handleServerMessage(const QByteArray& datagram);

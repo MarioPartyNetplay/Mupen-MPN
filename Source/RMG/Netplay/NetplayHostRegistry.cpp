@@ -65,7 +65,7 @@ void NetplayHostRegistry::attachSignalingHost(_ENetHost* host)
     if (m_enetHost) {
         setEnetRegistryDatagramHandler(reinterpret_cast<ENetHost*>(m_enetHost),
                                        &NetplayHostRegistry::onEnetDatagram, this);
-        qInfo() << "NAT registry attached to the signaling socket";
+        qInfo() << "NAT punch keepalive will use the signaling socket";
     }
 }
 
@@ -201,8 +201,11 @@ bool NetplayHostRegistry::ensureServerResolved(QString* errorOut)
 
 void NetplayHostRegistry::sendToServer(const QByteArray& message)
 {
+    // REGISTER replies have to come back on this socket. Sending them from the
+    // listening ENet port drops the reply, so the host code never arrives and
+    // the room is never published.
     QString error;
-    if (!ensureServerResolved(&error) || (m_enetHost == nullptr && !ensureSocketBound(&error))) {
+    if (!ensureSocketBound(&error) || !ensureServerResolved(&error)) {
         if (m_hostRegisterAttempts >= kMaxHostRegisterAttempts) {
             m_registrationAbandoned = true;
         }
@@ -210,18 +213,41 @@ void NetplayHostRegistry::sendToServer(const QByteArray& message)
         return;
     }
 
-    const bool sent = m_enetHost
-                          ? sendEnetDatagram(reinterpret_cast<ENetHost*>(m_enetHost), m_serverAddress,
-                                             static_cast<quint16>(kNetplayRegistryPort), message)
-                          : m_socket.writeDatagram(message, m_serverAddress, kNetplayRegistryPort) >= 0;
-    if (!sent) {
+    if (m_socket.writeDatagram(message, m_serverAddress, kNetplayRegistryPort) < 0) {
         if (m_hostRegisterAttempts >= kMaxHostRegisterAttempts) {
             m_registrationAbandoned = true;
         }
-        failHosting(m_enetHost
-                        ? QStringLiteral("Failed to send browse registry packet on the signaling socket")
-                        : QString("Failed to send browse registry packet: %1").arg(m_socket.errorString()));
+        failHosting(QString("Failed to send browse registry packet: %1").arg(m_socket.errorString()));
     }
+}
+
+void NetplayHostRegistry::sendSignalingKeep()
+{
+    if (m_enetHost == nullptr || m_hostCode.isEmpty()) {
+        return;
+    }
+
+    QString error;
+    if (!ensureServerResolved(&error)) {
+        qWarning() << "NAT punch keepalive:" << error;
+        return;
+    }
+
+    const QByteArray keepMessage =
+        QByteArray(kNetplayRegistryProtocol) + "|KEEP|" + m_hostCode.toUtf8() + "|" +
+        QByteArray::number(m_signalingPort) + "|" +
+        (m_listInBrowser ? "1" : "0");
+    bool sent = false;
+    for (int i = 0; i < 3; ++i) {
+        sent = sendEnetDatagram(reinterpret_cast<ENetHost*>(m_enetHost), m_serverAddress,
+                                static_cast<quint16>(kNetplayRegistryPort), keepMessage) || sent;
+    }
+    if (!sent) {
+        qWarning() << "NAT punch keepalive failed on the signaling socket";
+        return;
+    }
+
+    m_nextHostKeepMs = monotonicMs() + kEnetKeepIntervalMs;
 }
 
 void NetplayHostRegistry::onReadyRead()
@@ -261,6 +287,9 @@ void NetplayHostRegistry::handleServerMessage(const QByteArray& datagram)
         m_hostRegisterAttempts = 0;
         m_nextHostRegisterMs = 0;
         m_nextHostKeepMs = 0;
+        // Move the server's public mapping onto the game socket before the
+        // room is published, so a joiner punches that port.
+        sendSignalingKeep();
         emit hostRegistered(m_hostCode, publicAddress, signalingPort);
         return;
     }
@@ -312,12 +341,19 @@ void NetplayHostRegistry::onHousekeepingTimer()
     }
 
     if (m_nextHostKeepMs == 0 || now >= m_nextHostKeepMs) {
+        if (m_enetHost != nullptr) {
+            sendSignalingKeep();
+            if (m_nextHostKeepMs > now) {
+                return;
+            }
+        }
+
         const QByteArray keepMessage =
             QByteArray(kNetplayRegistryProtocol) + "|KEEP|" + m_hostCode.toUtf8() + "|" +
             QByteArray::number(m_signalingPort) + "|" +
             (m_listInBrowser ? "1" : "0");
         sendToServer(keepMessage);
-        m_nextHostKeepMs = now + (m_enetHost ? kEnetKeepIntervalMs : kHostKeepIntervalMs);
+        m_nextHostKeepMs = now + (m_enetHost != nullptr ? kEnetKeepIntervalMs : kHostKeepIntervalMs);
     }
 }
 
