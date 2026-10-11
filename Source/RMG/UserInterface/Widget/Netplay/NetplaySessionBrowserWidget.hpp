@@ -25,6 +25,7 @@ struct NetplaySessionData
     QString LobbySize;
     QString Address;
     int Port = 0;
+    bool UseNatTraversal = false;
 };
 
 namespace UserInterface
@@ -44,7 +45,7 @@ class NetplaySessionBrowserWidget : public QStackedWidget
     void StartRefresh(void);
 
     void AddSessionData(const QString& hostName, const QString& gameName, const QString& hostCode,
-                        const QString& lobbySize, int port, const QString& address);
+                        const QString& lobbySize, int port, const QString& address, bool useNatTraversal);
 
     void RefreshDone(void);
 

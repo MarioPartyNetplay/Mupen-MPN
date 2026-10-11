@@ -82,7 +82,7 @@ void NetplaySessionBrowserWidget::StartRefresh(void)
 
 void NetplaySessionBrowserWidget::AddSessionData(const QString& hostName, const QString& gameName,
                                                  const QString& hostCode, const QString& lobbySize,
-                                                 int port, const QString& address)
+                                                 int port, const QString& address, bool useNatTraversal)
 {
     if (!hostCode.isEmpty()) {
         for (int row = 0; row < this->tableWidget->rowCount(); ++row) {
@@ -106,6 +106,7 @@ void NetplaySessionBrowserWidget::AddSessionData(const QString& hostName, const 
         lobbySize,
         address,
         port,
+        useNatTraversal,
     };
 
     int row = this->tableWidget->rowCount();

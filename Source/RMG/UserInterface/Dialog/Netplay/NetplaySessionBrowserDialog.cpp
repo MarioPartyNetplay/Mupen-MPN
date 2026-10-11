@@ -13,8 +13,6 @@
 #include "UserInterface/Widget/Netplay/NetplaySessionBrowserWidget.hpp"
 #include "NetplaySessionPasswordDialog.hpp"
 #include "Utilities/QtMessageBox.hpp"
-
-#include <QCheckBox>
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
 #include <QNetworkAccessManager>
@@ -163,7 +161,10 @@ void addResolvedRoom(UserInterface::Widget::NetplaySessionBrowserWidget* widget,
         hostCode,
         fields.lobbySize,
         port,
-        address);
+        address,
+        Netplay::sessionUsesNatTraversal(indexSession) ||
+            room.value(QStringLiteral("useNatTraversal")).toBool(false) ||
+            room.value(QStringLiteral("use_nat_traversal")).toBool(false));
 }
 
 } // namespace
@@ -172,13 +173,6 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
     : QWidget(parent), coordinator(coordinator), romData(modelData)
 {
     this->setupUi(this);
-
-    this->useNatTraversalCheckBox = new QCheckBox(QStringLiteral("Use NAT traversal"), this);
-    this->useNatTraversalCheckBox->setToolTip(
-        QStringLiteral("Reach the host through NAT Traversal instead of its public IP. Requires the host code."));
-    if (this->horizontalLayout_ip) {
-        this->horizontalLayout_ip->addWidget(this->useNatTraversalCheckBox);
-    }
 
     this->ipAddressLineEdit->setPlaceholderText("IP address or IP:Port");
 
@@ -562,20 +556,11 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
 
 void NetplaySessionBrowserDialog::connectToResolvedHost(const QString& address, int port, const QString& roomId)
 {
-    const bool forceNat =
-        this->useNatTraversalCheckBox != nullptr && this->useNatTraversalCheckBox->isChecked();
     const QString hostCode = Netplay::sessionTraversalHostCode(this->pendingIndexSession);
-    const bool useTraversal = forceNat || Netplay::sessionUsesNatTraversal(this->pendingIndexSession) ||
+    const bool useTraversal = Netplay::sessionUsesNatTraversal(this->pendingIndexSession) ||
                               (!hostCode.isEmpty() && !Netplay::isUsableConnectAddress(address));
     if (useTraversal && !hostCode.isEmpty()) {
         beginTraversalJoin(hostCode, roomId);
-        return;
-    }
-    if (forceNat && hostCode.isEmpty()) {
-        QtMessageBox::Error(this, "NAT Traversal",
-                            "NAT traversal needs the host code from the room list or a 7-character code.");
-        this->isWaitingForConnection = false;
-        this->validateJoinButton();
         return;
     }
 
@@ -696,6 +681,12 @@ void NetplaySessionBrowserDialog::submit(void)
                     !selectedSession.HostCode.isEmpty()) {
                     this->pendingIndexSession.insert(QStringLiteral("host_code"), selectedSession.HostCode);
                 }
+                if (selectedSession.UseNatTraversal) {
+                    this->pendingIndexSession.insert(QStringLiteral("use_nat_traversal"), true);
+                    this->pendingIndexSession.insert(
+                        QStringLiteral("connection_mode"),
+                        Netplay::netplayConnectionModeToString(Netplay::NetplayConnectionMode::TraversalServer));
+                }
                 QString address = selectedSession.Address;
                 int connectPort = port;
                 if (Netplay::sessionConnectEndpoint(this->pendingIndexSession, &address, &connectPort)) {
@@ -707,6 +698,16 @@ void NetplaySessionBrowserDialog::submit(void)
             return;
         }
 
+        this->pendingIndexSession = QJsonObject();
+        if (!selectedSession.HostCode.isEmpty()) {
+            this->pendingIndexSession.insert(QStringLiteral("host_code"), selectedSession.HostCode);
+        }
+        if (selectedSession.UseNatTraversal) {
+            this->pendingIndexSession.insert(QStringLiteral("use_nat_traversal"), true);
+            this->pendingIndexSession.insert(
+                QStringLiteral("connection_mode"),
+                Netplay::netplayConnectionModeToString(Netplay::NetplayConnectionMode::TraversalServer));
+        }
         this->connectToResolvedHost(selectedSession.Address, port);
         return;
     }

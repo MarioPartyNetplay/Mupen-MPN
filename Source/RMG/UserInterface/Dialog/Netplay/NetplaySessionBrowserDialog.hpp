@@ -22,7 +22,6 @@
 
 class QNetworkAccessManager;
 class QNetworkReply;
-class QCheckBox;
 
 namespace UserInterface
 {
@@ -70,7 +69,6 @@ class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBr
     bool m_traversalPending = false;
     bool m_joinedViaTraversal = false;
     QString m_traversalHostCode;
-    QCheckBox* useNatTraversalCheckBox = nullptr;
 
     QString showROMDialog(QString name, QString md5);
 

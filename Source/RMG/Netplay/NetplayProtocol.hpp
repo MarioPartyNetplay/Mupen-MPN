@@ -365,7 +365,8 @@ inline NetplayConnectionMode netplayConnectionModeFromString(const QString& valu
 
 inline bool sessionUsesNatTraversal(const QJsonObject& session)
 {
-    if (session.value(QStringLiteral("use_nat_traversal")).toBool(false)) {
+    if (session.value(QStringLiteral("use_nat_traversal")).toBool(false) ||
+        session.value(QStringLiteral("useNatTraversal")).toBool(false)) {
         return true;
     }
     return netplayConnectionModeFromString(session.value(QStringLiteral("connection_mode")).toString()) ==
