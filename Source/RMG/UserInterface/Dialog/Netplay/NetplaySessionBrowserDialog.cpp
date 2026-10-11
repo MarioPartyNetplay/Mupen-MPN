@@ -595,7 +595,9 @@ void NetplaySessionBrowserDialog::onJuiceJoinSucceeded(quint16 localPort)
 
 void NetplaySessionBrowserDialog::onJuiceJoinFailed(const QString& reason)
 {
-    if (!this->m_traversalPending) {
+    // joinRetryActive covers the window after ICE reports connected and the
+    // dialog is dialing the local proxy. The tunnel can still die in that window.
+    if (!this->m_traversalPending && !this->joinRetryActive) {
         return;
     }
 

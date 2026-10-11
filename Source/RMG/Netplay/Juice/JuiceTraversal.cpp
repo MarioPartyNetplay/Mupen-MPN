@@ -679,7 +679,10 @@ void JuiceTraversal::deleteKey(const QString& key)
 
 void JuiceTraversal::failJoin(const QString& reason)
 {
-    if (!m_joining || m_joinFinished) {
+    // A successful connect sets m_joinFinished while the agent is still live.
+    // A later failure still has to be reported, or the UI keeps dialing the
+    // localhost proxy after the tunnel is gone.
+    if (!m_joining || (m_joinFinished && !m_joinReady)) {
         return;
     }
     m_joinFinished = true;
