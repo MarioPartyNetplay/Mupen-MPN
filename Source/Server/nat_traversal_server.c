@@ -14,8 +14,16 @@
  *
  *   --nat-traversal   tell clients every session uses NAT traversal
  *
+ * Threads:
+ *   main             UDP host codes and index only
+ *   HTTP accept + workers   lobby pages and /turn/ice-servers
+ *   TURN refresh     Cloudflare ICE credentials, off the UDP loop
+ *
  * Cloudflare TURN broker (server-side only):
  *   turn_secrets.h (compiled in) or RMG_TURN_KEY_ID / RMG_TURN_API_TOKEN env overrides
+ *   Cached credentials are rotated well before their TTL so a late joiner is not
+ *   handed a key that is about to expire. The response adds "expires" (unix) and
+ *   "ttl" (seconds remaining).
  *
  * Build:
  *   gcc -O2 -Wall -o nat_traversal_server nat_traversal_server.c -lws2_32
@@ -28,6 +36,8 @@
 #endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
+#include <process.h>
 typedef SOCKET socket_t;
 #define SOCKET_INVALID INVALID_SOCKET
 #define socket_close closesocket
@@ -37,6 +47,7 @@ typedef SOCKET socket_t;
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -75,13 +86,18 @@ typedef int socket_t;
 #define MAX_HTTP_REQUEST 16384
 #define MAX_TURN_RESPONSE 32768
 #define DEFAULT_TURN_CREDENTIAL_TTL_SEC 86400
+#define TURN_CREDENTIAL_TTL_MAX_SEC 172800
 #define TURN_CACHE_REFRESH_SKEW_SEC 300
+/* Re-issue while most of the TTL remains. Clients that join near the end of a
+   24h cache were keeping a credential that Cloudflare was about to reject. */
+#define TURN_CACHE_REUSE_SEC 900
 #define TURN_FETCH_TIMEOUT_SEC 5
-#define TURN_REFRESH_BACKOFF_SEC 30
+#define TURN_REFRESH_BACKOFF_SEC 5
 #define HTTP_CLIENT_TIMEOUT_SEC 2
 #define HTTP_LISTEN_BACKLOG 128
+#define HTTP_WORKERS 8
+#define HTTP_QUEUE_CAP 64
 #define MAX_UDP_DRAIN_PER_TICK 64
-#define MAX_HTTP_ACCEPT_PER_TICK 8
 #define EVENT_LOOP_IDLE_SEC 1
 
 #ifdef WITH_LIBCURL
@@ -116,7 +132,26 @@ static size_t g_turn_cache_len = 0;
 static uint64_t g_turn_cache_expires = 0;
 static int g_turn_credential_ttl_sec = DEFAULT_TURN_CREDENTIAL_TTL_SEC;
 static uint64_t g_turn_next_refresh_attempt = 0;
+static int g_turn_initial_done = 0;
 static int g_force_nat_traversal = 0;
+
+#ifdef _WIN32
+typedef CRITICAL_SECTION mutex_t;
+typedef CONDITION_VARIABLE cond_t;
+#else
+typedef pthread_mutex_t mutex_t;
+typedef pthread_cond_t cond_t;
+#endif
+
+static mutex_t g_state_mu;
+static mutex_t g_turn_mu;
+static cond_t g_turn_cv;
+static mutex_t g_http_q_mu;
+static cond_t g_http_q_cv;
+static socket_t g_http_queue[HTTP_QUEUE_CAP];
+static int g_http_q_head = 0;
+static int g_http_q_count = 0;
+static socket_t g_http_listen = SOCKET_INVALID;
 
 static int session_json_force_nat(const char* src, char* dst, size_t dst_size, size_t* out_len);
 
@@ -166,6 +201,187 @@ static int socket_would_block(void)
 #else
     return socket_errno == EAGAIN || socket_errno == EWOULDBLOCK;
 #endif
+}
+
+static void mutex_init(mutex_t* mutex)
+{
+#ifdef _WIN32
+    InitializeCriticalSection(mutex);
+#else
+    pthread_mutex_init(mutex, NULL);
+#endif
+}
+
+static void mutex_lock(mutex_t* mutex)
+{
+#ifdef _WIN32
+    EnterCriticalSection(mutex);
+#else
+    pthread_mutex_lock(mutex);
+#endif
+}
+
+static void mutex_unlock(mutex_t* mutex)
+{
+#ifdef _WIN32
+    LeaveCriticalSection(mutex);
+#else
+    pthread_mutex_unlock(mutex);
+#endif
+}
+
+static void cond_init(cond_t* cond)
+{
+#ifdef _WIN32
+    InitializeConditionVariable(cond);
+#else
+    pthread_cond_init(cond, NULL);
+#endif
+}
+
+static void cond_signal(cond_t* cond)
+{
+#ifdef _WIN32
+    WakeConditionVariable(cond);
+#else
+    pthread_cond_signal(cond);
+#endif
+}
+
+static void cond_broadcast(cond_t* cond)
+{
+#ifdef _WIN32
+    WakeAllConditionVariable(cond);
+#else
+    pthread_cond_broadcast(cond);
+#endif
+}
+
+/* Returns 0 if signaled, -1 on timeout. Caller holds mutex. timeout_ms < 0 waits forever. */
+static int cond_wait_ms(cond_t* cond, mutex_t* mutex, int timeout_ms)
+{
+#ifdef _WIN32
+    DWORD wait_ms = timeout_ms < 0 ? INFINITE : (DWORD)timeout_ms;
+    return SleepConditionVariableCS(cond, mutex, wait_ms) ? 0 : -1;
+#else
+    if (timeout_ms < 0) {
+        return pthread_cond_wait(cond, mutex) == 0 ? 0 : -1;
+    }
+    {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += timeout_ms / 1000;
+        ts.tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+        if (ts.tv_nsec >= 1000000000L) {
+            ts.tv_sec += 1;
+            ts.tv_nsec -= 1000000000L;
+        }
+        return pthread_cond_timedwait(cond, mutex, &ts) == 0 ? 0 : -1;
+    }
+#endif
+}
+
+static void thread_sleep_ms(int ms)
+{
+#ifdef _WIN32
+    Sleep(ms);
+#else
+    struct timespec pause;
+    pause.tv_sec = ms / 1000;
+    pause.tv_nsec = (long)(ms % 1000) * 1000000L;
+    nanosleep(&pause, NULL);
+#endif
+}
+
+typedef void* (*thread_fn)(void*);
+
+struct thread_boot {
+    thread_fn fn;
+    void* arg;
+};
+
+#ifdef _WIN32
+static unsigned __stdcall thread_trampoline(void* raw)
+{
+    struct thread_boot* boot = (struct thread_boot*)raw;
+    thread_fn fn = boot->fn;
+    void* arg = boot->arg;
+    free(boot);
+    fn(arg);
+    return 0;
+}
+
+static int thread_spawn(thread_fn fn, void* arg)
+{
+    struct thread_boot* boot = (struct thread_boot*)malloc(sizeof(*boot));
+    uintptr_t handle;
+    if (boot == NULL) {
+        return -1;
+    }
+    boot->fn = fn;
+    boot->arg = arg;
+    handle = _beginthreadex(NULL, 0, thread_trampoline, boot, 0, NULL);
+    if (handle == 0) {
+        free(boot);
+        return -1;
+    }
+    CloseHandle((HANDLE)handle);
+    return 0;
+}
+#else
+static void* thread_trampoline(void* raw)
+{
+    struct thread_boot* boot = (struct thread_boot*)raw;
+    thread_fn fn = boot->fn;
+    void* arg = boot->arg;
+    free(boot);
+    fn(arg);
+    return NULL;
+}
+
+static int thread_spawn(thread_fn fn, void* arg)
+{
+    pthread_t thread;
+    pthread_attr_t attr;
+    struct thread_boot* boot;
+    int rc;
+
+    boot = (struct thread_boot*)malloc(sizeof(*boot));
+    if (boot == NULL) {
+        return -1;
+    }
+    boot->fn = fn;
+    boot->arg = arg;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    rc = pthread_create(&thread, &attr, thread_trampoline, boot);
+    pthread_attr_destroy(&attr);
+    if (rc != 0) {
+        free(boot);
+        return -1;
+    }
+    return 0;
+}
+#endif
+
+static void state_lock(void)
+{
+    mutex_lock(&g_state_mu);
+}
+
+static void state_unlock(void)
+{
+    mutex_unlock(&g_state_mu);
+}
+
+static void turn_lock(void)
+{
+    mutex_lock(&g_turn_mu);
+}
+
+static void turn_unlock(void)
+{
+    mutex_unlock(&g_turn_mu);
 }
 
 static void send_reply(socket_t sock, const struct sockaddr* addr, socklen_t addr_len, const char* message)
@@ -749,8 +965,8 @@ static const char* field_after_key(const char* message, const char* op, const ch
     }
 }
 
-static void handle_udp(socket_t sock, const char* buffer, int length, const struct sockaddr_in* client,
-                       socklen_t client_len)
+static void handle_udp_locked(socket_t sock, const char* buffer, int length, const struct sockaddr_in* client,
+                             socklen_t client_len)
 {
     char message[MAX_UDP_PACKET];
     char* parts[8];
@@ -851,6 +1067,14 @@ static void handle_udp(socket_t sock, const char* buffer, int length, const stru
         }
         return;
     }
+}
+
+static void handle_udp(socket_t sock, const char* buffer, int length, const struct sockaddr_in* client,
+                       socklen_t client_len)
+{
+    state_lock();
+    handle_udp_locked(sock, buffer, length, client, client_len);
+    state_unlock();
 }
 
 /* ---- HTTP index ---- */
@@ -971,6 +1195,8 @@ static void http_reply_index_page(socket_t client)
     size_t offset = 0;
     const uint64_t now = now_seconds();
 
+    state_lock();
+    prune_index();
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
                                "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
                                "<title>Mupen MPN Index</title></head><body><h1>Mupen MPN Index</h1><ul>");
@@ -988,6 +1214,7 @@ static void http_reply_index_page(socket_t client)
     }
 
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "</ul></body></html>");
+    state_unlock();
 
     {
         char header[256];
@@ -1057,23 +1284,38 @@ static int session_json_force_nat(const char* src, char* dst, size_t dst_size, s
 
 static void http_reply_value(socket_t client, const char* key, int found)
 {
-    index_entry_t* entry = find_index(key);
-    if (!found || entry == NULL || now_seconds() - entry->last_seen > INDEX_TTL_SEC) {
+    char payload_copy[MAX_VALUE_LEN];
+    size_t payload_len = 0;
+    int ok = 0;
+
+    state_lock();
+    prune_index();
+    {
+        index_entry_t* entry = find_index(key);
+        if (found && entry != NULL && now_seconds() - entry->last_seen <= INDEX_TTL_SEC) {
+            char forced[MAX_VALUE_LEN];
+            size_t forced_len = 0;
+            const char* payload = entry->value;
+            payload_len = entry->value_len;
+            if (key != NULL && strncmp(key, "session/", 8) == 0 &&
+                session_json_force_nat(entry->value, forced, sizeof(forced), &forced_len)) {
+                payload = forced;
+                payload_len = forced_len;
+            }
+            if (payload_len < sizeof(payload_copy)) {
+                memcpy(payload_copy, payload, payload_len);
+                ok = 1;
+            }
+        }
+    }
+    state_unlock();
+
+    if (!ok) {
         http_send_all(client, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
         return;
     }
 
     {
-        char forced[MAX_VALUE_LEN];
-        size_t forced_len = 0;
-        const char* payload = entry->value;
-        size_t payload_len = entry->value_len;
-        if (key != NULL && strncmp(key, "session/", 8) == 0 &&
-            session_json_force_nat(entry->value, forced, sizeof(forced), &forced_len)) {
-            payload = forced;
-            payload_len = forced_len;
-        }
-
         char header[256];
         snprintf(header, sizeof(header),
                  "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %zu\r\n"
@@ -1083,7 +1325,7 @@ static void http_reply_value(socket_t client, const char* key, int found)
         {
             size_t sent = 0;
             while (sent < payload_len) {
-                int n = send(client, payload + sent, (int)(payload_len - sent), 0);
+                int n = send(client, payload_copy + sent, (int)(payload_len - sent), 0);
                 if (n <= 0) {
                     break;
                 }
@@ -1391,6 +1633,9 @@ static void http_reply_rooms_html(socket_t client)
     size_t offset = 0;
     const uint64_t now = now_seconds();
 
+    state_lock();
+    prune_hosts();
+    prune_index();
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
                                "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
                                "<title>Mupen MPN Active Rooms</title></head><body><h1>Active Rooms</h1><ul>");
@@ -1428,6 +1673,7 @@ static void http_reply_rooms_html(socket_t client)
     }
 
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "</ul></body></html>");
+    state_unlock();
 
     {
         char header[256];
@@ -1448,6 +1694,9 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
     int wrote_room = 0;
 
     body[0] = '\0';
+    state_lock();
+    prune_hosts();
+    prune_index();
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "{\"rooms\":[");
 
     for (int i = 0; i < g_host_count; ++i) {
@@ -1571,6 +1820,7 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
     }
 
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "]}");
+    state_unlock();
 
     {
         char header[256];
@@ -1628,13 +1878,19 @@ static void turn_load_config_from_env(void)
         int parsed = atoi(ttl);
         if (parsed > 0) {
             g_turn_credential_ttl_sec = parsed;
-            return;
         }
+    } else {
+#if RMG_TURN_CREDENTIAL_TTL_EMBED > 0
+        g_turn_credential_ttl_sec = RMG_TURN_CREDENTIAL_TTL_EMBED;
+#endif
     }
 
-#if RMG_TURN_CREDENTIAL_TTL_EMBED > 0
-    g_turn_credential_ttl_sec = RMG_TURN_CREDENTIAL_TTL_EMBED;
-#endif
+    if (g_turn_credential_ttl_sec > TURN_CREDENTIAL_TTL_MAX_SEC) {
+        g_turn_credential_ttl_sec = TURN_CREDENTIAL_TTL_MAX_SEC;
+    }
+    if (g_turn_credential_ttl_sec < 60) {
+        g_turn_credential_ttl_sec = 60;
+    }
 }
 
 static const char* turn_key_id_config(void)
@@ -1720,7 +1976,21 @@ static int turn_fetch_cloudflare_credentials(char* out, size_t out_size, size_t*
             *out_len = response.size;
             success = 1;
         } else {
-            fprintf(stderr, "[turn] Cloudflare credential request failed (HTTP %ld)\n", http_code);
+            char snippet[180];
+            size_t snippet_len = 0;
+            snippet[0] = '\0';
+            if (response.data != NULL && response.size > 0) {
+                snippet_len = response.size < sizeof(snippet) - 1 ? response.size : sizeof(snippet) - 1;
+                memcpy(snippet, response.data, snippet_len);
+                snippet[snippet_len] = '\0';
+                for (size_t i = 0; i < snippet_len; ++i) {
+                    if (snippet[i] == '\n' || snippet[i] == '\r') {
+                        snippet[i] = ' ';
+                    }
+                }
+            }
+            fprintf(stderr, "[turn] Cloudflare credential request failed (HTTP %ld)%s%s\n", http_code,
+                    snippet[0] != '\0' ? ": " : "", snippet);
         }
     } else {
         fprintf(stderr, "[turn] Cloudflare credential request failed: %s\n", curl_easy_strerror(result));
@@ -1732,49 +2002,149 @@ static int turn_fetch_cloudflare_credentials(char* out, size_t out_size, size_t*
     return success;
 }
 
-static int turn_credentials_are_fresh(uint64_t now)
+/* Caller holds g_turn_mu. */
+static int turn_should_refresh_locked(uint64_t now)
 {
-    return g_turn_cache_len > 0 && g_turn_cache_expires > now + TURN_CACHE_REFRESH_SKEW_SEC;
-}
+    uint64_t ttl;
+    uint64_t reuse;
+    uint64_t remaining;
 
-static int turn_credentials_are_usable(uint64_t now)
-{
-    /* Serve through the credential TTL; refresh happens off the request path. */
-    return g_turn_cache_len > 0 && g_turn_cache_expires > now;
-}
+    if (!turn_is_configured()) {
+        return 0;
+    }
+    if (now < g_turn_next_refresh_attempt) {
+        return 0;
+    }
+    if (g_turn_cache_len == 0 || g_turn_cache_expires <= now + (uint64_t)TURN_CACHE_REFRESH_SKEW_SEC) {
+        return 1;
+    }
 
-static int turn_refresh_credentials(uint64_t now)
-{
-    size_t fetched_len = 0;
-
-    if (!turn_fetch_cloudflare_credentials(g_turn_cache, sizeof(g_turn_cache), &fetched_len)) {
-        g_turn_next_refresh_attempt = now + TURN_REFRESH_BACKOFF_SEC;
+    ttl = (uint64_t)g_turn_credential_ttl_sec;
+    remaining = g_turn_cache_expires - now;
+    if (ttl == 0 || remaining >= ttl) {
         return 0;
     }
 
-    g_turn_cache_len = fetched_len;
-    g_turn_cache_expires = now + (uint64_t)g_turn_credential_ttl_sec;
-    g_turn_next_refresh_attempt = 0;
-    printf("[turn] refreshed Cloudflare ICE credentials (%zu bytes, ttl %d sec)\n", g_turn_cache_len,
-           g_turn_credential_ttl_sec);
-    return 1;
+    reuse = (uint64_t)TURN_CACHE_REUSE_SEC;
+    if (reuse + (uint64_t)TURN_CACHE_REFRESH_SKEW_SEC >= ttl) {
+        reuse = ttl / 4;
+        if (reuse < (uint64_t)TURN_CACHE_REFRESH_SKEW_SEC) {
+            reuse = (uint64_t)TURN_CACHE_REFRESH_SKEW_SEC;
+        }
+    }
+    return (ttl - remaining) >= reuse;
 }
 
-static void turn_maybe_refresh_idle(void)
+static void turn_publish_credentials(const char* fetched, size_t fetched_len)
 {
     const uint64_t now = now_seconds();
 
-    if (!turn_is_configured()) {
-        return;
+    turn_lock();
+    if (fetched_len > 0 && fetched_len < sizeof(g_turn_cache)) {
+        memcpy(g_turn_cache, fetched, fetched_len);
+        g_turn_cache[fetched_len] = '\0';
+        g_turn_cache_len = fetched_len;
+        g_turn_cache_expires = now + (uint64_t)g_turn_credential_ttl_sec;
+        g_turn_next_refresh_attempt = 0;
+        printf("[turn] refreshed Cloudflare ICE credentials (%zu bytes, ttl %d sec, reuse %d sec, expires %llu)\n",
+               g_turn_cache_len, g_turn_credential_ttl_sec, TURN_CACHE_REUSE_SEC,
+               (unsigned long long)g_turn_cache_expires);
     }
-    if (turn_credentials_are_fresh(now)) {
-        return;
-    }
-    if (now < g_turn_next_refresh_attempt) {
-        return;
+    turn_unlock();
+}
+
+static void turn_note_refresh_failure(void)
+{
+    turn_lock();
+    g_turn_next_refresh_attempt = now_seconds() + (uint64_t)TURN_REFRESH_BACKOFF_SEC;
+    turn_unlock();
+}
+
+static void turn_mark_initial_done(void)
+{
+    turn_lock();
+    g_turn_initial_done = 1;
+    cond_broadcast(&g_turn_cv);
+    turn_unlock();
+}
+
+static void* turn_refresh_main(void* unused)
+{
+    int first = 1;
+    (void)unused;
+
+    for (;;) {
+        int refresh = 0;
+        const uint64_t now = now_seconds();
+
+        turn_lock();
+        refresh = turn_should_refresh_locked(now);
+        turn_unlock();
+
+        if (refresh) {
+            char fetched[MAX_TURN_RESPONSE];
+            size_t fetched_len = 0;
+            if (turn_fetch_cloudflare_credentials(fetched, sizeof(fetched), &fetched_len)) {
+                turn_publish_credentials(fetched, fetched_len);
+            } else {
+                turn_note_refresh_failure();
+            }
+        }
+
+        if (first) {
+            turn_mark_initial_done();
+            first = 0;
+        }
+
+        thread_sleep_ms(1000);
     }
 
-    (void)turn_refresh_credentials(now);
+    return NULL;
+}
+
+/* Copy the cached Cloudflare body and stamp the real expiry onto it.
+   Returns 0 when the cache is empty or inside the refresh skew. */
+static int turn_build_client_payload(char* out, size_t out_size, size_t* out_len)
+{
+    char raw[MAX_TURN_RESPONSE];
+    size_t raw_len;
+    uint64_t expires;
+    uint64_t now;
+    const char* brace;
+    int prefix_len;
+    size_t rest_len;
+
+    turn_lock();
+    now = now_seconds();
+    if (g_turn_cache_len == 0 || g_turn_cache_expires <= now + (uint64_t)TURN_CACHE_REFRESH_SKEW_SEC ||
+        g_turn_cache_len >= sizeof(raw)) {
+        turn_unlock();
+        return 0;
+    }
+    raw_len = g_turn_cache_len;
+    memcpy(raw, g_turn_cache, raw_len);
+    raw[raw_len] = '\0';
+    expires = g_turn_cache_expires;
+    turn_unlock();
+
+    brace = raw;
+    while (*brace == ' ' || *brace == '\n' || *brace == '\r' || *brace == '\t') {
+        ++brace;
+    }
+    if (*brace != '{') {
+        return 0;
+    }
+    ++brace;
+    rest_len = strlen(brace);
+
+    prefix_len = snprintf(out, out_size, "{\"expires\":%llu,\"ttl\":%llu,", (unsigned long long)expires,
+                          (unsigned long long)(expires - now));
+    if (prefix_len < 0 || (size_t)prefix_len >= out_size || (size_t)prefix_len + rest_len + 1 > out_size) {
+        return 0;
+    }
+    memcpy(out + prefix_len, brace, rest_len + 1);
+    *out_len = (size_t)prefix_len + rest_len;
+    return 1;
 }
 
 #endif /* WITH_LIBCURL */
@@ -1782,7 +2152,8 @@ static void turn_maybe_refresh_idle(void)
 static void http_reply_turn_ice_servers(socket_t client)
 {
 #ifdef WITH_LIBCURL
-    const uint64_t now = now_seconds();
+    char payload[MAX_TURN_RESPONSE];
+    size_t payload_len = 0;
 
     if (!turn_is_configured()) {
         http_reply_json(client, 503, "Service Unavailable",
@@ -1790,34 +2161,23 @@ static void http_reply_turn_ice_servers(socket_t client)
         return;
     }
 
-    /* A client asking for keys always gets a fetch when the cache is empty.
-       Idle refresh keeps its backoff so the lobby loop does not hammer Cloudflare. */
-    if (!turn_credentials_are_usable(now)) {
-        if (g_turn_cache_len == 0) {
-            if (!turn_refresh_credentials(now)) {
-                http_reply_json(client, 502, "Bad Gateway",
-                                "{\"error\":\"Failed to fetch Cloudflare TURN credentials\"}");
-                return;
-            }
-        } else {
-            /* Expired cache: keep serving while idle refresh catches up. */
-            g_turn_next_refresh_attempt = 0;
-        }
-    } else if (!turn_credentials_are_fresh(now)) {
-        g_turn_next_refresh_attempt = 0;
+    if (!turn_build_client_payload(payload, sizeof(payload), &payload_len)) {
+        http_reply_json(client, 503, "Service Unavailable",
+                        "{\"error\":\"TURN credentials are refreshing\"}");
+        return;
     }
 
     {
-        char header[256];
+        char header[320];
         snprintf(header, sizeof(header),
-                 "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: %zu\r\n"
-                 "Connection: close\r\n\r\n",
-                 g_turn_cache_len);
+                 "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+                 "Cache-Control: no-store\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
+                 payload_len);
         http_send_all(client, header);
         {
             size_t sent = 0;
-            while (sent < g_turn_cache_len) {
-                int n = send(client, g_turn_cache + sent, (int)(g_turn_cache_len - sent), 0);
+            while (sent < payload_len) {
+                int n = send(client, payload + sent, (int)(payload_len - sent), 0);
                 if (n <= 0) {
                     break;
                 }
