@@ -44,7 +44,7 @@ private:
     void finishBrokerRequest();
     bool waitForBroker(int timeoutMs);
     bool parseIceServersResponse(const QByteArray& payload, std::vector<rtc::IceServer>* stunOut,
-                                 std::vector<rtc::IceServer>* turnOut, QString* errorOut);
+                                 std::vector<rtc::IceServer>* turnOut, QString* errorOut, qint64* expiresUnixOut);
 
     mutable QMutex m_mutex;
     std::vector<rtc::IceServer> m_stunServers;

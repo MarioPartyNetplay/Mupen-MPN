@@ -889,14 +889,38 @@ static void index_get(socket_t sock, const struct sockaddr_in* client, socklen_t
         size_t forced_len = 0;
         const char* payload = entry->value;
         size_t payload_len = entry->value_len;
+        const char* header = INDEX_PROTOCOL "|GETOK|";
+        const char* marker = "|B64:";
+        size_t header_len;
+        size_t key_len;
+        size_t marker_len;
+        size_t b64_len;
+        size_t total;
+
         if (strncmp(key, "session/", 8) == 0 &&
             session_json_force_nat(entry->value, forced, sizeof(forced), &forced_len)) {
             payload = forced;
             payload_len = forced_len;
         }
-        b64_encode((const unsigned char*)payload, payload_len, b64, sizeof(b64));
+        b64_len = b64_encode((const unsigned char*)payload, payload_len, b64, sizeof(b64));
+        header_len = strlen(header);
+        key_len = strlen(key);
+        marker_len = strlen(marker);
+        total = header_len + key_len + marker_len + b64_len;
+        {
+            const size_t expected = payload_len == 0 ? 0 : 4 * ((payload_len + 2) / 3);
+            if (b64_len != expected || total + 1 > sizeof(reply)) {
+                fprintf(stderr, "[idx] GET %s reply does not fit in one datagram (%zu bytes)\n", key, total);
+                send_reply(sock, (const struct sockaddr*)client, client_len, INDEX_PROTOCOL "|ERR|TOOLARGE");
+                return;
+            }
+        }
+        memcpy(reply, header, header_len);
+        memcpy(reply + header_len, key, key_len);
+        memcpy(reply + header_len + key_len, marker, marker_len);
+        memcpy(reply + header_len + key_len + marker_len, b64, b64_len);
+        reply[total] = '\0';
     }
-    snprintf(reply, sizeof(reply), INDEX_PROTOCOL "|GETOK|%s|B64:%s", key, b64);
     send_reply(sock, (const struct sockaddr*)client, client_len, reply);
 }
 
@@ -1515,6 +1539,25 @@ static int room_index_is_browsable(const char* session_json)
     return 1;
 }
 
+static void copy_text(char* dst, size_t dst_size, const char* src)
+{
+    size_t n;
+
+    if (dst == NULL || dst_size == 0) {
+        return;
+    }
+    if (src == NULL) {
+        dst[0] = '\0';
+        return;
+    }
+    n = strlen(src);
+    if (n >= dst_size) {
+        n = dst_size - 1;
+    }
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
 static void json_room_connect_endpoint(const char* session_json, const char* fallback_ip, uint16_t fallback_port,
                                        char* out_ip, size_t out_ip_size, uint16_t* out_port)
 {
@@ -1522,8 +1565,7 @@ static void json_room_connect_endpoint(const char* session_json, const char* fal
     char connect_addr[INET_ADDRSTRLEN] = {0};
     int connect_port = 0;
 
-    strncpy(out_ip, fallback_ip, out_ip_size - 1);
-    out_ip[out_ip_size - 1] = '\0';
+    copy_text(out_ip, out_ip_size, fallback_ip);
     *out_port = fallback_port;
 
     if (session_json == NULL) {
@@ -1542,8 +1584,7 @@ static void json_room_connect_endpoint(const char* session_json, const char* fal
         }
     }
 
-    strncpy(out_ip, connect_addr, out_ip_size - 1);
-    out_ip[out_ip_size - 1] = '\0';
+    copy_text(out_ip, out_ip_size, connect_addr);
 
     if (json_get_int_field(session_json, "connect_port", &connect_port) && connect_port >= 1024 &&
         connect_port <= 65535) {

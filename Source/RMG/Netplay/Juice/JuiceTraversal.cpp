@@ -25,7 +25,8 @@ namespace UserInterface::Netplay {
 
 namespace {
 
-constexpr int kJoinTimeoutMs = 25000;
+constexpr int kGatherTimeoutMs = 30000;
+constexpr int kAnswerWaitMs = 45000;
 constexpr int kOfferIntervalMs = 4000;
 constexpr int kOfferPublishLimit = 3;
 constexpr int kAnswerPollMs = 2000;
@@ -459,7 +460,7 @@ void JuiceTraversal::joinHost(const QString& hostCode)
     m_joinCode = normalized;
     m_joinerId = makeJoinerId();
     m_offerPublishes = 0;
-    m_joinDeadlineMs = monotonicMs() + kJoinTimeoutMs;
+    m_joinDeadlineMs = monotonicMs() + kGatherTimeoutMs;
     m_nextOfferMs = 0;
     m_nextAnswerPollMs = 0;
 
@@ -537,9 +538,16 @@ void JuiceTraversal::onTick()
         return;
     }
 
+    if (m_offerGathered && !m_answerApplied && m_offerPublishes == 0) {
+        /* Gathering already consumed the first deadline. The host still has to
+           gather its own candidates before the answer exists. */
+        m_joinDeadlineMs = now + kAnswerWaitMs;
+    }
+
     if (now >= m_joinDeadlineMs) {
         failJoin(m_answerApplied ? QStringLiteral("ICE connection timed out")
-                                 : QStringLiteral("Timed out waiting for the host ICE answer"));
+                 : m_offerGathered ? QStringLiteral("Timed out waiting for the host ICE answer")
+                                   : QStringLiteral("Timed out gathering ICE candidates"));
         return;
     }
 
