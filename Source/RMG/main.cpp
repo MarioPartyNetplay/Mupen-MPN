@@ -38,10 +38,6 @@
 #endif
 
 #include <RMG-Core/Directories.hpp>
-
-#ifdef NETPLAY
-#include "Netplay/NetplayProtocol.hpp"
-#endif
 #include <RMG-Core/Version.hpp>
 
 //
@@ -376,11 +372,6 @@ int main(int argc, char **argv)
     QCommandLineOption quitAfterEmulationOption({"q", "quit-after-emulation"}, "Quits RMG when emulation has finished");
     QCommandLineOption loadStateSlot("load-state-slot", "Loads save state slot when launching the ROM", "Slot Number");
     QCommandLineOption diskOption("disk", "64DD Disk to open ROM in combination with", "64DD Disk");
-#ifdef NETPLAY
-    QCommandLineOption natTraversalOption(
-        "nat-traversal",
-        "Force libjuice NAT traversal for netplay, even when a room lists a public address");
-#endif
 #ifdef PORTABLE_INSTALL
     QCommandLineOption userDataDirOption(
         "user-data-dir",
@@ -401,9 +392,6 @@ int main(int argc, char **argv)
     parser.addOption(quitAfterEmulationOption);
     parser.addOption(loadStateSlot);
     parser.addOption(diskOption);
-#ifdef NETPLAY
-    parser.addOption(natTraversalOption);
-#endif
 #ifdef PORTABLE_INSTALL
     parser.addOption(userDataDirOption);
 #endif // PORTABLE_INSTALL
@@ -448,12 +436,6 @@ int main(int argc, char **argv)
 
     // print debug callbacks to stdout if needed
     CoreSetPrintDebugCallback(parser.isSet(debugMessagesOption));
-
-#ifdef NETPLAY
-    if (parser.isSet(natTraversalOption)) {
-        UserInterface::Netplay::setNetplayForceNatTraversal(true);
-    }
-#endif
 
     // specified ROM path to launch
     QStringList args = parser.positionalArguments();

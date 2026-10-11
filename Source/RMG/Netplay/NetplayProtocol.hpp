@@ -363,25 +363,9 @@ inline NetplayConnectionMode netplayConnectionModeFromString(const QString& valu
     return NetplayConnectionMode::Direct;
 }
 
-inline bool& netplayForceNatTraversalStorage()
-{
-    static bool forced = false;
-    return forced;
-}
-
-inline void setNetplayForceNatTraversal(bool forced)
-{
-    netplayForceNatTraversalStorage() = forced;
-}
-
-inline bool netplayForceNatTraversal()
-{
-    return netplayForceNatTraversalStorage();
-}
-
 inline bool sessionUsesNatTraversal(const QJsonObject& session)
 {
-    if (netplayForceNatTraversal() || session.value(QStringLiteral("use_nat_traversal")).toBool(false)) {
+    if (session.value(QStringLiteral("use_nat_traversal")).toBool(false)) {
         return true;
     }
     return netplayConnectionModeFromString(session.value(QStringLiteral("connection_mode")).toString()) ==

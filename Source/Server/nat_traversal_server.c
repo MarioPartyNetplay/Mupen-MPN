@@ -12,6 +12,8 @@
  *   PUT  /index/{key}   store body (also POST)
  *   GET  /turn/ice-servers  short-lived Cloudflare TURN credentials (broker)
  *
+ *   --nat-traversal   tell clients every session uses NAT traversal
+ *
  * Cloudflare TURN broker (server-side only):
  *   turn_secrets.h (compiled in) or RMG_TURN_KEY_ID / RMG_TURN_API_TOKEN env overrides
  *
@@ -114,6 +116,9 @@ static size_t g_turn_cache_len = 0;
 static uint64_t g_turn_cache_expires = 0;
 static int g_turn_credential_ttl_sec = DEFAULT_TURN_CREDENTIAL_TTL_SEC;
 static uint64_t g_turn_next_refresh_attempt = 0;
+static int g_force_nat_traversal = 0;
+
+static int session_json_force_nat(const char* src, char* dst, size_t dst_size, size_t* out_len);
 
 static uint64_t now_seconds(void)
 {
@@ -652,7 +657,18 @@ static void index_get(socket_t sock, const struct sockaddr_in* client, socklen_t
         return;
     }
 
-    b64_encode((const unsigned char*)entry->value, entry->value_len, b64, sizeof(b64));
+    {
+        char forced[MAX_VALUE_LEN];
+        size_t forced_len = 0;
+        const char* payload = entry->value;
+        size_t payload_len = entry->value_len;
+        if (strncmp(key, "session/", 8) == 0 &&
+            session_json_force_nat(entry->value, forced, sizeof(forced), &forced_len)) {
+            payload = forced;
+            payload_len = forced_len;
+        }
+        b64_encode((const unsigned char*)payload, payload_len, b64, sizeof(b64));
+    }
     snprintf(reply, sizeof(reply), INDEX_PROTOCOL "|GETOK|%s|B64:%s", key, b64);
     send_reply(sock, (const struct sockaddr*)client, client_len, reply);
 }
@@ -974,6 +990,61 @@ static void http_reply_index_page(socket_t client)
     }
 }
 
+static int session_json_force_nat(const char* src, char* dst, size_t dst_size, size_t* out_len)
+{
+    const char* key = "\"use_nat_traversal\":";
+    const char* found;
+    const char* value;
+    size_t src_len;
+
+    if (!g_force_nat_traversal || src == NULL || dst == NULL || out_len == NULL || dst_size == 0) {
+        return 0;
+    }
+
+    src_len = strlen(src);
+    if (src_len == 0 || src[0] != '{' || src[src_len - 1] != '}') {
+        return 0;
+    }
+
+    found = strstr(src, key);
+    if (found != NULL) {
+        value = found + strlen(key);
+        while (*value == ' ' || *value == '\t') {
+            ++value;
+        }
+        if (strncmp(value, "true", 4) == 0) {
+            return 0;
+        }
+        if (strncmp(value, "false", 5) == 0) {
+            size_t prefix = (size_t)(value - src);
+            size_t suffix = src_len - prefix - 5;
+            if (prefix + 4 + suffix + 1 > dst_size) {
+                return 0;
+            }
+            memcpy(dst, src, prefix);
+            memcpy(dst + prefix, "true", 4);
+            memcpy(dst + prefix + 4, value + 5, suffix);
+            *out_len = prefix + 4 + suffix;
+            dst[*out_len] = '\0';
+            return 1;
+        }
+    }
+
+    {
+        const char* insert = ",\"use_nat_traversal\":true";
+        size_t insert_len = strlen(insert);
+        if (src_len + insert_len + 1 > dst_size) {
+            return 0;
+        }
+        memcpy(dst, src, src_len - 1);
+        memcpy(dst + src_len - 1, insert, insert_len);
+        dst[src_len - 1 + insert_len] = '}';
+        *out_len = src_len + insert_len;
+        dst[*out_len] = '\0';
+        return 1;
+    }
+}
+
 static void http_reply_value(socket_t client, const char* key, int found)
 {
     index_entry_t* entry = find_index(key);
@@ -983,16 +1054,26 @@ static void http_reply_value(socket_t client, const char* key, int found)
     }
 
     {
+        char forced[MAX_VALUE_LEN];
+        size_t forced_len = 0;
+        const char* payload = entry->value;
+        size_t payload_len = entry->value_len;
+        if (key != NULL && strncmp(key, "session/", 8) == 0 &&
+            session_json_force_nat(entry->value, forced, sizeof(forced), &forced_len)) {
+            payload = forced;
+            payload_len = forced_len;
+        }
+
         char header[256];
         snprintf(header, sizeof(header),
                  "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %zu\r\n"
                  "Connection: close\r\n\r\n",
-                 entry->value_len);
+                 payload_len);
         http_send_all(client, header);
         {
             size_t sent = 0;
-            while (sent < entry->value_len) {
-                int n = send(client, entry->value + sent, (int)(entry->value_len - sent), 0);
+            while (sent < payload_len) {
+                int n = send(client, payload + sent, (int)(payload_len - sent), 0);
                 if (n <= 0) {
                     break;
                 }
@@ -1166,7 +1247,9 @@ static int room_index_is_browsable(const char* session_json)
         return 0;
     }
 
-    if (json_get_bool_field(session_json, "use_nat_traversal", &use_nat) && !use_nat) {
+    if (g_force_nat_traversal) {
+        use_nat = 1;
+    } else if (json_get_bool_field(session_json, "use_nat_traversal", &use_nat) && !use_nat) {
         if (!json_get_string_field(session_json, "connect_address", connect_addr, sizeof(connect_addr)) ||
             !is_public_ipv4_text(connect_addr)) {
             if (!json_get_string_field(session_json, "public_address", connect_addr, sizeof(connect_addr)) ||
@@ -1194,7 +1277,7 @@ static void json_room_connect_endpoint(const char* session_json, const char* fal
         return;
     }
 
-    if (!json_get_bool_field(session_json, "use_nat_traversal", &use_nat) || use_nat) {
+    if (g_force_nat_traversal || !json_get_bool_field(session_json, "use_nat_traversal", &use_nat) || use_nat) {
         return;
     }
 
@@ -1455,13 +1538,19 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
                 }
             }
 
+            int room_uses_nat = g_force_nat_traversal;
+            if (!room_uses_nat && session_json != NULL) {
+                json_get_bool_field(session_json, "use_nat_traversal", &room_uses_nat);
+            }
+
             offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
                                        "{\"hostCode\":\"%s\",\"hostName\":\"%s\",\"gameName\":\"%s\","
                                        "\"playerCount\":%d,\"maxPlayers\":%d,\"lobbySize\":\"%s\","
-                                       "\"started\":%s,\"players\":%s,\"address\":\"%s\",\"port\":%u}",
+                                       "\"started\":%s,\"useNatTraversal\":%s,\"players\":%s,\"address\":\"%s\",\"port\":%u}",
                                        code_text, host_name_json, game_name_json, player_count,
                                        (max_players > 0 ? max_players : 4), lobby_size,
-                                       started ? "true" : "false", players_json, ip_text,
+                                       started ? "true" : "false",
+                                       room_uses_nat ? "true" : "false", players_json, ip_text,
                                        (unsigned)listing_port);
         }
         wrote_room = 1;
@@ -1934,6 +2023,8 @@ int main(int argc, char** argv)
             bind_host = argv[++i];
         } else if (strcmp(argv[i], "--no-http") == 0) {
             http_enabled = 0;
+        } else if (strcmp(argv[i], "--nat-traversal") == 0) {
+            g_force_nat_traversal = 1;
         }
     }
 
@@ -2006,6 +2097,9 @@ int main(int argc, char** argv)
 #endif
 
     printf("UDP NAT on %s:%d (%s + %s)\n", bind_host, udp_port, TRAV_PROTOCOL, INDEX_PROTOCOL);
+    if (g_force_nat_traversal) {
+        printf("NAT traversal forced for session index and room list\n");
+    }
 
     for (;;) {
         fd_set readfds;

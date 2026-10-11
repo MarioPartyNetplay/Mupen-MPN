@@ -176,10 +176,6 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
     this->useNatTraversalCheckBox = new QCheckBox(QStringLiteral("Use NAT traversal"), this);
     this->useNatTraversalCheckBox->setToolTip(
         QStringLiteral("Reach the host through NAT Traversal instead of its public IP. Requires the host code."));
-    this->useNatTraversalCheckBox->setChecked(Netplay::netplayForceNatTraversal());
-    if (Netplay::netplayForceNatTraversal()) {
-        this->useNatTraversalCheckBox->setEnabled(false);
-    }
     if (this->horizontalLayout_ip) {
         this->horizontalLayout_ip->addWidget(this->useNatTraversalCheckBox);
     }
@@ -566,8 +562,8 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
 
 void NetplaySessionBrowserDialog::connectToResolvedHost(const QString& address, int port, const QString& roomId)
 {
-    const bool forceNat = Netplay::netplayForceNatTraversal() ||
-                          (this->useNatTraversalCheckBox != nullptr && this->useNatTraversalCheckBox->isChecked());
+    const bool forceNat =
+        this->useNatTraversalCheckBox != nullptr && this->useNatTraversalCheckBox->isChecked();
     const QString hostCode = Netplay::sessionTraversalHostCode(this->pendingIndexSession);
     const bool useTraversal = forceNat || Netplay::sessionUsesNatTraversal(this->pendingIndexSession) ||
                               (!hostCode.isEmpty() && !Netplay::isUsableConnectAddress(address));

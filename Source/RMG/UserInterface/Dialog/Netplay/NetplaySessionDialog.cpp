@@ -634,8 +634,7 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
     {
         const int hostingPort = sessionJson.value("server_port").toInt(Netplay::kDefaultNetplayHostingPort);
         const bool showInBrowser = sessionJson.value("show_in_browser").toBool(false);
-        const bool useNat = Netplay::netplayForceNatTraversal() ||
-                            sessionJson.value("use_nat_traversal").toBool(false);
+        const bool useNat = sessionJson.value("use_nat_traversal").toBool(false);
         QString connectAddress = sessionJson.value("connect_address").toString(
             sessionJson.value("public_address").toString());
         if (connectAddress.isEmpty()) {
@@ -1090,8 +1089,7 @@ void NetplaySessionDialog::beginHostBrowserRegistration(uint16_t hostingPort, bo
         qDebug() << "Browse host code:" << hostCode << "server endpoint:" << publicAddress;
 
         this->sessionJson.insert("host_code", hostCode);
-        const bool useNat = Netplay::netplayForceNatTraversal() ||
-                            this->sessionJson.value(QStringLiteral("use_nat_traversal")).toBool(false);
+        const bool useNat = this->sessionJson.value(QStringLiteral("use_nat_traversal")).toBool(false);
         this->sessionJson.insert("use_nat_traversal", useNat);
         this->sessionJson.insert(
             "connection_mode",
@@ -1123,8 +1121,7 @@ void NetplaySessionDialog::beginHostBrowserRegistration(uint16_t hostingPort, bo
     const QString hostCode = this->sessionJson.value("host_code").toString();
     if (!hostCode.isEmpty()) {
         this->hostRegistry->resumeHosting(hostCode, hostingPort, listInBrowser);
-        const bool useNat = Netplay::netplayForceNatTraversal() ||
-                            this->sessionJson.value(QStringLiteral("use_nat_traversal")).toBool(false);
+        const bool useNat = this->sessionJson.value(QStringLiteral("use_nat_traversal")).toBool(false);
         if (useNat && this->coordinator) {
             this->sessionJson.insert("use_nat_traversal", true);
             this->sessionJson.insert(
