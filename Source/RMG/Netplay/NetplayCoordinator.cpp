@@ -406,7 +406,7 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
     qInfo() << "Hosting signaling server on port" << port;
 
     setState(InLobby);
-    TurnCredentialClient::instance().ensureCredentials(15000);
+    TurnCredentialClient::instance().ensureCredentials();
 
     // For hosting, emit roomJoined directly (host doesn't need to connect as Socket.IO client)
     // This allows the session dialog to open immediately
@@ -2380,7 +2380,7 @@ void NetplayCoordinator::setupPeerConnections(const QList<SocketIOClient::Player
 {
     qDebug() << "NetplayCoordinator: Setting up peer connections for" << players.size() << "players";
 
-    if (!TurnCredentialClient::instance().ensureCredentials(15000)) {
+    if (!TurnCredentialClient::instance().ensureCredentials()) {
         qWarning() << "NetplayCoordinator: Cloudflare TURN credentials unavailable; WebRTC may fail behind NAT";
     }
 

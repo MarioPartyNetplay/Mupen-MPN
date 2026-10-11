@@ -15,26 +15,34 @@
 #include <QUrl>
 #include <vector>
 
+class QNetworkAccessManager;
+class QNetworkReply;
+
 namespace UserInterface::Netplay {
 
-/** Fetches and caches Cloudflare ICE servers (STUN + TURN) from the netplay index server. */
+/**
+ * Fetches and caches short-lived STUN/TURN credentials from the netplay server's
+ * /turn/ice-servers broker. The Cloudflare API token stays on the server.
+ */
 class TurnCredentialClient {
 public:
     static TurnCredentialClient& instance();
 
     bool isConfigured() const;
     void prefetch();
-    bool ensureCredentials(int timeoutMs = 10000);
+    bool ensureCredentials(int timeoutMs = 45000);
     std::vector<rtc::IceServer> stunServers() const;
     std::vector<rtc::IceServer> turnServers() const;
 
 private:
     TurnCredentialClient() = default;
+    ~TurnCredentialClient();
 
     bool credentialsAreFreshLocked() const;
-    bool fetchCredentialsBlocking(int timeoutMs);
-    bool fetchFromBroker(const QUrl& brokerUrl, int timeoutMs, std::vector<rtc::IceServer>* stunOut,
-                         std::vector<rtc::IceServer>* turnOut, QString* errorOut);
+    bool loadIceConfigFile();
+    void startBrokerRequest();
+    void finishBrokerRequest();
+    bool waitForBroker(int timeoutMs);
     bool parseIceServersResponse(const QByteArray& payload, std::vector<rtc::IceServer>* stunOut,
                                  std::vector<rtc::IceServer>* turnOut, QString* errorOut);
 
@@ -42,6 +50,8 @@ private:
     std::vector<rtc::IceServer> m_stunServers;
     std::vector<rtc::IceServer> m_turnServers;
     QDateTime m_expiresAt;
+    QNetworkAccessManager* m_network = nullptr;
+    QNetworkReply* m_reply = nullptr;
     bool m_fetchInProgress = false;
 };
 

@@ -50,8 +50,6 @@ struct ResolvedIce {
 
 ResolvedIce resolveIceServers()
 {
-    TurnCredentialClient::instance().ensureCredentials(10000);
-
     ResolvedIce ice;
     for (const rtc::IceServer& server : buildIceServers()) {
         if (server.hostname.empty() || server.port == 0) {

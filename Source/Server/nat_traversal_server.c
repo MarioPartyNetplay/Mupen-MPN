@@ -1606,6 +1606,7 @@ static int turn_fetch_cloudflare_credentials(char* out, size_t out_size, size_t*
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, turn_curl_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)TURN_FETCH_TIMEOUT_SEC);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "RMG-NAT-Traversal-Server/1.0");
@@ -1690,18 +1691,15 @@ static void http_reply_turn_ice_servers(socket_t client)
         return;
     }
 
-    /* Never block the lobby event loop on Cloudflare when we can still serve cache. */
+    /* A client asking for keys always gets a fetch when the cache is empty.
+       Idle refresh keeps its backoff so the lobby loop does not hammer Cloudflare. */
     if (!turn_credentials_are_usable(now)) {
-        if (g_turn_cache_len == 0 && now >= g_turn_next_refresh_attempt) {
+        if (g_turn_cache_len == 0) {
             if (!turn_refresh_credentials(now)) {
                 http_reply_json(client, 502, "Bad Gateway",
                                 "{\"error\":\"Failed to fetch Cloudflare TURN credentials\"}");
                 return;
             }
-        } else if (g_turn_cache_len == 0) {
-            http_reply_json(client, 502, "Bad Gateway",
-                            "{\"error\":\"Failed to fetch Cloudflare TURN credentials\"}");
-            return;
         } else {
             /* Expired cache: keep serving while idle refresh catches up. */
             g_turn_next_refresh_attempt = 0;
@@ -2059,11 +2057,6 @@ int main(int argc, char** argv)
             }
         }
 
-#ifdef WITH_LIBCURL
-        /* Refresh after KEEP drain so Cloudflare latency cannot drop host registrations. */
-        turn_maybe_refresh_idle();
-#endif
-
         if (http_sock != SOCKET_INVALID && FD_ISSET(http_sock, &readfds)) {
             for (int i = 0; i < MAX_HTTP_ACCEPT_PER_TICK; ++i) {
                 struct sockaddr_in client;
@@ -2089,6 +2082,12 @@ int main(int argc, char** argv)
                 socket_close(client_sock);
             }
         }
+
+#ifdef WITH_LIBCURL
+        /* Refresh after the pending HTTP client is served, so a Cloudflare
+           fetch cannot sit in front of /turn/ice-servers. */
+        turn_maybe_refresh_idle();
+#endif
     }
 
     socket_close(udp_sock);
