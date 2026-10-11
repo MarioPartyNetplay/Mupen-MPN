@@ -51,11 +51,9 @@ bool hostAddressToEnet(const QHostAddress& host, quint16 port, ENetAddress* addr
     }
 
     addressOut->port = port;
-    if (host.protocol() == QAbstractSocket::IPv4Protocol) {
-        addressOut->host = host.toIPv4Address();
-        return true;
-    }
-
+    // ENet keeps address.host in network byte order and copies it straight into
+    // sin_addr. QHostAddress::toIPv4Address() is host order, which sends the
+    // packet to the reversed IP.
     const QByteArray hostBytes = host.toString().toUtf8();
     return enet_address_set_host(addressOut, hostBytes.constData()) == 0;
 }
@@ -452,9 +450,14 @@ bool exchangeTraversalPunch(ENetHost* host, const QString& hostCode, QString* ad
     QElapsedTimer elapsed;
     elapsed.start();
     qint64 nextLookupAt = 0;
+    bool sentLookup = false;
     while (elapsed.elapsed() < 1200 && !state.ready && state.error.isEmpty()) {
         if (elapsed.elapsed() >= nextLookupAt) {
-            sendEnetDatagram(host, serverAddress, static_cast<quint16>(kNetplayRegistryPort), lookup);
+            if (sendEnetDatagram(host, serverAddress, static_cast<quint16>(kNetplayRegistryPort), lookup)) {
+                sentLookup = true;
+            } else {
+                qWarning() << "NAT punch LOOKUP send failed for" << code;
+            }
             nextLookupAt = elapsed.elapsed() + 400;
         }
         ENetEvent event;
@@ -470,8 +473,9 @@ bool exchangeTraversalPunch(ENetHost* host, const QString& hostCode, QString* ad
 
     if (!state.ready) {
         if (errorOut) {
-            *errorOut = state.error.isEmpty() ? QStringLiteral("NAT traversal server did not answer")
-                                              : state.error;
+            *errorOut = !sentLookup ? QStringLiteral("Failed to send the NAT traversal lookup")
+                                    : state.error.isEmpty() ? QStringLiteral("NAT traversal server did not answer")
+                                                            : state.error;
         }
         return false;
     }
