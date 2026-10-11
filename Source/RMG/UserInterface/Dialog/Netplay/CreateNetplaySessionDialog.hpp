@@ -61,6 +61,7 @@ class CreateNetplaySessionDialog : public QWidget, private Ui::CreateNetplaySess
     int hostingPort = Netplay::kDefaultNetplayHostingPort;
 
     QCheckBox* showInBrowserCheckBox = nullptr;
+    QCheckBox* useNatTraversalCheckBox = nullptr;
     QCheckBox* useUpnpCheckBox = nullptr;
     QSpinBox* hostingPortSpinBox = nullptr;
 

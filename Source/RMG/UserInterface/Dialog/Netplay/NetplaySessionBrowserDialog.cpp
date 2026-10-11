@@ -14,6 +14,7 @@
 #include "NetplaySessionPasswordDialog.hpp"
 #include "Utilities/QtMessageBox.hpp"
 
+#include <QCheckBox>
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
 #include <QNetworkAccessManager>
@@ -171,6 +172,17 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
     : QWidget(parent), coordinator(coordinator), romData(modelData)
 {
     this->setupUi(this);
+
+    this->useNatTraversalCheckBox = new QCheckBox(QStringLiteral("Use NAT traversal"), this);
+    this->useNatTraversalCheckBox->setToolTip(
+        QStringLiteral("Reach the host through NAT Traversal instead of its public IP. Requires the host code."));
+    this->useNatTraversalCheckBox->setChecked(Netplay::netplayForceNatTraversal());
+    if (Netplay::netplayForceNatTraversal()) {
+        this->useNatTraversalCheckBox->setEnabled(false);
+    }
+    if (this->horizontalLayout_ip) {
+        this->horizontalLayout_ip->addWidget(this->useNatTraversalCheckBox);
+    }
 
     this->ipAddressLineEdit->setPlaceholderText("IP address or IP:Port");
 
@@ -532,8 +544,10 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
     sessionJson.insert("local_md5", localMd5);
     const Netplay::NetplayConnectionMode mode =
         connectionModeForJoin(this->pendingIndexSession, this->targetAddress);
-    sessionJson.insert("connection_mode", Netplay::netplayConnectionModeToString(mode));
-    sessionJson.insert("use_nat_traversal", this->m_joinedViaTraversal);
+    const bool joinedNat = this->m_joinedViaTraversal;
+    sessionJson.insert("connection_mode", Netplay::netplayConnectionModeToString(
+        joinedNat ? Netplay::NetplayConnectionMode::TraversalServer : mode));
+    sessionJson.insert("use_nat_traversal", joinedNat);
     sessionJson.insert("use_connection_reversal", false);
     QString hostCode = Netplay::sessionTraversalHostCode(this->pendingIndexSession);
     if (hostCode.isEmpty()) {
@@ -552,11 +566,20 @@ void NetplaySessionBrowserDialog::onCoordinatorRoomJoined(const QString& roomId,
 
 void NetplaySessionBrowserDialog::connectToResolvedHost(const QString& address, int port, const QString& roomId)
 {
+    const bool forceNat = Netplay::netplayForceNatTraversal() ||
+                          (this->useNatTraversalCheckBox != nullptr && this->useNatTraversalCheckBox->isChecked());
     const QString hostCode = Netplay::sessionTraversalHostCode(this->pendingIndexSession);
-    const bool useTraversal = Netplay::sessionUsesNatTraversal(this->pendingIndexSession) ||
+    const bool useTraversal = forceNat || Netplay::sessionUsesNatTraversal(this->pendingIndexSession) ||
                               (!hostCode.isEmpty() && !Netplay::isUsableConnectAddress(address));
     if (useTraversal && !hostCode.isEmpty()) {
         beginTraversalJoin(hostCode, roomId);
+        return;
+    }
+    if (forceNat && hostCode.isEmpty()) {
+        QtMessageBox::Error(this, "NAT Traversal",
+                            "NAT traversal needs the host code from the room list or a 7-character code.");
+        this->isWaitingForConnection = false;
+        this->validateJoinButton();
         return;
     }
 
