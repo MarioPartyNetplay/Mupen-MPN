@@ -357,18 +357,34 @@ if (NETPLAY)
 
     set(ENET_EXTERNAL_TARGET enet PARENT_SCOPE)
 
-    # Same libjuice commit libdatachannel 9ddf889 vendors. Built once so RMG can
-    # open ICE agents directly and libdatachannel links this copy instead of a
-    # second static archive.
-    include(FetchContent)
+    # Same libjuice commit libdatachannel 9ddf889 vendors (5948a416). Built once
+    # so RMG can open ICE agents directly. Prefer a tree already on disk: the
+    # Flatpak manifest unpacks it before configure, where git clone has no
+    # network. The libdatachannel submodule is the same commit.
     set(NO_TESTS ON)
     set(NO_SERVER ON)
-    FetchContent_Declare(
-        libjuice
-        GIT_REPOSITORY https://github.com/paullouisageneau/libjuice.git
-        GIT_TAG 5948a4162d37bc213d6051b67ee2876ccc5a99a6
-    )
-    FetchContent_MakeAvailable(libjuice)
+    set(_LIBJUICE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libjuice")
+    if (NOT EXISTS "${_LIBJUICE_DIR}/CMakeLists.txt")
+        set(_LIBJUICE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libdatachannel/deps/libjuice")
+    endif()
+    if (EXISTS "${_LIBJUICE_DIR}/CMakeLists.txt")
+        set(_LIBJUICE_SKIP_INSTALL_RULES "${CMAKE_SKIP_INSTALL_RULES}")
+        set(CMAKE_SKIP_INSTALL_RULES TRUE)
+        add_subdirectory("${_LIBJUICE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/libjuice")
+        set(CMAKE_SKIP_INSTALL_RULES "${_LIBJUICE_SKIP_INSTALL_RULES}")
+        if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/libjuice/cmake_install.cmake")
+            file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/libjuice/cmake_install.cmake"
+                "# Install rules intentionally skipped for bundled libjuice\n")
+        endif()
+    else()
+        include(FetchContent)
+        FetchContent_Declare(
+            libjuice
+            GIT_REPOSITORY https://github.com/paullouisageneau/libjuice.git
+            GIT_TAG 5948a4162d37bc213d6051b67ee2876ccc5a99a6
+        )
+        FetchContent_MakeAvailable(libjuice)
+    endif()
     unset(NO_TESTS)
     unset(NO_SERVER)
     if (TARGET juice)

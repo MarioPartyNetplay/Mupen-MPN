@@ -149,7 +149,7 @@ replacement = (
     "          - Bin\n"
     "      - type: shell\n"
     "        commands:\n"
-    "          - rm -rf Source/3rdParty/libdatachannel Source/3rdParty/enet"
+    "          - rm -rf Source/3rdParty/libdatachannel Source/3rdParty/enet Source/3rdParty/libjuice"
 )
 new_text, count = re.subn(pattern, replacement, text, count=1)
 if count != 1:
