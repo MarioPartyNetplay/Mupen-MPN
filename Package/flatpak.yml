@@ -122,6 +122,10 @@ modules:
         sha256: 28603c895f9ed24a846478180ee72c7376b39b4bb1287b73877e5eae7d96b0dd
         strip-components: 1
         dest: Source/3rdParty/enet
+      - type: git
+        url: https://github.com/paullouisageneau/libjuice.git
+        commit: 5948a4162d37bc213d6051b67ee2876ccc5a99a6
+        dest: Source/3rdParty/libjuice
       - type: shell
         commands:
           - git -C Source/3rdParty/libdatachannel submodule update --init --recursive

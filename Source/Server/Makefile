@@ -21,6 +21,9 @@ LDFLAGS += $(CURL_LIBS)
 
 ifeq ($(OS),Windows_NT)
 LDFLAGS += -lws2_32
+else
+CFLAGS += -pthread
+LDFLAGS += -pthread
 endif
 
 .PHONY: all clean

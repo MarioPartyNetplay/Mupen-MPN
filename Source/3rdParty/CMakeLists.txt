@@ -357,6 +357,75 @@ if (NETPLAY)
 
     set(ENET_EXTERNAL_TARGET enet PARENT_SCOPE)
 
+    # Same libjuice commit libdatachannel 9ddf889 vendors (5948a416). Built once
+    # so RMG can open ICE agents directly. Prefer a tree already on disk: the
+    # Flatpak manifest unpacks it before configure, where git clone has no
+    # network. The libdatachannel submodule is the same commit.
+    #
+    # macOS poll() reports POLLERR when any losing ICE candidate gets an ICMP
+    # unreachable. libjuice 5948a416 then fails the whole agent, including a
+    # pair that already connected. Clear that socket error and keep going.
+    function(rmg_patch_libjuice_udp_pollerr source_dir)
+        set(conn_thread "${source_dir}/src/conn_thread.c")
+        if (NOT EXISTS "${conn_thread}")
+            message(FATAL_ERROR "libjuice conn_thread.c not found at ${conn_thread}")
+        endif()
+        file(READ "${conn_thread}" contents)
+        if (contents MATCHES "Ignoring UDP socket error")
+            return()
+        endif()
+        set(old_poll "\tif (pfd->revents & POLLNVAL || pfd->revents & POLLERR) {\n\t\tJLOG_ERROR(\"Error when polling socket\");\n\t\tagent_conn_fail(agent);\n\t\tmutex_unlock(&conn_impl->mutex);\n\t\treturn -1;\n\t}")
+        set(new_poll "\tif (pfd->revents & POLLNVAL) {\n\t\tJLOG_ERROR(\"Error when polling socket\");\n\t\tagent_conn_fail(agent);\n\t\tmutex_unlock(&conn_impl->mutex);\n\t\treturn -1;\n\t}\n\n\t/* ICMP unreachable on a losing candidate sets POLLERR and must not\n\t   fail an agent that still has a working pair. */\n\tif (pfd->revents & POLLERR) {\n\t\tint sock_err = 0;\n\t\tsocklen_t sock_err_len = sizeof(sock_err);\n\t\tgetsockopt(conn_impl->sock, SOL_SOCKET, SO_ERROR, (char *)&sock_err, &sock_err_len);\n\t\tJLOG_DEBUG(\"Ignoring UDP socket error, errno=%d\", sock_err);\n\t\tpfd->revents &= ~POLLERR;\n\t}")
+        set(old_recv "\t\tif (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK) {\n\t\t\tJLOG_VERBOSE(\"No more datagrams to receive\");\n\t\t\treturn 0;\n\t\t}\n\t\tJLOG_ERROR(\"recvfrom failed, errno=%d\", sockerrno);")
+        set(new_recv "\t\tif (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK) {\n\t\t\tJLOG_VERBOSE(\"No more datagrams to receive\");\n\t\t\treturn 0;\n\t\t}\n\t\tif (sockerrno == SECONNREFUSED || sockerrno == SECONNRESET || sockerrno == SENETUNREACH ||\n\t\t    sockerrno == SENETRESET) {\n\t\t\tJLOG_DEBUG(\"Ignoring UDP receive error, errno=%d\", sockerrno);\n\t\t\treturn 0;\n\t\t}\n#ifndef _WIN32\n\t\tif (sockerrno == EHOSTUNREACH || sockerrno == EHOSTDOWN || sockerrno == ENETDOWN) {\n\t\t\tJLOG_DEBUG(\"Ignoring UDP receive error, errno=%d\", sockerrno);\n\t\t\treturn 0;\n\t\t}\n#endif\n\t\tJLOG_ERROR(\"recvfrom failed, errno=%d\", sockerrno);")
+        string(FIND "${contents}" "${old_poll}" poll_at)
+        string(FIND "${contents}" "${old_recv}" recv_at)
+        if (poll_at LESS 0 OR recv_at LESS 0)
+            message(FATAL_ERROR "libjuice conn_thread.c at ${conn_thread} does not match the UDP POLLERR patch")
+        endif()
+        string(REPLACE "${old_poll}" "${new_poll}" contents "${contents}")
+        string(REPLACE "${old_recv}" "${new_recv}" contents "${contents}")
+        file(WRITE "${conn_thread}" "${contents}")
+        message(STATUS "Patched libjuice UDP POLLERR handling in ${conn_thread}")
+    endfunction()
+
+    set(NO_TESTS ON)
+    set(NO_SERVER ON)
+    set(_LIBJUICE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libjuice")
+    if (NOT EXISTS "${_LIBJUICE_DIR}/CMakeLists.txt")
+        set(_LIBJUICE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libdatachannel/deps/libjuice")
+    endif()
+    if (EXISTS "${_LIBJUICE_DIR}/CMakeLists.txt")
+        rmg_patch_libjuice_udp_pollerr("${_LIBJUICE_DIR}")
+        set(_LIBJUICE_SKIP_INSTALL_RULES "${CMAKE_SKIP_INSTALL_RULES}")
+        set(CMAKE_SKIP_INSTALL_RULES TRUE)
+        add_subdirectory("${_LIBJUICE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/libjuice")
+        set(CMAKE_SKIP_INSTALL_RULES "${_LIBJUICE_SKIP_INSTALL_RULES}")
+        if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/libjuice/cmake_install.cmake")
+            file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/libjuice/cmake_install.cmake"
+                "# Install rules intentionally skipped for bundled libjuice\n")
+        endif()
+    else()
+        include(FetchContent)
+        FetchContent_Declare(
+            libjuice
+            GIT_REPOSITORY https://github.com/paullouisageneau/libjuice.git
+            GIT_TAG 5948a4162d37bc213d6051b67ee2876ccc5a99a6
+        )
+        FetchContent_GetProperties(libjuice)
+        if (NOT libjuice_POPULATED)
+            FetchContent_Populate(libjuice)
+            FetchContent_GetProperties(libjuice)
+        endif()
+        rmg_patch_libjuice_udp_pollerr("${libjuice_SOURCE_DIR}")
+        add_subdirectory("${libjuice_SOURCE_DIR}" "${libjuice_BINARY_DIR}")
+    endif()
+    unset(NO_TESTS)
+    unset(NO_SERVER)
+    if (TARGET juice)
+        set_target_properties(juice PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endif()
+
     set(LIBDATACHANNEL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libdatachannel")
     
     # MinGW-specific flags for libdatachannel
@@ -472,12 +541,12 @@ if (NETPLAY)
             OpenSSL::SSL
             libSRTP::srtp2
             Threads::Threads
-            "${_LIBDATACHANNEL_JUICE_LIB}"
             "${_LIBDATACHANNEL_USRSCTP_LIB}"
         )
         set_target_properties(libdatachannel_external PROPERTIES
             INTERFACE_LINK_LIBRARIES "${_LIBDATACHANNEL_DEPS}"
         )
+        target_link_libraries(libdatachannel_external INTERFACE juice)
     endif()
     
 endif(NETPLAY)

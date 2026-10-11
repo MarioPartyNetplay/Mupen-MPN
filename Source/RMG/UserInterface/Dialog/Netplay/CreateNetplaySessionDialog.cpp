@@ -131,6 +131,11 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     this->showInBrowserCheckBox->setToolTip("List this room in the public session browser.");
     this->showInBrowserCheckBox->setChecked(true);
 
+    this->useNatTraversalCheckBox = new QCheckBox("Use NAT traversal", this);
+    this->useNatTraversalCheckBox->setToolTip(
+        "Joiners reach this room through libjuice and the netplay server instead of a forwarded port.");
+    this->useNatTraversalCheckBox->setChecked(true);
+
     this->useUpnpCheckBox = new QCheckBox("Use UPnP port mapping", this);
     this->useUpnpCheckBox->setToolTip(
         QStringLiteral("Attempt to open the hosting port on your router via UPnP."));
@@ -144,12 +149,14 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
     this->hostingPortSpinBox->setMinimum(1024);
     this->hostingPortSpinBox->setMaximum(65535);
     this->hostingPortSpinBox->setValue(Netplay::kDefaultNetplayHostingPort);
-    this->hostingPortSpinBox->setToolTip("Valid ports: 1024-65535. Forward this port on your router for WAN play.");
+    this->hostingPortSpinBox->setToolTip(
+        "Valid ports: 1024-65535. Forward this port only for direct IP joins. NAT traversal does not need it.");
     
     connect(this->hostingPortSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [this](int port) { this->hostingPort = port; });
     
     portLayout->addWidget(this->showInBrowserCheckBox);
+    portLayout->addWidget(this->useNatTraversalCheckBox);
     portLayout->addWidget(this->useUpnpCheckBox);
     portLayout->addWidget(portLabel);
     portLayout->addWidget(this->hostingPortSpinBox);
@@ -286,6 +293,8 @@ void CreateNetplaySessionDialog::createSession(void)
         : Netplay::kDefaultNetplayHostingPort;
     const bool showInBrowser =
         this->showInBrowserCheckBox != nullptr && this->showInBrowserCheckBox->isChecked();
+    const bool useNat =
+        this->useNatTraversalCheckBox != nullptr && this->useNatTraversalCheckBox->isChecked();
 
     if (useUpnp) {
         Netplay::netplayUpnpMapPort(static_cast<quint16>(this->hostingPort));
@@ -320,8 +329,11 @@ void CreateNetplaySessionDialog::createSession(void)
     json.insert("server_port", this->hostingPort);
     json.insert("public_port", this->hostingPort);
     json.insert("connect_port", this->hostingPort);
-    json.insert("use_nat_traversal", false);
-    json.insert("connection_mode", Netplay::netplayConnectionModeToString(Netplay::NetplayConnectionMode::Direct));
+    const Netplay::NetplayConnectionMode connectionMode = useNat
+        ? Netplay::NetplayConnectionMode::TraversalServer
+        : Netplay::NetplayConnectionMode::Direct;
+    json.insert("use_nat_traversal", useNat);
+    json.insert("connection_mode", Netplay::netplayConnectionModeToString(connectionMode));
     json.insert("use_upnp", useUpnp);
     json.insert("use_connection_reversal", false);
     json.insert("show_in_browser", showInBrowser);
@@ -379,6 +391,9 @@ void CreateNetplaySessionDialog::toggleUI(bool enable, bool enableCreateButton)
     }
     if (this->showInBrowserCheckBox) {
         this->showInBrowserCheckBox->setEnabled(enable);
+    }
+    if (this->useNatTraversalCheckBox) {
+        this->useNatTraversalCheckBox->setEnabled(enable);
     }
     if (this->hostingPortSpinBox) {
         this->hostingPortSpinBox->setEnabled(enable);

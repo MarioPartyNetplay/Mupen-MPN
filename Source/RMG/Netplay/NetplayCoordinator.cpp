@@ -10,6 +10,7 @@
 #include "NetplayCoordinator.hpp"
 #include "NetplayProtocol.hpp"
 #include "Netplay.hpp"
+#include "Juice/JuiceTraversal.hpp"
 #include "WebRTC/TurnCredentialClient.hpp"
 #include <RMG-Core/Netplay/WebRTC/WebRTCDataChannel.hpp>
 #include <RMG-Core/Netplay.hpp>
@@ -163,6 +164,7 @@ NetplayCoordinator::~NetplayCoordinator()
         UserInterface::Netplay::g_netplayCoordinator = nullptr;
     }
 
+    stopJuiceTraversal();
     stopHosting();
     
     if (m_socketIO && m_socketIO->getConnectionState() == SocketIOClient::Connected) {
@@ -404,7 +406,7 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
     qInfo() << "Hosting signaling server on port" << port;
 
     setState(InLobby);
-    TurnCredentialClient::instance().ensureCredentials(15000);
+    TurnCredentialClient::instance().ensureCredentials();
 
     // For hosting, emit roomJoined directly (host doesn't need to connect as Socket.IO client)
     // This allows the session dialog to open immediately
@@ -413,8 +415,79 @@ bool NetplayCoordinator::startHosting(int port, const QString& playerName, const
     return true;
 }
 
+void NetplayCoordinator::ensureJuiceTraversal()
+{
+    if (m_juiceTraversal) {
+        return;
+    }
+
+    m_juiceTraversal = std::make_unique<JuiceTraversal>(this);
+    connect(m_juiceTraversal.get(), &JuiceTraversal::joinSucceeded, this, &NetplayCoordinator::juiceJoinSucceeded);
+    connect(m_juiceTraversal.get(), &JuiceTraversal::joinFailed, this, &NetplayCoordinator::juiceJoinFailed);
+}
+
+void NetplayCoordinator::stopJuiceTraversal()
+{
+    ++m_juiceStopToken;
+    if (!m_juiceTraversal) {
+        return;
+    }
+    m_juiceTraversal->stopHosting();
+    m_juiceTraversal->cancelJoin();
+}
+
+void NetplayCoordinator::startJuiceHosting(const QString& hostCode, quint16 signalingPort)
+{
+    ++m_juiceStopToken;
+    ensureJuiceTraversal();
+    m_juiceTraversal->startHosting(hostCode, signalingPort);
+    if (m_server && m_server->enetHost()) {
+        applyTunneledSignalingMtu(m_server->enetHost());
+    }
+}
+
+void NetplayCoordinator::setPunchHostCode(const QString& hostCode)
+{
+    m_punchHostCode = normalizeTraversalCode(hostCode);
+}
+
+void NetplayCoordinator::clearPunchJoin()
+{
+    m_punchHostCode.clear();
+}
+
+void NetplayCoordinator::beginJuiceJoin(const QString& hostCode)
+{
+    ++m_juiceStopToken;
+    ensureJuiceTraversal();
+    m_juiceTraversal->joinHost(hostCode);
+}
+
+void NetplayCoordinator::cancelJuiceJoin()
+{
+    ++m_juiceStopToken;
+    if (m_juiceTraversal) {
+        m_juiceTraversal->cancelJoin();
+    }
+}
+
+void NetplayCoordinator::stopJuiceJoinSoon()
+{
+    const int token = ++m_juiceStopToken;
+    QTimer::singleShot(2000, this, [this, token]() {
+        if (token != m_juiceStopToken || !m_juiceTraversal || m_juiceTraversal->isHosting()) {
+            return;
+        }
+        m_juiceTraversal->cancelJoin();
+    });
+}
+
 void NetplayCoordinator::stopHosting()
 {
+    if (m_juiceTraversal) {
+        m_juiceTraversal->stopHosting();
+    }
+
     if (m_server)
     {
         m_server->stopServer();
@@ -458,7 +531,17 @@ void NetplayCoordinator::connectToDirectIPServer(const QString& ipAddress, int p
     
     // Create new client with the direct IP server URL
     m_socketIO = std::make_unique<SocketIOClient>(serverUrl, this);
+    if (m_juiceTraversal && m_juiceTraversal->isJoinReady()) {
+        m_socketIO->setTransportMtu(kTunneledSignalingMtu);
+    }
     connectSocketIOClientSignals(m_socketIO.get());
+
+    const bool loopback = connectAddress.compare(QStringLiteral("127.0.0.1")) == 0 ||
+                          connectAddress.compare(QStringLiteral("localhost"), Qt::CaseInsensitive) == 0 ||
+                          connectAddress.compare(QStringLiteral("::1")) == 0;
+    if (!m_punchHostCode.isEmpty() && !loopback) {
+        m_socketIO->setPunchHostCode(m_punchHostCode);
+    }
     
     // Now connect to the server
     setState(Connecting);
@@ -2314,7 +2397,7 @@ void NetplayCoordinator::setupPeerConnections(const QList<SocketIOClient::Player
 {
     qDebug() << "NetplayCoordinator: Setting up peer connections for" << players.size() << "players";
 
-    if (!TurnCredentialClient::instance().ensureCredentials(15000)) {
+    if (!TurnCredentialClient::instance().ensureCredentials()) {
         qWarning() << "NetplayCoordinator: Cloudflare TURN credentials unavailable; WebRTC may fail behind NAT";
     }
 

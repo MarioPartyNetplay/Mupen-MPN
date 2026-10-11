@@ -19,10 +19,11 @@
 namespace UserInterface::Netplay {
 
 static constexpr int kDefaultNetplayHostingPort = 2626; // UDP/ENet signaling
-static constexpr const char* kNetplayIndexHost = "216.201.73.203";
+static constexpr const char* kNetplayIndexHost = "216.201.72.143";
 static constexpr int kNetplayRegistryPort = 9150;
 static constexpr int kNetplayIndexHttpPort = 9151;
 static constexpr const char* kNetplayRegistryProtocol = "N02TRAV1";
+static constexpr const char* kNetplayIndexProtocol = "N02IDX1";
 static constexpr uint32_t kNetplayHostCodeMax = 0x0FFFFFFF;
 
 inline QString localNetworkAddress()
@@ -342,24 +343,34 @@ inline bool turnCredentialsAvailable()
 
 enum class NetplayConnectionMode {
     Direct,
+    TraversalServer,
 };
 
 inline QString netplayConnectionModeToString(NetplayConnectionMode mode)
 {
-    Q_UNUSED(mode);
+    if (mode == NetplayConnectionMode::TraversalServer) {
+        return QStringLiteral("traversal");
+    }
     return QStringLiteral("direct");
 }
 
 inline NetplayConnectionMode netplayConnectionModeFromString(const QString& value)
 {
-    Q_UNUSED(value);
+    const QString mode = value.trimmed().toLower();
+    if (mode == QLatin1String("traversal") || mode == QLatin1String("nat") || mode == QLatin1String("juice")) {
+        return NetplayConnectionMode::TraversalServer;
+    }
     return NetplayConnectionMode::Direct;
 }
 
 inline bool sessionUsesNatTraversal(const QJsonObject& session)
 {
-    Q_UNUSED(session);
-    return false;
+    if (session.value(QStringLiteral("use_nat_traversal")).toBool(false) ||
+        session.value(QStringLiteral("useNatTraversal")).toBool(false)) {
+        return true;
+    }
+    return netplayConnectionModeFromString(session.value(QStringLiteral("connection_mode")).toString()) ==
+           NetplayConnectionMode::TraversalServer;
 }
 
 inline QString sessionTraversalHostCode(const QJsonObject& session)

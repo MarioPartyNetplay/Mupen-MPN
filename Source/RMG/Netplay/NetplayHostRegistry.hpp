@@ -8,9 +8,13 @@
 #include "NetplayProtocol.hpp"
 
 #include <QObject>
+#include <QByteArray>
 #include <QHostAddress>
+#include <QList>
 #include <QUdpSocket>
 #include <QTimer>
+
+struct _ENetHost;
 
 namespace UserInterface::Netplay {
 
@@ -23,6 +27,8 @@ public:
     ~NetplayHostRegistry() override;
 
     QString hostCode() const;
+    /** Send REGISTER/KEEP from the hosting ENet socket so its NAT mapping is the one joiners punch. */
+    void attachSignalingHost(_ENetHost* host);
     void startHosting(uint16_t signalingPort, bool listInBrowser);
     void resumeHosting(const QString& hostCode, uint16_t signalingPort, bool listInBrowser);
     void setListInBrowser(bool listInBrowser);
@@ -34,6 +40,7 @@ signals:
 
 private:
     void sendToServer(const QByteArray& message);
+    void sendSignalingKeep();
     bool ensureSocketBound(QString* errorOut = nullptr);
     bool ensureServerResolved(QString* errorOut = nullptr);
     void handleServerMessage(const QByteArray& datagram);
@@ -42,6 +49,9 @@ private:
 
     void onReadyRead();
     void onHousekeepingTimer();
+    void onPunchTimer();
+    void notePunchTarget(const QHostAddress& address, quint16 port);
+    static void onEnetDatagram(const QByteArray& datagram, void* userData);
 
     QUdpSocket m_socket;
     QTimer m_housekeepingTimer;
@@ -55,6 +65,17 @@ private:
     qint64 m_nextHostKeepMs = 0;
     bool m_isHosting = false;
     bool m_registrationAbandoned = false;
+
+    struct PunchTarget {
+        QHostAddress address;
+        quint16 port = 0;
+        int burstsLeft = 0;
+        qint64 lastSendMs = 0;
+    };
+
+    _ENetHost* m_enetHost = nullptr;
+    QTimer m_punchTimer;
+    QList<PunchTarget> m_punchTargets;
 };
 
 } // namespace UserInterface::Netplay

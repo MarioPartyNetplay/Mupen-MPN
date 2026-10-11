@@ -11,6 +11,7 @@
 #define NETPLAYSESSIONBROWSERDIALOG_HPP
 
 #include <QJsonObject>
+#include <QLabel>
 #include <QWidget>
 #include <QString>
 
@@ -66,11 +67,22 @@ class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBr
     qint64 joinDeadlineMs = 0;
     QString joinRoomId;
 
+    bool m_traversalPending = false;
+    bool m_punchActive = false;
+    int m_punchFailures = 0;
+    bool m_joinedViaTraversal = false;
+    QString m_traversalHostCode;
+    QLabel* m_traversalStatusLabel = nullptr;
+
+    void setTraversalStatus(const QString& text);
+    bool isTraversalBusy(void) const;
+
     QString showROMDialog(QString name, QString md5);
 
     bool validate(void) const;
     void validateJoinButton(void);
     void connectToResolvedHost(const QString& address, int port, const QString& roomId = QString());
+    void beginTraversalJoin(const QString& hostCode, const QString& roomId);
     void beginJoinConnect(const QString& address, int port, const QString& roomId = QString());
     void attemptJoinConnect();
     void finishJoinFailure(const QString& error);
@@ -83,6 +95,8 @@ class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBr
     void onCoordinatorConnected(void);
     void onCoordinatorConnectionError(const QString& error);
     void onCoordinatorRoomJoined(const QString& roomId, int slot);
+    void onJuiceJoinSucceeded(quint16 localPort);
+    void onJuiceJoinFailed(const QString& reason);
 
 };
 } // namespace Dialog

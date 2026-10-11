@@ -53,6 +53,8 @@
 #include <QPlainTextEdit>
 #include <QPair>
 #include <QSet>
+#include <QTextCharFormat>
+#include <QTextCursor>
 #include <QTextEdit>
 #include <QTreeWidget>
 #include <QDir>
@@ -91,6 +93,30 @@ constexpr int kPlayerClientIdRole = Qt::UserRole;
 constexpr int kPlayerSlotRole = Qt::UserRole + 1;
 constexpr int kPlayerIdRole = Qt::UserRole + 2;
 constexpr int kPlayerNameRole = Qt::UserRole + 3;
+
+void resetChatTextColor(QPlainTextEdit* edit)
+{
+    if (!edit) {
+        return;
+    }
+
+    QTextCursor cursor = edit->textCursor();
+    cursor.movePosition(QTextCursor::End);
+    cursor.setCharFormat(QTextCharFormat());
+    edit->setTextCursor(cursor);
+}
+
+void appendChatHtml(QPlainTextEdit* edit, const QString& html)
+{
+    if (!edit) {
+        return;
+    }
+
+    edit->appendHtml(html);
+    // appendHtml keeps the last span color as the cursor format, so the next
+    // plain chat line would stay green or red.
+    resetChatTextColor(edit);
+}
 
 QString formatPingLabel(int pingMs)
 {
@@ -630,10 +656,11 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
         this->sessionSlot = this->coordinator->getGameSession().localSlot;
     }
 
-    if (this->sessionJson.value("is_hosting").toBool(false) || this->isLocalSessionHost())
+        if (this->sessionJson.value("is_hosting").toBool(false) || this->isLocalSessionHost())
     {
         const int hostingPort = sessionJson.value("server_port").toInt(Netplay::kDefaultNetplayHostingPort);
         const bool showInBrowser = sessionJson.value("show_in_browser").toBool(false);
+        const bool useNat = sessionJson.value("use_nat_traversal").toBool(false);
         QString connectAddress = sessionJson.value("connect_address").toString(
             sessionJson.value("public_address").toString());
         if (connectAddress.isEmpty()) {
@@ -645,19 +672,27 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
             this->sessionJson.insert("connect_address", connectAddress);
             this->sessionJson.insert("public_port", hostingPort);
             this->sessionJson.insert("connect_port", hostingPort);
-            this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
         }
+        if (useNat) {
+            this->sessionJson.insert("use_nat_traversal", true);
+            this->sessionJson.insert(
+                "connection_mode",
+                Netplay::netplayConnectionModeToString(Netplay::NetplayConnectionMode::TraversalServer));
+        }
+        this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
 
-        if (showInBrowser) {
-            this->indexClient = std::make_unique<Netplay::NetplayIndexClient>(this);
-            connect(this->indexClient.get(), &Netplay::NetplayIndexClient::published,
-                    this, [](const QString& key) {
-                qDebug() << "Updated session index:" << key;
-            });
-            connect(this->indexClient.get(), &Netplay::NetplayIndexClient::publishFailed,
-                    this, [](const QString& reason) {
-                qWarning() << "Failed to update session index:" << reason;
-            });
+        if (showInBrowser || useNat) {
+            if (showInBrowser) {
+                this->indexClient = std::make_unique<Netplay::NetplayIndexClient>(this);
+                connect(this->indexClient.get(), &Netplay::NetplayIndexClient::published,
+                        this, [](const QString& key) {
+                    qDebug() << "Updated session index:" << key;
+                });
+                connect(this->indexClient.get(), &Netplay::NetplayIndexClient::publishFailed,
+                        this, [](const QString& reason) {
+                    qWarning() << "Failed to update session index:" << reason;
+                });
+            }
             this->beginHostBrowserRegistration(static_cast<uint16_t>(hostingPort), showInBrowser);
         } else {
             this->fetchPublicIpAddress();
@@ -718,7 +753,7 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
             if (shareInChat && this->isLocalSessionHost()) {
                 this->coordinator->sendChatMessage(changeMessage);
             } else if (!shareInChat) {
-                this->chatPlainTextEdit->appendHtml(QStringLiteral("<i>%1</i>").arg(changeMessage));
+                appendChatHtml(this->chatPlainTextEdit, QStringLiteral("<i>%1</i>").arg(changeMessage));
                 if (CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayBufferAlerts)) {
                     OnScreenDisplaySetMessage(changeMessage.toStdString());
                 }
@@ -737,7 +772,7 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
         }
 
         const QString escapedReason = reason.toHtmlEscaped();
-        this->chatPlainTextEdit->appendHtml(
+        appendChatHtml(this->chatPlainTextEdit, 
             QStringLiteral("<span style=\"color:#ff6666;\"><b>Desync detected:</b> %1</span>").arg(escapedReason));
         if (CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayDesyncAlerts)) {
             OnScreenDisplaySetMessage(message.toStdString());
@@ -757,7 +792,7 @@ NetplaySessionDialog::NetplaySessionDialog(QWidget *parent, Netplay::NetplayCoor
             return;
         }
 
-        this->chatPlainTextEdit->appendHtml(
+        appendChatHtml(this->chatPlainTextEdit, 
             QStringLiteral("<span style=\"color:#ffaa44;\"><b>Input stall:</b> player %1 at frame %2</span>")
                 .arg(playerSlot)
                 .arg(frameNumber));
@@ -1056,11 +1091,16 @@ void NetplaySessionDialog::shutdownSession(void)
             this->coordinator->endGame();
         }
 
+        const bool wasHosting = this->coordinator->isHostingServer();
         this->coordinator->leaveRoom();
 
-        if (this->coordinator->isHostingServer())
+        if (wasHosting && this->coordinator->isHostingServer())
         {
             this->coordinator->stopHosting();
+        }
+        if (!wasHosting)
+        {
+            this->coordinator->stopJuiceJoinSoon();
         }
     }
 }
@@ -1075,6 +1115,12 @@ void NetplaySessionDialog::beginHostBrowserRegistration(uint16_t hostingPort, bo
         qDebug() << "Browse host code:" << hostCode << "server endpoint:" << publicAddress;
 
         this->sessionJson.insert("host_code", hostCode);
+        const bool useNat = this->sessionJson.value(QStringLiteral("use_nat_traversal")).toBool(false);
+        this->sessionJson.insert("use_nat_traversal", useNat);
+        this->sessionJson.insert(
+            "connection_mode",
+            Netplay::netplayConnectionModeToString(useNat ? Netplay::NetplayConnectionMode::TraversalServer
+                                                         : Netplay::NetplayConnectionMode::Direct));
         this->sessionJson.insert("public_port", hostingPort);
         this->sessionJson.insert("connect_port", hostingPort);
         if (Netplay::isUsableConnectAddress(publicAddress)) {
@@ -1083,6 +1129,9 @@ void NetplaySessionDialog::beginHostBrowserRegistration(uint16_t hostingPort, bo
         }
         this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
         this->updateConnectInfoDisplay();
+        if (useNat && this->coordinator) {
+            this->coordinator->startJuiceHosting(hostCode, static_cast<quint16>(hostingPort));
+        }
         this->publishHostSessionIndex(this->coordinator && this->coordinator->isInGame());
     });
 
@@ -1095,9 +1144,26 @@ void NetplaySessionDialog::beginHostBrowserRegistration(uint16_t hostingPort, bo
         }
     });
 
+    if (this->coordinator && this->coordinator->getHostingServer()) {
+        if (ENetHost* signalingHost = this->coordinator->getHostingServer()->enetHost()) {
+            this->hostRegistry->attachSignalingHost(signalingHost);
+        } else {
+            qWarning() << "NAT punch registry has no signaling socket";
+        }
+    }
+
     const QString hostCode = this->sessionJson.value("host_code").toString();
     if (!hostCode.isEmpty()) {
         this->hostRegistry->resumeHosting(hostCode, hostingPort, listInBrowser);
+        const bool useNat = this->sessionJson.value(QStringLiteral("use_nat_traversal")).toBool(false);
+        if (useNat && this->coordinator) {
+            this->sessionJson.insert("use_nat_traversal", true);
+            this->sessionJson.insert(
+                "connection_mode",
+                Netplay::netplayConnectionModeToString(Netplay::NetplayConnectionMode::TraversalServer));
+            this->sessionFile = QJsonDocument(this->sessionJson).toJson(QJsonDocument::Compact);
+            this->coordinator->startJuiceHosting(hostCode, hostingPort);
+        }
     } else {
         this->hostRegistry->startHosting(hostingPort, listInBrowser);
     }
@@ -1119,6 +1185,10 @@ void NetplaySessionDialog::updateConnectInfoDisplay(void)
 
     if (!hostCode.isEmpty()) {
         this->publicIpLineEdit->setText(hostCode);
+        if (this->sessionJson.value(QStringLiteral("use_nat_traversal")).toBool(false)) {
+            this->publicIpLineEdit->setToolTip(QStringLiteral(
+                "NAT traversal is running. Share this code. The lobby is not published again until it changes."));
+        }
     } else if (publicAddress.isEmpty()) {
         this->publicIpLineEdit->setText(QStringLiteral("Resolving..."));
     } else {
@@ -1352,7 +1422,7 @@ void NetplaySessionDialog::appendGameChangedSystemMessage(const QString& gameNam
     }
 
     const QString changeMessage = QStringLiteral("Game changed to '%1'").arg(gameName);
-    this->chatPlainTextEdit->appendHtml(
+    appendChatHtml(this->chatPlainTextEdit, 
         QStringLiteral("<i>%1</i>").arg(changeMessage.toHtmlEscaped()));
 }
 
@@ -1745,7 +1815,7 @@ void NetplaySessionDialog::updateCheatsTreeWidget(void)
 
 void NetplaySessionDialog::showMatchHudNotice(const QString& message, const QString& color)
 {
-    this->chatPlainTextEdit->appendHtml(
+    appendChatHtml(this->chatPlainTextEdit, 
         QStringLiteral("<span style=\"color:%1;\"><b>%2</b></span>")
             .arg(color, message.toHtmlEscaped()));
     OnScreenDisplaySetMessage(message.toStdString(), 8);
@@ -1810,14 +1880,14 @@ void NetplaySessionDialog::announceMatchRosterChanges(
     QStringList hudLines;
     if (!dropped.isEmpty()) {
         const QString message = QStringLiteral("%1 disconnected").arg(dropped.join(QStringLiteral(", ")));
-        this->chatPlainTextEdit->appendHtml(
+        appendChatHtml(this->chatPlainTextEdit, 
             QStringLiteral("<span style=\"color:#ff6666;\"><b>%1</b></span>")
                 .arg(message.toHtmlEscaped()));
         hudLines.append(message);
     }
     if (!joined.isEmpty()) {
         const QString message = QStringLiteral("%1 reconnected").arg(joined.join(QStringLiteral(", ")));
-        this->chatPlainTextEdit->appendHtml(
+        appendChatHtml(this->chatPlainTextEdit, 
             QStringLiteral("<span style=\"color:#8fd18f;\"><b>%1</b></span>")
                 .arg(message.toHtmlEscaped()));
         hudLines.append(message);
@@ -2180,7 +2250,7 @@ void NetplaySessionDialog::on_coordinator_coreSettingsSyncReceived(const QJsonOb
     QString mismatch;
     if (!localPluginsMatchHostSync(coreSettings, this->expectedSessionMd5(), &mismatch)) {
         this->m_sessionCoreSettingsApplied = false;
-        this->chatPlainTextEdit->appendHtml(
+        appendChatHtml(this->chatPlainTextEdit, 
             QStringLiteral("<span style=\"color:#ff6666;\"><b>Cannot start:</b> %1. "
                            "Match the host RSP/GFX plugins, then rejoin.</span>")
                 .arg(mismatch.toHtmlEscaped()));
@@ -2306,16 +2376,19 @@ void NetplaySessionDialog::publishHostSessionIndex(bool started)
         return;
     }
 
-    QString connectAddress;
-    int connectPort = 0;
-    if (!Netplay::sessionConnectEndpoint(sessionJson, &connectAddress, &connectPort)) {
-        const QString publicAddress = sessionJson.value(QStringLiteral("public_address")).toString();
-        if (!Netplay::isUsableConnectAddress(publicAddress)) {
-            return;
+    const bool useNat = sessionJson.value(QStringLiteral("use_nat_traversal")).toBool(false);
+    if (!useNat) {
+        QString connectAddress;
+        int connectPort = 0;
+        if (!Netplay::sessionConnectEndpoint(sessionJson, &connectAddress, &connectPort)) {
+            const QString publicAddress = sessionJson.value(QStringLiteral("public_address")).toString();
+            if (!Netplay::isUsableConnectAddress(publicAddress)) {
+                return;
+            }
+            sessionJson.insert(QStringLiteral("connect_address"), publicAddress);
+            this->sessionJson = sessionJson;
+            this->sessionFile = QJsonDocument(sessionJson).toJson(QJsonDocument::Compact);
         }
-        sessionJson.insert(QStringLiteral("connect_address"), publicAddress);
-        this->sessionJson = sessionJson;
-        this->sessionFile = QJsonDocument(sessionJson).toJson(QJsonDocument::Compact);
     }
 
     const QByteArray payload =
@@ -2327,7 +2400,7 @@ void NetplaySessionDialog::on_coordinator_chatMessageReceived(const QString& pla
 {
     if (message.startsWith(QStringLiteral("Buffer changed to ")) ||
         message.startsWith(QStringLiteral("Game changed to "))) {
-        this->chatPlainTextEdit->appendHtml(
+        appendChatHtml(this->chatPlainTextEdit, 
             QStringLiteral("<i>%1</i>").arg(message.toHtmlEscaped()));
         if (message.startsWith(QStringLiteral("Buffer changed to ")) &&
             CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayBufferAlerts)) {
@@ -2338,7 +2411,7 @@ void NetplaySessionDialog::on_coordinator_chatMessageReceived(const QString& pla
 
     if (message.startsWith(QStringLiteral("Desync detected: "))) {
         const QString reason = message.mid(QStringLiteral("Desync detected: ").size());
-        this->chatPlainTextEdit->appendHtml(
+        appendChatHtml(this->chatPlainTextEdit, 
             QStringLiteral("<span style=\"color:#ff6666;\"><b>Desync detected:</b> %1 (%2)</span>")
                 .arg(reason.toHtmlEscaped(), playerName.toHtmlEscaped()));
         if (CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayDesyncAlerts)) {
@@ -2348,6 +2421,7 @@ void NetplaySessionDialog::on_coordinator_chatMessageReceived(const QString& pla
     }
 
     const QString displayMessage = playerName + ": " + message;
+    resetChatTextColor(this->chatPlainTextEdit);
     this->chatPlainTextEdit->appendPlainText(displayMessage);
     if (CoreSettingsGetBoolValue(SettingsID::GUI_OnScreenDisplayNetplayChatMessages)) {
         OnScreenDisplaySetMessage(displayMessage.toStdString());
@@ -2357,7 +2431,7 @@ void NetplaySessionDialog::on_coordinator_chatMessageReceived(const QString& pla
 void NetplaySessionDialog::on_coordinator_motdReceived(const QString& message)
 {
     QString motdMessage = "<b>MOTD:</b> " + message;
-    this->chatPlainTextEdit->appendHtml(motdMessage);
+    appendChatHtml(this->chatPlainTextEdit, motdMessage);
     this->chatPlainTextEdit->setTextInteractionFlags(Qt::TextBrowserInteraction);
 }
 
@@ -2669,7 +2743,7 @@ void NetplaySessionDialog::timerEvent(QTimerEvent* event)
         if (this->m_clientSessionPrepRetries >= 10) {
             this->killTimer(this->m_clientSessionPrepWatchdogTimerId);
             this->m_clientSessionPrepWatchdogTimerId = -1;
-            this->chatPlainTextEdit->appendHtml(
+            appendChatHtml(this->chatPlainTextEdit, 
                 QStringLiteral("<span style=\"color:#ff6666;\"><b>Netplay:</b> Timed out waiting for "
                                "host save/settings sync. Do not start — leave and rejoin.</span>"));
             return;

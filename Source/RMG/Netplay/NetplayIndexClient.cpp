@@ -5,6 +5,7 @@
 #include "NetplayIndexClient.hpp"
 #include "NetplayProtocol.hpp"
 
+#include <QDebug>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 
@@ -24,6 +25,13 @@ void NetplayIndexClient::publishSession(const QString& hostCode, const QByteArra
         return;
     }
 
+    if (key == m_lastPublishedKey && data == m_lastPublishedPayload) {
+        qInfo() << "Session index unchanged; skipping publish of" << key;
+        return;
+    }
+    m_lastPublishedKey = key;
+    m_lastPublishedPayload = data;
+
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     request.setTransferTimeout(10000);
@@ -31,6 +39,10 @@ void NetplayIndexClient::publishSession(const QString& hostCode, const QByteArra
     QNetworkReply* reply = m_networkManager.put(request, data);
     connect(reply, &QNetworkReply::finished, this, [this, reply, key]() {
         if (reply->error() != QNetworkReply::NoError) {
+            if (key == m_lastPublishedKey) {
+                m_lastPublishedKey.clear();
+                m_lastPublishedPayload.clear();
+            }
             emit publishFailed(reply->errorString());
         } else {
             emit published(key);

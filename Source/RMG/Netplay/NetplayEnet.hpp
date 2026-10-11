@@ -36,6 +36,10 @@ ENetHost* createSignalingEnetHost(const ENetAddress* address, size_t peerCount, 
 
 void installNetplayEnetIntercept(ENetHost* host);
 
+/** ICE/TURN tunnels carry ENet, so keep datagrams under a typical relay MTU. */
+constexpr enet_uint32 kTunneledSignalingMtu = 1100;
+void applyTunneledSignalingMtu(ENetHost* host);
+
 bool peerIsConnected(ENetPeer* peer);
 
 /** Apply signaling peer timeouts tolerant of high-latency internet play. */
@@ -57,6 +61,16 @@ bool parseGameplayControllerInput(const QByteArray& data, int* slotOut, uint32_t
 bool parseSignalingPacket(const QByteArray& data, QString* eventNameOut, QJsonArray* argsOut);
 
 bool sendEnetDatagram(ENetHost* host, const QHostAddress& target, quint16 port, const QByteArray& payload);
+
+/** Several 1-byte datagrams. The ENet intercept drops them so they only open NAT. */
+void sendNatPunch(ENetHost* host, const QHostAddress& target, quint16 port);
+
+/**
+ * From this socket, ask the traversal server for hostCode and punch the public
+ * mapping it returns. addressOut is the address enet_host_connect must use.
+ */
+bool exchangeTraversalPunch(ENetHost* host, const QString& hostCode, QString* addressOut, quint16* portOut,
+                            QString* errorOut);
 
 using EnetRegistryDatagramHandler = void (*)(const QByteArray& datagram, void* userData);
 void setEnetRegistryDatagramHandler(ENetHost* host, EnetRegistryDatagramHandler handler, void* userData);

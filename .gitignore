@@ -41,3 +41,6 @@ lib/libdiscord-rpc.a
 # Local environment overrides
 .env
 *.DS_Store
+
+# Cloudflare TURN key compiled into nat_traversal_server
+Source/Server/turn_secrets.h

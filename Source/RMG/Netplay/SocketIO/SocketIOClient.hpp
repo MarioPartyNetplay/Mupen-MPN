@@ -97,6 +97,9 @@ public:
 
 
     void connectToServer(const QString& playerName);
+    void setTransportMtu(enet_uint32 mtu);
+    /** When set, connectToServer punches this host code and dials the mapped address. */
+    void setPunchHostCode(const QString& hostCode);
     void disconnect();
     ConnectionState getConnectionState() const;
 
@@ -142,6 +145,8 @@ public:
     void sendEmulationClosed();
 
     QString getPlayerId() const;
+    QString signalingHost() const { return m_serverHostname; }
+    quint16 signalingPort() const { return m_serverPort; }
     QString getRoomId() const;
     RoomInfo getCurrentRoom() const;
     QList<PlayerInfo> getPlayerList() const;
@@ -216,16 +221,24 @@ private:
     void updateRoomState(const QJsonObject& roomData);
     void updatePlayerList(const QJsonArray& players);
     void destroyEnetClient();
+    void stopPunchKeep();
 
     bool parseServerEndpoint(const QString& serverUrl, QHostAddress* addressOut, quint16* portOut) const;
     bool setEnetPeerAddress(ENetAddress* addressOut) const;
 
     ENetHost* m_enetHost = nullptr;
+    enet_uint32 m_transportMtu = 0;
     ENetPeer* m_serverPeer = nullptr;
     QTimer* m_serviceTimer = nullptr;
     QTimer* m_connectTimer = nullptr;
     QTimer* m_pingTimer = nullptr;
     QTimer* m_reconnectTimer = nullptr;
+    QTimer* m_punchKeepTimer = nullptr;
+
+    QString m_punchHostCode;
+    QHostAddress m_punchPeer;
+    quint16 m_punchPeerPort = 0;
+    int m_punchBurstsLeft = 0;
 
     QString m_serverUrl;
     QString m_serverHostname;

@@ -12,8 +12,18 @@
  *   PUT  /index/{key}   store body (also POST)
  *   GET  /turn/ice-servers  short-lived Cloudflare TURN credentials (broker)
  *
+ *   --nat-traversal   tell clients every session uses NAT traversal
+ *
+ * Threads:
+ *   main             UDP host codes and index only
+ *   HTTP accept + workers   lobby pages and /turn/ice-servers
+ *   TURN refresh     Cloudflare ICE credentials, off the UDP loop
+ *
  * Cloudflare TURN broker (server-side only):
  *   turn_secrets.h (compiled in) or RMG_TURN_KEY_ID / RMG_TURN_API_TOKEN env overrides
+ *   Cached credentials are rotated well before their TTL so a late joiner is not
+ *   handed a key that is about to expire. The response adds "expires" (unix) and
+ *   "ttl" (seconds remaining).
  *
  * Build:
  *   gcc -O2 -Wall -o nat_traversal_server nat_traversal_server.c -lws2_32
@@ -26,6 +36,8 @@
 #endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
+#include <process.h>
 typedef SOCKET socket_t;
 #define SOCKET_INVALID INVALID_SOCKET
 #define socket_close closesocket
@@ -35,6 +47,7 @@ typedef SOCKET socket_t;
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -73,13 +86,18 @@ typedef int socket_t;
 #define MAX_HTTP_REQUEST 16384
 #define MAX_TURN_RESPONSE 32768
 #define DEFAULT_TURN_CREDENTIAL_TTL_SEC 86400
+#define TURN_CREDENTIAL_TTL_MAX_SEC 172800
 #define TURN_CACHE_REFRESH_SKEW_SEC 300
+/* Re-issue while most of the TTL remains. Clients that join near the end of a
+   24h cache were keeping a credential that Cloudflare was about to reject. */
+#define TURN_CACHE_REUSE_SEC 900
 #define TURN_FETCH_TIMEOUT_SEC 5
-#define TURN_REFRESH_BACKOFF_SEC 30
+#define TURN_REFRESH_BACKOFF_SEC 5
 #define HTTP_CLIENT_TIMEOUT_SEC 2
 #define HTTP_LISTEN_BACKLOG 128
+#define HTTP_WORKERS 8
+#define HTTP_QUEUE_CAP 64
 #define MAX_UDP_DRAIN_PER_TICK 64
-#define MAX_HTTP_ACCEPT_PER_TICK 8
 #define EVENT_LOOP_IDLE_SEC 1
 
 #ifdef WITH_LIBCURL
@@ -114,6 +132,29 @@ static size_t g_turn_cache_len = 0;
 static uint64_t g_turn_cache_expires = 0;
 static int g_turn_credential_ttl_sec = DEFAULT_TURN_CREDENTIAL_TTL_SEC;
 static uint64_t g_turn_next_refresh_attempt = 0;
+static int g_turn_initial_done = 0;
+static int g_curl_ready = 0;
+static int g_force_nat_traversal = 0;
+
+#ifdef _WIN32
+typedef CRITICAL_SECTION mutex_t;
+typedef CONDITION_VARIABLE cond_t;
+#else
+typedef pthread_mutex_t mutex_t;
+typedef pthread_cond_t cond_t;
+#endif
+
+static mutex_t g_state_mu;
+static mutex_t g_turn_mu;
+static cond_t g_turn_cv;
+static mutex_t g_http_q_mu;
+static cond_t g_http_q_cv;
+static socket_t g_http_queue[HTTP_QUEUE_CAP];
+static int g_http_q_head = 0;
+static int g_http_q_count = 0;
+static socket_t g_http_listen = SOCKET_INVALID;
+
+static int session_json_force_nat(const char* src, char* dst, size_t dst_size, size_t* out_len);
 
 static uint64_t now_seconds(void)
 {
@@ -161,6 +202,187 @@ static int socket_would_block(void)
 #else
     return socket_errno == EAGAIN || socket_errno == EWOULDBLOCK;
 #endif
+}
+
+static void mutex_init(mutex_t* mutex)
+{
+#ifdef _WIN32
+    InitializeCriticalSection(mutex);
+#else
+    pthread_mutex_init(mutex, NULL);
+#endif
+}
+
+static void mutex_lock(mutex_t* mutex)
+{
+#ifdef _WIN32
+    EnterCriticalSection(mutex);
+#else
+    pthread_mutex_lock(mutex);
+#endif
+}
+
+static void mutex_unlock(mutex_t* mutex)
+{
+#ifdef _WIN32
+    LeaveCriticalSection(mutex);
+#else
+    pthread_mutex_unlock(mutex);
+#endif
+}
+
+static void cond_init(cond_t* cond)
+{
+#ifdef _WIN32
+    InitializeConditionVariable(cond);
+#else
+    pthread_cond_init(cond, NULL);
+#endif
+}
+
+static void cond_signal(cond_t* cond)
+{
+#ifdef _WIN32
+    WakeConditionVariable(cond);
+#else
+    pthread_cond_signal(cond);
+#endif
+}
+
+static void cond_broadcast(cond_t* cond)
+{
+#ifdef _WIN32
+    WakeAllConditionVariable(cond);
+#else
+    pthread_cond_broadcast(cond);
+#endif
+}
+
+/* Returns 0 if signaled, -1 on timeout. Caller holds mutex. timeout_ms < 0 waits forever. */
+static int cond_wait_ms(cond_t* cond, mutex_t* mutex, int timeout_ms)
+{
+#ifdef _WIN32
+    DWORD wait_ms = timeout_ms < 0 ? INFINITE : (DWORD)timeout_ms;
+    return SleepConditionVariableCS(cond, mutex, wait_ms) ? 0 : -1;
+#else
+    if (timeout_ms < 0) {
+        return pthread_cond_wait(cond, mutex) == 0 ? 0 : -1;
+    }
+    {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += timeout_ms / 1000;
+        ts.tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+        if (ts.tv_nsec >= 1000000000L) {
+            ts.tv_sec += 1;
+            ts.tv_nsec -= 1000000000L;
+        }
+        return pthread_cond_timedwait(cond, mutex, &ts) == 0 ? 0 : -1;
+    }
+#endif
+}
+
+static void thread_sleep_ms(int ms)
+{
+#ifdef _WIN32
+    Sleep(ms);
+#else
+    struct timespec pause;
+    pause.tv_sec = ms / 1000;
+    pause.tv_nsec = (long)(ms % 1000) * 1000000L;
+    nanosleep(&pause, NULL);
+#endif
+}
+
+typedef void* (*thread_fn)(void*);
+
+struct thread_boot {
+    thread_fn fn;
+    void* arg;
+};
+
+#ifdef _WIN32
+static unsigned __stdcall thread_trampoline(void* raw)
+{
+    struct thread_boot* boot = (struct thread_boot*)raw;
+    thread_fn fn = boot->fn;
+    void* arg = boot->arg;
+    free(boot);
+    fn(arg);
+    return 0;
+}
+
+static int thread_spawn(thread_fn fn, void* arg)
+{
+    struct thread_boot* boot = (struct thread_boot*)malloc(sizeof(*boot));
+    uintptr_t handle;
+    if (boot == NULL) {
+        return -1;
+    }
+    boot->fn = fn;
+    boot->arg = arg;
+    handle = _beginthreadex(NULL, 0, thread_trampoline, boot, 0, NULL);
+    if (handle == 0) {
+        free(boot);
+        return -1;
+    }
+    CloseHandle((HANDLE)handle);
+    return 0;
+}
+#else
+static void* thread_trampoline(void* raw)
+{
+    struct thread_boot* boot = (struct thread_boot*)raw;
+    thread_fn fn = boot->fn;
+    void* arg = boot->arg;
+    free(boot);
+    fn(arg);
+    return NULL;
+}
+
+static int thread_spawn(thread_fn fn, void* arg)
+{
+    pthread_t thread;
+    pthread_attr_t attr;
+    struct thread_boot* boot;
+    int rc;
+
+    boot = (struct thread_boot*)malloc(sizeof(*boot));
+    if (boot == NULL) {
+        return -1;
+    }
+    boot->fn = fn;
+    boot->arg = arg;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    rc = pthread_create(&thread, &attr, thread_trampoline, boot);
+    pthread_attr_destroy(&attr);
+    if (rc != 0) {
+        free(boot);
+        return -1;
+    }
+    return 0;
+}
+#endif
+
+static void state_lock(void)
+{
+    mutex_lock(&g_state_mu);
+}
+
+static void state_unlock(void)
+{
+    mutex_unlock(&g_state_mu);
+}
+
+static void turn_lock(void)
+{
+    mutex_lock(&g_turn_mu);
+}
+
+static void turn_unlock(void)
+{
+    mutex_unlock(&g_turn_mu);
 }
 
 static void send_reply(socket_t sock, const struct sockaddr* addr, socklen_t addr_len, const char* message)
@@ -512,21 +734,34 @@ static void trav_lookup(socket_t sock, const struct sockaddr_in* client, socklen
     }
 
     addr.s_addr = entry->host_ip;
-    snprintf(reply, sizeof(reply), TRAV_PROTOCOL "|LOOKUPOK|%s|%s|%u", code_text, inet_ntoa(addr),
-             (unsigned)entry->signaling_port);
-    send_reply(sock, (const struct sockaddr*)client, client_len, reply);
+    /* Joiners punch the NAT mapping of the host's ENet socket, not the port the
+       host asked to be listed on. signaling_port is the private listen port. */
+    const unsigned mapped_port = entry->traversal_port > 0 ? (unsigned)entry->traversal_port
+                                                            : (unsigned)entry->signaling_port;
+    char host_ip[INET_ADDRSTRLEN];
+    char joiner_ip[INET_ADDRSTRLEN];
+    if (inet_ntop(AF_INET, &addr, host_ip, sizeof(host_ip)) == NULL) {
+        snprintf(host_ip, sizeof(host_ip), "0.0.0.0");
+    }
+    if (inet_ntop(AF_INET, &client->sin_addr, joiner_ip, sizeof(joiner_ip)) == NULL) {
+        snprintf(joiner_ip, sizeof(joiner_ip), "0.0.0.0");
+    }
 
-    /* Coordinate UDP hole punching for port-restricted cone NAT (Dolphin-style). */
+    snprintf(reply, sizeof(reply), TRAV_PROTOCOL "|LOOKUPOK|%s|%s|%u", code_text, host_ip, mapped_port);
+    send_reply(sock, (const struct sockaddr*)client, client_len, reply);
+    printf("[trav] LOOKUP %s -> %s:%u (joiner %s:%u)\n", code_text, host_ip, mapped_port, joiner_ip,
+           (unsigned)ntohs(client->sin_port));
+
+    /* Tell each side the other's public mapping so both can punch (Dolphin-style). */
     {
         struct sockaddr_in host_addr;
         memset(&host_addr, 0, sizeof(host_addr));
         host_addr.sin_family = AF_INET;
         host_addr.sin_addr.s_addr = entry->host_ip;
-        host_addr.sin_port = htons(entry->traversal_port > 0 ? entry->traversal_port : entry->signaling_port);
+        host_addr.sin_port = htons((uint16_t)mapped_port);
 
-        trav_send_punch(sock, &host_addr, sizeof(host_addr), inet_ntoa(client->sin_addr),
-                        (unsigned)ntohs(client->sin_port));
-        trav_send_punch(sock, client, client_len, inet_ntoa(addr), (unsigned)entry->signaling_port);
+        trav_send_punch(sock, &host_addr, sizeof(host_addr), joiner_ip, (unsigned)ntohs(client->sin_port));
+        trav_send_punch(sock, client, client_len, host_ip, mapped_port);
     }
 }
 
@@ -612,7 +847,6 @@ static void index_set(socket_t sock, const struct sockaddr_in* client, socklen_t
 
     if (strncmp(value_field, "B64:", 4) == 0) {
         decoded_len = b64_decode(value_field + 4, decoded, sizeof(decoded));
-        printf("[idx] Decoded B64 length=%zu for key=%s from %s:%u\n", decoded_len, key, inet_ntoa(client->sin_addr), (unsigned)ntohs(client->sin_port));
     } else {
         decoded_len = strlen(value_field);
         if (decoded_len >= sizeof(decoded)) {
@@ -621,6 +855,17 @@ static void index_set(socket_t sock, const struct sockaddr_in* client, socklen_t
             return;
         }
         memcpy(decoded, value_field, decoded_len);
+    }
+
+    {
+        index_entry_t* existing = find_index(key);
+        if (existing != NULL && existing->value_len == decoded_len &&
+            memcmp(existing->value, decoded, decoded_len) == 0) {
+            existing->last_seen = now_seconds();
+            snprintf(reply, sizeof(reply), INDEX_PROTOCOL "|SETOK|%s", key);
+            send_reply(sock, (const struct sockaddr*)client, client_len, reply);
+            return;
+        }
     }
 
     if (upsert_index(key, decoded, decoded_len, now_seconds()) == NULL) {
@@ -652,8 +897,43 @@ static void index_get(socket_t sock, const struct sockaddr_in* client, socklen_t
         return;
     }
 
-    b64_encode((const unsigned char*)entry->value, entry->value_len, b64, sizeof(b64));
-    snprintf(reply, sizeof(reply), INDEX_PROTOCOL "|GETOK|%s|B64:%s", key, b64);
+    {
+        char forced[MAX_VALUE_LEN];
+        size_t forced_len = 0;
+        const char* payload = entry->value;
+        size_t payload_len = entry->value_len;
+        const char* header = INDEX_PROTOCOL "|GETOK|";
+        const char* marker = "|B64:";
+        size_t header_len;
+        size_t key_len;
+        size_t marker_len;
+        size_t b64_len;
+        size_t total;
+
+        if (strncmp(key, "session/", 8) == 0 &&
+            session_json_force_nat(entry->value, forced, sizeof(forced), &forced_len)) {
+            payload = forced;
+            payload_len = forced_len;
+        }
+        b64_len = b64_encode((const unsigned char*)payload, payload_len, b64, sizeof(b64));
+        header_len = strlen(header);
+        key_len = strlen(key);
+        marker_len = strlen(marker);
+        total = header_len + key_len + marker_len + b64_len;
+        {
+            const size_t expected = payload_len == 0 ? 0 : 4 * ((payload_len + 2) / 3);
+            if (b64_len != expected || total + 1 > sizeof(reply)) {
+                fprintf(stderr, "[idx] GET %s reply does not fit in one datagram (%zu bytes)\n", key, total);
+                send_reply(sock, (const struct sockaddr*)client, client_len, INDEX_PROTOCOL "|ERR|TOOLARGE");
+                return;
+            }
+        }
+        memcpy(reply, header, header_len);
+        memcpy(reply + header_len, key, key_len);
+        memcpy(reply + header_len + key_len, marker, marker_len);
+        memcpy(reply + header_len + key_len + marker_len, b64, b64_len);
+        reply[total] = '\0';
+    }
     send_reply(sock, (const struct sockaddr*)client, client_len, reply);
 }
 
@@ -723,8 +1003,8 @@ static const char* field_after_key(const char* message, const char* op, const ch
     }
 }
 
-static void handle_udp(socket_t sock, const char* buffer, int length, const struct sockaddr_in* client,
-                       socklen_t client_len)
+static void handle_udp_locked(socket_t sock, const char* buffer, int length, const struct sockaddr_in* client,
+                             socklen_t client_len)
 {
     char message[MAX_UDP_PACKET];
     char* parts[8];
@@ -762,6 +1042,10 @@ static void handle_udp(socket_t sock, const char* buffer, int length, const stru
                 if (entry != NULL) {
                     const uint64_t now = now_seconds();
                     entry->last_seen = now;
+                    /* KEEP is sent from the ENet socket, so the observed source is the
+                       mapping joiners must punch. Refresh it every heartbeat. */
+                    entry->host_ip = client->sin_addr.s_addr;
+                    entry->traversal_port = ntohs(client->sin_port);
                     /* Client sends KEEP|code|port|list. Older clients used KEEP|code|list. */
                     if (part_count >= 5) {
                         entry->list_in_browser = (strcmp(parts[4], "0") != 0);
@@ -825,6 +1109,14 @@ static void handle_udp(socket_t sock, const char* buffer, int length, const stru
         }
         return;
     }
+}
+
+static void handle_udp(socket_t sock, const char* buffer, int length, const struct sockaddr_in* client,
+                       socklen_t client_len)
+{
+    state_lock();
+    handle_udp_locked(sock, buffer, length, client, client_len);
+    state_unlock();
 }
 
 /* ---- HTTP index ---- */
@@ -945,6 +1237,8 @@ static void http_reply_index_page(socket_t client)
     size_t offset = 0;
     const uint64_t now = now_seconds();
 
+    state_lock();
+    prune_index();
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
                                "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
                                "<title>Mupen MPN Index</title></head><body><h1>Mupen MPN Index</h1><ul>");
@@ -962,6 +1256,7 @@ static void http_reply_index_page(socket_t client)
     }
 
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "</ul></body></html>");
+    state_unlock();
 
     {
         char header[256];
@@ -974,10 +1269,90 @@ static void http_reply_index_page(socket_t client)
     }
 }
 
+static int session_json_force_nat(const char* src, char* dst, size_t dst_size, size_t* out_len)
+{
+    const char* key = "\"use_nat_traversal\":";
+    const char* found;
+    const char* value;
+    size_t src_len;
+
+    if (!g_force_nat_traversal || src == NULL || dst == NULL || out_len == NULL || dst_size == 0) {
+        return 0;
+    }
+
+    src_len = strlen(src);
+    if (src_len == 0 || src[0] != '{' || src[src_len - 1] != '}') {
+        return 0;
+    }
+
+    found = strstr(src, key);
+    if (found != NULL) {
+        value = found + strlen(key);
+        while (*value == ' ' || *value == '\t') {
+            ++value;
+        }
+        if (strncmp(value, "true", 4) == 0) {
+            return 0;
+        }
+        if (strncmp(value, "false", 5) == 0) {
+            size_t prefix = (size_t)(value - src);
+            size_t suffix = src_len - prefix - 5;
+            if (prefix + 4 + suffix + 1 > dst_size) {
+                return 0;
+            }
+            memcpy(dst, src, prefix);
+            memcpy(dst + prefix, "true", 4);
+            memcpy(dst + prefix + 4, value + 5, suffix);
+            *out_len = prefix + 4 + suffix;
+            dst[*out_len] = '\0';
+            return 1;
+        }
+    }
+
+    {
+        const char* insert = ",\"use_nat_traversal\":true";
+        size_t insert_len = strlen(insert);
+        if (src_len + insert_len + 1 > dst_size) {
+            return 0;
+        }
+        memcpy(dst, src, src_len - 1);
+        memcpy(dst + src_len - 1, insert, insert_len);
+        dst[src_len - 1 + insert_len] = '}';
+        *out_len = src_len + insert_len;
+        dst[*out_len] = '\0';
+        return 1;
+    }
+}
+
 static void http_reply_value(socket_t client, const char* key, int found)
 {
-    index_entry_t* entry = find_index(key);
-    if (!found || entry == NULL || now_seconds() - entry->last_seen > INDEX_TTL_SEC) {
+    char payload_copy[MAX_VALUE_LEN];
+    size_t payload_len = 0;
+    int ok = 0;
+
+    state_lock();
+    prune_index();
+    {
+        index_entry_t* entry = find_index(key);
+        if (found && entry != NULL && now_seconds() - entry->last_seen <= INDEX_TTL_SEC) {
+            char forced[MAX_VALUE_LEN];
+            size_t forced_len = 0;
+            const char* payload = entry->value;
+            payload_len = entry->value_len;
+            if (key != NULL && strncmp(key, "session/", 8) == 0 &&
+                session_json_force_nat(entry->value, forced, sizeof(forced), &forced_len)) {
+                payload = forced;
+                payload_len = forced_len;
+            }
+            if (payload_len < sizeof(payload_copy)) {
+                memcpy(payload_copy, payload, payload_len);
+                ok = 1;
+            }
+        }
+    }
+    state_unlock();
+
+    if (!ok) {
         http_send_all(client, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
         return;
     }
@@ -987,12 +1362,12 @@ static void http_reply_value(socket_t client, const char* key, int found)
         snprintf(header, sizeof(header),
                  "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %zu\r\n"
                  "Connection: close\r\n\r\n",
-                 entry->value_len);
+                 payload_len);
         http_send_all(client, header);
         {
             size_t sent = 0;
-            while (sent < entry->value_len) {
-                int n = send(client, entry->value + sent, (int)(entry->value_len - sent), 0);
+            while (sent < payload_len) {
+                int n = send(client, payload_copy + sent, (int)(payload_len - sent), 0);
                 if (n <= 0) {
                     break;
                 }
@@ -1166,7 +1541,9 @@ static int room_index_is_browsable(const char* session_json)
         return 0;
     }
 
-    if (json_get_bool_field(session_json, "use_nat_traversal", &use_nat) && !use_nat) {
+    if (g_force_nat_traversal) {
+        use_nat = 1;
+    } else if (json_get_bool_field(session_json, "use_nat_traversal", &use_nat) && !use_nat) {
         if (!json_get_string_field(session_json, "connect_address", connect_addr, sizeof(connect_addr)) ||
             !is_public_ipv4_text(connect_addr)) {
             if (!json_get_string_field(session_json, "public_address", connect_addr, sizeof(connect_addr)) ||
@@ -1179,6 +1556,25 @@ static int room_index_is_browsable(const char* session_json)
     return 1;
 }
 
+static void copy_text(char* dst, size_t dst_size, const char* src)
+{
+    size_t n;
+
+    if (dst == NULL || dst_size == 0) {
+        return;
+    }
+    if (src == NULL) {
+        dst[0] = '\0';
+        return;
+    }
+    n = strlen(src);
+    if (n >= dst_size) {
+        n = dst_size - 1;
+    }
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
 static void json_room_connect_endpoint(const char* session_json, const char* fallback_ip, uint16_t fallback_port,
                                        char* out_ip, size_t out_ip_size, uint16_t* out_port)
 {
@@ -1186,15 +1582,14 @@ static void json_room_connect_endpoint(const char* session_json, const char* fal
     char connect_addr[INET_ADDRSTRLEN] = {0};
     int connect_port = 0;
 
-    strncpy(out_ip, fallback_ip, out_ip_size - 1);
-    out_ip[out_ip_size - 1] = '\0';
+    copy_text(out_ip, out_ip_size, fallback_ip);
     *out_port = fallback_port;
 
     if (session_json == NULL) {
         return;
     }
 
-    if (!json_get_bool_field(session_json, "use_nat_traversal", &use_nat) || use_nat) {
+    if (g_force_nat_traversal || !json_get_bool_field(session_json, "use_nat_traversal", &use_nat) || use_nat) {
         return;
     }
 
@@ -1206,8 +1601,7 @@ static void json_room_connect_endpoint(const char* session_json, const char* fal
         }
     }
 
-    strncpy(out_ip, connect_addr, out_ip_size - 1);
-    out_ip[out_ip_size - 1] = '\0';
+    copy_text(out_ip, out_ip_size, connect_addr);
 
     if (json_get_int_field(session_json, "connect_port", &connect_port) && connect_port >= 1024 &&
         connect_port <= 65535) {
@@ -1298,6 +1692,9 @@ static void http_reply_rooms_html(socket_t client)
     size_t offset = 0;
     const uint64_t now = now_seconds();
 
+    state_lock();
+    prune_hosts();
+    prune_index();
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
                                "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
                                "<title>Mupen MPN Active Rooms</title></head><body><h1>Active Rooms</h1><ul>");
@@ -1335,6 +1732,7 @@ static void http_reply_rooms_html(socket_t client)
     }
 
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "</ul></body></html>");
+    state_unlock();
 
     {
         char header[256];
@@ -1355,6 +1753,9 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
     int wrote_room = 0;
 
     body[0] = '\0';
+    state_lock();
+    prune_hosts();
+    prune_index();
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "{\"rooms\":[");
 
     for (int i = 0; i < g_host_count; ++i) {
@@ -1455,13 +1856,19 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
                 }
             }
 
+            int room_uses_nat = g_force_nat_traversal;
+            if (!room_uses_nat && session_json != NULL) {
+                json_get_bool_field(session_json, "use_nat_traversal", &room_uses_nat);
+            }
+
             offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
                                        "{\"hostCode\":\"%s\",\"hostName\":\"%s\",\"gameName\":\"%s\","
                                        "\"playerCount\":%d,\"maxPlayers\":%d,\"lobbySize\":\"%s\","
-                                       "\"started\":%s,\"players\":%s,\"address\":\"%s\",\"port\":%u}",
+                                       "\"started\":%s,\"useNatTraversal\":%s,\"players\":%s,\"address\":\"%s\",\"port\":%u}",
                                        code_text, host_name_json, game_name_json, player_count,
                                        (max_players > 0 ? max_players : 4), lobby_size,
-                                       started ? "true" : "false", players_json, ip_text,
+                                       started ? "true" : "false",
+                                       room_uses_nat ? "true" : "false", players_json, ip_text,
                                        (unsigned)listing_port);
         }
         wrote_room = 1;
@@ -1472,6 +1879,7 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
     }
 
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "]}");
+    state_unlock();
 
     {
         char header[256];
@@ -1529,13 +1937,19 @@ static void turn_load_config_from_env(void)
         int parsed = atoi(ttl);
         if (parsed > 0) {
             g_turn_credential_ttl_sec = parsed;
-            return;
         }
+    } else {
+#if RMG_TURN_CREDENTIAL_TTL_EMBED > 0
+        g_turn_credential_ttl_sec = RMG_TURN_CREDENTIAL_TTL_EMBED;
+#endif
     }
 
-#if RMG_TURN_CREDENTIAL_TTL_EMBED > 0
-    g_turn_credential_ttl_sec = RMG_TURN_CREDENTIAL_TTL_EMBED;
-#endif
+    if (g_turn_credential_ttl_sec > TURN_CREDENTIAL_TTL_MAX_SEC) {
+        g_turn_credential_ttl_sec = TURN_CREDENTIAL_TTL_MAX_SEC;
+    }
+    if (g_turn_credential_ttl_sec < 60) {
+        g_turn_credential_ttl_sec = 60;
+    }
 }
 
 static const char* turn_key_id_config(void)
@@ -1606,6 +2020,7 @@ static int turn_fetch_cloudflare_credentials(char* out, size_t out_size, size_t*
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, turn_curl_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)TURN_FETCH_TIMEOUT_SEC);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "RMG-NAT-Traversal-Server/1.0");
@@ -1620,7 +2035,21 @@ static int turn_fetch_cloudflare_credentials(char* out, size_t out_size, size_t*
             *out_len = response.size;
             success = 1;
         } else {
-            fprintf(stderr, "[turn] Cloudflare credential request failed (HTTP %ld)\n", http_code);
+            char snippet[180];
+            size_t snippet_len = 0;
+            snippet[0] = '\0';
+            if (response.data != NULL && response.size > 0) {
+                snippet_len = response.size < sizeof(snippet) - 1 ? response.size : sizeof(snippet) - 1;
+                memcpy(snippet, response.data, snippet_len);
+                snippet[snippet_len] = '\0';
+                for (size_t i = 0; i < snippet_len; ++i) {
+                    if (snippet[i] == '\n' || snippet[i] == '\r') {
+                        snippet[i] = ' ';
+                    }
+                }
+            }
+            fprintf(stderr, "[turn] Cloudflare credential request failed (HTTP %ld)%s%s\n", http_code,
+                    snippet[0] != '\0' ? ": " : "", snippet);
         }
     } else {
         fprintf(stderr, "[turn] Cloudflare credential request failed: %s\n", curl_easy_strerror(result));
@@ -1632,49 +2061,149 @@ static int turn_fetch_cloudflare_credentials(char* out, size_t out_size, size_t*
     return success;
 }
 
-static int turn_credentials_are_fresh(uint64_t now)
+/* Caller holds g_turn_mu. */
+static int turn_should_refresh_locked(uint64_t now)
 {
-    return g_turn_cache_len > 0 && g_turn_cache_expires > now + TURN_CACHE_REFRESH_SKEW_SEC;
-}
+    uint64_t ttl;
+    uint64_t reuse;
+    uint64_t remaining;
 
-static int turn_credentials_are_usable(uint64_t now)
-{
-    /* Serve through the credential TTL; refresh happens off the request path. */
-    return g_turn_cache_len > 0 && g_turn_cache_expires > now;
-}
+    if (!turn_is_configured()) {
+        return 0;
+    }
+    if (now < g_turn_next_refresh_attempt) {
+        return 0;
+    }
+    if (g_turn_cache_len == 0 || g_turn_cache_expires <= now + (uint64_t)TURN_CACHE_REFRESH_SKEW_SEC) {
+        return 1;
+    }
 
-static int turn_refresh_credentials(uint64_t now)
-{
-    size_t fetched_len = 0;
-
-    if (!turn_fetch_cloudflare_credentials(g_turn_cache, sizeof(g_turn_cache), &fetched_len)) {
-        g_turn_next_refresh_attempt = now + TURN_REFRESH_BACKOFF_SEC;
+    ttl = (uint64_t)g_turn_credential_ttl_sec;
+    remaining = g_turn_cache_expires - now;
+    if (ttl == 0 || remaining >= ttl) {
         return 0;
     }
 
-    g_turn_cache_len = fetched_len;
-    g_turn_cache_expires = now + (uint64_t)g_turn_credential_ttl_sec;
-    g_turn_next_refresh_attempt = 0;
-    printf("[turn] refreshed Cloudflare ICE credentials (%zu bytes, ttl %d sec)\n", g_turn_cache_len,
-           g_turn_credential_ttl_sec);
-    return 1;
+    reuse = (uint64_t)TURN_CACHE_REUSE_SEC;
+    if (reuse + (uint64_t)TURN_CACHE_REFRESH_SKEW_SEC >= ttl) {
+        reuse = ttl / 4;
+        if (reuse < (uint64_t)TURN_CACHE_REFRESH_SKEW_SEC) {
+            reuse = (uint64_t)TURN_CACHE_REFRESH_SKEW_SEC;
+        }
+    }
+    return (ttl - remaining) >= reuse;
 }
 
-static void turn_maybe_refresh_idle(void)
+static void turn_publish_credentials(const char* fetched, size_t fetched_len)
 {
     const uint64_t now = now_seconds();
 
-    if (!turn_is_configured()) {
-        return;
+    turn_lock();
+    if (fetched_len > 0 && fetched_len < sizeof(g_turn_cache)) {
+        memcpy(g_turn_cache, fetched, fetched_len);
+        g_turn_cache[fetched_len] = '\0';
+        g_turn_cache_len = fetched_len;
+        g_turn_cache_expires = now + (uint64_t)g_turn_credential_ttl_sec;
+        g_turn_next_refresh_attempt = 0;
+        printf("[turn] refreshed Cloudflare ICE credentials (%zu bytes, ttl %d sec, reuse %d sec, expires %llu)\n",
+               g_turn_cache_len, g_turn_credential_ttl_sec, TURN_CACHE_REUSE_SEC,
+               (unsigned long long)g_turn_cache_expires);
     }
-    if (turn_credentials_are_fresh(now)) {
-        return;
-    }
-    if (now < g_turn_next_refresh_attempt) {
-        return;
+    turn_unlock();
+}
+
+static void turn_note_refresh_failure(void)
+{
+    turn_lock();
+    g_turn_next_refresh_attempt = now_seconds() + (uint64_t)TURN_REFRESH_BACKOFF_SEC;
+    turn_unlock();
+}
+
+static void turn_mark_initial_done(void)
+{
+    turn_lock();
+    g_turn_initial_done = 1;
+    cond_broadcast(&g_turn_cv);
+    turn_unlock();
+}
+
+static void* turn_refresh_main(void* unused)
+{
+    int first = 1;
+    (void)unused;
+
+    for (;;) {
+        int refresh = 0;
+        const uint64_t now = now_seconds();
+
+        turn_lock();
+        refresh = turn_should_refresh_locked(now);
+        turn_unlock();
+
+        if (refresh) {
+            char fetched[MAX_TURN_RESPONSE];
+            size_t fetched_len = 0;
+            if (turn_fetch_cloudflare_credentials(fetched, sizeof(fetched), &fetched_len)) {
+                turn_publish_credentials(fetched, fetched_len);
+            } else {
+                turn_note_refresh_failure();
+            }
+        }
+
+        if (first) {
+            turn_mark_initial_done();
+            first = 0;
+        }
+
+        thread_sleep_ms(1000);
     }
 
-    (void)turn_refresh_credentials(now);
+    return NULL;
+}
+
+/* Copy the cached Cloudflare body and stamp the real expiry onto it.
+   Returns 0 when the cache is empty or inside the refresh skew. */
+static int turn_build_client_payload(char* out, size_t out_size, size_t* out_len)
+{
+    char raw[MAX_TURN_RESPONSE];
+    size_t raw_len;
+    uint64_t expires;
+    uint64_t now;
+    const char* brace;
+    int prefix_len;
+    size_t rest_len;
+
+    turn_lock();
+    now = now_seconds();
+    if (g_turn_cache_len == 0 || g_turn_cache_expires <= now + (uint64_t)TURN_CACHE_REFRESH_SKEW_SEC ||
+        g_turn_cache_len >= sizeof(raw)) {
+        turn_unlock();
+        return 0;
+    }
+    raw_len = g_turn_cache_len;
+    memcpy(raw, g_turn_cache, raw_len);
+    raw[raw_len] = '\0';
+    expires = g_turn_cache_expires;
+    turn_unlock();
+
+    brace = raw;
+    while (*brace == ' ' || *brace == '\n' || *brace == '\r' || *brace == '\t') {
+        ++brace;
+    }
+    if (*brace != '{') {
+        return 0;
+    }
+    ++brace;
+    rest_len = strlen(brace);
+
+    prefix_len = snprintf(out, out_size, "{\"expires\":%llu,\"ttl\":%llu,", (unsigned long long)expires,
+                          (unsigned long long)(expires - now));
+    if (prefix_len < 0 || (size_t)prefix_len >= out_size || (size_t)prefix_len + rest_len + 1 > out_size) {
+        return 0;
+    }
+    memcpy(out + prefix_len, brace, rest_len + 1);
+    *out_len = (size_t)prefix_len + rest_len;
+    return 1;
 }
 
 #endif /* WITH_LIBCURL */
@@ -1682,7 +2211,14 @@ static void turn_maybe_refresh_idle(void)
 static void http_reply_turn_ice_servers(socket_t client)
 {
 #ifdef WITH_LIBCURL
-    const uint64_t now = now_seconds();
+    char payload[MAX_TURN_RESPONSE];
+    size_t payload_len = 0;
+
+    if (!g_curl_ready) {
+        http_reply_json(client, 503, "Service Unavailable",
+                        "{\"error\":\"TURN broker requires server built with libcurl\"}");
+        return;
+    }
 
     if (!turn_is_configured()) {
         http_reply_json(client, 503, "Service Unavailable",
@@ -1690,37 +2226,23 @@ static void http_reply_turn_ice_servers(socket_t client)
         return;
     }
 
-    /* Never block the lobby event loop on Cloudflare when we can still serve cache. */
-    if (!turn_credentials_are_usable(now)) {
-        if (g_turn_cache_len == 0 && now >= g_turn_next_refresh_attempt) {
-            if (!turn_refresh_credentials(now)) {
-                http_reply_json(client, 502, "Bad Gateway",
-                                "{\"error\":\"Failed to fetch Cloudflare TURN credentials\"}");
-                return;
-            }
-        } else if (g_turn_cache_len == 0) {
-            http_reply_json(client, 502, "Bad Gateway",
-                            "{\"error\":\"Failed to fetch Cloudflare TURN credentials\"}");
-            return;
-        } else {
-            /* Expired cache: keep serving while idle refresh catches up. */
-            g_turn_next_refresh_attempt = 0;
-        }
-    } else if (!turn_credentials_are_fresh(now)) {
-        g_turn_next_refresh_attempt = 0;
+    if (!turn_build_client_payload(payload, sizeof(payload), &payload_len)) {
+        http_reply_json(client, 503, "Service Unavailable",
+                        "{\"error\":\"TURN credentials are refreshing\"}");
+        return;
     }
 
     {
-        char header[256];
+        char header[320];
         snprintf(header, sizeof(header),
-                 "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: %zu\r\n"
-                 "Connection: close\r\n\r\n",
-                 g_turn_cache_len);
+                 "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+                 "Cache-Control: no-store\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
+                 payload_len);
         http_send_all(client, header);
         {
             size_t sent = 0;
-            while (sent < g_turn_cache_len) {
-                int n = send(client, g_turn_cache + sent, (int)(g_turn_cache_len - sent), 0);
+            while (sent < payload_len) {
+                int n = send(client, payload + sent, (int)(payload_len - sent), 0);
                 if (n <= 0) {
                     break;
                 }
@@ -1763,8 +2285,6 @@ static void handle_http_client(socket_t client)
         }
     }
 
-    prune_index();
-
     if (strcmp(path, "/") == 0 || strcmp(path, "/index") == 0 || strcmp(path, "/index/") == 0) {
         http_reply_index_page(client);
         return;
@@ -1797,6 +2317,9 @@ static void handle_http_client(socket_t client)
         size_t offset = 0;
         const uint64_t now = now_seconds();
 
+        state_lock();
+        prune_hosts();
+        prune_index();
         offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "{\"index\":[");
         int wrote = 0;
         for (int i = 0; i < g_index_count; ++i) {
@@ -1843,6 +2366,7 @@ static void handle_http_client(socket_t client)
             if (offset >= sizeof(body) - 256) break;
         }
         offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "]}");
+        state_unlock();
 
         char header[256];
         snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n", offset);
@@ -1878,10 +2402,17 @@ static void handle_http_client(socket_t client)
                 printf("[http] PUT /index/%s rejected: %zu bytes (max %d)\n", key, body_len, MAX_VALUE_LEN - 1);
                 return;
             }
-            if (upsert_index(key, (const unsigned char*)body, body_len, now_seconds()) != NULL) {
-                http_send_all(client, "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n");
-                printf("[http] PUT /index/%s (%zu bytes)\n", key, body_len);
-                return;
+            {
+                index_entry_t* stored;
+                state_lock();
+                prune_index();
+                stored = upsert_index(key, (const unsigned char*)body, body_len, now_seconds());
+                state_unlock();
+                if (stored != NULL) {
+                    http_send_all(client, "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n");
+                    printf("[http] PUT /index/%s (%zu bytes)\n", key, body_len);
+                    return;
+                }
             }
             printf("[http] PUT /index/%s failed: index store full\n", key);
         } else {
@@ -1917,6 +2448,85 @@ static void net_shutdown(void)
 }
 #endif
 
+static void http_queue_push(socket_t sock)
+{
+    mutex_lock(&g_http_q_mu);
+    while (g_http_q_count == HTTP_QUEUE_CAP) {
+        (void)cond_wait_ms(&g_http_q_cv, &g_http_q_mu, -1);
+    }
+    g_http_queue[(g_http_q_head + g_http_q_count) % HTTP_QUEUE_CAP] = sock;
+    ++g_http_q_count;
+    cond_signal(&g_http_q_cv);
+    mutex_unlock(&g_http_q_mu);
+}
+
+static socket_t http_queue_pop(void)
+{
+    socket_t sock;
+
+    mutex_lock(&g_http_q_mu);
+    while (g_http_q_count == 0) {
+        (void)cond_wait_ms(&g_http_q_cv, &g_http_q_mu, -1);
+    }
+    sock = g_http_queue[g_http_q_head];
+    g_http_q_head = (g_http_q_head + 1) % HTTP_QUEUE_CAP;
+    --g_http_q_count;
+    cond_signal(&g_http_q_cv);
+    mutex_unlock(&g_http_q_mu);
+    return sock;
+}
+
+static void* http_worker_main(void* unused)
+{
+    (void)unused;
+    for (;;) {
+        socket_t client = http_queue_pop();
+        (void)socket_set_nonblocking(client, 0);
+        socket_set_io_timeout(client, HTTP_CLIENT_TIMEOUT_SEC);
+        handle_http_client(client);
+        socket_close(client);
+    }
+    return NULL;
+}
+
+static void* http_accept_main(void* unused)
+{
+    (void)unused;
+    for (;;) {
+        struct sockaddr_in client;
+        socklen_t client_len = sizeof(client);
+        socket_t client_sock = accept(g_http_listen, (struct sockaddr*)&client, &client_len);
+        char peer_ip[INET_ADDRSTRLEN];
+
+        if (client_sock == SOCKET_INVALID) {
+            thread_sleep_ms(10);
+            continue;
+        }
+        if (inet_ntop(AF_INET, &client.sin_addr, peer_ip, sizeof(peer_ip)) == NULL) {
+            strncpy(peer_ip, "0.0.0.0", sizeof(peer_ip) - 1);
+            peer_ip[sizeof(peer_ip) - 1] = '\0';
+        }
+        printf("[http] connection from %s:%u\n", peer_ip, (unsigned)ntohs(client.sin_port));
+        http_queue_push(client_sock);
+    }
+    return NULL;
+}
+
+static int start_http_threads(void)
+{
+    for (int i = 0; i < HTTP_WORKERS; ++i) {
+        if (thread_spawn(http_worker_main, NULL) != 0) {
+            fprintf(stderr, "http worker thread failed\n");
+            return -1;
+        }
+    }
+    if (thread_spawn(http_accept_main, NULL) != 0) {
+        fprintf(stderr, "http accept thread failed\n");
+        return -1;
+    }
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
     const char* bind_host = "0.0.0.0";
@@ -1936,6 +2546,8 @@ int main(int argc, char** argv)
             bind_host = argv[++i];
         } else if (strcmp(argv[i], "--no-http") == 0) {
             http_enabled = 0;
+        } else if (strcmp(argv[i], "--nat-traversal") == 0) {
+            g_force_nat_traversal = 1;
         }
     }
 
@@ -1945,6 +2557,12 @@ int main(int argc, char** argv)
         fprintf(stderr, "network init failed\n");
         return 1;
     }
+
+    mutex_init(&g_state_mu);
+    mutex_init(&g_turn_mu);
+    cond_init(&g_turn_cv);
+    mutex_init(&g_http_q_mu);
+    cond_init(&g_http_q_cv);
 
     udp_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (udp_sock == SOCKET_INVALID) {
@@ -1986,10 +2604,8 @@ int main(int argc, char** argv)
             inet_pton(AF_INET, bind_host, &http_addr.sin_addr);
             if (bind(http_sock, (struct sockaddr*)&http_addr, sizeof(http_addr)) == 0 &&
                 listen(http_sock, HTTP_LISTEN_BACKLOG) == 0) {
-                if (socket_set_nonblocking(http_sock, 1) != 0) {
-                    fprintf(stderr, "warning: failed to set HTTP listen non-blocking\n");
-                }
-                printf("HTTP index on http://%s:%d/\n", bind_host, http_port);
+                g_http_listen = http_sock;
+                printf("HTTP index on http://%s:%d/ (%d workers)\n", bind_host, http_port, HTTP_WORKERS);
             } else {
                 fprintf(stderr, "http bind failed, continuing without HTTP\n");
                 socket_close(http_sock);
@@ -2002,45 +2618,62 @@ int main(int argc, char** argv)
     if (curl_global_init(CURL_GLOBAL_DEFAULT) != 0) {
         fprintf(stderr, "warning: libcurl init failed; /turn/ice-servers will be unavailable\n");
     } else {
-        /* Warm TURN cache before serving clients so request handling stays non-blocking. */
-        turn_maybe_refresh_idle();
+        g_curl_ready = 1;
+        if (thread_spawn(turn_refresh_main, NULL) != 0) {
+            fprintf(stderr, "turn refresh thread failed\n");
+            socket_close(udp_sock);
+            if (http_sock != SOCKET_INVALID) {
+                socket_close(http_sock);
+            }
+            net_shutdown();
+            return 1;
+        }
+        turn_lock();
+        while (!g_turn_initial_done) {
+            if (cond_wait_ms(&g_turn_cv, &g_turn_mu, 6000) != 0) {
+                fprintf(stderr, "[turn] credential warmup still running; serving while it finishes\n");
+                break;
+            }
+        }
+        turn_unlock();
     }
 #endif
 
+    if (g_http_listen != SOCKET_INVALID && start_http_threads() != 0) {
+        socket_close(udp_sock);
+        socket_close(http_sock);
+        net_shutdown();
+        return 1;
+    }
+
     printf("UDP NAT on %s:%d (%s + %s)\n", bind_host, udp_port, TRAV_PROTOCOL, INDEX_PROTOCOL);
+    if (g_force_nat_traversal) {
+        printf("NAT traversal forced for session index and room list\n");
+    }
 
     for (;;) {
         fd_set readfds;
-        socket_t max_fd = udp_sock;
         struct timeval timeout;
         int ready;
 
         FD_ZERO(&readfds);
         FD_SET(udp_sock, &readfds);
-        if (http_sock != SOCKET_INVALID) {
-            FD_SET(http_sock, &readfds);
-            if (http_sock > max_fd) {
-                max_fd = http_sock;
-            }
-        }
 
         timeout.tv_sec = EVENT_LOOP_IDLE_SEC;
         timeout.tv_usec = 0;
-        ready = select((int)max_fd + 1, &readfds, NULL, NULL, &timeout);
+        ready = select((int)udp_sock + 1, &readfds, NULL, NULL, &timeout);
         if (ready < 0) {
             continue;
         }
 
         if (ready == 0) {
+            state_lock();
             prune_hosts();
             prune_index();
-#ifdef WITH_LIBCURL
-            turn_maybe_refresh_idle();
-#endif
+            state_unlock();
             continue;
         }
 
-        /* Drain UDP first so host KEEP heartbeats are never starved by HTTP/TURN. */
         if (FD_ISSET(udp_sock, &readfds)) {
             for (int i = 0; i < MAX_UDP_DRAIN_PER_TICK; ++i) {
                 char buffer[MAX_UDP_PACKET];
@@ -2056,37 +2689,6 @@ int main(int argc, char** argv)
                     break;
                 }
                 break;
-            }
-        }
-
-#ifdef WITH_LIBCURL
-        /* Refresh after KEEP drain so Cloudflare latency cannot drop host registrations. */
-        turn_maybe_refresh_idle();
-#endif
-
-        if (http_sock != SOCKET_INVALID && FD_ISSET(http_sock, &readfds)) {
-            for (int i = 0; i < MAX_HTTP_ACCEPT_PER_TICK; ++i) {
-                struct sockaddr_in client;
-                socklen_t client_len = sizeof(client);
-                socket_t client_sock = accept(http_sock, (struct sockaddr*)&client, &client_len);
-                if (client_sock == SOCKET_INVALID) {
-                    if (socket_would_block()) {
-                        break;
-                    }
-                    break;
-                }
-
-                /* Accepted sockets must be blocking with a short I/O deadline. */
-                (void)socket_set_nonblocking(client_sock, 0);
-                socket_set_io_timeout(client_sock, HTTP_CLIENT_TIMEOUT_SEC);
-
-                char peer_ip[INET_ADDRSTRLEN];
-                if (inet_ntop(AF_INET, &client.sin_addr, peer_ip, sizeof(peer_ip)) == NULL) {
-                    strncpy(peer_ip, "0.0.0.0", sizeof(peer_ip));
-                }
-                printf("[http] connection from %s:%u\n", peer_ip, (unsigned)ntohs(client.sin_port));
-                handle_http_client(client_sock);
-                socket_close(client_sock);
             }
         }
     }

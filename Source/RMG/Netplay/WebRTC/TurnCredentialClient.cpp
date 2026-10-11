@@ -5,6 +5,8 @@
 #include "TurnCredentialClient.hpp"
 #include "../NetplayProtocol.hpp"
 
+#include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QMutexLocker>
 #include <QEventLoop>
@@ -15,6 +17,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QTimer>
+#include <QTimeZone>
 #include <QUrl>
 #include <QUrlQuery>
 
@@ -29,6 +32,7 @@ namespace {
 constexpr int kCredentialRefreshSkewSeconds = 300;
 constexpr int kDefaultTurnCredentialCacheTtlSeconds = 86400;
 constexpr int kMaxLibjuiceTurnServers = 2;
+constexpr int kMaxBrokerAttempts = 3;
 
 struct ParsedIceUrl {
     QString scheme;
@@ -219,6 +223,54 @@ void parseIceServerEntry(const QJsonObject& entry, ParsedIceServers* servers)
     }
 }
 
+qint64 usernameExpiryUnix(const QString& username)
+{
+    const int colon = username.indexOf(QLatin1Char(':'));
+    if (colon < 10) {
+        return 0;
+    }
+
+    bool ok = false;
+    const qint64 stamp = username.left(colon).toLongLong(&ok);
+    if (!ok || stamp < 1000000000LL) {
+        return 0;
+    }
+    return stamp;
+}
+
+qint64 earliestUsernameExpiry(const QJsonArray& iceServers)
+{
+    qint64 earliest = 0;
+    for (const QJsonValue& value : iceServers) {
+        const qint64 stamp = usernameExpiryUnix(value.toObject().value(QStringLiteral("username")).toString());
+        if (stamp > 0 && (earliest == 0 || stamp < earliest)) {
+            earliest = stamp;
+        }
+    }
+    return earliest;
+}
+
+qint64 brokerExpiryUnix(const QJsonObject& root, const QJsonArray& iceServers)
+{
+    qint64 expiry = 0;
+    const QJsonValue expiresValue = root.value(QStringLiteral("expires"));
+    if (expiresValue.isDouble()) {
+        expiry = static_cast<qint64>(expiresValue.toDouble());
+    } else if (expiresValue.isString()) {
+        bool ok = false;
+        const qint64 parsed = expiresValue.toString().toLongLong(&ok);
+        if (ok) {
+            expiry = parsed;
+        }
+    }
+
+    const qint64 usernameExpiry = earliestUsernameExpiry(iceServers);
+    if (usernameExpiry > 0 && (expiry == 0 || usernameExpiry < expiry)) {
+        expiry = usernameExpiry;
+    }
+    return expiry;
+}
+
 ParsedIceServers parseIceEntries(const QJsonArray& iceServers)
 {
     ParsedIceServers servers;
@@ -306,6 +358,23 @@ TurnCredentialClient& TurnCredentialClient::instance()
     return client;
 }
 
+TurnCredentialClient::~TurnCredentialClient()
+{
+    if (QCoreApplication::instance() == nullptr) {
+        m_reply = nullptr;
+        m_network = nullptr;
+        return;
+    }
+
+    if (m_reply != nullptr) {
+        QObject::disconnect(m_reply, nullptr, nullptr, nullptr);
+        m_reply->abort();
+        m_reply = nullptr;
+    }
+    delete m_network;
+    m_network = nullptr;
+}
+
 bool TurnCredentialClient::isConfigured() const
 {
     return turnCredentialsAvailable() || !qgetenv("RMG_ICE_CONFIG_FILE").isEmpty();
@@ -318,20 +387,25 @@ void TurnCredentialClient::prefetch()
         return;
     }
 
-    QMutexLocker locker(&m_mutex);
-    if (credentialsAreFreshLocked()) {
-        qInfo() << "TurnCredentialClient: ICE credentials already cached; skipping prefetch";
+    if (loadIceConfigFile()) {
         return;
     }
+
+    {
+        QMutexLocker locker(&m_mutex);
+        if (credentialsAreFreshLocked()) {
+            qInfo() << "TurnCredentialClient: ICE credentials already cached; skipping prefetch";
+            return;
+        }
+    }
+
     if (m_fetchInProgress) {
         qInfo() << "TurnCredentialClient: ICE credential fetch already in progress; skipping prefetch";
         return;
     }
-    m_fetchInProgress = true;
-    locker.unlock();
 
     qInfo() << "TurnCredentialClient: Prefetching ICE credentials from" << netplayTurnIceServersUrl().toString();
-    fetchCredentialsBlocking(10000);
+    startBrokerRequest();
 }
 
 bool TurnCredentialClient::ensureCredentials(int timeoutMs)
@@ -340,15 +414,70 @@ bool TurnCredentialClient::ensureCredentials(int timeoutMs)
         return true;
     }
 
-    {
-        QMutexLocker locker(&m_mutex);
-        if (credentialsAreFreshLocked()) {
-            return true;
+    if (loadIceConfigFile()) {
+        return true;
+    }
+
+    if (timeoutMs <= 0) {
+        timeoutMs = 45000;
+    }
+
+    QElapsedTimer timer;
+    timer.start();
+    int attempts = 0;
+
+    while (timer.elapsed() < timeoutMs) {
+        {
+            QMutexLocker locker(&m_mutex);
+            if (credentialsAreFreshLocked()) {
+                return true;
+            }
+        }
+
+        if (!m_fetchInProgress) {
+            if (attempts >= kMaxBrokerAttempts) {
+                break;
+            }
+            if (attempts > 0) {
+                QEventLoop pause;
+                QTimer::singleShot(2000, &pause, &QEventLoop::quit);
+                pause.exec();
+                if (timer.elapsed() >= timeoutMs) {
+                    break;
+                }
+            }
+            ++attempts;
+            startBrokerRequest();
+            if (!m_fetchInProgress) {
+                break;
+            }
+        }
+
+        const int remaining = timeoutMs - static_cast<int>(timer.elapsed());
+        if (remaining <= 0) {
+            break;
+        }
+
+        const bool finished = waitForBroker(remaining);
+        {
+            QMutexLocker locker(&m_mutex);
+            if (credentialsAreFreshLocked()) {
+                return true;
+            }
+        }
+
+        if (!finished && m_fetchInProgress) {
+            qInfo() << "TurnCredentialClient: TURN credentials are still loading";
+            return false;
         }
     }
 
-    fetchCredentialsBlocking(timeoutMs);
-    return true;
+    QMutexLocker locker(&m_mutex);
+    const bool ready = credentialsAreFreshLocked();
+    if (!ready) {
+        qWarning() << "TurnCredentialClient: TURN credentials were not ready";
+    }
+    return ready;
 }
 
 std::vector<rtc::IceServer> TurnCredentialClient::stunServers() const
@@ -378,122 +507,159 @@ bool TurnCredentialClient::credentialsAreFreshLocked() const
     return !m_stunServers.empty();
 }
 
-bool TurnCredentialClient::fetchCredentialsBlocking(int timeoutMs)
+bool TurnCredentialClient::loadIceConfigFile()
 {
+    const QByteArray configFilePath = qgetenv("RMG_ICE_CONFIG_FILE");
+    if (configFilePath.isEmpty()) {
+        return false;
+    }
+
+    QFile configFile(QString::fromUtf8(configFilePath));
+    if (!configFile.open(QIODevice::ReadOnly)) {
+        return false;
+    }
+
     QString errorMessage;
     std::vector<rtc::IceServer> fetchedStunServers;
     std::vector<rtc::IceServer> fetchedTurnServers;
-
-    const QByteArray configFilePath = qgetenv("RMG_ICE_CONFIG_FILE");
-    if (!configFilePath.isEmpty()) {
-        QFile configFile(QString::fromUtf8(configFilePath));
-        if (configFile.open(QIODevice::ReadOnly) &&
-            parseIceServersResponse(configFile.readAll(), &fetchedStunServers, &fetchedTurnServers,
-                                    &errorMessage)) {
-            QMutexLocker locker(&m_mutex);
-            m_fetchInProgress = false;
-            m_stunServers = std::move(fetchedStunServers);
-            m_turnServers = std::move(fetchedTurnServers);
-            m_expiresAt = QDateTime::currentDateTimeUtc().addSecs(kDefaultTurnCredentialCacheTtlSeconds);
-            qInfo() << "TurnCredentialClient: Loaded" << m_stunServers.size() << "STUN and"
-                    << m_turnServers.size() << "TURN ICE servers from" << configFile.fileName();
-            return true;
-        }
-
+    if (!parseIceServersResponse(configFile.readAll(), &fetchedStunServers, &fetchedTurnServers, &errorMessage,
+                                 nullptr)) {
         if (!errorMessage.isEmpty()) {
             qWarning() << "TurnCredentialClient:" << errorMessage;
         }
+        return false;
+    }
+
+    QMutexLocker locker(&m_mutex);
+    m_stunServers = std::move(fetchedStunServers);
+    m_turnServers = std::move(fetchedTurnServers);
+    m_expiresAt = QDateTime::currentDateTimeUtc().addSecs(kDefaultTurnCredentialCacheTtlSeconds);
+    qInfo() << "TurnCredentialClient: Loaded" << m_stunServers.size() << "STUN and" << m_turnServers.size()
+            << "TURN ICE servers from" << configFile.fileName();
+    return true;
+}
+
+void TurnCredentialClient::startBrokerRequest()
+{
+    if (m_fetchInProgress || m_reply != nullptr) {
+        return;
     }
 
     const QUrl brokerUrl = netplayTurnIceServersUrl();
     if (brokerUrl.isEmpty()) {
         qInfo() << "TurnCredentialClient: No ICE broker URL configured";
-        QMutexLocker locker(&m_mutex);
-        m_fetchInProgress = false;
-        return false;
+        return;
     }
+
+    if (m_network == nullptr) {
+        m_network = new QNetworkAccessManager();
+    }
+
+    QNetworkRequest request(brokerUrl);
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("RMG-Netplay/1.0"));
+    request.setTransferTimeout(45000);
 
     qInfo() << "TurnCredentialClient: Fetching ICE credentials from" << brokerUrl.toString();
-    if (fetchFromBroker(brokerUrl, timeoutMs, &fetchedStunServers, &fetchedTurnServers, &errorMessage)) {
-        QMutexLocker locker(&m_mutex);
+    m_fetchInProgress = true;
+    m_reply = m_network->get(request);
+    QObject::connect(m_reply, &QNetworkReply::finished, m_reply, [this]() {
+        finishBrokerRequest();
+    });
+    if (m_reply != nullptr && m_reply->isFinished()) {
+        finishBrokerRequest();
+    }
+}
+
+void TurnCredentialClient::finishBrokerRequest()
+{
+    QNetworkReply* reply = m_reply;
+    m_reply = nullptr;
+    if (reply == nullptr) {
         m_fetchInProgress = false;
-        m_stunServers = std::move(fetchedStunServers);
-        m_turnServers = std::move(fetchedTurnServers);
-        m_expiresAt = QDateTime::currentDateTimeUtc().addSecs(kDefaultTurnCredentialCacheTtlSeconds);
-        qInfo() << "TurnCredentialClient: Loaded" << m_stunServers.size() << "STUN and"
-                << m_turnServers.size() << "TURN ICE servers from broker";
-        return true;
+        return;
     }
 
-    if (!errorMessage.isEmpty()) {
-        qWarning() << "TurnCredentialClient:" << errorMessage;
+    QString errorMessage;
+    std::vector<rtc::IceServer> fetchedStunServers;
+    std::vector<rtc::IceServer> fetchedTurnServers;
+    qint64 expiresUnix = 0;
+    bool success = false;
+
+    if (reply->error() != QNetworkReply::NoError) {
+        errorMessage = reply->errorString();
+    } else {
+        const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (statusCode >= 200 && statusCode < 300) {
+            success = parseIceServersResponse(reply->readAll(), &fetchedStunServers, &fetchedTurnServers,
+                                              &errorMessage, &expiresUnix);
+        } else {
+            errorMessage = QStringLiteral("TURN broker returned HTTP %1").arg(statusCode);
+        }
+    }
+    reply->deleteLater();
+
+    QDateTime expiresAt;
+    if (success) {
+        if (expiresUnix > 0) {
+            expiresAt = QDateTime::fromSecsSinceEpoch(expiresUnix, QTimeZone::UTC);
+        } else {
+            qWarning() << "TurnCredentialClient: broker did not report credential expiry; assuming"
+                       << kDefaultTurnCredentialCacheTtlSeconds << "seconds";
+            expiresAt = QDateTime::currentDateTimeUtc().addSecs(kDefaultTurnCredentialCacheTtlSeconds);
+        }
+        if (!expiresAt.isValid() ||
+            expiresAt <= QDateTime::currentDateTimeUtc().addSecs(kCredentialRefreshSkewSeconds)) {
+            success = false;
+            errorMessage = QStringLiteral("broker credentials expire too soon");
+        }
     }
 
     QMutexLocker locker(&m_mutex);
     m_fetchInProgress = false;
-    return !m_stunServers.empty() || !m_turnServers.empty();
+    if (!success) {
+        if (!errorMessage.isEmpty()) {
+            qWarning() << "TurnCredentialClient:" << errorMessage;
+        }
+        return;
+    }
+
+    m_stunServers = std::move(fetchedStunServers);
+    m_turnServers = std::move(fetchedTurnServers);
+    m_expiresAt = expiresAt;
+    qInfo() << "TurnCredentialClient: Loaded" << m_stunServers.size() << "STUN and" << m_turnServers.size()
+            << "TURN ICE servers from broker, expires" << m_expiresAt.toString(Qt::ISODate);
 }
 
-bool TurnCredentialClient::fetchFromBroker(
-    const QUrl& brokerUrl,
-    int timeoutMs,
-    std::vector<rtc::IceServer>* stunOut,
-    std::vector<rtc::IceServer>* turnOut,
-    QString* errorOut)
+bool TurnCredentialClient::waitForBroker(int timeoutMs)
 {
-    if (!stunOut || !turnOut) {
-        return false;
+    if (m_reply == nullptr || m_reply->isFinished()) {
+        return true;
     }
-
-    QNetworkAccessManager networkManager;
-    QNetworkRequest request(brokerUrl);
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("RMG-Netplay/1.0"));
-    request.setTransferTimeout(timeoutMs);
-
-    QNetworkReply* reply = networkManager.get(request);
 
     QEventLoop loop;
-    QTimer timeoutTimer;
-    timeoutTimer.setSingleShot(true);
-    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
-    timeoutTimer.start(timeoutMs);
+    QTimer timer;
+    timer.setSingleShot(true);
+    QObject::connect(m_reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    if (timeoutMs > 0) {
+        timer.start(timeoutMs);
+    }
     loop.exec();
-
-    const bool timedOut = !reply->isFinished();
-    bool success = false;
-    QString localError;
-
-    if (timedOut) {
-        localError = QStringLiteral("TURN broker request timed out");
-        reply->abort();
-    } else if (reply->error() != QNetworkReply::NoError) {
-        localError = reply->errorString();
-    } else {
-        const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        if (statusCode >= 200 && statusCode < 300) {
-            success = parseIceServersResponse(reply->readAll(), stunOut, turnOut, &localError);
-        } else {
-            localError = QStringLiteral("TURN broker returned HTTP %1").arg(statusCode);
-        }
-    }
-
-    reply->deleteLater();
-
-    if (!success && errorOut) {
-        *errorOut = localError;
-    }
-    return success;
+    return m_reply == nullptr || m_reply->isFinished();
 }
 
 bool TurnCredentialClient::parseIceServersResponse(
     const QByteArray& payload,
     std::vector<rtc::IceServer>* stunOut,
     std::vector<rtc::IceServer>* turnOut,
-    QString* errorOut)
+    QString* errorOut,
+    qint64* expiresUnixOut)
 {
     if (!stunOut || !turnOut) {
         return false;
+    }
+    if (expiresUnixOut) {
+        *expiresUnixOut = 0;
     }
 
     const QJsonDocument document = QJsonDocument::fromJson(payload);
@@ -505,7 +671,13 @@ bool TurnCredentialClient::parseIceServersResponse(
     }
 
     const QJsonObject root = document.object();
-    QJsonArray iceServers = root.value(QStringLiteral("iceServers")).toArray();
+    const QJsonValue iceValue = root.value(QStringLiteral("iceServers"));
+    QJsonArray iceServers;
+    if (iceValue.isArray()) {
+        iceServers = iceValue.toArray();
+    } else if (iceValue.isObject()) {
+        iceServers.append(iceValue);
+    }
 
     // gopher64-style flat config: { "urls": [...], "username": "...", "credential": "..." }
     if (iceServers.isEmpty() && root.contains(QStringLiteral("urls"))) {
@@ -529,6 +701,9 @@ bool TurnCredentialClient::parseIceServersResponse(
 
     *stunOut = parsedServers.stun;
     *turnOut = parsedServers.turn;
+    if (expiresUnixOut) {
+        *expiresUnixOut = brokerExpiryUnix(root, iceServers);
+    }
     return true;
 }
 
@@ -541,14 +716,14 @@ std::vector<rtc::IceServer> buildIceServers()
     TurnCredentialClient& iceClient = TurnCredentialClient::instance();
     if (turnCredentialsAvailable() || !qgetenv("RMG_ICE_CONFIG_FILE").isEmpty()) {
         if (!iceClient.ensureCredentials()) {
-            qWarning() << "TurnCredentialClient: Failed to refresh ICE credentials; using cached or fallback STUN/TURN";
+            qWarning() << "TurnCredentialClient: Failed to refresh ICE credentials; STUN fallback only";
+        } else {
+            const std::vector<rtc::IceServer> brokerStunServers = iceClient.stunServers();
+            servers.insert(servers.end(), brokerStunServers.begin(), brokerStunServers.end());
+
+            const std::vector<rtc::IceServer> turnServers = iceClient.turnServers();
+            servers.insert(servers.end(), turnServers.begin(), turnServers.end());
         }
-
-        const std::vector<rtc::IceServer> brokerStunServers = iceClient.stunServers();
-        servers.insert(servers.end(), brokerStunServers.begin(), brokerStunServers.end());
-
-        const std::vector<rtc::IceServer> turnServers = iceClient.turnServers();
-        servers.insert(servers.end(), turnServers.begin(), turnServers.end());
     }
 
     servers = finalizeIceServers(std::move(servers));

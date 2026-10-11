@@ -5,8 +5,10 @@
 #ifndef NETPLAYINDEXCLIENT_HPP
 #define NETPLAYINDEXCLIENT_HPP
 
+#include <QByteArray>
 #include <QObject>
 #include <QNetworkAccessManager>
+#include <QString>
 
 namespace UserInterface::Netplay {
 
@@ -28,6 +30,8 @@ signals:
 
 private:
     QNetworkAccessManager m_networkManager;
+    QString m_lastPublishedKey;
+    QByteArray m_lastPublishedPayload;
 };
 
 } // namespace UserInterface::Netplay

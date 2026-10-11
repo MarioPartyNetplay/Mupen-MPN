@@ -178,6 +178,7 @@ if (NETPLAY)
         Netplay/NetplayUpnp.cpp
         Netplay/NetplayHostRegistry.cpp
         Netplay/NetplayIndexClient.cpp
+        Netplay/Juice/JuiceTraversal.cpp
         Netplay/NetplayCoordinator.cpp
         Netplay.cpp
     )
@@ -295,7 +296,7 @@ if (KCA_DRAG_DROP)
 endif(KCA_DRAG_DROP)
 
 if (NETPLAY)
-    target_link_libraries(RMG Qt6::Network enet)
+    target_link_libraries(RMG Qt6::Network enet juice)
     if (WIN32)
         target_link_libraries(RMG ws2_32 winmm)
     endif()

@@ -3,6 +3,7 @@
  * Copyright (C) 2020-2026 Rosalie Wanders <rosalie@mailbox.org>
  */
 #include "NetplayHostRegistry.hpp"
+#include "NetplayEnet.hpp"
 
 #include <QDateTime>
 #include <QDebug>
@@ -16,6 +17,8 @@ namespace {
 constexpr int kMaxHostRegisterAttempts = 30;
 constexpr int kHostRegisterIntervalMs = 1000;
 constexpr int kHostKeepIntervalMs = 30000;
+constexpr int kEnetKeepIntervalMs = 5000;
+constexpr int kPunchSustainBursts = 20;
 
 qint64 monotonicMs()
 {
@@ -44,6 +47,26 @@ NetplayHostRegistry::NetplayHostRegistry(QObject* parent)
     connect(&m_socket, &QUdpSocket::readyRead, this, &NetplayHostRegistry::onReadyRead);
     connect(&m_housekeepingTimer, &QTimer::timeout, this, &NetplayHostRegistry::onHousekeepingTimer);
     m_housekeepingTimer.setInterval(1000);
+    m_punchTimer.setInterval(100);
+    connect(&m_punchTimer, &QTimer::timeout, this, &NetplayHostRegistry::onPunchTimer);
+}
+
+void NetplayHostRegistry::attachSignalingHost(_ENetHost* host)
+{
+    if (m_enetHost == host) {
+        return;
+    }
+
+    if (m_enetHost) {
+        clearEnetSideChannel(reinterpret_cast<ENetHost*>(m_enetHost));
+    }
+
+    m_enetHost = host;
+    if (m_enetHost) {
+        setEnetRegistryDatagramHandler(reinterpret_cast<ENetHost*>(m_enetHost),
+                                       &NetplayHostRegistry::onEnetDatagram, this);
+        qInfo() << "NAT punch keepalive will use the signaling socket";
+    }
 }
 
 NetplayHostRegistry::~NetplayHostRegistry()
@@ -108,17 +131,22 @@ void NetplayHostRegistry::setListInBrowser(bool listInBrowser)
 
 void NetplayHostRegistry::stopHosting(bool unregister)
 {
-    if (!m_isHosting) {
-        return;
+    if (m_isHosting) {
+        if (unregister && !m_hostCode.isEmpty()) {
+            sendToServer(QByteArray(kNetplayRegistryProtocol) + "|UNREGISTER|" + m_hostCode.toUtf8());
+        }
+
+        resetHostState();
+        m_isHosting = false;
+        m_housekeepingTimer.stop();
     }
 
-    if (unregister && !m_hostCode.isEmpty()) {
-        sendToServer(QByteArray(kNetplayRegistryProtocol) + "|UNREGISTER|" + m_hostCode.toUtf8());
+    m_punchTimer.stop();
+    m_punchTargets.clear();
+    if (m_enetHost) {
+        clearEnetSideChannel(reinterpret_cast<ENetHost*>(m_enetHost));
+        m_enetHost = nullptr;
     }
-
-    resetHostState();
-    m_isHosting = false;
-    m_housekeepingTimer.stop();
 }
 
 bool NetplayHostRegistry::ensureSocketBound(QString* errorOut)
@@ -173,6 +201,9 @@ bool NetplayHostRegistry::ensureServerResolved(QString* errorOut)
 
 void NetplayHostRegistry::sendToServer(const QByteArray& message)
 {
+    // REGISTER replies have to come back on this socket. Sending them from the
+    // listening ENet port drops the reply, so the host code never arrives and
+    // the room is never published.
     QString error;
     if (!ensureSocketBound(&error) || !ensureServerResolved(&error)) {
         if (m_hostRegisterAttempts >= kMaxHostRegisterAttempts) {
@@ -188,6 +219,35 @@ void NetplayHostRegistry::sendToServer(const QByteArray& message)
         }
         failHosting(QString("Failed to send browse registry packet: %1").arg(m_socket.errorString()));
     }
+}
+
+void NetplayHostRegistry::sendSignalingKeep()
+{
+    if (m_enetHost == nullptr || m_hostCode.isEmpty()) {
+        return;
+    }
+
+    QString error;
+    if (!ensureServerResolved(&error)) {
+        qWarning() << "NAT punch keepalive:" << error;
+        return;
+    }
+
+    const QByteArray keepMessage =
+        QByteArray(kNetplayRegistryProtocol) + "|KEEP|" + m_hostCode.toUtf8() + "|" +
+        QByteArray::number(m_signalingPort) + "|" +
+        (m_listInBrowser ? "1" : "0");
+    bool sent = false;
+    for (int i = 0; i < 3; ++i) {
+        sent = sendEnetDatagram(reinterpret_cast<ENetHost*>(m_enetHost), m_serverAddress,
+                                static_cast<quint16>(kNetplayRegistryPort), keepMessage) || sent;
+    }
+    if (!sent) {
+        qWarning() << "NAT punch keepalive failed on the signaling socket";
+        return;
+    }
+
+    m_nextHostKeepMs = monotonicMs() + kEnetKeepIntervalMs;
 }
 
 void NetplayHostRegistry::onReadyRead()
@@ -227,7 +287,24 @@ void NetplayHostRegistry::handleServerMessage(const QByteArray& datagram)
         m_hostRegisterAttempts = 0;
         m_nextHostRegisterMs = 0;
         m_nextHostKeepMs = 0;
+        // Move the server's public mapping onto the game socket before the
+        // room is published, so a joiner punches that port.
+        sendSignalingKeep();
         emit hostRegistered(m_hostCode, publicAddress, signalingPort);
+        return;
+    }
+
+    if (type == "PUNCH" && parts.size() >= 4) {
+        QHostAddress address;
+        if (!address.setAddress(QString::fromUtf8(parts[2]).trimmed())) {
+            return;
+        }
+        bool ok = false;
+        const uint port = parts[3].trimmed().toUInt(&ok);
+        if (!ok || port == 0 || port > 65535) {
+            return;
+        }
+        notePunchTarget(address, static_cast<quint16>(port));
         return;
     }
 
@@ -264,12 +341,92 @@ void NetplayHostRegistry::onHousekeepingTimer()
     }
 
     if (m_nextHostKeepMs == 0 || now >= m_nextHostKeepMs) {
+        if (m_enetHost != nullptr) {
+            sendSignalingKeep();
+            if (m_nextHostKeepMs > now) {
+                return;
+            }
+        }
+
         const QByteArray keepMessage =
             QByteArray(kNetplayRegistryProtocol) + "|KEEP|" + m_hostCode.toUtf8() + "|" +
             QByteArray::number(m_signalingPort) + "|" +
             (m_listInBrowser ? "1" : "0");
         sendToServer(keepMessage);
-        m_nextHostKeepMs = now + kHostKeepIntervalMs;
+        m_nextHostKeepMs = now + (m_enetHost != nullptr ? kEnetKeepIntervalMs : kHostKeepIntervalMs);
+    }
+}
+
+void NetplayHostRegistry::onEnetDatagram(const QByteArray& datagram, void* userData)
+{
+    if (auto* self = static_cast<NetplayHostRegistry*>(userData)) {
+        self->handleServerMessage(datagram);
+    }
+}
+
+void NetplayHostRegistry::notePunchTarget(const QHostAddress& address, quint16 port)
+{
+    if (!m_enetHost || address.isNull() || address.protocol() != QAbstractSocket::IPv4Protocol || port == 0) {
+        return;
+    }
+
+    int index = -1;
+    for (int i = 0; i < m_punchTargets.size(); ++i) {
+        if (m_punchTargets.at(i).address == address && m_punchTargets.at(i).port == port) {
+            index = i;
+            break;
+        }
+    }
+
+    const bool fresh = index < 0 || m_punchTargets.at(index).burstsLeft <= 0;
+    if (index < 0) {
+        if (m_punchTargets.size() >= 4) {
+            m_punchTargets.removeFirst();
+        }
+        PunchTarget target;
+        target.address = address;
+        target.port = port;
+        m_punchTargets.append(target);
+        index = m_punchTargets.size() - 1;
+    }
+
+    PunchTarget& target = m_punchTargets[index];
+    target.burstsLeft = kPunchSustainBursts;
+    const qint64 now = monotonicMs();
+    if (fresh || now - target.lastSendMs >= 50) {
+        if (fresh) {
+            qInfo() << "NAT punch to" << address.toString() << port;
+        }
+        sendNatPunch(reinterpret_cast<ENetHost*>(m_enetHost), target.address, target.port);
+        target.lastSendMs = now;
+    }
+    if (!m_punchTimer.isActive()) {
+        m_punchTimer.start();
+    }
+}
+
+void NetplayHostRegistry::onPunchTimer()
+{
+    if (!m_enetHost) {
+        m_punchTargets.clear();
+        m_punchTimer.stop();
+        return;
+    }
+
+    bool any = false;
+    for (PunchTarget& target : m_punchTargets) {
+        if (target.burstsLeft <= 0 || target.port == 0) {
+            continue;
+        }
+        sendNatPunch(reinterpret_cast<ENetHost*>(m_enetHost), target.address, target.port);
+        target.lastSendMs = monotonicMs();
+        --target.burstsLeft;
+        any = any || target.burstsLeft > 0;
+    }
+
+    if (!any) {
+        m_punchTargets.clear();
+        m_punchTimer.stop();
     }
 }
 
