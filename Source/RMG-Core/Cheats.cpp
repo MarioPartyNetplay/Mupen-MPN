@@ -854,6 +854,12 @@ CORE_EXPORT bool CoreRemoveCheat(std::filesystem::path file, CoreCheat cheat)
     return write_cheat_file(l_UserCheatFile, cheatFilePath);
 }
 
+static bool cheat_defaults_to_enabled(const CoreCheat& cheat)
+{
+    // QOL modifications are on until the player turns one off.
+    return cheat.Name.starts_with("QOL") || cheat.Name.starts_with("aQOL");
+}
+
 CORE_EXPORT bool CoreEnableCheat(std::filesystem::path file, CoreCheat cheat, bool enabled)
 {
     CoreRomHeader   romHeader;
@@ -869,8 +875,8 @@ CORE_EXPORT bool CoreEnableCheat(std::filesystem::path file, CoreCheat cheat, bo
     settingSection = romSettings.MD5 + " Cheats";
     settingKey = "Cheat \"" + cheat.Name + "\" Enabled";
 
-    // if the cheat is disabled and the settings key doesn't exist, do nothing
-    if (!enabled && !CoreSettingsKeyExists(settingSection, settingKey))
+    // Skip writing an explicit off value when that is already the default.
+    if (!enabled && !cheat_defaults_to_enabled(cheat) && !CoreSettingsKeyExists(settingSection, settingKey))
     {
         return true;
     }
@@ -893,7 +899,7 @@ CORE_EXPORT bool CoreIsCheatEnabled(std::filesystem::path file, CoreCheat cheat)
     settingSection = romSettings.MD5 + " Cheats";
     settingKey = "Cheat \"" + cheat.Name + "\" Enabled";
 
-    return CoreSettingsGetBoolValue(settingSection, settingKey, false);
+    return CoreSettingsGetBoolValue(settingSection, settingKey, cheat_defaults_to_enabled(cheat));
 }
 
 CORE_EXPORT bool CoreHasCheatOptionSet(std::filesystem::path file, CoreCheat cheat)
@@ -1404,7 +1410,7 @@ CORE_EXPORT bool CoreEnableModificationCheat(const std::string& internalName, Co
     const std::string settingSection = modification_cheat_setting_section(*profile);
     const std::string settingKey = "Cheat \"" + cheat.Name + "\" Enabled";
 
-    if (!enabled && !CoreSettingsKeyExists(settingSection, settingKey))
+    if (!enabled && !cheat_defaults_to_enabled(cheat) && !CoreSettingsKeyExists(settingSection, settingKey))
     {
         return true;
     }
@@ -1423,7 +1429,7 @@ CORE_EXPORT bool CoreIsModificationCheatEnabled(const std::string& internalName,
     const std::string settingSection = modification_cheat_setting_section(*profile);
     const std::string settingKey = "Cheat \"" + cheat.Name + "\" Enabled";
 
-    return CoreSettingsGetBoolValue(settingSection, settingKey, false);
+    return CoreSettingsGetBoolValue(settingSection, settingKey, cheat_defaults_to_enabled(cheat));
 }
 
 CORE_EXPORT bool CoreHasModificationCheatOptionSet(const std::string& internalName, CoreCheat cheat)
