@@ -10,6 +10,7 @@
 #include "RomBrowserWidget.hpp"
 
 #include <QDesktopServices>
+#include <QFile>
 #include <QFileDialog>
 #include <QGridLayout>
 #include <QBoxLayout>
@@ -133,6 +134,7 @@ RomBrowserWidget::RomBrowserWidget(QWidget *parent) : QWidget(parent)
     labels << "Name";
     labels << "Internal Name";
     labels << "MD5";
+    labels << "MPN Game";
     labels << "Format";
     labels << "File Name";
     labels << "File Ext.";
@@ -146,10 +148,11 @@ RomBrowserWidget::RomBrowserWidget(QWidget *parent) : QWidget(parent)
     this->columnNames << labels.at(0);
     this->columnNames << labels.at(1);
     this->columnNames << labels.at(2);
+    this->columnNames << labels.at(3);
     this->columnNames << "Game Format";
-    this->columnNames << labels.at(4);
+    this->columnNames << labels.at(5);
     this->columnNames << "File Extension";
-    this->columnNames << labels.at(6);
+    this->columnNames << labels.at(7);
     this->columnNames << "Game I.D.";
     this->columnNames << "Game Region";
 
@@ -502,6 +505,121 @@ QString RomBrowserWidget::getCurrentRom(void)
     return data.file;
 }
 
+namespace
+{
+
+enum class RomByteOrder
+{
+    Z64,
+    V64,
+    N64
+};
+
+RomByteOrder romByteOrderFromMagic(const uint8_t magic[4])
+{
+    if (magic[0] == 0x37 && magic[1] == 0x80)
+    {
+        return RomByteOrder::V64;
+    }
+    if (magic[0] == 0x40 && magic[1] == 0x12)
+    {
+        return RomByteOrder::N64;
+    }
+    return RomByteOrder::Z64;
+}
+
+uint32_t fileOffsetForRomAddress(uint32_t address, RomByteOrder order)
+{
+    switch (order)
+    {
+    case RomByteOrder::V64:
+        return address ^ 1u;
+    case RomByteOrder::N64:
+        return address ^ 3u;
+    case RomByteOrder::Z64:
+    default:
+        return address;
+    }
+}
+
+bool readRomU16(QFile& file, RomByteOrder order, uint32_t address, uint16_t& value)
+{
+    const uint32_t hiOffset = fileOffsetForRomAddress(address, order);
+    const uint32_t loOffset = fileOffsetForRomAddress(address + 1, order);
+    uint8_t hi = 0;
+    uint8_t lo = 0;
+
+    if (!file.seek(hiOffset) || file.read(reinterpret_cast<char*>(&hi), 1) != 1)
+    {
+        return false;
+    }
+    if (!file.seek(loOffset) || file.read(reinterpret_cast<char*>(&lo), 1) != 1)
+    {
+        return false;
+    }
+
+    value = static_cast<uint16_t>((static_cast<uint16_t>(hi) << 8) | lo);
+    return true;
+}
+
+bool isPartyPlannerMp3Rom(const QString& path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+    {
+        return false;
+    }
+
+    uint8_t magic[4] = {};
+    if (file.read(reinterpret_cast<char*>(magic), 4) != 4)
+    {
+        return false;
+    }
+
+    const RomByteOrder order = romByteOrderFromMagic(magic);
+    uint16_t first = 0;
+    uint16_t second = 0;
+    return readRomU16(file, order, 0x360EE, first) && first == 0x8040 &&
+           readRomU16(file, order, 0x360F6, second) && second == 0x003B;
+}
+
+bool isVerifiedMpnRom(const CoreRomSettings& settings)
+{
+    const QString md5 = QString::fromStdString(settings.MD5).toUpper();
+    static const char* kVerifiedMd5[] = {
+        "8BC2712139FBF0C56C8EA835802C52DC", // Mario Party (U)
+        "04840612A35ECE222AFDB2DFBF926409", // Mario Party 2 (U)
+        "76A8BBC81BC2060EC99C9645867237CC", // Mario Party 3 (U)
+        "3A67D9986F54EB282924FCA4CD5F6DFF", // Mario Kart 64 (U)
+    };
+
+    for (const char* verified : kVerifiedMd5)
+    {
+        if (md5 == QLatin1String(verified))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+QString mpnGameLabel(const QString& file, CoreRomType type, const CoreRomSettings& settings)
+{
+    if (type == CoreRomType::Cartridge && isPartyPlannerMp3Rom(file))
+    {
+        return QStringLiteral("PartyPlanner");
+    }
+    if (isVerifiedMpnRom(settings))
+    {
+        return QStringLiteral("MPN");
+    }
+
+    return QString();
+}
+
+} // namespace
+
 void RomBrowserWidget::addRomData(QString file, CoreRomType type, CoreRomHeader header, CoreRomSettings settings)
 {
     QString name;
@@ -563,6 +681,10 @@ void RomBrowserWidget::addRomData(QString file, CoreRomType type, CoreRomHeader 
     QStandardItem* listViewItem3 = new QStandardItem();
     listViewItem3->setText(QString::fromStdString(settings.MD5));
     listViewRow.append(listViewItem3);
+    // MPN game
+    QStandardItem* listViewItemMpn = new QStandardItem();
+    listViewItemMpn->setText(mpnGameLabel(file, type, settings));
+    listViewRow.append(listViewItemMpn);
     // game format
     QStandardItem* listViewItem4 = new QStandardItem();
     listViewItem4->setText(gameFormat);
@@ -1042,7 +1164,8 @@ void RomBrowserWidget::on_RomBrowserThread_Finished(bool canceled)
     {
         columnVisibility.clear();
         columnVisibility.resize(this->listViewModel->columnCount(), 0);
-        for (int i = 0; i < 3; i++)
+        // Name, Internal Name, MD5, and MPN Game.
+        for (int i = 0; i < 4; i++)
         {
             columnVisibility.at(i) = 1;
         }
