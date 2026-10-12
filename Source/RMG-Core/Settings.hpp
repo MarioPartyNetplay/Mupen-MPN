@@ -207,6 +207,7 @@ enum class SettingsID
     
     // Settings Settings
     Settings_HasForceUsedSetOnce,
+    Settings_DefaultModificationCheatsApplied,
 
     // Audio Plugin Settings
     Audio_DefaultFrequency,

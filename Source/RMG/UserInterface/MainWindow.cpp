@@ -101,6 +101,8 @@ bool MainWindow::Init(QApplication* app, bool showUI, bool launchROM)
         return false;
     }
 
+    CoreApplyDefaultModificationCheatsOnce();
+
     if (!CoreApplyPluginSettings())
     {
         this->showErrorMessage("CoreApplyPluginSettings() Failed", QString::fromStdString(CoreGetError()));

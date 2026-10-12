@@ -639,6 +639,9 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::Settings_HasForceUsedSetOnce:
         setting = {SETTING_SECTION_SETTINGS, "HasForceUsedSetOnce", false};
         break;
+    case SettingsID::Settings_DefaultModificationCheatsApplied:
+        setting = {SETTING_SECTION_SETTINGS, "DefaultModificationCheatsApplied", false};
+        break;
 
     case SettingsID::Audio_DefaultFrequency:
         setting = {SETTING_SECTION_AUDIO, "DefaultFrequency", 33600};

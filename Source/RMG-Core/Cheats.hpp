@@ -182,4 +182,6 @@ bool CoreUpdateModificationCheat(const std::string& internalName, CoreCheat oldC
 bool CoreCanRemoveModificationCheat(const std::string& internalName, CoreCheat cheat);
 bool CoreRemoveModificationCheat(const std::string& internalName, CoreCheat cheat);
 
+void CoreApplyDefaultModificationCheatsOnce(void);
+
 #endif // CORE_CHEATS_HPP
