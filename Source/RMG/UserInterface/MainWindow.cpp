@@ -1463,6 +1463,7 @@ void MainWindow::connectActionSignals(void)
     connect(this->action_Netplay, &QAction::triggered, this, &MainWindow::on_Action_Netplay);
 
     connect(this->action_Help_Github, &QAction::triggered, this, &MainWindow::on_Action_Help_Github);
+    connect(this->action_Help_Discord, &QAction::triggered, this, &MainWindow::on_Action_Help_Discord);
     connect(this->action_Help_About, &QAction::triggered, this, &MainWindow::on_Action_Help_About);
     connect(this->action_Help_Update, &QAction::triggered, this, &MainWindow::on_Action_Help_Update);
 
@@ -2455,6 +2456,11 @@ void MainWindow::on_Action_Netplay(void)
 void MainWindow::on_Action_Help_Github(void)
 {
     QDesktopServices::openUrl(QUrl("https://github.com/MarioPartyNetplay/Mupen-MPN"));
+}
+
+void MainWindow::on_Action_Help_Discord(void)
+{
+    QDesktopServices::openUrl(QUrl("https://discord.gg/mario-party-netplay-152205464061345792"));
 }
 
 void MainWindow::on_Action_Help_About(void)
