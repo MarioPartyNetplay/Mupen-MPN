@@ -265,6 +265,12 @@ static bool parse_cheat(const std::vector<std::string>& lines, int startIndex, C
             cheat.Note = line;
             continue;
         }
+        else if (line.starts_with("Enabled="))
+        {
+            line.erase(0, 8);
+            cheat.DefaultEnabled = (line == "1" || line == "true" || line == "True");
+            continue;
+        }
 
         // newline = new cheat
         if (line.empty())
@@ -521,6 +527,11 @@ static bool write_cheat_file(const CoreCheatFile& cheatFile, const std::filesyst
         if (!cheat.Note.empty())
         {
             lines += std::format("Note={}\n", cheat.Note);
+        }
+
+        if (cheat.DefaultEnabled)
+        {
+            lines += "Enabled=1\n";
         }
 
         for (const CoreCheatCode& code : cheat.CheatCodes)
@@ -856,8 +867,7 @@ CORE_EXPORT bool CoreRemoveCheat(std::filesystem::path file, CoreCheat cheat)
 
 static bool cheat_defaults_to_enabled(const CoreCheat& cheat)
 {
-    // QOL modifications are on until the player turns one off.
-    return cheat.Name.starts_with("QOL") || cheat.Name.starts_with("aQOL");
+    return cheat.DefaultEnabled;
 }
 
 CORE_EXPORT bool CoreEnableCheat(std::filesystem::path file, CoreCheat cheat, bool enabled)

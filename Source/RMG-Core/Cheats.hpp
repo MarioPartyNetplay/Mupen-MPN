@@ -70,6 +70,9 @@ struct CoreCheat
     // Cheat Note
     std::string Note;
 
+    // On when the cheat file says Enabled=1 and the player has not chosen otherwise.
+    bool DefaultEnabled = false;
+
     // Whether Cheat Has Options
     bool                         HasOptions = false;
     // Cheat Options
@@ -83,6 +86,7 @@ struct CoreCheat
         return Name == other.Name &&
                 Author == other.Author &&
                 Note == other.Note &&
+                DefaultEnabled == other.DefaultEnabled &&
                 HasOptions == other.HasOptions &&
                 CheatOptions == other.CheatOptions &&
                 CheatCodes == other.CheatCodes;

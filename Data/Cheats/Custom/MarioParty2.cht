@@ -2,6 +2,7 @@
 Name=Mario Party 2 (U)
 
 $QOL - Always Save After Every Turn
+Enabled=1
 Note=By: gamemasterplc.
 800F93CC 0000
 800F93CE 0000
@@ -9,20 +10,24 @@ D00FA63F 004B
 800F93CC 0002
 
 $QOL - Display Super Hard on Boards
+Enabled=1
 Note=By: gamemasterplc
 D110300A 1D91
 8110300E 0004
 
 $QOL - Do Not Proceed on Results
+Enabled=1
 Note=By: gamemasterplc.
 D1107336 1CBB
 811072A0 2400
 
 $QOL - Faster Map Scrolling
+Enabled=1
 Note=By: Rain.
 8106793E 40E0
 
 $QOL - Increased Board Speed
+Enabled=1
 Note=By: Celery/gamemasterplc.
 810657EE 0005
 D110724A CC90
@@ -37,10 +42,12 @@ D111019E 4040
 8111019E 40C0
 
 $QOL - Increased Taunt Capabilities
+Enabled=1
 Note=By: gamemasterplc, Taunting can be spammed during your own turn.
 81062D8C 1000
 
 $QOL - Show Player Who Paused
+Enabled=1
 Note=By: Celery.
 81078A50 080F
 81078A52 FC10
@@ -77,10 +84,12 @@ Note=By: Celery.
 813FF07A 1040
 
 $QOL - Skip Player Start Screen
+Enabled=1
 Note=By: gamemasterplc.
 8104F0D4 1000
 
 $QOL - Unlock Everything
+Enabled=1
 Note=By: gamemasterplc
 810F8C7C FFFF
 810F8C7E FFFF
