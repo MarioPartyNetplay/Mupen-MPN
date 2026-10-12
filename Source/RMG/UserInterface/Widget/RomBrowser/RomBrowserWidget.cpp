@@ -563,7 +563,15 @@ bool readRomU16(QFile& file, RomByteOrder order, uint32_t address, uint16_t& val
     return true;
 }
 
-bool isPartyPlannerMp3Rom(const QString& path)
+bool matchesPartyPlannerSignature(QFile& file, RomByteOrder order, uint32_t firstAddress, uint32_t secondAddress)
+{
+    uint16_t first = 0;
+    uint16_t second = 0;
+    return readRomU16(file, order, firstAddress, first) && first == 0x8040 &&
+           readRomU16(file, order, secondAddress, second) && second == 0x003B;
+}
+
+bool isPartyPlannerRom(const QString& path)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
@@ -578,10 +586,21 @@ bool isPartyPlannerMp3Rom(const QString& path)
     }
 
     const RomByteOrder order = romByteOrderFromMagic(magic);
-    uint16_t first = 0;
-    uint16_t second = 0;
-    return readRomU16(file, order, 0x360EE, first) && first == 0x8040 &&
-           readRomU16(file, order, 0x360F6, second) && second == 0x003B;
+    static const uint32_t kSignatures[][2] = {
+        {0x3BF62, 0x3BF6A}, // Mario Party
+        {0x41602, 0x4160A}, // Mario Party 2
+        {0x360EE, 0x360F6}, // Mario Party 3
+    };
+
+    for (const uint32_t (&signature)[2] : kSignatures)
+    {
+        if (matchesPartyPlannerSignature(file, order, signature[0], signature[1]))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool isVerifiedMpnRom(const CoreRomSettings& settings)
@@ -607,7 +626,7 @@ bool isVerifiedMpnRom(const CoreRomSettings& settings)
 
 QString mpnGameLabel(const QString& file, CoreRomType type, const CoreRomSettings& settings)
 {
-    if (type == CoreRomType::Cartridge && isPartyPlannerMp3Rom(file))
+    if (type == CoreRomType::Cartridge && isPartyPlannerRom(file))
     {
         return QStringLiteral("PartyPlanner64");
     }
