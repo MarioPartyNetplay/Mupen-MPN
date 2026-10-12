@@ -137,7 +137,7 @@ static std::filesystem::path get_apple_support_directory(std::string subdirector
     }
 
     std::filesystem::path directory = home;
-    directory += "/Library/Application Support/RMG/";
+    directory += "/Library/Application Support/Mupen-MPN/";
     directory += subdirectory;
     return directory.make_preferred();
 }
