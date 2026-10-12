@@ -9,6 +9,7 @@
  */
 #include "RomBrowserWidget.hpp"
 
+#include <QColor>
 #include <QDesktopServices>
 #include <QFile>
 #include <QFileDialog>
@@ -134,7 +135,7 @@ RomBrowserWidget::RomBrowserWidget(QWidget *parent) : QWidget(parent)
     labels << "Name";
     labels << "Internal Name";
     labels << "MD5";
-    labels << "MPN Game";
+    labels << "MPN Status";
     labels << "Format";
     labels << "File Name";
     labels << "File Ext.";
@@ -608,14 +609,28 @@ QString mpnGameLabel(const QString& file, CoreRomType type, const CoreRomSetting
 {
     if (type == CoreRomType::Cartridge && isPartyPlannerMp3Rom(file))
     {
-        return QStringLiteral("PartyPlanner");
+        return QStringLiteral("PartyPlanner64");
     }
     if (isVerifiedMpnRom(settings))
     {
-        return QStringLiteral("MPN");
+        return QStringLiteral("MPN Game");
     }
 
-    return QString();
+    return QStringLiteral("Not Officially Supported");
+}
+
+QColor mpnGameColor(const QString& label)
+{
+    if (label == QStringLiteral("PartyPlanner64"))
+    {
+        return QColor(46, 204, 113);
+    }
+    if (label == QStringLiteral("MPN Game"))
+    {
+        return QColor(255, 140, 0);
+    }
+
+    return QColor(77, 163, 255);
 }
 
 } // namespace
@@ -682,8 +697,10 @@ void RomBrowserWidget::addRomData(QString file, CoreRomType type, CoreRomHeader 
     listViewItem3->setText(QString::fromStdString(settings.MD5));
     listViewRow.append(listViewItem3);
     // MPN game
+    const QString mpnLabel = mpnGameLabel(file, type, settings);
     QStandardItem* listViewItemMpn = new QStandardItem();
-    listViewItemMpn->setText(mpnGameLabel(file, type, settings));
+    listViewItemMpn->setText(mpnLabel);
+    listViewItemMpn->setForeground(mpnGameColor(mpnLabel));
     listViewRow.append(listViewItemMpn);
     // game format
     QStandardItem* listViewItem4 = new QStandardItem();
