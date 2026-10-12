@@ -481,6 +481,14 @@ void ConfigDialog::_init(bool reInit, bool blockCustomSettings)
 	}
 #endif
 
+	// RMG has its own OSD settings; hide GLideN64's duplicate tab.
+	for (int i = 0; i < ui->tabWidget->count(); ++i) {
+		if (tr("OSD") == ui->tabWidget->tabText(i)) {
+			ui->tabWidget->removeTab(i);
+			break;
+		}
+	}
+
 	m_blockReInit = false;
 }
 
