@@ -242,6 +242,15 @@ static l_Setting get_setting(SettingsID settingId)
     case SettingsID::Netplay_Nickname:
         setting = {SETTING_SECTION_NETPLAY, "Nickname", std::string("MPNPlayer")};
         break;
+    case SettingsID::Netplay_ShowInBrowser:
+        setting = {SETTING_SECTION_NETPLAY, "ShowInBrowser", true};
+        break;
+    case SettingsID::Netplay_UseNatTraversal:
+        setting = {SETTING_SECTION_NETPLAY, "UseNatTraversal", true};
+        break;
+    case SettingsID::Netplay_UseUpnp:
+        setting = {SETTING_SECTION_NETPLAY, "UseUpnp", false};
+        break;
 
     case SettingsID::Core_GFX_Plugin:
         setting = {SETTING_SECTION_CORE, "GFX_Plugin",

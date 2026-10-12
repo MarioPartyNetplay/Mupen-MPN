@@ -80,6 +80,7 @@ class CreateNetplaySessionDialog : public QWidget, private Ui::CreateNetplaySess
     void createSession(void);
     void finalizeSession(void);
     void updateConnectionModeUi(void);
+    void saveHostOptions(void);
 
     void toggleUI(bool enable, bool enableCreateButton);
 

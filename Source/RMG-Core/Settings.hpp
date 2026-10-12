@@ -56,6 +56,9 @@ enum class SettingsID
 
     // Netplay Settings
     Netplay_Nickname,
+    Netplay_ShowInBrowser,
+    Netplay_UseNatTraversal,
+    Netplay_UseUpnp,
 
     // Core Plugin Settings
     Core_GFX_Plugin,

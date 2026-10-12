@@ -129,17 +129,22 @@ CreateNetplaySessionDialog::CreateNetplaySessionDialog(QWidget *parent, UserInte
 
     this->showInBrowserCheckBox = new QCheckBox("Show in Browser", this);
     this->showInBrowserCheckBox->setToolTip("List this room in the public session browser.");
-    this->showInBrowserCheckBox->setChecked(true);
+    this->showInBrowserCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::Netplay_ShowInBrowser));
 
     this->useNatTraversalCheckBox = new QCheckBox("Use NAT traversal", this);
     this->useNatTraversalCheckBox->setToolTip(
-        "Joiners reach this room through libjuice and the netplay server instead of a forwarded port.");
-    this->useNatTraversalCheckBox->setChecked(true);
+        "Joiners reach this room through NAT Traversal and the netplay server instead of a forwarded port.");
+    this->useNatTraversalCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::Netplay_UseNatTraversal));
 
     this->useUpnpCheckBox = new QCheckBox("Use UPnP port mapping", this);
     this->useUpnpCheckBox->setToolTip(
         QStringLiteral("Attempt to open the hosting port on your router via UPnP."));
-    this->useUpnpCheckBox->setChecked(false);
+    this->useUpnpCheckBox->setChecked(CoreSettingsGetBoolValue(SettingsID::Netplay_UseUpnp));
+
+    const auto saveHostOptions = [this](bool) { this->saveHostOptions(); };
+    connect(this->showInBrowserCheckBox, &QCheckBox::toggled, this, saveHostOptions);
+    connect(this->useNatTraversalCheckBox, &QCheckBox::toggled, this, saveHostOptions);
+    connect(this->useUpnpCheckBox, &QCheckBox::toggled, this, saveHostOptions);
 
     QLabel* portLabel = new QLabel("Hosting Port:", this);
     portLabel->setObjectName(QStringLiteral("portLabel"));
@@ -215,6 +220,8 @@ CreateNetplaySessionDialog::~CreateNetplaySessionDialog(void)
 {
     Netplay::netplayUpnpUnmapPort();
 
+    this->saveHostOptions();
+
     QString nickname = this->nickNameLineEdit->text();
     if (!nickname.isEmpty())
     {
@@ -272,6 +279,22 @@ void CreateNetplaySessionDialog::validateCreateButton(void)
 void CreateNetplaySessionDialog::updateConnectionModeUi(void)
 {
     Q_UNUSED(this);
+}
+
+void CreateNetplaySessionDialog::saveHostOptions(void)
+{
+    if (this->showInBrowserCheckBox != nullptr)
+    {
+        CoreSettingsSetValue(SettingsID::Netplay_ShowInBrowser, this->showInBrowserCheckBox->isChecked());
+    }
+    if (this->useNatTraversalCheckBox != nullptr)
+    {
+        CoreSettingsSetValue(SettingsID::Netplay_UseNatTraversal, this->useNatTraversalCheckBox->isChecked());
+    }
+    if (this->useUpnpCheckBox != nullptr)
+    {
+        CoreSettingsSetValue(SettingsID::Netplay_UseUpnp, this->useUpnpCheckBox->isChecked());
+    }
 }
 
 void CreateNetplaySessionDialog::on_connectionModeComboBox_currentIndexChanged(int index)
