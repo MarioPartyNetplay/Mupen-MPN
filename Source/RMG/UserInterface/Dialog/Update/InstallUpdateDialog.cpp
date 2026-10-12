@@ -459,50 +459,94 @@ bool InstallUpdateDialog::installMacOSDiskImage(const QString& diskImagePath, co
         QStringLiteral("work=") + shellSingleQuote(this->temporaryDirectory) + QLatin1Char('\n') +
         QStringLiteral(R"sh(
 cd /tmp || cd /
+staged="$work/staged.app"
 
-replace_bundle() {
-    owner=$(/usr/bin/stat -f '%u:%g' "$bundle" 2>/dev/null || true)
-    previous="$bundle.previous"
-    /bin/rm -rf "$previous"
-    echo "== Moving $bundle aside"
-    if ! /bin/mv "$bundle" "$previous"; then
-        echo "error: could not move the existing application"
+binary_ok() {
+    [ -n "$1" ] && [ -f "$1" ] && [ ! -L "$1" ] && [ -s "$1" ] && [ -x "$1" ]
+}
+
+restore_user_files() {
+    dest_macos="$1"
+    if [ ! -d "$dest_macos" ]; then
+        echo "error: new application has no Contents/MacOS folder"
         return 1
     fi
-    echo "== Copying $src to $bundle"
-    if ! /usr/bin/ditto "$src" "$bundle"; then
-        echo "error: could not copy the new application"
-        /bin/rm -rf "$bundle"
-        /bin/mv "$previous" "$bundle"
-        return 1
-    fi
-
-    new_macos="$bundle/Contents/MacOS"
-    /bin/mkdir -p "$new_macos"
     for name in Config Save Cache Screenshots instances; do
         if [ -d "$stash/$name" ]; then
             echo "== Restoring $name"
-            /bin/rm -rf "$new_macos/$name"
-            /usr/bin/ditto "$stash/$name" "$new_macos/$name"
+            /bin/rm -rf "$dest_macos/$name"
+            /usr/bin/ditto "$stash/$name" "$dest_macos/$name" || return 1
         fi
     done
     for name in portable.txt .env; do
         if [ -f "$stash/$name" ]; then
             echo "== Restoring $name"
-            /bin/cp -p "$stash/$name" "$new_macos/$name"
+            /bin/cp -p "$stash/$name" "$dest_macos/$name" || return 1
         fi
     done
     if [ -d "$stash/Data" ]; then
         echo "== Restoring user files in Data"
-        /bin/mkdir -p "$new_macos/Data"
+        /bin/mkdir -p "$dest_macos/Data"
         if [ -x /usr/bin/rsync ]; then
-            /usr/bin/rsync -a --ignore-existing "$stash/Data/" "$new_macos/Data/" || echo "warning: could not restore every user file in Data"
+            /usr/bin/rsync -a --ignore-existing --safe-links "$stash/Data/" "$dest_macos/Data/" || echo "warning: could not restore every user file in Data"
         fi
+    fi
+    binary_ok "$dest_macos/Mupen-MPN"
+}
+
+replace_bundle() {
+    owner=$(/usr/bin/stat -f '%u:%g' "$bundle" 2>/dev/null || true)
+    previous="$bundle.previous"
+    incoming="$bundle.incoming"
+    /bin/rm -rf "$incoming"
+    if ! binary_ok "$staged/Contents/MacOS/Mupen-MPN"; then
+        echo "error: staged update is missing Mupen-MPN"
+        return 1
+    fi
+
+    echo "== Preparing $incoming"
+    if ! /usr/bin/ditto "$staged" "$incoming"; then
+        echo "error: could not copy the staged application"
+        /bin/rm -rf "$incoming"
+        return 1
+    fi
+    if ! restore_user_files "$incoming/Contents/MacOS"; then
+        echo "error: restoring user files damaged the new application"
+        /bin/rm -rf "$incoming"
+        return 1
+    fi
+
+    /bin/rm -rf "$previous"
+    echo "== Moving $bundle aside"
+    if ! /bin/mv "$bundle" "$previous"; then
+        echo "error: could not move the existing application"
+        /bin/rm -rf "$incoming"
+        return 1
+    fi
+    echo "== Installing $incoming"
+    if ! /bin/mv "$incoming" "$bundle"; then
+        echo "error: could not move the new application into place"
+        /bin/rm -rf "$bundle"
+        /bin/mv "$previous" "$bundle"
+        /bin/rm -rf "$incoming"
+        return 1
+    fi
+    if ! binary_ok "$bundle/Contents/MacOS/Mupen-MPN"; then
+        echo "error: installed application is missing Mupen-MPN, restoring the previous copy"
+        /bin/rm -rf "$bundle"
+        /bin/mv "$previous" "$bundle"
+        return 1
     fi
 
     /usr/bin/xattr -dr com.apple.quarantine "$bundle" >/dev/null 2>&1 || true
     if [ -n "$owner" ]; then
         /usr/sbin/chown -R "$owner" "$bundle" >/dev/null 2>&1 || true
+    fi
+    if ! binary_ok "$bundle/Contents/MacOS/Mupen-MPN"; then
+        echo "error: application was damaged after install, restoring the previous copy"
+        /bin/rm -rf "$bundle"
+        /bin/mv "$previous" "$bundle"
+        return 1
     fi
     /bin/rm -rf "$previous"
     return 0
@@ -569,6 +613,18 @@ fi
 
     stash_user_files
 
+    echo "== Copying the update off the disk image"
+    /bin/rm -rf "$staged"
+    if ! /usr/bin/ditto "$src" "$staged" || ! binary_ok "$staged/Contents/MacOS/Mupen-MPN"; then
+        echo "error: disk image copy has no executable"
+        notify_failure
+        /usr/bin/open "$bundle" >/dev/null 2>&1 || true
+        exit 1
+    fi
+
+    echo "== Unmounting the disk image before replacing the application"
+    /usr/bin/hdiutil detach "$mount" >/dev/null 2>&1 || /usr/bin/hdiutil detach -force "$mount" >/dev/null 2>&1 || true
+
     echo "== Installing update into $bundle"
     status=0
     if [ -w "$(/usr/bin/dirname "$bundle")" ]; then
@@ -590,11 +646,15 @@ fi
     echo "== Launching $bundle"
     /usr/bin/open "$bundle"
 )
-if /usr/bin/hdiutil detach "$mount" >> "$log" 2>&1 || /usr/bin/hdiutil detach -force "$mount" >> "$log" 2>&1; then
-    /bin/rm -rf "$work"
-else
-    echo "warning: disk image stayed mounted at $mount" >> "$log"
-fi
+/usr/bin/hdiutil detach "$mount" >> "$log" 2>&1 || /usr/bin/hdiutil detach -force "$mount" >> "$log" 2>&1 || true
+case "$bundle" in
+    "$work"|"$work"/*)
+        echo "warning: leaving $work because it contains the application" >> "$log"
+        ;;
+    *)
+        /bin/rm -rf "$work"
+        ;;
+esac
 )sh");
 
     if (!this->writeAndRunScript(script.split(QLatin1Char('\n'))))
