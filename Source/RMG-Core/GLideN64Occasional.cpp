@@ -103,35 +103,11 @@ static uint8_t read_n64_u8(uint32_t offset)
     return safe_read_rdram(get_rdram_pointer(), offset ^ l_N64ByteXor);
 }
 
-static uint32_t read_n64_u32(uint32_t offset)
+static uint16_t read_n64_u16(uint32_t offset)
 {
-    const uint8_t* rdram = get_rdram_pointer();
-    const uint32_t aligned = offset & ~3u;
-    if (rdram == nullptr || aligned + 3 >= 0x800000)
-    {
-        return 0;
-    }
-
-    uint32_t word = 0;
-    std::memcpy(&word, rdram + aligned, sizeof(word));
-    return word;
-}
-
-static bool minigame_id_is(uint32_t offset, uint8_t id)
-{
-    if (read_n64_u8(offset) == id)
-    {
-        return true;
-    }
-
-    // Host-order fallback if the constant is already a swapped offset.
-    if (safe_read_rdram(get_rdram_pointer(), offset) == id)
-    {
-        return true;
-    }
-
-    const uint32_t word = read_n64_u32(offset);
-    return (word & 0xFFu) == id || ((word >> 24) & 0xFFu) == id;
+    const uint16_t hi = read_n64_u8(offset);
+    const uint16_t lo = read_n64_u8(offset + 1);
+    return static_cast<uint16_t>((hi << 8) | lo);
 }
 
 static uint8_t mp2_lights_out_id(void)
@@ -243,7 +219,11 @@ CORE_EXPORT void CoreGLideN64OccasionalUpdateFrame(void)
 
     if (l_IsMarioParty2)
     {
-        const bool wantOverride = minigame_id_is(MP2_MEM_MINI_STATE, mp2_lights_out_id());
+        // chosenMinigameIndex is the halfword at 0x800F93C8. The next halfword
+        // is the player's absolute space, which is often 0x16 near the start
+        // of a board. Matching that space used to turn on the Lights Out
+        // graphics while still walking the board.
+        const bool wantOverride = read_n64_u16(MP2_MEM_MINI_STATE - 1) == mp2_lights_out_id();
         if (wantOverride != l_Mp2OverrideActive)
         {
             l_Mp2OverrideActive = wantOverride;
@@ -258,7 +238,7 @@ CORE_EXPORT void CoreGLideN64OccasionalUpdateFrame(void)
 #ifdef __APPLE__
         const bool wantOverride = false;
 #else
-        const bool wantOverride = minigame_id_is(MP3_MEM_MINI_STATE, mp3_curtain_call_id());
+        const bool wantOverride = read_n64_u8(MP3_MEM_MINI_STATE) == mp3_curtain_call_id();
 #endif
         if (wantOverride != l_Mp3OverrideActive)
         {
