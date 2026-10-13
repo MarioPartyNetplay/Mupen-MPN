@@ -424,6 +424,7 @@ void NetplayCoordinator::ensureJuiceTraversal()
     m_juiceTraversal = std::make_unique<JuiceTraversal>(this);
     connect(m_juiceTraversal.get(), &JuiceTraversal::joinSucceeded, this, &NetplayCoordinator::juiceJoinSucceeded);
     connect(m_juiceTraversal.get(), &JuiceTraversal::joinFailed, this, &NetplayCoordinator::juiceJoinFailed);
+    connect(m_juiceTraversal.get(), &JuiceTraversal::joinRetrying, this, &NetplayCoordinator::juiceJoinRetrying);
 }
 
 void NetplayCoordinator::stopJuiceTraversal()

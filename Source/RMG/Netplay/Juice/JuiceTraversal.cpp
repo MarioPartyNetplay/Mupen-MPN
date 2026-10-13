@@ -34,6 +34,7 @@ constexpr int kListIntervalMs = 3000;
 constexpr int kAnswerRepublishCount = 2;
 constexpr int kAnswerRepublishGapMs = 2000;
 constexpr int kMaxTurnServers = 2;
+constexpr int kStunOnlyIceWaitMs = 12000;
 
 qint64 monotonicMs()
 {
@@ -52,29 +53,48 @@ struct ResolvedIce {
     QVector<Turn> turns;
 };
 
-ResolvedIce resolveIceServers()
+bool iceSdpHasRelay(const QByteArray& sdp)
+{
+    return sdp.contains("typ relay");
+}
+
+bool turnRelayAvailable()
+{
+    TurnCredentialClient& iceClient = TurnCredentialClient::instance();
+    if (!iceClient.isConfigured()) {
+        return false;
+    }
+    if (!iceClient.ensureCredentials(15000)) {
+        return false;
+    }
+    return !iceClient.turnServers().empty();
+}
+
+ResolvedIce resolveIceServers(bool includeTurn)
 {
     ResolvedIce ice;
-    for (const rtc::IceServer& server : buildIceServers()) {
-        if (server.hostname.empty() || server.port == 0) {
-            continue;
-        }
-        if (server.type == rtc::IceServer::Type::Stun) {
-            if (ice.stunHost.isEmpty()) {
-                ice.stunHost = QByteArray::fromStdString(server.hostname);
-                ice.stunPort = static_cast<uint16_t>(server.port);
+    if (includeTurn) {
+        for (const rtc::IceServer& server : buildIceServers()) {
+            if (server.hostname.empty() || server.port == 0) {
+                continue;
             }
-            continue;
+            if (server.type == rtc::IceServer::Type::Stun) {
+                if (ice.stunHost.isEmpty()) {
+                    ice.stunHost = QByteArray::fromStdString(server.hostname);
+                    ice.stunPort = static_cast<uint16_t>(server.port);
+                }
+                continue;
+            }
+            if (ice.turns.size() >= kMaxTurnServers || server.username.empty() || server.password.empty()) {
+                continue;
+            }
+            ResolvedIce::Turn turn;
+            turn.host = QByteArray::fromStdString(server.hostname);
+            turn.username = QByteArray::fromStdString(server.username);
+            turn.password = QByteArray::fromStdString(server.password);
+            turn.port = static_cast<uint16_t>(server.port);
+            ice.turns.push_back(std::move(turn));
         }
-        if (ice.turns.size() >= kMaxTurnServers || server.username.empty() || server.password.empty()) {
-            continue;
-        }
-        ResolvedIce::Turn turn;
-        turn.host = QByteArray::fromStdString(server.hostname);
-        turn.username = QByteArray::fromStdString(server.username);
-        turn.password = QByteArray::fromStdString(server.password);
-        turn.port = static_cast<uint16_t>(server.port);
-        ice.turns.push_back(std::move(turn));
     }
 
     if (ice.stunHost.isEmpty()) {
@@ -142,10 +162,11 @@ public:
         }
     }
 
-    bool start(const QByteArray& remoteSdp)
+    bool start(const QByteArray& remoteSdp, bool useTurn)
     {
         installJuiceLogHandler();
-        const ResolvedIce ice = resolveIceServers();
+        m_useTurn = useTurn;
+        const ResolvedIce ice = resolveIceServers(useTurn);
 
         std::vector<juice_turn_server_t> turnServers;
         turnServers.reserve(static_cast<size_t>(ice.turns.size()));
@@ -177,6 +198,13 @@ public:
         if (m_agent == nullptr) {
             fail(QStringLiteral("Failed to create libjuice ICE agent"));
             return false;
+        }
+
+        if (useTurn && !ice.turns.isEmpty()) {
+            qInfo() << "libjuice gathering with" << ice.turns.size()
+                    << "TURN server(s); ICE still prefers a direct path when one works";
+        } else {
+            qInfo() << "libjuice gathering STUN/direct candidates only";
         }
 
         if (!remoteSdp.isEmpty()) {
@@ -276,6 +304,18 @@ private:
             qInfo() << "libjuice selected" << localAddress << "->" << remoteAddress;
         }
 
+        char localCandidate[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
+        char remoteCandidate[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
+        if (juice_get_selected_candidates(m_agent, localCandidate, sizeof(localCandidate), remoteCandidate,
+                                          sizeof(remoteCandidate)) == 0) {
+            const QByteArray localSdp(localCandidate);
+            const QByteArray remoteSdp(remoteCandidate);
+            const bool usedRelay = iceSdpHasRelay(localSdp) || iceSdpHasRelay(remoteSdp);
+            qInfo() << "libjuice candidates" << localCandidate << "->" << remoteCandidate;
+            qInfo() << "libjuice path" << (usedRelay ? "TURN relay" : "direct/STUN")
+                    << (m_useTurn ? "(TURN was available)" : "(TURN not gathered)");
+        }
+
         if (!m_proxy.bind(QHostAddress::LocalHost, 0, QUdpSocket::DontShareAddress)) {
             fail(QStringLiteral("Failed to bind NAT traversal proxy: %1").arg(m_proxy.errorString()));
             return;
@@ -367,6 +407,7 @@ private:
     }
 
     Role m_role = Role::Joiner;
+    bool m_useTurn = false;
     quint16 m_signalingPort = 0;
     quint16 m_enetPort = 0;
     juice_agent_t* m_agent = nullptr;
@@ -459,37 +500,16 @@ void JuiceTraversal::joinHost(const QString& hostCode)
     m_joinProxyPort = 0;
     m_joinCode = normalized;
     m_joinerId = makeJoinerId();
+    m_turnRetryUsed = false;
     m_offerPublishes = 0;
     m_joinDeadlineMs = monotonicMs() + kGatherTimeoutMs;
+    m_stunOnlyDeadlineMs = 0;
     m_nextOfferMs = 0;
     m_nextAnswerPollMs = 0;
 
-    m_joiner = new JuicePeer(JuicePeer::Role::Joiner, 0, this);
-    m_joiner->onLocalDescription = [this](const QByteArray& sdp) {
-        if (!m_joining) {
-            return;
-        }
-        m_localOffer = sdp;
-        m_offerGathered = true;
-        m_nextOfferMs = 0;
-        qInfo() << "libjuice gathered local description for" << m_joinCode;
-    };
-    m_joiner->onConnected = [this](quint16 port) {
-        if (!m_joining || m_joinFinished) {
-            return;
-        }
-        m_joinReady = true;
-        m_joinFinished = true;
-        m_joinProxyPort = port;
-        qInfo() << "libjuice NAT traversal connected, local proxy port" << port;
-        emit joinSucceeded(port);
-    };
-    m_joiner->onFailed = [this](const QString& reason) {
-        failJoin(reason);
-    };
-
-    if (!m_joiner->start(QByteArray())) {
-        failJoin(QStringLiteral("Failed to start ICE gathering"));
+    TurnCredentialClient::instance().prefetch();
+    startJoinerPeer(false);
+    if (!m_joining) {
         return;
     }
 
@@ -497,7 +517,7 @@ void JuiceTraversal::joinHost(const QString& hostCode)
         m_timer.start();
     }
     qInfo() << "NAT traversal is running for" << m_joinCode << "as" << m_joinerId
-            << "— the ICE offer is sent at most" << kOfferPublishLimit << "times";
+            << "— STUN/direct first, TURN only if that path fails";
 }
 
 void JuiceTraversal::cancelJoin()
@@ -542,6 +562,11 @@ void JuiceTraversal::onTick()
         /* Gathering already consumed the first deadline. The host still has to
            gather its own candidates before the answer exists. */
         m_joinDeadlineMs = now + kAnswerWaitMs;
+    }
+
+    if (m_stunOnlyDeadlineMs > 0 && now >= m_stunOnlyDeadlineMs) {
+        failJoin(QStringLiteral("Direct ICE did not connect"));
+        return;
     }
 
     if (now >= m_joinDeadlineMs) {
@@ -660,6 +685,9 @@ void JuiceTraversal::handleIndexMessage(const QByteArray& datagram)
             m_answerApplied = true;
             qInfo() << "libjuice received host ICE answer";
             m_joiner->applyRemoteDescription(value);
+            if (!m_turnRetryUsed) {
+                m_stunOnlyDeadlineMs = monotonicMs() + kStunOnlyIceWaitMs;
+            }
             return;
         }
 
@@ -693,12 +721,96 @@ void JuiceTraversal::deleteKey(const QString& key)
     sendIndex(QByteArray(kNetplayIndexProtocol) + "|DEL|" + key.toUtf8());
 }
 
+void JuiceTraversal::startJoinerPeer(bool useTurn)
+{
+    m_joiner = new JuicePeer(JuicePeer::Role::Joiner, 0, this);
+    m_joiner->onLocalDescription = [this](const QByteArray& sdp) {
+        if (!m_joining) {
+            return;
+        }
+        m_localOffer = sdp;
+        m_offerGathered = true;
+        m_nextOfferMs = 0;
+        qInfo() << "libjuice gathered local description for" << m_joinCode
+                << (iceSdpHasRelay(sdp) ? "with TURN relay candidates" : "without TURN relay candidates");
+    };
+    m_joiner->onConnected = [this](quint16 port) {
+        if (!m_joining || m_joinFinished) {
+            return;
+        }
+        m_joinReady = true;
+        m_joinFinished = true;
+        m_stunOnlyDeadlineMs = 0;
+        m_joinProxyPort = port;
+        qInfo() << "libjuice NAT traversal connected, local proxy port" << port;
+        emit joinSucceeded(port);
+    };
+    m_joiner->onFailed = [this](const QString& reason) {
+        failJoin(reason);
+    };
+
+    if (!m_joiner->start(QByteArray(), useTurn)) {
+        failJoin(QStringLiteral("Failed to start ICE gathering"));
+    }
+}
+
+bool JuiceTraversal::tryRetryJoinWithTurn(const QString& reason)
+{
+    if (m_turnRetryUsed || !m_joining || m_joinCode.isEmpty()) {
+        return false;
+    }
+    const bool iceMiss = reason.contains(QLatin1String("ICE connection")) ||
+                         reason.contains(QLatin1String("Direct ICE")) ||
+                         reason.contains(QLatin1String("host ICE answer"));
+    if (!iceMiss) {
+        return false;
+    }
+    if (!turnRelayAvailable()) {
+        qInfo() << "NAT traversal needs a relay after" << reason << "but no TURN server is available";
+        return false;
+    }
+
+    const QString hostCode = m_joinCode;
+    const QString previousJoinerId = m_joinerId;
+    ++m_failureToken;
+    m_turnRetryUsed = true;
+    m_joinReady = false;
+    m_joinFinished = false;
+    m_offerGathered = false;
+    m_answerApplied = false;
+    m_localOffer.clear();
+    m_joinProxyPort = 0;
+    m_offerPublishes = 0;
+    m_stunOnlyDeadlineMs = 0;
+    m_joinDeadlineMs = monotonicMs() + kGatherTimeoutMs;
+    m_nextOfferMs = 0;
+    m_nextAnswerPollMs = 0;
+    m_joinerId = makeJoinerId();
+
+    if (m_joiner != nullptr) {
+        m_joiner->deleteLater();
+        m_joiner = nullptr;
+    }
+    if (!previousJoinerId.isEmpty()) {
+        deleteKey(offerKey(hostCode, previousJoinerId));
+        deleteKey(answerKey(hostCode, previousJoinerId));
+    }
+
+    qInfo() << "Direct NAT traversal did not connect (" << reason << "); retrying with TURN as" << m_joinerId;
+    emit joinRetrying(reason);
+    startJoinerPeer(true);
+    return m_joining && m_joiner != nullptr;
+}
+
 void JuiceTraversal::failJoin(const QString& reason)
 {
     // A successful connect sets m_joinFinished while the agent is still live.
     // A later failure still has to be reported, or the UI keeps dialing the
     // localhost proxy after the tunnel is gone.
     if (!m_joining || (m_joinFinished && !m_joinReady)) {
+        return;
+    }
+    if (tryRetryJoinWithTurn(reason)) {
         return;
     }
     m_joinFinished = true;
@@ -713,8 +825,10 @@ void JuiceTraversal::failJoin(const QString& reason)
     m_localOffer.clear();
     m_offerGathered = false;
     m_answerApplied = false;
+    m_turnRetryUsed = false;
     m_offerPublishes = 0;
     m_joinProxyPort = 0;
+    m_stunOnlyDeadlineMs = 0;
     if (m_joiner != nullptr) {
         m_joiner->deleteLater();
         m_joiner = nullptr;
@@ -745,11 +859,13 @@ void JuiceTraversal::resetJoin()
     m_joinFinished = false;
     m_offerGathered = false;
     m_answerApplied = false;
+    m_turnRetryUsed = false;
     m_offerPublishes = 0;
     m_localOffer.clear();
     m_joinCode.clear();
     m_joinerId.clear();
     m_joinProxyPort = 0;
+    m_stunOnlyDeadlineMs = 0;
     delete m_joiner;
     m_joiner = nullptr;
 }
@@ -782,7 +898,10 @@ void JuiceTraversal::acceptOffer(const QString& joinerId, const QByteArray& sdp)
         }
     };
     m_hostPeers.insert(joinerId, peer);
-    peer->start(sdp);
+    const bool useTurn = iceSdpHasRelay(sdp);
+    qInfo() << "NAT traversal answering" << joinerId
+            << (useTurn ? "with TURN because the offer includes a relay" : "STUN/direct first");
+    peer->start(sdp, useTurn);
 }
 
 QString JuiceTraversal::offerKey(const QString& hostCode, const QString& joinerId) const

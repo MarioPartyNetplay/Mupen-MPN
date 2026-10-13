@@ -20,10 +20,11 @@ namespace UserInterface::Netplay {
 /**
  * libjuice ICE session signaled through the NAT server's N02IDX1 index.
  *
- * The host answers each joiner offer stored on the server. Once ICE connects,
- * ENet signaling is tunneled with juice_send / juice_recv through a localhost
- * UDP proxy so server-reflexive and TURN candidates can carry the existing
- * signaling protocol.
+ * The host answers each joiner offer stored on the server. ICE tries host and
+ * STUN paths first; TURN is gathered only if that session fails. Once ICE
+ * connects, ENet signaling is tunneled with juice_send / juice_recv through a
+ * localhost UDP proxy so server-reflexive and TURN candidates can carry the
+ * existing signaling protocol.
  */
 class JuiceTraversal : public QObject {
     Q_OBJECT
@@ -44,6 +45,7 @@ public:
 signals:
     void joinSucceeded(quint16 localProxyPort);
     void joinFailed(const QString& reason);
+    void joinRetrying(const QString& reason);
 
 private:
     class JuicePeer;
@@ -56,6 +58,8 @@ private:
     void publishValue(const QString& key, const QByteArray& value);
     void deleteKey(const QString& key);
     void failJoin(const QString& reason);
+    bool tryRetryJoinWithTurn(const QString& reason);
+    void startJoinerPeer(bool useTurn);
     void resetJoin();
     void acceptOffer(const QString& joinerId, const QByteArray& sdp);
     QString offerKey(const QString& hostCode, const QString& joinerId) const;
@@ -79,9 +83,11 @@ private:
     QByteArray m_localOffer;
     bool m_offerGathered = false;
     bool m_answerApplied = false;
+    bool m_turnRetryUsed = false;
     int m_offerPublishes = 0;
     quint16 m_joinProxyPort = 0;
     qint64 m_joinDeadlineMs = 0;
+    qint64 m_stunOnlyDeadlineMs = 0;
     qint64 m_nextOfferMs = 0;
     qint64 m_nextAnswerPollMs = 0;
 

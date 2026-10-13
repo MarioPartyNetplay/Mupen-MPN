@@ -200,6 +200,8 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
             this, &NetplaySessionBrowserDialog::onJuiceJoinSucceeded);
     connect(this->coordinator, &Netplay::NetplayCoordinator::juiceJoinFailed,
             this, &NetplaySessionBrowserDialog::onJuiceJoinFailed);
+    connect(this->coordinator, &Netplay::NetplayCoordinator::juiceJoinRetrying,
+            this, &NetplaySessionBrowserDialog::onJuiceJoinRetrying);
 
     this->networkManager = new QNetworkAccessManager(this);
     connect(this->networkManager, &QNetworkAccessManager::finished,
@@ -688,6 +690,15 @@ void NetplaySessionBrowserDialog::onJuiceJoinSucceeded(quint16 localPort)
     this->m_joinedViaTraversal = true;
     this->setTraversalStatus(QStringLiteral("NAT traversal connected. Joining the lobby…"));
     this->beginJoinConnect(QStringLiteral("127.0.0.1"), localPort, this->joinRoomId);
+}
+
+void NetplaySessionBrowserDialog::onJuiceJoinRetrying(const QString& reason)
+{
+    Q_UNUSED(reason);
+    if (!this->m_traversalPending) {
+        return;
+    }
+    this->setTraversalStatus(QStringLiteral("Direct connection did not open. Trying relay…"));
 }
 
 void NetplaySessionBrowserDialog::onJuiceJoinFailed(const QString& reason)

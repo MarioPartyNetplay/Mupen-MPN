@@ -97,6 +97,7 @@ class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBr
     void onCoordinatorRoomJoined(const QString& roomId, int slot);
     void onJuiceJoinSucceeded(quint16 localPort);
     void onJuiceJoinFailed(const QString& reason);
+    void onJuiceJoinRetrying(const QString& reason);
 
 };
 } // namespace Dialog

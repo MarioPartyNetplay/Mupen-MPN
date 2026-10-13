@@ -167,6 +167,7 @@ class NetplayCoordinator : public QObject {
      void connectionError(const QString& error);
     void juiceJoinSucceeded(quint16 localProxyPort);
     void juiceJoinFailed(const QString& reason);
+    void juiceJoinRetrying(const QString& reason);
      void inputDelayChanged(int frames);
 
      void motdReceived(const QString& motd);
