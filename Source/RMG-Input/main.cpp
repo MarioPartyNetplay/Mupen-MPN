@@ -46,6 +46,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <mutex>
@@ -216,7 +217,7 @@ static bool l_KeyboardState[SDL_SCANCODE_COUNT];
 static std::mutex l_DeviceMutex;
 
 // config GUI state
-static bool l_IsConfigGuiOpen = false;
+static std::atomic<bool> l_IsConfigGuiOpen{false};
 
 // Embedded netplay synchronization state
 static bool l_EmbeddedNetplayLocalSubmitted = false;
@@ -1628,13 +1629,11 @@ EXPORT m64p_error CALL PluginConfigWithRomConfig(void* parent, int romConfig, Co
         return M64ERR_NOT_INIT;
     }
 
-    l_IsConfigGuiOpen = true;
+    l_IsConfigGuiOpen.store(true);
 
-    // Let the emulation thread finish any in-flight GetKeys() before closing devices.
-    if (CoreIsEmulationPaused())
-    {
-        QThread::msleep(16);
-    }
+    // GetKeys() and the hotkey thread still touch SDL devices until they see
+    // the config flag. Give them a couple of polls before we steal the pads.
+    QThread::msleep(32);
     
     // close controllers
     close_controllers();
@@ -1665,7 +1664,7 @@ EXPORT m64p_error CALL PluginConfigWithRomConfig(void* parent, int romConfig, Co
     // open controllers
     open_controllers();
 
-    l_IsConfigGuiOpen = false;
+    l_IsConfigGuiOpen.store(false);
     
     return M64ERR_SUCCESS;
 }
@@ -1734,6 +1733,11 @@ EXPORT void CALL ControllerCommand(int Control, unsigned char* Command)
 
 void RefreshSdlInputState(void)
 {
+    if (l_IsConfigGuiOpen.load())
+    {
+        return;
+    }
+
     SDL_UpdateGamepads();
     SDL_UpdateJoysticks();
 
@@ -1761,7 +1765,7 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
 
         InputProfile* profile = &l_InputProfiles[localControl];
 
-        if (!profile->PluggedIn || l_IsConfigGuiOpen)
+        if (!profile->PluggedIn || l_IsConfigGuiOpen.load())
         {
             return;
         }
@@ -1834,7 +1838,7 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
         if (!l_EmbeddedNetplayLocalSubmitted)
         {
             BUTTONS localKeys = {};
-            if (!l_IsConfigGuiOpen)
+            if (!l_IsConfigGuiOpen.load())
             {
                 // Use the same local read path as offline play so keyboard/pad
                 // bindings behave identically; only the destination (lockstep
@@ -1844,7 +1848,7 @@ EXPORT void CALL GetKeys(int Control, BUTTONS* Keys)
             CoreSubmitEmbeddedNetplayFrameInput(localKeys.Value);
             l_EmbeddedNetplayLocalSubmitted = true;
 
-            if (!l_IsConfigGuiOpen && !l_EmbeddedNetplayFrameAdvanced)
+            if (!l_EmbeddedNetplayFrameAdvanced)
             {
                 int throttleMs = 1;
                 bool advanced = CoreAdvanceEmbeddedNetplayFrame();
