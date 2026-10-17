@@ -38,6 +38,46 @@ constexpr int kTurnWaitMs = 8000;
 constexpr int kMaxTurnServers = 2;
 constexpr int kStunOnlyIceWaitMs = 6000;
 constexpr int kTickIntervalMs = 50;
+constexpr int kEarlyGatherPublishMs = 400;
+
+QByteArray g_resolvedStunIpv4;
+
+bool isIpv4Literal(const QString& host)
+{
+    QHostAddress address;
+    return address.setAddress(host) && address.protocol() == QAbstractSocket::IPv4Protocol;
+}
+
+void beginStunResolve(QObject* context)
+{
+    const QString host = stunServerHost();
+    if (isIpv4Literal(host)) {
+        g_resolvedStunIpv4 = host.toUtf8();
+        return;
+    }
+    if (!g_resolvedStunIpv4.isEmpty() || context == nullptr) {
+        return;
+    }
+
+    QHostInfo::lookupHost(host, context, [host](const QHostInfo& info) {
+        if (!g_resolvedStunIpv4.isEmpty()) {
+            return;
+        }
+        if (info.error() != QHostInfo::NoError) {
+            qWarning() << "JuiceTraversal: STUN resolve failed for" << host << info.errorString();
+            return;
+        }
+        for (const QHostAddress& resolved : info.addresses()) {
+            if (resolved.protocol() == QAbstractSocket::IPv4Protocol) {
+                g_resolvedStunIpv4 = resolved.toString().toUtf8();
+                qInfo() << "JuiceTraversal: STUN server is" << resolved.toString() << "port"
+                        << stunServerPort();
+                return;
+            }
+        }
+        qWarning() << "JuiceTraversal: no IPv4 address for STUN host" << host;
+    });
+}
 
 qint64 monotonicMs()
 {
@@ -102,8 +142,16 @@ ResolvedIce resolveIceServers(bool includeTurn)
     }
 
     if (ice.stunHost.isEmpty()) {
-        ice.stunHost = stunServerHost().toUtf8();
-        ice.stunPort = stunServerPort();
+        const QString configured = stunServerHost();
+        if (!g_resolvedStunIpv4.isEmpty()) {
+            ice.stunHost = g_resolvedStunIpv4;
+            ice.stunPort = stunServerPort();
+        } else if (isIpv4Literal(configured)) {
+            ice.stunHost = configured.toUtf8();
+            ice.stunPort = stunServerPort();
+        } else {
+            qInfo() << "JuiceTraversal: STUN hostname is not resolved yet; gathering host candidates only";
+        }
     }
     return ice;
 }
@@ -178,6 +226,7 @@ public:
     {
         installJuiceLogHandler();
         m_useTurn = useTurn;
+        m_startedRemoteSdp = remoteSdp;
         const ResolvedIce ice = resolveIceServers(useTurn);
 
         std::vector<juice_turn_server_t> turnServers;
@@ -202,6 +251,7 @@ public:
             config.turn_servers_count = static_cast<int>(turnServers.size());
         }
         config.cb_state_changed = &JuicePeer::onStateChanged;
+        config.cb_candidate = &JuicePeer::onCandidate;
         config.cb_gathering_done = &JuicePeer::onGatheringDone;
         config.cb_recv = &JuicePeer::onRecv;
         config.user_ptr = this;
@@ -231,8 +281,12 @@ public:
             fail(QStringLiteral("Failed to gather ICE candidates"));
             return false;
         }
+        scheduleLocalDescriptionPublish();
         return true;
     }
+
+    bool isLinked() const { return m_linked; }
+    bool hasSameRemote(const QByteArray& sdp) const { return !sdp.isEmpty() && sdp == m_startedRemoteSdp; }
 
     void applyRemoteDescription(const QByteArray& sdp)
     {
@@ -262,7 +316,7 @@ private:
 
     void tryApplyRemote()
     {
-        if (m_agent == nullptr || m_pendingRemote.isEmpty() || !m_gatheringDone || m_remoteApplied) {
+        if (m_agent == nullptr || m_pendingRemote.isEmpty() || m_remoteApplied) {
             return;
         }
         if (juice_set_remote_description(m_agent, m_pendingRemote.constData()) != 0) {
@@ -273,22 +327,57 @@ private:
         m_pendingRemote.clear();
     }
 
-    void handleGatheringDone()
+    void scheduleLocalDescriptionPublish()
     {
-        if (!m_alive.load() || m_agent == nullptr || m_gatheringDone) {
+        if (!m_alive.load() || m_failed || m_publishScheduled || !m_lastPublishedSdp.isEmpty()) {
             return;
         }
-        m_gatheringDone = true;
+        m_publishScheduled = true;
+        QTimer::singleShot(kEarlyGatherPublishMs, this, [this]() {
+            m_publishScheduled = false;
+            if (m_alive.load()) {
+                publishLocalDescription(false);
+            }
+        });
+    }
+
+    void publishLocalDescription(bool gatheringDone)
+    {
+        if (!m_alive.load() || m_agent == nullptr || m_failed) {
+            return;
+        }
+        if (gatheringDone) {
+            m_gatheringDone = true;
+        } else if (!m_lastPublishedSdp.isEmpty()) {
+            return;
+        }
 
         char sdp[JUICE_MAX_SDP_STRING_LEN];
         if (juice_get_local_description(m_agent, sdp, sizeof(sdp)) != 0) {
-            fail(QStringLiteral("Failed to read local ICE description"));
+            if (gatheringDone) {
+                fail(QStringLiteral("Failed to read local ICE description"));
+            }
             return;
         }
+
+        const QByteArray snapshot(sdp);
+        if (snapshot == m_lastPublishedSdp) {
+            tryApplyRemote();
+            return;
+        }
+        if (m_remoteApplied && !gatheringDone) {
+            return;
+        }
+        m_lastPublishedSdp = snapshot;
         if (onLocalDescription) {
-            onLocalDescription(QByteArray(sdp));
+            onLocalDescription(snapshot);
         }
         tryApplyRemote();
+    }
+
+    void handleGatheringDone()
+    {
+        publishLocalDescription(true);
     }
 
     void handleState(juice_state_t state)
@@ -391,6 +480,19 @@ private:
         });
     }
 
+    static void onCandidate(juice_agent_t*, const char*, void* user)
+    {
+        auto* peer = static_cast<JuicePeer*>(user);
+        if (peer == nullptr || !peer->m_alive.load()) {
+            return;
+        }
+        QTimer::singleShot(0, peer, [peer]() {
+            if (peer->m_alive.load()) {
+                peer->scheduleLocalDescriptionPublish();
+            }
+        });
+    }
+
     static void onGatheringDone(juice_agent_t*, void* user)
     {
         auto* peer = static_cast<JuicePeer*>(user);
@@ -424,7 +526,10 @@ private:
     quint16 m_enetPort = 0;
     juice_agent_t* m_agent = nullptr;
     QUdpSocket m_proxy;
+    QByteArray m_startedRemoteSdp;
     QByteArray m_pendingRemote;
+    QByteArray m_lastPublishedSdp;
+    bool m_publishScheduled = false;
     bool m_gatheringDone = false;
     bool m_remoteApplied = false;
     bool m_linked = false;
@@ -439,6 +544,7 @@ JuiceTraversal::JuiceTraversal(QObject* parent)
     connect(&m_timer, &QTimer::timeout, this, &JuiceTraversal::onTick);
     m_timer.setInterval(kTickIntervalMs);
     resolveServerAsync();
+    beginStunResolve(this);
 }
 
 JuiceTraversal::~JuiceTraversal()
@@ -464,6 +570,7 @@ void JuiceTraversal::startHosting(const QString& hostCode, quint16 signalingPort
     m_nextListMs = 0;
     m_nextPingMs = 0;
     resolveServerAsync();
+    beginStunResolve(this);
     if (!m_timer.isActive()) {
         m_timer.start();
     }
@@ -533,6 +640,7 @@ void JuiceTraversal::joinHost(const QString& hostCode)
 
     TurnCredentialClient::instance().prefetch();
     resolveServerAsync();
+    beginStunResolve(this);
     setJoinProgress(QStringLiteral("Contacting the NAT traversal server…"));
     startJoinerPeer(false);
     if (!m_joining) {
@@ -825,8 +933,13 @@ void JuiceTraversal::handleIndexMessage(const QByteArray& datagram)
                 continue;
             }
             const QString joinerId = key.mid(prefix.size());
-            if (!isJoinerId(joinerId) || m_hostPeers.contains(joinerId)) {
+            if (!isJoinerId(joinerId)) {
                 continue;
+            }
+            if (JuicePeer* existing = m_hostPeers.value(joinerId)) {
+                if (existing->isLinked()) {
+                    continue;
+                }
             }
             sendIndex(QByteArray(kNetplayIndexProtocol) + "|GET|" + key.toUtf8());
         }
@@ -927,7 +1040,8 @@ bool JuiceTraversal::tryRetryJoinWithTurn(const QString& reason)
     }
     const bool iceMiss = reason.contains(QLatin1String("ICE connection")) ||
                          reason.contains(QLatin1String("Direct ICE")) ||
-                         reason.contains(QLatin1String("host ICE answer"));
+                         reason.contains(QLatin1String("host ICE answer")) ||
+                         reason.contains(QLatin1String("gathering ICE candidates"));
     if (!iceMiss) {
         return false;
     }
@@ -1061,8 +1175,18 @@ void JuiceTraversal::resetJoin()
 
 void JuiceTraversal::acceptOffer(const QString& joinerId, const QByteArray& sdp)
 {
-    if (!m_hosting || m_hostPeers.contains(joinerId) || sdp.isEmpty()) {
+    if (!m_hosting || sdp.isEmpty()) {
         return;
+    }
+    if (JuicePeer* existing = m_hostPeers.value(joinerId)) {
+        if (existing->isLinked() || existing->hasSameRemote(sdp)) {
+            return;
+        }
+        m_hostPeers.remove(joinerId);
+        m_pendingAnswers.remove(joinerId);
+        existing->detach();
+        existing->deleteLater();
+        qInfo() << "NAT traversal replacing ICE session for" << joinerId;
     }
 
     auto* peer = new JuicePeer(JuicePeer::Role::Host, m_signalingPort, this);
