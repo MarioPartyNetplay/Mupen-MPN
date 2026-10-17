@@ -25,18 +25,19 @@ namespace UserInterface::Netplay {
 
 namespace {
 
-constexpr int kGatherTimeoutMs = 30000;
-constexpr int kAnswerWaitMs = 45000;
-constexpr int kOfferIntervalMs = 1000;
-constexpr int kAnswerPollMs = 500;
-constexpr int kListIntervalMs = 1000;
-constexpr int kAnswerRepublishGapMs = 1000;
+constexpr int kGatherTimeoutMs = 20000;
+constexpr int kAnswerWaitMs = 25000;
+constexpr int kOfferIntervalMs = 250;
+constexpr int kAnswerPollMs = 250;
+constexpr int kListIntervalMs = 250;
+constexpr int kAnswerRepublishGapMs = 250;
+constexpr int kAckedAnswerRefreshMs = 2000;
 constexpr int kPingIntervalMs = 1000;
 constexpr int kServerSilenceFailMs = 8000;
-constexpr int kTurnWaitMs = 10000;
+constexpr int kTurnWaitMs = 8000;
 constexpr int kMaxTurnServers = 2;
-constexpr int kStunOnlyIceWaitMs = 12000;
-constexpr int kTickIntervalMs = 100;
+constexpr int kStunOnlyIceWaitMs = 6000;
+constexpr int kTickIntervalMs = 50;
 
 qint64 monotonicMs()
 {
@@ -574,9 +575,6 @@ void JuiceTraversal::onTick()
 
     if ((m_hosting || m_joining) && (m_nextPingMs == 0 || now >= m_nextPingMs)) {
         sendPing();
-        if (m_firstPingMs == 0) {
-            m_firstPingMs = now;
-        }
         m_nextPingMs = now + kPingIntervalMs;
     }
 
@@ -587,14 +585,14 @@ void JuiceTraversal::onTick()
             m_nextListMs = now + kListIntervalMs;
         }
         for (auto it = m_pendingAnswers.begin(); it != m_pendingAnswers.end(); ++it) {
-            if (it->acked || it->sdp.isEmpty() || !m_hostPeers.contains(it.key())) {
+            if (it->sdp.isEmpty() || !m_hostPeers.contains(it.key())) {
                 continue;
             }
             if (it->nextPublishMs != 0 && now < it->nextPublishMs) {
                 continue;
             }
             publishValue(answerKey(m_hostCode, it.key()), it->sdp);
-            it->nextPublishMs = now + kAnswerRepublishGapMs;
+            it->nextPublishMs = now + (it->acked ? kAckedAnswerRefreshMs : kAnswerRepublishGapMs);
         }
     }
 
@@ -648,10 +646,9 @@ void JuiceTraversal::onTick()
         return;
     }
 
-    if (m_offerGathered && !m_answerApplied && !m_offerAcked &&
-        (m_nextOfferMs == 0 || now >= m_nextOfferMs)) {
+    if (m_offerGathered && !m_answerApplied && (m_nextOfferMs == 0 || now >= m_nextOfferMs)) {
         publishValue(offerKey(m_joinCode, m_joinerId), m_localOffer);
-        m_nextOfferMs = now + kOfferIntervalMs;
+        m_nextOfferMs = now + (m_offerAcked ? kAckedAnswerRefreshMs : kOfferIntervalMs);
     }
 
     if (m_offerGathered && !m_answerApplied && (m_nextAnswerPollMs == 0 || now >= m_nextAnswerPollMs)) {
@@ -744,6 +741,10 @@ void JuiceTraversal::sendIndex(const QByteArray& message)
     }
     if (m_socket.writeDatagram(message, m_serverAddress, static_cast<quint16>(kNetplayRegistryPort)) < 0) {
         qWarning() << "JuiceTraversal: index send failed:" << m_socket.errorString();
+        return;
+    }
+    if (m_firstPingMs == 0 && !message.contains("|PING")) {
+        m_firstPingMs = monotonicMs();
     }
 }
 

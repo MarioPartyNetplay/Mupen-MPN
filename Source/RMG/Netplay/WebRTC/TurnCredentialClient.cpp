@@ -726,15 +726,14 @@ std::vector<rtc::IceServer> buildIceServers()
 
     TurnCredentialClient& iceClient = TurnCredentialClient::instance();
     if (turnCredentialsAvailable() || !qgetenv("RMG_ICE_CONFIG_FILE").isEmpty()) {
-        if (!iceClient.ensureCredentials()) {
-            qWarning() << "TurnCredentialClient: Failed to refresh ICE credentials; STUN fallback only";
-        } else {
-            const std::vector<rtc::IceServer> brokerStunServers = iceClient.stunServers();
-            servers.insert(servers.end(), brokerStunServers.begin(), brokerStunServers.end());
-
-            const std::vector<rtc::IceServer> turnServers = iceClient.turnServers();
-            servers.insert(servers.end(), turnServers.begin(), turnServers.end());
+        if (!iceClient.hasFreshCredentials()) {
+            iceClient.prefetch();
+            qWarning() << "TurnCredentialClient: ICE credentials are still loading; STUN fallback only";
         }
+        const std::vector<rtc::IceServer> brokerStunServers = iceClient.stunServers();
+        servers.insert(servers.end(), brokerStunServers.begin(), brokerStunServers.end());
+        const std::vector<rtc::IceServer> turnServers = iceClient.turnServers();
+        servers.insert(servers.end(), turnServers.begin(), turnServers.end());
     }
 
     servers = finalizeIceServers(std::move(servers));

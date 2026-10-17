@@ -14,8 +14,9 @@ namespace UserInterface::Netplay {
 
 namespace {
 
-constexpr int kMaxHostRegisterAttempts = 30;
-constexpr int kHostRegisterIntervalMs = 1000;
+constexpr int kMaxHostRegisterAttempts = 40;
+constexpr int kHostRegisterIntervalMs = 250;
+constexpr int kHostRegisterBurst = 3;
 constexpr int kHostKeepIntervalMs = 30000;
 constexpr int kEnetKeepIntervalMs = 5000;
 constexpr int kPunchSustainBursts = 20;
@@ -46,7 +47,8 @@ NetplayHostRegistry::NetplayHostRegistry(QObject* parent)
 {
     connect(&m_socket, &QUdpSocket::readyRead, this, &NetplayHostRegistry::onReadyRead);
     connect(&m_housekeepingTimer, &QTimer::timeout, this, &NetplayHostRegistry::onHousekeepingTimer);
-    m_housekeepingTimer.setInterval(1000);
+    m_housekeepingTimer.setInterval(250);
+    resolveServerAsync();
     m_punchTimer.setInterval(100);
     connect(&m_punchTimer, &QTimer::timeout, this, &NetplayHostRegistry::onPunchTimer);
 }
@@ -94,6 +96,7 @@ void NetplayHostRegistry::startHosting(uint16_t signalingPort, bool listInBrowse
     m_nextHostKeepMs = 0;
     m_registrationAbandoned = false;
 
+    resolveServerAsync();
     if (!m_housekeepingTimer.isActive()) {
         m_housekeepingTimer.start();
     }
@@ -117,6 +120,7 @@ void NetplayHostRegistry::resumeHosting(const QString& hostCode, uint16_t signal
     m_nextHostKeepMs = 0;
     m_registrationAbandoned = false;
 
+    resolveServerAsync();
     if (!m_housekeepingTimer.isActive()) {
         m_housekeepingTimer.start();
     }
@@ -178,25 +182,46 @@ bool NetplayHostRegistry::ensureServerResolved(QString* errorOut)
         return true;
     }
 
-    QHostInfo info = QHostInfo::fromName(hostname);
-    if (info.error() != QHostInfo::NoError) {
-        if (errorOut) {
-            *errorOut = QString("Failed to resolve browse server %1: %2").arg(hostname, info.errorString());
-        }
-        return false;
-    }
-
-    for (const QHostAddress& resolved : info.addresses()) {
-        if (resolved.protocol() == QAbstractSocket::IPv4Protocol) {
-            m_serverAddress = resolved;
-            return true;
-        }
-    }
-
+    resolveServerAsync();
     if (errorOut) {
-        *errorOut = QString("Browse server %1 has no IPv4 address").arg(hostname);
+        *errorOut = m_resolving ? QStringLiteral("Resolving browse server")
+                                : QString("Browse server %1 has no IPv4 address").arg(hostname);
     }
     return false;
+}
+
+void NetplayHostRegistry::resolveServerAsync()
+{
+    if (!m_serverAddress.isNull() || m_resolving) {
+        return;
+    }
+
+    const QString hostname = netplayIndexServerHostname();
+    QHostAddress address;
+    if (address.setAddress(hostname)) {
+        m_serverAddress = address;
+        return;
+    }
+
+    m_resolving = true;
+    const int lookupId = ++m_resolveId;
+    QHostInfo::lookupHost(hostname, this, [this, lookupId](const QHostInfo& info) {
+        if (lookupId != m_resolveId) {
+            return;
+        }
+        m_resolving = false;
+        if (info.error() != QHostInfo::NoError) {
+            qWarning() << "Browse registry: failed to resolve" << info.errorString();
+            return;
+        }
+        for (const QHostAddress& resolved : info.addresses()) {
+            if (resolved.protocol() == QAbstractSocket::IPv4Protocol) {
+                m_serverAddress = resolved;
+                onHousekeepingTimer();
+                return;
+            }
+        }
+    });
 }
 
 void NetplayHostRegistry::sendToServer(const QByteArray& message)
@@ -205,11 +230,14 @@ void NetplayHostRegistry::sendToServer(const QByteArray& message)
     // listening ENet port drops the reply, so the host code never arrives and
     // the room is never published.
     QString error;
-    if (!ensureSocketBound(&error) || !ensureServerResolved(&error)) {
+    if (!ensureSocketBound(&error)) {
         if (m_hostRegisterAttempts >= kMaxHostRegisterAttempts) {
             m_registrationAbandoned = true;
+            failHosting(error);
         }
-        failHosting(error);
+        return;
+    }
+    if (!ensureServerResolved(&error)) {
         return;
     }
 
@@ -333,7 +361,9 @@ void NetplayHostRegistry::onHousekeepingTimer()
                 QByteArray(kNetplayRegistryProtocol) + "|REGISTER|" +
                 QByteArray::number(m_signalingPort) + "|" +
                 (m_listInBrowser ? "1" : "0");
-            sendToServer(registerMessage);
+            for (int i = 0; i < kHostRegisterBurst; ++i) {
+                sendToServer(registerMessage);
+            }
             ++m_hostRegisterAttempts;
             m_nextHostRegisterMs = now + kHostRegisterIntervalMs;
         }

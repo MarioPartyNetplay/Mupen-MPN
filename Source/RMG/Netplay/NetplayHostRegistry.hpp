@@ -43,6 +43,7 @@ private:
     void sendSignalingKeep();
     bool ensureSocketBound(QString* errorOut = nullptr);
     bool ensureServerResolved(QString* errorOut = nullptr);
+    void resolveServerAsync();
     void handleServerMessage(const QByteArray& datagram);
     void failHosting(const QString& reason);
     void resetHostState();
@@ -56,6 +57,8 @@ private:
     QUdpSocket m_socket;
     QTimer m_housekeepingTimer;
     QHostAddress m_serverAddress;
+    bool m_resolving = false;
+    int m_resolveId = 0;
 
     bool m_listInBrowser = false;
     uint16_t m_signalingPort = kDefaultNetplayHostingPort;
