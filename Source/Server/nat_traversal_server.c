@@ -14,10 +14,17 @@
  *
  *   --nat-traversal   tell clients every session uses NAT traversal
  *
+ *   N02IDX1|PING                 -> PONG|<unix>  (NAT keepalive + liveness)
+ *   N02IDX1|LIST[|prefix]        filtered key list; prefix also watches for SET
+ *   N02IDX1|GET                  missing keys are watched so SET is pushed as GETOK
+ *
  * Threads:
  *   main             UDP host codes and index only
  *   HTTP accept + workers   lobby pages and /turn/ice-servers
  *   TURN refresh     Cloudflare ICE credentials, off the UDP loop
+ *
+ * The UDP loop never holds g_state_mu across punch bursts or HTTP body writes.
+ * HTTP /rooms snapshots host rows, then formats JSON after unlocking.
  *
  * Cloudflare TURN broker (server-side only):
  *   turn_secrets.h (compiled in) or RMG_TURN_KEY_ID / RMG_TURN_API_TOKEN env overrides
@@ -97,8 +104,13 @@ typedef int socket_t;
 #define HTTP_LISTEN_BACKLOG 128
 #define HTTP_WORKERS 8
 #define HTTP_QUEUE_CAP 64
-#define MAX_UDP_DRAIN_PER_TICK 64
+#define MAX_UDP_DRAIN_PER_TICK 128
 #define EVENT_LOOP_IDLE_SEC 1
+#define MAX_WATCHERS 256
+#define WATCH_TTL_SEC 20
+#define PUNCH_BURST 4
+#define MAX_ROOM_LIST_SNAP 256
+#define ROOM_SNAP_PLAYERS 4096
 
 #ifdef WITH_LIBCURL
 #include <curl/curl.h>
@@ -122,10 +134,42 @@ typedef struct {
     int in_use;
 } index_entry_t;
 
+typedef struct {
+    char prefix[MAX_KEY_LEN];
+    struct sockaddr_in addr;
+    uint64_t last_seen;
+    int in_use;
+} watcher_t;
+
+typedef struct {
+    int active;
+    struct sockaddr_in host_addr;
+    struct sockaddr_in joiner_addr;
+    char host_ip[INET_ADDRSTRLEN];
+    char joiner_ip[INET_ADDRSTRLEN];
+    unsigned host_port;
+    unsigned joiner_port;
+} punch_job_t;
+
+typedef struct {
+    char code_text[8];
+    char ip_text[INET_ADDRSTRLEN];
+    unsigned port;
+    char host_name[128];
+    char game_name[128];
+    char lobby_size[32];
+    char players_json[ROOM_SNAP_PLAYERS];
+    int started;
+    int player_count;
+    int max_players;
+    int use_nat;
+} room_snap_t;
+
 static host_entry_t g_hosts[MAX_HOSTS];
 static int g_host_count = 0;
 static index_entry_t g_index[MAX_INDEX_ENTRIES];
 static int g_index_count = 0;
+static watcher_t g_watchers[MAX_WATCHERS];
 
 static char g_turn_cache[MAX_TURN_RESPONSE];
 static size_t g_turn_cache_len = 0;
@@ -710,12 +754,13 @@ static void trav_send_punch(socket_t sock, const struct sockaddr_in* target, soc
 {
     char reply[96];
     snprintf(reply, sizeof(reply), TRAV_PROTOCOL "|PUNCH|%s|%u", ip_text, target_port);
-    for (int i = 0; i < 20; ++i) {
+    for (int i = 0; i < PUNCH_BURST; ++i) {
         send_reply(sock, (const struct sockaddr*)target, target_len, reply);
     }
 }
 
-static void trav_lookup(socket_t sock, const struct sockaddr_in* client, socklen_t client_len, const char* code_text)
+static void trav_lookup(socket_t sock, const struct sockaddr_in* client, socklen_t client_len, const char* code_text,
+                        punch_job_t* punch)
 {
     char reply[96];
     uint32_t code = 0;
@@ -752,16 +797,17 @@ static void trav_lookup(socket_t sock, const struct sockaddr_in* client, socklen
     printf("[trav] LOOKUP %s -> %s:%u (joiner %s:%u)\n", code_text, host_ip, mapped_port, joiner_ip,
            (unsigned)ntohs(client->sin_port));
 
-    /* Tell each side the other's public mapping so both can punch (Dolphin-style). */
-    {
-        struct sockaddr_in host_addr;
-        memset(&host_addr, 0, sizeof(host_addr));
-        host_addr.sin_family = AF_INET;
-        host_addr.sin_addr.s_addr = entry->host_ip;
-        host_addr.sin_port = htons((uint16_t)mapped_port);
-
-        trav_send_punch(sock, &host_addr, sizeof(host_addr), joiner_ip, (unsigned)ntohs(client->sin_port));
-        trav_send_punch(sock, client, client_len, host_ip, mapped_port);
+    if (punch != NULL) {
+        memset(punch, 0, sizeof(*punch));
+        punch->active = 1;
+        punch->host_addr.sin_family = AF_INET;
+        punch->host_addr.sin_addr.s_addr = entry->host_ip;
+        punch->host_addr.sin_port = htons((uint16_t)mapped_port);
+        punch->joiner_addr = *client;
+        strncpy(punch->host_ip, host_ip, sizeof(punch->host_ip) - 1);
+        strncpy(punch->joiner_ip, joiner_ip, sizeof(punch->joiner_ip) - 1);
+        punch->host_port = mapped_port;
+        punch->joiner_port = (unsigned)ntohs(client->sin_port);
     }
 }
 
@@ -784,6 +830,122 @@ static void prune_index(void)
         if (g_index[i].in_use && now - g_index[i].last_seen > INDEX_TTL_SEC) {
             g_index[i].in_use = 0;
         }
+    }
+}
+
+static int sockaddr_in_equal(const struct sockaddr_in* a, const struct sockaddr_in* b)
+{
+    return a != NULL && b != NULL && a->sin_addr.s_addr == b->sin_addr.s_addr && a->sin_port == b->sin_port;
+}
+
+static void prune_watchers(void)
+{
+    const uint64_t now = now_seconds();
+    for (int i = 0; i < MAX_WATCHERS; ++i) {
+        if (g_watchers[i].in_use && now - g_watchers[i].last_seen > WATCH_TTL_SEC) {
+            g_watchers[i].in_use = 0;
+        }
+    }
+}
+
+static void watch_add(const char* prefix, const struct sockaddr_in* client)
+{
+    watcher_t* slot = NULL;
+
+    if (prefix == NULL || prefix[0] == '\0' || client == NULL || !is_valid_key(prefix)) {
+        return;
+    }
+
+    prune_watchers();
+    for (int i = 0; i < MAX_WATCHERS; ++i) {
+        if (g_watchers[i].in_use && strcmp(g_watchers[i].prefix, prefix) == 0 &&
+            sockaddr_in_equal(&g_watchers[i].addr, client)) {
+            g_watchers[i].last_seen = now_seconds();
+            return;
+        }
+        if (slot == NULL && !g_watchers[i].in_use) {
+            slot = &g_watchers[i];
+        }
+    }
+    if (slot == NULL) {
+        return;
+    }
+
+    memset(slot, 0, sizeof(*slot));
+    strncpy(slot->prefix, prefix, MAX_KEY_LEN - 1);
+    slot->addr = *client;
+    slot->last_seen = now_seconds();
+    slot->in_use = 1;
+}
+
+static int index_build_getok(const char* key, char* reply, size_t reply_size)
+{
+    index_entry_t* entry;
+    char b64[MAX_VALUE_LEN * 2];
+    char forced[MAX_VALUE_LEN];
+    size_t forced_len = 0;
+    const char* payload;
+    size_t payload_len;
+    const char* header = INDEX_PROTOCOL "|GETOK|";
+    const char* marker = "|B64:";
+    size_t header_len;
+    size_t key_len;
+    size_t marker_len;
+    size_t b64_len;
+    size_t total;
+
+    if (key == NULL || reply == NULL || reply_size == 0 || !is_valid_key(key)) {
+        return 0;
+    }
+
+    entry = find_index(key);
+    if (entry == NULL || now_seconds() - entry->last_seen > INDEX_TTL_SEC) {
+        return 0;
+    }
+
+    payload = entry->value;
+    payload_len = entry->value_len;
+    if (strncmp(key, "session/", 8) == 0 &&
+        session_json_force_nat(entry->value, forced, sizeof(forced), &forced_len)) {
+        payload = forced;
+        payload_len = forced_len;
+    }
+
+    b64_len = b64_encode((const unsigned char*)payload, payload_len, b64, sizeof(b64));
+    header_len = strlen(header);
+    key_len = strlen(key);
+    marker_len = strlen(marker);
+    total = header_len + key_len + marker_len + b64_len;
+    {
+        const size_t expected = payload_len == 0 ? 0 : 4 * ((payload_len + 2) / 3);
+        if (b64_len != expected || total + 1 > reply_size) {
+            return 0;
+        }
+    }
+    memcpy(reply, header, header_len);
+    memcpy(reply + header_len, key, key_len);
+    memcpy(reply + header_len + key_len, marker, marker_len);
+    memcpy(reply + header_len + key_len + marker_len, b64, b64_len);
+    reply[total] = '\0';
+    return 1;
+}
+
+static void watch_notify(socket_t sock, const char* key)
+{
+    char reply[MAX_UDP_PACKET];
+
+    if (key == NULL || !index_build_getok(key, reply, sizeof(reply))) {
+        return;
+    }
+
+    for (int i = 0; i < MAX_WATCHERS; ++i) {
+        if (!g_watchers[i].in_use) {
+            continue;
+        }
+        if (strncmp(key, g_watchers[i].prefix, strlen(g_watchers[i].prefix)) != 0) {
+            continue;
+        }
+        send_reply(sock, (const struct sockaddr*)&g_watchers[i].addr, sizeof(g_watchers[i].addr), reply);
     }
 }
 
@@ -864,6 +1026,8 @@ static void index_set(socket_t sock, const struct sockaddr_in* client, socklen_t
             existing->last_seen = now_seconds();
             snprintf(reply, sizeof(reply), INDEX_PROTOCOL "|SETOK|%s", key);
             send_reply(sock, (const struct sockaddr*)client, client_len, reply);
+            /* Same payload still has to wake watchers; the first GETOK can be lost. */
+            watch_notify(sock, key);
             return;
         }
     }
@@ -876,63 +1040,26 @@ static void index_set(socket_t sock, const struct sockaddr_in* client, socklen_t
 
     snprintf(reply, sizeof(reply), INDEX_PROTOCOL "|SETOK|%s", key);
     send_reply(sock, (const struct sockaddr*)client, client_len, reply);
+    watch_notify(sock, key);
     printf("[idx] SET %s (%zu bytes)\n", key, decoded_len);
 }
 
 static void index_get(socket_t sock, const struct sockaddr_in* client, socklen_t client_len, const char* key)
 {
     char reply[MAX_UDP_PACKET];
-    char b64[MAX_VALUE_LEN * 2];
-    index_entry_t* entry;
 
     if (!is_valid_key(key)) {
         send_reply(sock, (const struct sockaddr*)client, client_len, INDEX_PROTOCOL "|ERR|BADKEY");
         return;
     }
 
-    entry = find_index(key);
-    if (entry == NULL || now_seconds() - entry->last_seen > INDEX_TTL_SEC) {
+    if (!index_build_getok(key, reply, sizeof(reply))) {
+        /* Joiner is polling an ICE answer that is not published yet. Watch the
+           exact key so the later SET is pushed as GETOK instead of waiting. */
+        watch_add(key, client);
         snprintf(reply, sizeof(reply), INDEX_PROTOCOL "|GETFAIL|%s|NOTFOUND", key);
         send_reply(sock, (const struct sockaddr*)client, client_len, reply);
         return;
-    }
-
-    {
-        char forced[MAX_VALUE_LEN];
-        size_t forced_len = 0;
-        const char* payload = entry->value;
-        size_t payload_len = entry->value_len;
-        const char* header = INDEX_PROTOCOL "|GETOK|";
-        const char* marker = "|B64:";
-        size_t header_len;
-        size_t key_len;
-        size_t marker_len;
-        size_t b64_len;
-        size_t total;
-
-        if (strncmp(key, "session/", 8) == 0 &&
-            session_json_force_nat(entry->value, forced, sizeof(forced), &forced_len)) {
-            payload = forced;
-            payload_len = forced_len;
-        }
-        b64_len = b64_encode((const unsigned char*)payload, payload_len, b64, sizeof(b64));
-        header_len = strlen(header);
-        key_len = strlen(key);
-        marker_len = strlen(marker);
-        total = header_len + key_len + marker_len + b64_len;
-        {
-            const size_t expected = payload_len == 0 ? 0 : 4 * ((payload_len + 2) / 3);
-            if (b64_len != expected || total + 1 > sizeof(reply)) {
-                fprintf(stderr, "[idx] GET %s reply does not fit in one datagram (%zu bytes)\n", key, total);
-                send_reply(sock, (const struct sockaddr*)client, client_len, INDEX_PROTOCOL "|ERR|TOOLARGE");
-                return;
-            }
-        }
-        memcpy(reply, header, header_len);
-        memcpy(reply + header_len, key, key_len);
-        memcpy(reply + header_len + key_len, marker, marker_len);
-        memcpy(reply + header_len + key_len + marker_len, b64, b64_len);
-        reply[total] = '\0';
     }
     send_reply(sock, (const struct sockaddr*)client, client_len, reply);
 }
@@ -946,16 +1073,24 @@ static void index_del(const char* key)
     }
 }
 
-static void index_list(socket_t sock, const struct sockaddr_in* client, socklen_t client_len)
+static void index_list(socket_t sock, const struct sockaddr_in* client, socklen_t client_len, const char* prefix)
 {
     char reply[MAX_UDP_PACKET];
     size_t offset = 0;
     const uint64_t now = now_seconds();
+    const size_t prefix_len = prefix != NULL ? strlen(prefix) : 0;
+
+    if (prefix_len > 0) {
+        watch_add(prefix, client);
+    }
 
     offset += (size_t)snprintf(reply, sizeof(reply), "%s|LISTOK|", INDEX_PROTOCOL);
 
     for (int i = 0; i < g_index_count; ++i) {
         if (!g_index[i].in_use || now - g_index[i].last_seen > INDEX_TTL_SEC) {
+            continue;
+        }
+        if (prefix_len > 0 && strncmp(g_index[i].key, prefix, prefix_len) != 0) {
             continue;
         }
         if (offset > strlen(INDEX_PROTOCOL "|LISTOK|")) {
@@ -1004,7 +1139,7 @@ static const char* field_after_key(const char* message, const char* op, const ch
 }
 
 static void handle_udp_locked(socket_t sock, const char* buffer, int length, const struct sockaddr_in* client,
-                             socklen_t client_len)
+                             socklen_t client_len, punch_job_t* punch)
 {
     char message[MAX_UDP_PACKET];
     char* parts[8];
@@ -1074,7 +1209,11 @@ static void handle_udp_locked(socket_t sock, const char* buffer, int length, con
                     parts[2][i] = parts[2][i] - 'a' + 'A';
                 }
             }
-            trav_lookup(sock, client, client_len, parts[2]);
+            trav_lookup(sock, client, client_len, parts[2], punch);
+        } else if (strcmp(parts[1], "PING") == 0) {
+            char reply[64];
+            snprintf(reply, sizeof(reply), "%s|PONG|%llu", TRAV_PROTOCOL, (unsigned long long)now_seconds());
+            send_reply(sock, (const struct sockaddr*)client, client_len, reply);
         } else if (strcmp(parts[1], "UNREGISTER") == 0 && part_count >= 3) {
             uint32_t code = 0;
             if (parse_host_code(parts[2], &code)) {
@@ -1105,7 +1244,12 @@ static void handle_udp_locked(socket_t sock, const char* buffer, int length, con
         } else if (strcmp(parts[1], "DEL") == 0 && part_count >= 3) {
             index_del(parts[2]);
         } else if (strcmp(parts[1], "LIST") == 0) {
-            index_list(sock, client, client_len);
+            const char* prefix = part_count >= 3 ? parts[2] : NULL;
+            index_list(sock, client, client_len, prefix);
+        } else if (strcmp(parts[1], "PING") == 0) {
+            char reply[64];
+            snprintf(reply, sizeof(reply), "%s|PONG|%llu", INDEX_PROTOCOL, (unsigned long long)now_seconds());
+            send_reply(sock, (const struct sockaddr*)client, client_len, reply);
         }
         return;
     }
@@ -1114,9 +1258,15 @@ static void handle_udp_locked(socket_t sock, const char* buffer, int length, con
 static void handle_udp(socket_t sock, const char* buffer, int length, const struct sockaddr_in* client,
                        socklen_t client_len)
 {
+    punch_job_t punch;
+    memset(&punch, 0, sizeof(punch));
     state_lock();
-    handle_udp_locked(sock, buffer, length, client, client_len);
+    handle_udp_locked(sock, buffer, length, client, client_len, &punch);
     state_unlock();
+    if (punch.active) {
+        trav_send_punch(sock, &punch.host_addr, sizeof(punch.host_addr), punch.joiner_ip, punch.joiner_port);
+        trav_send_punch(sock, &punch.joiner_addr, sizeof(punch.joiner_addr), punch.host_ip, punch.host_port);
+    }
 }
 
 /* ---- HTTP index ---- */
@@ -1750,60 +1900,60 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
     char body[65536];
     size_t offset = 0;
     const uint64_t now = now_seconds();
-    int wrote_room = 0;
+    room_snap_t* snaps = (room_snap_t*)calloc((size_t)MAX_ROOM_LIST_SNAP, sizeof(room_snap_t));
+    int snap_count = 0;
 
-    body[0] = '\0';
+    if (snaps == NULL) {
+        http_reply_json(client, 500, "Internal Server Error", "{\"error\":\"oom\"}");
+        return;
+    }
+
     state_lock();
     prune_hosts();
     prune_index();
-    offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "{\"rooms\":[");
 
-    for (int i = 0; i < g_host_count; ++i) {
+    for (int i = 0; i < g_host_count && snap_count < MAX_ROOM_LIST_SNAP; ++i) {
+        room_snap_t* snap;
+        char key[MAX_KEY_LEN];
+        char* session_json = NULL;
+        struct in_addr addr;
+        char listing_ip[INET_ADDRSTRLEN];
+        uint16_t listing_port;
+
         if (!g_hosts[i].in_use || now - g_hosts[i].last_seen > HOST_TTL_SEC || !g_hosts[i].list_in_browser) {
             continue;
         }
 
-        char code_text[8];
-        char ip_text[INET_ADDRSTRLEN];
-        char key[MAX_KEY_LEN];
-        char host_name[128] = {0};
-        char game_name[128] = {0};
-        char players_json[MAX_VALUE_LEN] = {0};
-        char host_name_json[256];
-        char game_name_json[256];
-        char lobby_size[32];
-        char* session_json = NULL;
-        struct in_addr addr;
-        int started = 0;
-        int player_count = 1;
-        int max_players = 4;
+        snap = &snaps[snap_count];
+        memset(snap, 0, sizeof(*snap));
+        snap->started = 0;
+        snap->player_count = 1;
+        snap->max_players = 4;
+        snap->use_nat = g_force_nat_traversal;
 
-        if (!format_host_code(g_hosts[i].code, code_text, sizeof(code_text))) {
+        if (!format_host_code(g_hosts[i].code, snap->code_text, sizeof(snap->code_text))) {
             continue;
         }
 
-        snprintf(key, sizeof(key), "session/%s", code_text);
+        snprintf(key, sizeof(key), "session/%s", snap->code_text);
         {
             index_entry_t* entry = find_index(key);
             if (entry != NULL && now - entry->last_seen <= INDEX_TTL_SEC) {
                 session_json = entry->value;
-                json_get_bool_field(session_json, "started", &started);
-                json_get_int_field(session_json, "player_count", &player_count);
-                json_get_int_field(session_json, "max_players", &max_players);
-                if (!json_get_string_field(session_json, "host_name", host_name, sizeof(host_name))) {
-                    if (!json_get_string_field(session_json, "player_name", host_name, sizeof(host_name))) {
-                        if (!json_get_string_field(session_json, "room_name", host_name, sizeof(host_name))) {
-                            strncpy(host_name, code_text, sizeof(host_name) - 1);
-                        }
+                json_get_bool_field(session_json, "started", &snap->started);
+                json_get_int_field(session_json, "player_count", &snap->player_count);
+                json_get_int_field(session_json, "max_players", &snap->max_players);
+                if (!json_get_string_field(session_json, "host_name", snap->host_name, sizeof(snap->host_name))) {
+                    if (!json_get_string_field(session_json, "player_name", snap->host_name, sizeof(snap->host_name))) {
+                        json_get_string_field(session_json, "room_name", snap->host_name, sizeof(snap->host_name));
                     }
                 }
-                if (!json_get_string_field(session_json, "game_name", game_name, sizeof(game_name))) {
-                    strncpy(game_name, "", sizeof(game_name) - 1);
+                json_get_string_field(session_json, "game_name", snap->game_name, sizeof(snap->game_name));
+                if (!json_copy_array_field(session_json, "players", snap->players_json, sizeof(snap->players_json))) {
+                    snap->players_json[0] = '\0';
                 }
-                if (!json_copy_array_field(session_json, "players", players_json, sizeof(players_json))) {
-                    char escaped_host[256];
-                    json_escape_string(host_name, escaped_host, sizeof(escaped_host));
-                    snprintf(players_json, sizeof(players_json), "[{\"name\":\"%s\",\"slotIndex\":0}]", escaped_host);
+                if (!snap->use_nat) {
+                    json_get_bool_field(session_json, "use_nat_traversal", &snap->use_nat);
                 }
             }
         }
@@ -1811,75 +1961,59 @@ static void http_reply_rooms_json(socket_t client, int waitingOnly)
         if (!room_index_is_browsable(session_json)) {
             continue;
         }
-
-        if (waitingOnly) {
-            if (started) {
-                continue;
-            }
-        } else {
-            if (!started) {
-                continue;
-            }
+        if (waitingOnly ? snap->started : !snap->started) {
+            continue;
         }
 
-        if (host_name[0] == '\0') {
-            strncpy(host_name, code_text, sizeof(host_name) - 1);
+        if (snap->host_name[0] == '\0') {
+            strncpy(snap->host_name, snap->code_text, sizeof(snap->host_name) - 1);
         }
-
-        json_escape_string(host_name, host_name_json, sizeof(host_name_json));
-        json_escape_string(game_name, game_name_json, sizeof(game_name_json));
-        snprintf(lobby_size, sizeof(lobby_size), "%d/%d", player_count, max_players > 0 ? max_players : 4);
-
-        /* Ensure players_json is valid JSON even if no session/index entry exists */
-        if (players_json[0] == '\0') {
-            strncpy(players_json, "[]", sizeof(players_json) - 1);
-            players_json[sizeof(players_json) - 1] = '\0';
+        if (snap->players_json[0] == '\0') {
+            strncpy(snap->players_json, "[]", sizeof(snap->players_json) - 1);
         }
+        if (snap->max_players <= 0) {
+            snap->max_players = 4;
+        }
+        snprintf(snap->lobby_size, sizeof(snap->lobby_size), "%d/%d", snap->player_count, snap->max_players);
 
         addr.s_addr = g_hosts[i].host_ip;
-        if (inet_ntop(AF_INET, &addr, ip_text, sizeof(ip_text)) == NULL) {
-            strncpy(ip_text, "0.0.0.0", sizeof(ip_text) - 1);
+        if (inet_ntop(AF_INET, &addr, snap->ip_text, sizeof(snap->ip_text)) == NULL) {
+            strncpy(snap->ip_text, "0.0.0.0", sizeof(snap->ip_text) - 1);
         }
+        listing_port = g_hosts[i].signaling_port;
+        json_room_connect_endpoint(session_json, snap->ip_text, g_hosts[i].signaling_port, listing_ip,
+                                   sizeof(listing_ip), &listing_port);
+        strncpy(snap->ip_text, listing_ip, sizeof(snap->ip_text) - 1);
+        snap->ip_text[sizeof(snap->ip_text) - 1] = '\0';
+        snap->port = listing_port;
+        ++snap_count;
+    }
+    state_unlock();
 
-        {
-            char listing_ip[INET_ADDRSTRLEN];
-            uint16_t listing_port = g_hosts[i].signaling_port;
-            json_room_connect_endpoint(session_json, ip_text, g_hosts[i].signaling_port, listing_ip,
-                                       sizeof(listing_ip), &listing_port);
-            strncpy(ip_text, listing_ip, sizeof(ip_text) - 1);
-            ip_text[sizeof(ip_text) - 1] = '\0';
-
-            if (wrote_room) {
-                if (offset + 1 < sizeof(body)) {
-                    body[offset++] = ',';
-                    body[offset] = '\0';
-                }
-            }
-
-            int room_uses_nat = g_force_nat_traversal;
-            if (!room_uses_nat && session_json != NULL) {
-                json_get_bool_field(session_json, "use_nat_traversal", &room_uses_nat);
-            }
-
-            offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
-                                       "{\"hostCode\":\"%s\",\"hostName\":\"%s\",\"gameName\":\"%s\","
-                                       "\"playerCount\":%d,\"maxPlayers\":%d,\"lobbySize\":\"%s\","
-                                       "\"started\":%s,\"useNatTraversal\":%s,\"players\":%s,\"address\":\"%s\",\"port\":%u}",
-                                       code_text, host_name_json, game_name_json, player_count,
-                                       (max_players > 0 ? max_players : 4), lobby_size,
-                                       started ? "true" : "false",
-                                       room_uses_nat ? "true" : "false", players_json, ip_text,
-                                       (unsigned)listing_port);
+    offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "{\"rooms\":[");
+    for (int i = 0; i < snap_count; ++i) {
+        char host_name_json[256];
+        char game_name_json[256];
+        json_escape_string(snaps[i].host_name, host_name_json, sizeof(host_name_json));
+        json_escape_string(snaps[i].game_name, game_name_json, sizeof(game_name_json));
+        if (i > 0 && offset + 1 < sizeof(body)) {
+            body[offset++] = ',';
         }
-        wrote_room = 1;
-
+        offset += (size_t)snprintf(body + offset, sizeof(body) - offset,
+                                   "{\"hostCode\":\"%s\",\"hostName\":\"%s\",\"gameName\":\"%s\","
+                                   "\"playerCount\":%d,\"maxPlayers\":%d,\"lobbySize\":\"%s\","
+                                   "\"started\":%s,\"useNatTraversal\":%s,\"players\":%s,\"address\":\"%s\",\"port\":%u}",
+                                   snaps[i].code_text, host_name_json, game_name_json, snaps[i].player_count,
+                                   snaps[i].max_players, snaps[i].lobby_size,
+                                   snaps[i].started ? "true" : "false",
+                                   snaps[i].use_nat ? "true" : "false", snaps[i].players_json, snaps[i].ip_text,
+                                   snaps[i].port);
         if (offset >= sizeof(body) - 256) {
             break;
         }
     }
-
     offset += (size_t)snprintf(body + offset, sizeof(body) - offset, "]}");
-    state_unlock();
+    free(snaps);
 
     {
         char header[256];
@@ -2670,6 +2804,7 @@ int main(int argc, char** argv)
             state_lock();
             prune_hosts();
             prune_index();
+            prune_watchers();
             state_unlock();
             continue;
         }

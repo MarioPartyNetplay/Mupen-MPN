@@ -202,6 +202,8 @@ NetplaySessionBrowserDialog::NetplaySessionBrowserDialog(QWidget *parent, Netpla
             this, &NetplaySessionBrowserDialog::onJuiceJoinFailed);
     connect(this->coordinator, &Netplay::NetplayCoordinator::juiceJoinRetrying,
             this, &NetplaySessionBrowserDialog::onJuiceJoinRetrying);
+    connect(this->coordinator, &Netplay::NetplayCoordinator::juiceJoinProgress,
+            this, &NetplaySessionBrowserDialog::onJuiceJoinProgress);
 
     this->networkManager = new QNetworkAccessManager(this);
     connect(this->networkManager, &QNetworkAccessManager::finished,
@@ -699,6 +701,14 @@ void NetplaySessionBrowserDialog::onJuiceJoinRetrying(const QString& reason)
         return;
     }
     this->setTraversalStatus(QStringLiteral("Direct connection did not open. Trying relay…"));
+}
+
+void NetplaySessionBrowserDialog::onJuiceJoinProgress(const QString& status)
+{
+    if (!this->m_traversalPending || status.isEmpty()) {
+        return;
+    }
+    this->setTraversalStatus(status);
 }
 
 void NetplaySessionBrowserDialog::onJuiceJoinFailed(const QString& reason)

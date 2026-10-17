@@ -31,6 +31,8 @@ public:
     bool isConfigured() const;
     void prefetch();
     bool ensureCredentials(int timeoutMs = 45000);
+    bool hasFreshCredentials() const;
+    bool isFetchInProgress() const;
     std::vector<rtc::IceServer> stunServers() const;
     std::vector<rtc::IceServer> turnServers() const;
 

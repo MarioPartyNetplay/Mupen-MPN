@@ -27,14 +27,16 @@ namespace {
 
 constexpr int kGatherTimeoutMs = 30000;
 constexpr int kAnswerWaitMs = 45000;
-constexpr int kOfferIntervalMs = 4000;
-constexpr int kOfferPublishLimit = 3;
-constexpr int kAnswerPollMs = 2000;
-constexpr int kListIntervalMs = 3000;
-constexpr int kAnswerRepublishCount = 2;
-constexpr int kAnswerRepublishGapMs = 2000;
+constexpr int kOfferIntervalMs = 1000;
+constexpr int kAnswerPollMs = 500;
+constexpr int kListIntervalMs = 1000;
+constexpr int kAnswerRepublishGapMs = 1000;
+constexpr int kPingIntervalMs = 1000;
+constexpr int kServerSilenceFailMs = 8000;
+constexpr int kTurnWaitMs = 10000;
 constexpr int kMaxTurnServers = 2;
 constexpr int kStunOnlyIceWaitMs = 12000;
+constexpr int kTickIntervalMs = 100;
 
 qint64 monotonicMs()
 {
@@ -64,7 +66,8 @@ bool turnRelayAvailable()
     if (!iceClient.isConfigured()) {
         return false;
     }
-    if (!iceClient.ensureCredentials(15000)) {
+    if (!iceClient.hasFreshCredentials()) {
+        iceClient.prefetch();
         return false;
     }
     return !iceClient.turnServers().empty();
@@ -154,12 +157,20 @@ public:
 
     ~JuicePeer() override
     {
-        m_alive.store(false);
+        detach();
         if (m_agent != nullptr) {
             juice_agent_t* agent = m_agent;
             m_agent = nullptr;
             juice_destroy(agent);
         }
+    }
+
+    void detach()
+    {
+        m_alive.store(false);
+        onLocalDescription = {};
+        onConnected = {};
+        onFailed = {};
     }
 
     bool start(const QByteArray& remoteSdp, bool useTurn)
@@ -425,7 +436,8 @@ JuiceTraversal::JuiceTraversal(QObject* parent)
 {
     connect(&m_socket, &QUdpSocket::readyRead, this, &JuiceTraversal::onReadyRead);
     connect(&m_timer, &QTimer::timeout, this, &JuiceTraversal::onTick);
-    m_timer.setInterval(250);
+    m_timer.setInterval(kTickIntervalMs);
+    resolveServerAsync();
 }
 
 JuiceTraversal::~JuiceTraversal()
@@ -449,11 +461,13 @@ void JuiceTraversal::startHosting(const QString& hostCode, quint16 signalingPort
     m_hostCode = normalized;
     m_signalingPort = signalingPort;
     m_nextListMs = 0;
+    m_nextPingMs = 0;
+    resolveServerAsync();
     if (!m_timer.isActive()) {
         m_timer.start();
     }
     qInfo() << "NAT traversal is running for" << m_hostCode
-            << "— checking for joiners every" << (kListIntervalMs / 1000) << "seconds";
+            << "— watching joiners and pinging the index every" << (kPingIntervalMs / 1000) << "second";
     onTick();
 }
 
@@ -467,8 +481,12 @@ void JuiceTraversal::stopHosting()
     for (const QString& joinerId : joinerIds) {
         deleteKey(offerKey(m_hostCode, joinerId));
         deleteKey(answerKey(m_hostCode, joinerId));
-        delete m_hostPeers.take(joinerId);
+        if (JuicePeer* peer = m_hostPeers.take(joinerId)) {
+            peer->detach();
+            peer->deleteLater();
+        }
     }
+    m_pendingAnswers.clear();
     m_hosting = false;
     m_hostCode.clear();
     m_signalingPort = 0;
@@ -501,13 +519,20 @@ void JuiceTraversal::joinHost(const QString& hostCode)
     m_joinCode = normalized;
     m_joinerId = makeJoinerId();
     m_turnRetryUsed = false;
-    m_offerPublishes = 0;
+    m_offerAcked = false;
     m_joinDeadlineMs = monotonicMs() + kGatherTimeoutMs;
     m_stunOnlyDeadlineMs = 0;
+    m_turnWaitDeadlineMs = 0;
     m_nextOfferMs = 0;
     m_nextAnswerPollMs = 0;
+    m_nextPingMs = 0;
+    m_firstPingMs = 0;
+    m_lastPongMs = 0;
+    m_lastProgress.clear();
 
     TurnCredentialClient::instance().prefetch();
+    resolveServerAsync();
+    setJoinProgress(QStringLiteral("Contacting the NAT traversal server…"));
     startJoinerPeer(false);
     if (!m_joining) {
         return;
@@ -547,10 +572,29 @@ void JuiceTraversal::onTick()
 {
     const qint64 now = monotonicMs();
 
+    if ((m_hosting || m_joining) && (m_nextPingMs == 0 || now >= m_nextPingMs)) {
+        sendPing();
+        if (m_firstPingMs == 0) {
+            m_firstPingMs = now;
+        }
+        m_nextPingMs = now + kPingIntervalMs;
+    }
+
     if (m_hosting) {
         if (m_nextListMs == 0 || now >= m_nextListMs) {
-            sendIndex(QByteArray(kNetplayIndexProtocol) + "|LIST");
+            const QByteArray prefix = QByteArray("ice/") + m_hostCode.toUtf8() + "/";
+            sendIndex(QByteArray(kNetplayIndexProtocol) + "|LIST|" + prefix);
             m_nextListMs = now + kListIntervalMs;
+        }
+        for (auto it = m_pendingAnswers.begin(); it != m_pendingAnswers.end(); ++it) {
+            if (it->acked || it->sdp.isEmpty() || !m_hostPeers.contains(it.key())) {
+                continue;
+            }
+            if (it->nextPublishMs != 0 && now < it->nextPublishMs) {
+                continue;
+            }
+            publishValue(answerKey(m_hostCode, it.key()), it->sdp);
+            it->nextPublishMs = now + kAnswerRepublishGapMs;
         }
     }
 
@@ -558,10 +602,38 @@ void JuiceTraversal::onTick()
         return;
     }
 
-    if (m_offerGathered && !m_answerApplied && m_offerPublishes == 0) {
+    if (m_serverAddress.isNull() && !m_resolving && m_firstPingMs > 0 &&
+        now - m_firstPingMs >= kServerSilenceFailMs) {
+        failJoin(QStringLiteral("Failed to resolve the NAT traversal server"));
+        return;
+    }
+
+    if (serverLooksDead(now)) {
+        failJoin(m_lastPongMs == 0 ? QStringLiteral("NAT traversal server did not answer")
+                                   : QStringLiteral("Lost contact with the NAT traversal server"));
+        return;
+    }
+
+    if (m_turnWaitDeadlineMs > 0) {
+        if (turnRelayReady()) {
+            m_turnWaitDeadlineMs = 0;
+            if (!tryRetryJoinWithTurn(QStringLiteral("Direct ICE did not connect"))) {
+                failJoin(QStringLiteral("Direct ICE did not connect"));
+            }
+            return;
+        }
+        if (now >= m_turnWaitDeadlineMs) {
+            failJoin(QStringLiteral("Relay credentials were not ready"));
+            return;
+        }
+        return;
+    }
+
+    if (m_offerGathered && !m_answerApplied && m_nextOfferMs == 0) {
         /* Gathering already consumed the first deadline. The host still has to
            gather its own candidates before the answer exists. */
         m_joinDeadlineMs = now + kAnswerWaitMs;
+        setJoinProgress(QStringLiteral("Waiting for the host to answer…"));
     }
 
     if (m_stunOnlyDeadlineMs > 0 && now >= m_stunOnlyDeadlineMs) {
@@ -576,10 +648,9 @@ void JuiceTraversal::onTick()
         return;
     }
 
-    if (m_offerGathered && !m_answerApplied && m_offerPublishes < kOfferPublishLimit &&
+    if (m_offerGathered && !m_answerApplied && !m_offerAcked &&
         (m_nextOfferMs == 0 || now >= m_nextOfferMs)) {
         publishValue(offerKey(m_joinCode, m_joinerId), m_localOffer);
-        ++m_offerPublishes;
         m_nextOfferMs = now + kOfferIntervalMs;
     }
 
@@ -610,18 +681,51 @@ bool JuiceTraversal::ensureServerAddress()
         return true;
     }
 
-    const QHostInfo info = QHostInfo::fromName(hostname);
-    if (info.error() != QHostInfo::NoError) {
-        qWarning() << "JuiceTraversal: failed to resolve" << hostname << info.errorString();
-        return false;
-    }
-    for (const QHostAddress& resolved : info.addresses()) {
-        if (resolved.protocol() == QAbstractSocket::IPv4Protocol) {
-            m_serverAddress = resolved;
-            return true;
-        }
-    }
+    resolveServerAsync();
     return false;
+}
+
+void JuiceTraversal::resolveServerAsync()
+{
+    if (!m_serverAddress.isNull() || m_resolving) {
+        return;
+    }
+
+    const QString hostname = netplayIndexServerHostname();
+    QHostAddress address;
+    if (address.setAddress(hostname)) {
+        m_serverAddress = address;
+        return;
+    }
+
+    m_resolving = true;
+    const int lookupId = ++m_resolveId;
+    qInfo() << "JuiceTraversal: resolving" << hostname;
+    QHostInfo::lookupHost(hostname, this, [this, lookupId, hostname](const QHostInfo& info) {
+        if (lookupId != m_resolveId) {
+            return;
+        }
+        m_resolving = false;
+        if (info.error() != QHostInfo::NoError) {
+            qWarning() << "JuiceTraversal: failed to resolve" << hostname << info.errorString();
+            if (m_joining) {
+                failJoin(QStringLiteral("Failed to resolve the NAT traversal server"));
+            }
+            return;
+        }
+        for (const QHostAddress& resolved : info.addresses()) {
+            if (resolved.protocol() == QAbstractSocket::IPv4Protocol) {
+                m_serverAddress = resolved;
+                qInfo() << "JuiceTraversal: index server is" << resolved.toString();
+                onTick();
+                return;
+            }
+        }
+        qWarning() << "JuiceTraversal: no IPv4 address for" << hostname;
+        if (m_joining) {
+            failJoin(QStringLiteral("NAT traversal server has no IPv4 address"));
+        }
+    });
 }
 
 void JuiceTraversal::sendIndex(const QByteArray& message)
@@ -643,6 +747,39 @@ void JuiceTraversal::sendIndex(const QByteArray& message)
     }
 }
 
+void JuiceTraversal::sendPing()
+{
+    sendIndex(QByteArray(kNetplayIndexProtocol) + "|PING");
+}
+
+void JuiceTraversal::markServerAlive()
+{
+    m_lastPongMs = monotonicMs();
+}
+
+bool JuiceTraversal::serverLooksDead(qint64 nowMs) const
+{
+    if (m_firstPingMs == 0 || m_serverAddress.isNull()) {
+        return false;
+    }
+    const qint64 lastHeard = m_lastPongMs > 0 ? m_lastPongMs : m_firstPingMs;
+    return nowMs - lastHeard >= kServerSilenceFailMs;
+}
+
+void JuiceTraversal::setJoinProgress(const QString& status)
+{
+    if (status.isEmpty() || status == m_lastProgress) {
+        return;
+    }
+    m_lastProgress = status;
+    emit joinProgress(status);
+}
+
+bool JuiceTraversal::turnRelayReady() const
+{
+    return turnRelayAvailable();
+}
+
 void JuiceTraversal::handleIndexMessage(const QByteArray& datagram)
 {
     if (!datagram.startsWith(QByteArray(kNetplayIndexProtocol))) {
@@ -651,6 +788,30 @@ void JuiceTraversal::handleIndexMessage(const QByteArray& datagram)
 
     const QList<QByteArray> parts = datagram.split('|');
     if (parts.size() < 2) {
+        return;
+    }
+
+    markServerAlive();
+
+    if (parts[1] == "PONG") {
+        return;
+    }
+
+    if (parts[1] == "SETOK" && parts.size() >= 3) {
+        const QString key = QString::fromUtf8(parts[2]);
+        if (m_joining && key == offerKey(m_joinCode, m_joinerId)) {
+            m_offerAcked = true;
+        }
+        if (m_hosting && key.endsWith(QStringLiteral(".ans"))) {
+            const QString prefix = QStringLiteral("ice/%1/").arg(m_hostCode);
+            if (key.startsWith(prefix)) {
+                QString joinerId = key.mid(prefix.size());
+                joinerId.chop(4);
+                if (m_pendingAnswers.contains(joinerId)) {
+                    m_pendingAnswers[joinerId].acked = true;
+                }
+            }
+        }
         return;
     }
 
@@ -684,6 +845,7 @@ void JuiceTraversal::handleIndexMessage(const QByteArray& datagram)
         if (m_joining && key == answerKey(m_joinCode, m_joinerId) && !m_answerApplied && m_joiner != nullptr) {
             m_answerApplied = true;
             qInfo() << "libjuice received host ICE answer";
+            setJoinProgress(QStringLiteral("Opening the connection…"));
             m_joiner->applyRemoteDescription(value);
             if (!m_turnRetryUsed) {
                 m_stunOnlyDeadlineMs = monotonicMs() + kStunOnlyIceWaitMs;
@@ -733,6 +895,7 @@ void JuiceTraversal::startJoinerPeer(bool useTurn)
         m_nextOfferMs = 0;
         qInfo() << "libjuice gathered local description for" << m_joinCode
                 << (iceSdpHasRelay(sdp) ? "with TURN relay candidates" : "without TURN relay candidates");
+        setJoinProgress(QStringLiteral("Waiting for the host to answer…"));
     };
     m_joiner->onConnected = [this](quint16 port) {
         if (!m_joining || m_joinFinished) {
@@ -749,6 +912,8 @@ void JuiceTraversal::startJoinerPeer(bool useTurn)
         failJoin(reason);
     };
 
+    setJoinProgress(useTurn ? QStringLiteral("Gathering relay candidates…")
+                            : QStringLiteral("Gathering connection candidates…"));
     if (!m_joiner->start(QByteArray(), useTurn)) {
         failJoin(QStringLiteral("Failed to start ICE gathering"));
     }
@@ -765,7 +930,17 @@ bool JuiceTraversal::tryRetryJoinWithTurn(const QString& reason)
     if (!iceMiss) {
         return false;
     }
-    if (!turnRelayAvailable()) {
+    if (!turnRelayReady()) {
+        TurnCredentialClient& iceClient = TurnCredentialClient::instance();
+        if (iceClient.isConfigured()) {
+            iceClient.prefetch();
+            if (m_turnWaitDeadlineMs == 0) {
+                m_turnWaitDeadlineMs = monotonicMs() + kTurnWaitMs;
+                setJoinProgress(QStringLiteral("Waiting for relay credentials…"));
+                emit joinRetrying(reason);
+            }
+            return true;
+        }
         qInfo() << "NAT traversal needs a relay after" << reason << "but no TURN server is available";
         return false;
     }
@@ -777,17 +952,19 @@ bool JuiceTraversal::tryRetryJoinWithTurn(const QString& reason)
     m_joinReady = false;
     m_joinFinished = false;
     m_offerGathered = false;
+    m_offerAcked = false;
     m_answerApplied = false;
     m_localOffer.clear();
     m_joinProxyPort = 0;
-    m_offerPublishes = 0;
     m_stunOnlyDeadlineMs = 0;
+    m_turnWaitDeadlineMs = 0;
     m_joinDeadlineMs = monotonicMs() + kGatherTimeoutMs;
     m_nextOfferMs = 0;
     m_nextAnswerPollMs = 0;
     m_joinerId = makeJoinerId();
 
     if (m_joiner != nullptr) {
+        m_joiner->detach();
         m_joiner->deleteLater();
         m_joiner = nullptr;
     }
@@ -826,10 +1003,13 @@ void JuiceTraversal::failJoin(const QString& reason)
     m_offerGathered = false;
     m_answerApplied = false;
     m_turnRetryUsed = false;
-    m_offerPublishes = 0;
+    m_offerAcked = false;
     m_joinProxyPort = 0;
     m_stunOnlyDeadlineMs = 0;
+    m_turnWaitDeadlineMs = 0;
+    m_lastProgress.clear();
     if (m_joiner != nullptr) {
+        m_joiner->detach();
         m_joiner->deleteLater();
         m_joiner = nullptr;
     }
@@ -858,16 +1038,24 @@ void JuiceTraversal::resetJoin()
     m_joinReady = false;
     m_joinFinished = false;
     m_offerGathered = false;
+    m_offerAcked = false;
     m_answerApplied = false;
     m_turnRetryUsed = false;
-    m_offerPublishes = 0;
     m_localOffer.clear();
     m_joinCode.clear();
     m_joinerId.clear();
     m_joinProxyPort = 0;
     m_stunOnlyDeadlineMs = 0;
-    delete m_joiner;
-    m_joiner = nullptr;
+    m_turnWaitDeadlineMs = 0;
+    m_firstPingMs = 0;
+    m_lastPongMs = 0;
+    m_nextPingMs = 0;
+    m_lastProgress.clear();
+    if (m_joiner != nullptr) {
+        m_joiner->detach();
+        m_joiner->deleteLater();
+        m_joiner = nullptr;
+    }
 }
 
 void JuiceTraversal::acceptOffer(const QString& joinerId, const QByteArray& sdp)
@@ -881,19 +1069,19 @@ void JuiceTraversal::acceptOffer(const QString& joinerId, const QByteArray& sdp)
         if (!m_hosting) {
             return;
         }
-        qInfo() << "NAT traversal answering" << joinerId
-                << "— sending the ICE answer" << kAnswerRepublishCount << "times";
-        for (int attempt = 0; attempt < kAnswerRepublishCount; ++attempt) {
-            QTimer::singleShot(attempt * kAnswerRepublishGapMs, this, [this, joinerId, answer]() {
-                if (m_hosting && m_hostPeers.contains(joinerId)) {
-                    publishValue(answerKey(m_hostCode, joinerId), answer);
-                }
-            });
-        }
+        PendingAnswer pending;
+        pending.sdp = answer;
+        pending.acked = false;
+        pending.nextPublishMs = 0;
+        m_pendingAnswers.insert(joinerId, pending);
+        qInfo() << "NAT traversal answering" << joinerId << "— publishing the ICE answer until the server acks";
+        publishValue(answerKey(m_hostCode, joinerId), answer);
     };
     peer->onFailed = [this, joinerId](const QString& reason) {
         qWarning() << "libjuice joiner" << joinerId << "failed:" << reason;
+        m_pendingAnswers.remove(joinerId);
         if (JuicePeer* existing = m_hostPeers.take(joinerId)) {
+            existing->detach();
             existing->deleteLater();
         }
     };

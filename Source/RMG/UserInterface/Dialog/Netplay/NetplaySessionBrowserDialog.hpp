@@ -98,6 +98,7 @@ class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBr
     void onJuiceJoinSucceeded(quint16 localPort);
     void onJuiceJoinFailed(const QString& reason);
     void onJuiceJoinRetrying(const QString& reason);
+    void onJuiceJoinProgress(const QString& status);
 
 };
 } // namespace Dialog
