@@ -408,6 +408,17 @@ void TurnCredentialClient::prefetch()
     startBrokerRequest();
 }
 
+bool TurnCredentialClient::hasFreshCredentials() const
+{
+    QMutexLocker locker(&m_mutex);
+    return credentialsAreFreshLocked();
+}
+
+bool TurnCredentialClient::isFetchInProgress() const
+{
+    return m_fetchInProgress;
+}
+
 bool TurnCredentialClient::ensureCredentials(int timeoutMs)
 {
     if (!turnCredentialsAvailable() && qgetenv("RMG_ICE_CONFIG_FILE").isEmpty()) {

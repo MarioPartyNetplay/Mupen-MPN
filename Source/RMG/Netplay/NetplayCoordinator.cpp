@@ -425,6 +425,7 @@ void NetplayCoordinator::ensureJuiceTraversal()
     connect(m_juiceTraversal.get(), &JuiceTraversal::joinSucceeded, this, &NetplayCoordinator::juiceJoinSucceeded);
     connect(m_juiceTraversal.get(), &JuiceTraversal::joinFailed, this, &NetplayCoordinator::juiceJoinFailed);
     connect(m_juiceTraversal.get(), &JuiceTraversal::joinRetrying, this, &NetplayCoordinator::juiceJoinRetrying);
+    connect(m_juiceTraversal.get(), &JuiceTraversal::joinProgress, this, &NetplayCoordinator::juiceJoinProgress);
 }
 
 void NetplayCoordinator::stopJuiceTraversal()
