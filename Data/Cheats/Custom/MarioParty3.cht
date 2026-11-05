@@ -1341,8 +1341,8 @@ D00CD068 002D
 
 $Minigame Replacement - M.P.I.Q ➜ Picture Imperfect
 Note= By: Celery
-D00F93C9 0015
-800F93C9 0012
+D00CD068 0021
+800CD068 001E
 
 $Minigame Replacement - River Raiders ➜ Thwomp Pull
 Note= By: Celery
@@ -1368,7 +1368,6 @@ $Minigame Replacement - The Beat Goes On ➜ Toadstool Titan
 Note= By: Celery
 D00CD068 0020
 800CD068 0016
-
 
 $Turns: Custom Turns
 Note=By: gamemasterplc.

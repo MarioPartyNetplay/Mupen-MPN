@@ -1096,9 +1096,9 @@ void MainWindow::updateActions(bool inEmulation, bool isPaused)
     this->action_Settings_Rsp->setEnabled(CorePluginsHasConfig(CorePluginType::Rsp));
     this->action_Settings_Rsp->setShortcut(QKeySequence(keyBinding));
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_InputSettings));
-    this->action_Settings_Input->setEnabled(!netplayRestrictions);
+    this->action_Settings_Input->setEnabled(true);
     this->action_Settings_Input->setShortcut(QKeySequence(keyBinding));
-    this->action_Settings_Input2->setEnabled(!netplayRestrictions);
+    this->action_Settings_Input2->setEnabled(true);
     keyBinding = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::KeyBinding_Settings));
     this->action_Settings_Settings->setShortcut(QKeySequence(keyBinding));
 
@@ -2311,9 +2311,18 @@ void MainWindow::on_Action_Settings_Rsp(void)
 
 void MainWindow::on_Action_Settings_Input(void)
 {
-    if (UserInterface::Netplay::shouldBlockModifications())
+    const bool inGame = CoreIsEmulationRunning() || CoreIsEmulationPaused();
+    if (inGame)
     {
-        this->showErrorMessage("Input settings cannot be changed during a netplay session");
+        if (!CorePluginsHasConfig(CorePluginType::Input))
+        {
+            this->showErrorMessage("The current input plugin cannot be configured");
+            return;
+        }
+        if (!CorePluginsOpenConfig(CorePluginType::Input, this))
+        {
+            this->showErrorMessage("Failed to open input settings", QString::fromStdString(CoreGetError()));
+        }
         return;
     }
 
