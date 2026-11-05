@@ -25,7 +25,7 @@ constexpr const char* l_HalosRemovalKey = "EnableHalosRemoval";
 constexpr const char* l_NativeResTexrectsKey = "EnableNativeResTexrects";
 constexpr int l_NoOverride = -1;
 constexpr int l_DepthCompareCompatible = 2;
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__linux__)
 constexpr uint8_t l_Mp3CurtainCallId = 0x22;
 #endif
 constexpr uint8_t l_Mp2LightsOutId = 0x16;
@@ -122,7 +122,7 @@ static uint8_t mp2_lights_out_id(void)
     return l_Mp2LightsOutId;
 }
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__linux__)
 static uint8_t mp3_curtain_call_id(void)
 {
     for (uint8_t i = 0; i < static_cast<uint8_t>(sizeof(MP3_MINIS) / sizeof(MP3_MINIS[0])); ++i)
@@ -233,9 +233,9 @@ CORE_EXPORT void CoreGLideN64OccasionalUpdateFrame(void)
 
     if (l_IsMarioParty3)
     {
-        // Curtain Call needs N64 depth compare in compatible mode, which uses
-        // shader image load/store. ANGLE's Metal backend does not support that.
-#ifdef __APPLE__
+        // Curtain Call needs shader image load/store. Metal lacks it, and
+        // switching depth modes at runtime is unsafe on Linux renderers.
+#if defined(__APPLE__) || defined(__linux__)
         const bool wantOverride = false;
 #else
         const bool wantOverride = read_n64_u8(MP3_MEM_MINI_STATE) == mp3_curtain_call_id();
