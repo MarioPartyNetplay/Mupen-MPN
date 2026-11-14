@@ -26,7 +26,9 @@ namespace UserInterface::Netplay {
 namespace {
 
 constexpr int kGatherTimeoutMs = 20000;
-constexpr int kAnswerWaitMs = 25000;
+constexpr int kRelayAnswerWaitMs = 12000;
+constexpr int kLookupIntervalMs = 200;
+constexpr int kLookupGiveUpMs = 1500;
 constexpr int kOfferIntervalMs = 250;
 constexpr int kAnswerPollMs = 250;
 constexpr int kListIntervalMs = 250;
@@ -36,7 +38,6 @@ constexpr int kPingIntervalMs = 1000;
 constexpr int kServerSilenceFailMs = 8000;
 constexpr int kTurnWaitMs = 8000;
 constexpr int kMaxTurnServers = 2;
-constexpr int kStunOnlyIceWaitMs = 6000;
 constexpr int kTickIntervalMs = 50;
 constexpr int kEarlyGatherPublishMs = 400;
 
@@ -99,6 +100,37 @@ struct ResolvedIce {
 bool iceSdpHasRelay(const QByteArray& sdp)
 {
     return sdp.contains("typ relay");
+}
+
+QByteArray relayOnlySdp(const QByteArray& sdp)
+{
+    QByteArray out;
+    int start = 0;
+    while (start < sdp.size()) {
+        int end = sdp.indexOf('\n', start);
+        if (end < 0) {
+            end = sdp.size();
+        }
+        QByteArray line = sdp.mid(start, end - start);
+        const bool cr = line.endsWith('\r');
+        if (cr) {
+            line.chop(1);
+        }
+        if (!line.startsWith("a=candidate:") || line.contains(" typ relay")) {
+            out += line;
+            if (cr) {
+                out += '\r';
+            }
+            if (end < sdp.size()) {
+                out += '\n';
+            }
+        }
+        if (end >= sdp.size()) {
+            break;
+        }
+        start = end + 1;
+    }
+    return out;
 }
 
 bool turnRelayAvailable()
@@ -270,7 +302,8 @@ public:
         }
 
         if (!remoteSdp.isEmpty()) {
-            if (juice_set_remote_description(m_agent, remoteSdp.constData()) != 0) {
+            const QByteArray remote = useTurn ? relayOnlySdp(remoteSdp) : remoteSdp;
+            if (juice_set_remote_description(m_agent, remote.constData()) != 0) {
                 fail(QStringLiteral("Failed to apply remote ICE description"));
                 return false;
             }
@@ -319,7 +352,8 @@ private:
         if (m_agent == nullptr || m_pendingRemote.isEmpty() || m_remoteApplied) {
             return;
         }
-        if (juice_set_remote_description(m_agent, m_pendingRemote.constData()) != 0) {
+        const QByteArray remote = m_useTurn ? relayOnlySdp(m_pendingRemote) : m_pendingRemote;
+        if (juice_set_remote_description(m_agent, remote.constData()) != 0) {
             fail(QStringLiteral("Failed to apply remote ICE description"));
             return;
         }
@@ -360,12 +394,27 @@ private:
             return;
         }
 
-        const QByteArray snapshot(sdp);
+        QByteArray snapshot(sdp);
+        if (m_useTurn) {
+            snapshot = relayOnlySdp(snapshot);
+            if (!iceSdpHasRelay(snapshot)) {
+                if (gatheringDone) {
+                    fail(QStringLiteral("Relay candidates were not gathered"));
+                }
+                return;
+            }
+        }
         if (snapshot == m_lastPublishedSdp) {
             tryApplyRemote();
             return;
         }
-        if (m_remoteApplied && !gatheringDone) {
+        if (!m_lastPublishedSdp.isEmpty()) {
+            // The first relay description is the one both sides use. A later
+            // update would restart the other agent.
+            tryApplyRemote();
+            return;
+        }
+        if (m_remoteApplied && !gatheringDone && !m_useTurn) {
             return;
         }
         m_lastPublishedSdp = snapshot;
@@ -569,13 +618,16 @@ void JuiceTraversal::startHosting(const QString& hostCode, quint16 signalingPort
     m_signalingPort = signalingPort;
     m_nextListMs = 0;
     m_nextPingMs = 0;
+    m_deferredOffers.clear();
+    m_deferredOfferDeadlineMs = 0;
+    TurnCredentialClient::instance().prefetch();
     resolveServerAsync();
     beginStunResolve(this);
     if (!m_timer.isActive()) {
         m_timer.start();
     }
     qInfo() << "NAT traversal is running for" << m_hostCode
-            << "— watching joiners and pinging the index every" << (kPingIntervalMs / 1000) << "second";
+            << "— watching joiners and answering through the relay";
     onTick();
 }
 
@@ -595,6 +647,8 @@ void JuiceTraversal::stopHosting()
         }
     }
     m_pendingAnswers.clear();
+    m_deferredOffers.clear();
+    m_deferredOfferDeadlineMs = 0;
     m_hosting = false;
     m_hostCode.clear();
     m_signalingPort = 0;
@@ -626,13 +680,14 @@ void JuiceTraversal::joinHost(const QString& hostCode)
     m_joinProxyPort = 0;
     m_joinCode = normalized;
     m_joinerId = makeJoinerId();
-    m_turnRetryUsed = false;
     m_offerAcked = false;
+    m_hostLookupOk = false;
     m_joinDeadlineMs = monotonicMs() + kGatherTimeoutMs;
-    m_stunOnlyDeadlineMs = 0;
     m_turnWaitDeadlineMs = 0;
     m_nextOfferMs = 0;
     m_nextAnswerPollMs = 0;
+    m_nextLookupMs = 0;
+    m_lookupDeadlineMs = 0;
     m_nextPingMs = 0;
     m_firstPingMs = 0;
     m_lastPongMs = 0;
@@ -641,17 +696,13 @@ void JuiceTraversal::joinHost(const QString& hostCode)
     TurnCredentialClient::instance().prefetch();
     resolveServerAsync();
     beginStunResolve(this);
-    setJoinProgress(QStringLiteral("Contacting the NAT traversal server…"));
-    startJoinerPeer(false);
-    if (!m_joining) {
-        return;
-    }
-
+    setJoinProgress(QStringLiteral("Checking the host code…"));
     if (!m_timer.isActive()) {
         m_timer.start();
     }
     qInfo() << "NAT traversal is running for" << m_joinCode << "as" << m_joinerId
-            << "— STUN/direct first, TURN only if that path fails";
+            << "— relay only, host code is checked first";
+    onTick();
 }
 
 void JuiceTraversal::cancelJoin()
@@ -702,6 +753,23 @@ void JuiceTraversal::onTick()
             publishValue(answerKey(m_hostCode, it.key()), it->sdp);
             it->nextPublishMs = now + (it->acked ? kAckedAnswerRefreshMs : kAnswerRepublishGapMs);
         }
+        if (!m_deferredOffers.isEmpty()) {
+            if (turnRelayReady()) {
+                const QHash<QString, QByteArray> offers = m_deferredOffers;
+                m_deferredOffers.clear();
+                m_deferredOfferDeadlineMs = 0;
+                for (auto it = offers.cbegin(); it != offers.cend(); ++it) {
+                    acceptOffer(it.key(), it.value());
+                }
+            } else if (m_deferredOfferDeadlineMs > 0 && now >= m_deferredOfferDeadlineMs) {
+                qWarning() << "NAT traversal dropped" << m_deferredOffers.size()
+                           << "offer(s); relay credentials were not ready";
+                m_deferredOffers.clear();
+                m_deferredOfferDeadlineMs = 0;
+            } else {
+                TurnCredentialClient::instance().prefetch();
+            }
+        }
     }
 
     if (!m_joining || m_joinFinished) {
@@ -720,31 +788,40 @@ void JuiceTraversal::onTick()
         return;
     }
 
-    if (m_turnWaitDeadlineMs > 0) {
-        if (turnRelayReady()) {
-            m_turnWaitDeadlineMs = 0;
-            if (!tryRetryJoinWithTurn(QStringLiteral("Direct ICE did not connect"))) {
-                failJoin(QStringLiteral("Direct ICE did not connect"));
-            }
-            return;
+    if (!m_hostLookupOk) {
+        if (m_nextLookupMs == 0 || now >= m_nextLookupMs) {
+            sendIndex(QByteArray(kNetplayRegistryProtocol) + "|LOOKUP|" + m_joinCode.toUtf8());
+            m_nextLookupMs = now + kLookupIntervalMs;
         }
-        if (now >= m_turnWaitDeadlineMs) {
+        if (m_lastPongMs > 0 && m_lookupDeadlineMs == 0) {
+            m_lookupDeadlineMs = now + kLookupGiveUpMs;
+        }
+        if (m_lookupDeadlineMs > 0 && now >= m_lookupDeadlineMs) {
+            failJoin(QStringLiteral("No host is using that code"));
+        }
+        return;
+    }
+
+    if (m_joiner == nullptr) {
+        if (turnRelayReady()) {
+            startRelayJoinIfReady();
+        } else if (!TurnCredentialClient::instance().isConfigured()) {
+            failJoin(QStringLiteral("No relay server is available"));
+        } else if (m_turnWaitDeadlineMs == 0) {
+            TurnCredentialClient::instance().prefetch();
+            m_turnWaitDeadlineMs = now + kTurnWaitMs;
+            setJoinProgress(QStringLiteral("Waiting for relay credentials…"));
+        } else if (now >= m_turnWaitDeadlineMs) {
             failJoin(QStringLiteral("Relay credentials were not ready"));
-            return;
         }
         return;
     }
 
     if (m_offerGathered && !m_answerApplied && m_nextOfferMs == 0) {
-        /* Gathering already consumed the first deadline. The host still has to
-           gather its own candidates before the answer exists. */
-        m_joinDeadlineMs = now + kAnswerWaitMs;
+        // Gathering already consumed the first deadline. The host still has to
+        // finish its own relay gather before the answer exists.
+        m_joinDeadlineMs = now + kRelayAnswerWaitMs;
         setJoinProgress(QStringLiteral("Waiting for the host to answer…"));
-    }
-
-    if (m_stunOnlyDeadlineMs > 0 && now >= m_stunOnlyDeadlineMs) {
-        failJoin(QStringLiteral("Direct ICE did not connect"));
-        return;
     }
 
     if (now >= m_joinDeadlineMs) {
@@ -769,7 +846,12 @@ void JuiceTraversal::onTick()
 void JuiceTraversal::onReadyRead()
 {
     while (m_socket.hasPendingDatagrams()) {
-        handleIndexMessage(m_socket.receiveDatagram().data());
+        const QByteArray datagram = m_socket.receiveDatagram().data();
+        if (datagram.startsWith(QByteArray(kNetplayRegistryProtocol))) {
+            handleRegistryMessage(datagram);
+        } else {
+            handleIndexMessage(datagram);
+        }
     }
 }
 
@@ -889,6 +971,53 @@ bool JuiceTraversal::turnRelayReady() const
     return turnRelayAvailable();
 }
 
+void JuiceTraversal::startRelayJoinIfReady()
+{
+    if (!m_joining || m_joinFinished || !m_hostLookupOk || m_joiner != nullptr || !turnRelayReady()) {
+        return;
+    }
+    m_turnWaitDeadlineMs = 0;
+    m_joinDeadlineMs = monotonicMs() + kGatherTimeoutMs;
+    startJoinerPeer(true);
+}
+
+void JuiceTraversal::handleRegistryMessage(const QByteArray& datagram)
+{
+    const QList<QByteArray> parts = datagram.split('|');
+    if (parts.size() < 2 || parts[0] != QByteArray(kNetplayRegistryProtocol)) {
+        return;
+    }
+
+    markServerAlive();
+    if (!m_joining || m_hostLookupOk || m_joinFinished) {
+        return;
+    }
+
+    if (parts[1] == "LOOKUPOK" && parts.size() >= 3) {
+        const QString code = normalizeTraversalCode(QString::fromUtf8(parts[2]));
+        if (code != m_joinCode) {
+            return;
+        }
+        m_hostLookupOk = true;
+        m_lookupDeadlineMs = 0;
+        qInfo() << "NAT traversal host code" << code << "is registered";
+        startRelayJoinIfReady();
+        return;
+    }
+
+    if (parts[1] == "LOOKUPFAIL") {
+        const QByteArray reason = parts.size() >= 4 ? parts[3] : QByteArray();
+        if (reason != "INVALID" && parts.size() >= 3) {
+            const QString code = normalizeTraversalCode(QString::fromUtf8(parts[2]));
+            if (!code.isEmpty() && code != m_joinCode) {
+                return;
+            }
+        }
+        failJoin(reason == "INVALID" ? QStringLiteral("Invalid host code")
+                                      : QStringLiteral("No host is using that code"));
+    }
+}
+
 void JuiceTraversal::handleIndexMessage(const QByteArray& datagram)
 {
     if (!datagram.startsWith(QByteArray(kNetplayIndexProtocol))) {
@@ -959,11 +1088,8 @@ void JuiceTraversal::handleIndexMessage(const QByteArray& datagram)
         if (m_joining && key == answerKey(m_joinCode, m_joinerId) && !m_answerApplied && m_joiner != nullptr) {
             m_answerApplied = true;
             qInfo() << "libjuice received host ICE answer";
-            setJoinProgress(QStringLiteral("Opening the connection…"));
+            setJoinProgress(QStringLiteral("Opening the relay…"));
             m_joiner->applyRemoteDescription(value);
-            if (!m_turnRetryUsed) {
-                m_stunOnlyDeadlineMs = monotonicMs() + kStunOnlyIceWaitMs;
-            }
             return;
         }
 
@@ -1017,7 +1143,6 @@ void JuiceTraversal::startJoinerPeer(bool useTurn)
         }
         m_joinReady = true;
         m_joinFinished = true;
-        m_stunOnlyDeadlineMs = 0;
         m_joinProxyPort = port;
         qInfo() << "libjuice NAT traversal connected, local proxy port" << port;
         emit joinSucceeded(port);
@@ -1033,76 +1158,12 @@ void JuiceTraversal::startJoinerPeer(bool useTurn)
     }
 }
 
-bool JuiceTraversal::tryRetryJoinWithTurn(const QString& reason)
-{
-    if (m_turnRetryUsed || !m_joining || m_joinCode.isEmpty()) {
-        return false;
-    }
-    const bool iceMiss = reason.contains(QLatin1String("ICE connection")) ||
-                         reason.contains(QLatin1String("Direct ICE")) ||
-                         reason.contains(QLatin1String("host ICE answer")) ||
-                         reason.contains(QLatin1String("gathering ICE candidates"));
-    if (!iceMiss) {
-        return false;
-    }
-    if (!turnRelayReady()) {
-        TurnCredentialClient& iceClient = TurnCredentialClient::instance();
-        if (iceClient.isConfigured()) {
-            iceClient.prefetch();
-            if (m_turnWaitDeadlineMs == 0) {
-                m_turnWaitDeadlineMs = monotonicMs() + kTurnWaitMs;
-                setJoinProgress(QStringLiteral("Waiting for relay credentials…"));
-                emit joinRetrying(reason);
-            }
-            return true;
-        }
-        qInfo() << "NAT traversal needs a relay after" << reason << "but no TURN server is available";
-        return false;
-    }
-
-    const QString hostCode = m_joinCode;
-    const QString previousJoinerId = m_joinerId;
-    ++m_failureToken;
-    m_turnRetryUsed = true;
-    m_joinReady = false;
-    m_joinFinished = false;
-    m_offerGathered = false;
-    m_offerAcked = false;
-    m_answerApplied = false;
-    m_localOffer.clear();
-    m_joinProxyPort = 0;
-    m_stunOnlyDeadlineMs = 0;
-    m_turnWaitDeadlineMs = 0;
-    m_joinDeadlineMs = monotonicMs() + kGatherTimeoutMs;
-    m_nextOfferMs = 0;
-    m_nextAnswerPollMs = 0;
-    m_joinerId = makeJoinerId();
-
-    if (m_joiner != nullptr) {
-        m_joiner->detach();
-        m_joiner->deleteLater();
-        m_joiner = nullptr;
-    }
-    if (!previousJoinerId.isEmpty()) {
-        deleteKey(offerKey(hostCode, previousJoinerId));
-        deleteKey(answerKey(hostCode, previousJoinerId));
-    }
-
-    qInfo() << "Direct NAT traversal did not connect (" << reason << "); retrying with TURN as" << m_joinerId;
-    emit joinRetrying(reason);
-    startJoinerPeer(true);
-    return m_joining && m_joiner != nullptr;
-}
-
 void JuiceTraversal::failJoin(const QString& reason)
 {
     // A successful connect sets m_joinFinished while the agent is still live.
     // A later failure still has to be reported, or the UI keeps dialing the
     // localhost proxy after the tunnel is gone.
     if (!m_joining || (m_joinFinished && !m_joinReady)) {
-        return;
-    }
-    if (tryRetryJoinWithTurn(reason)) {
         return;
     }
     m_joinFinished = true;
@@ -1117,11 +1178,12 @@ void JuiceTraversal::failJoin(const QString& reason)
     m_localOffer.clear();
     m_offerGathered = false;
     m_answerApplied = false;
-    m_turnRetryUsed = false;
+    m_hostLookupOk = false;
     m_offerAcked = false;
     m_joinProxyPort = 0;
-    m_stunOnlyDeadlineMs = 0;
     m_turnWaitDeadlineMs = 0;
+    m_nextLookupMs = 0;
+    m_lookupDeadlineMs = 0;
     m_lastProgress.clear();
     if (m_joiner != nullptr) {
         m_joiner->detach();
@@ -1155,13 +1217,14 @@ void JuiceTraversal::resetJoin()
     m_offerGathered = false;
     m_offerAcked = false;
     m_answerApplied = false;
-    m_turnRetryUsed = false;
+    m_hostLookupOk = false;
     m_localOffer.clear();
     m_joinCode.clear();
     m_joinerId.clear();
     m_joinProxyPort = 0;
-    m_stunOnlyDeadlineMs = 0;
     m_turnWaitDeadlineMs = 0;
+    m_nextLookupMs = 0;
+    m_lookupDeadlineMs = 0;
     m_firstPingMs = 0;
     m_lastPongMs = 0;
     m_nextPingMs = 0;
@@ -1189,6 +1252,17 @@ void JuiceTraversal::acceptOffer(const QString& joinerId, const QByteArray& sdp)
         qInfo() << "NAT traversal replacing ICE session for" << joinerId;
     }
 
+    if (!turnRelayReady()) {
+        TurnCredentialClient::instance().prefetch();
+        m_deferredOffers.insert(joinerId, sdp);
+        if (m_deferredOfferDeadlineMs == 0) {
+            m_deferredOfferDeadlineMs = monotonicMs() + kTurnWaitMs;
+        }
+        qInfo() << "NAT traversal holding offer from" << joinerId << "until relay credentials are ready";
+        return;
+    }
+    m_deferredOffers.remove(joinerId);
+
     auto* peer = new JuicePeer(JuicePeer::Role::Host, m_signalingPort, this);
     peer->onLocalDescription = [this, joinerId](const QByteArray& answer) {
         if (!m_hosting) {
@@ -1211,10 +1285,8 @@ void JuiceTraversal::acceptOffer(const QString& joinerId, const QByteArray& sdp)
         }
     };
     m_hostPeers.insert(joinerId, peer);
-    const bool useTurn = iceSdpHasRelay(sdp);
-    qInfo() << "NAT traversal answering" << joinerId
-            << (useTurn ? "with TURN because the offer includes a relay" : "STUN/direct first");
-    peer->start(sdp, useTurn);
+    qInfo() << "NAT traversal answering" << joinerId << "through the relay";
+    peer->start(sdp, true);
 }
 
 QString JuiceTraversal::offerKey(const QString& hostCode, const QString& joinerId) const

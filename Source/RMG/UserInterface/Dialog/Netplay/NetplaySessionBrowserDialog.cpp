@@ -700,7 +700,7 @@ void NetplaySessionBrowserDialog::onJuiceJoinRetrying(const QString& reason)
     if (!this->m_traversalPending) {
         return;
     }
-    this->setTraversalStatus(QStringLiteral("Direct connection did not open. Trying relay…"));
+    this->setTraversalStatus(QStringLiteral("Direct connection did not open. Trying the relay…"));
 }
 
 void NetplaySessionBrowserDialog::onJuiceJoinProgress(const QString& status)

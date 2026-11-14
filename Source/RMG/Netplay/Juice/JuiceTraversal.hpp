@@ -20,11 +20,12 @@ namespace UserInterface::Netplay {
 /**
  * libjuice ICE session signaled through the NAT server's N02IDX1 index.
  *
- * The host answers each joiner offer stored on the server. ICE tries host and
- * STUN paths first; TURN is gathered only if that session fails. Once ICE
- * connects, ENet signaling is tunneled with juice_send / juice_recv through a
- * localhost UDP proxy so server-reflexive and TURN candidates can carry the
- * existing signaling protocol.
+ * The host answers each joiner offer stored on the server. NAT traversal always
+ * gathers TURN and signals only relay candidates, which is faster than waiting
+ * for a direct path to fail. A registry LOOKUP fails the join as soon as the
+ * server says the host code is invalid or not registered. Once ICE connects,
+ * ENet signaling is tunneled with juice_send / juice_recv through a localhost
+ * UDP proxy.
  *
  * The index socket pings the server so a dead UDP path fails in seconds instead
  * of sitting on "Opening a NAT traversal connection…". Offers and answers are
@@ -69,11 +70,12 @@ private:
     void markServerAlive();
     bool serverLooksDead(qint64 nowMs) const;
     void handleIndexMessage(const QByteArray& datagram);
+    void handleRegistryMessage(const QByteArray& datagram);
     void publishValue(const QString& key, const QByteArray& value);
     void deleteKey(const QString& key);
     void failJoin(const QString& reason);
-    bool tryRetryJoinWithTurn(const QString& reason);
     bool turnRelayReady() const;
+    void startRelayJoinIfReady();
     void startJoinerPeer(bool useTurn);
     void resetJoin();
     void acceptOffer(const QString& joinerId, const QByteArray& sdp);
@@ -102,13 +104,16 @@ private:
     bool m_offerGathered = false;
     bool m_offerAcked = false;
     bool m_answerApplied = false;
-    bool m_turnRetryUsed = false;
+    bool m_hostLookupOk = false;
     quint16 m_joinProxyPort = 0;
     qint64 m_joinDeadlineMs = 0;
-    qint64 m_stunOnlyDeadlineMs = 0;
     qint64 m_turnWaitDeadlineMs = 0;
     qint64 m_nextOfferMs = 0;
     qint64 m_nextAnswerPollMs = 0;
+    qint64 m_nextLookupMs = 0;
+    qint64 m_lookupDeadlineMs = 0;
+    QHash<QString, QByteArray> m_deferredOffers;
+    qint64 m_deferredOfferDeadlineMs = 0;
     qint64 m_nextPingMs = 0;
     qint64 m_firstPingMs = 0;
     qint64 m_lastPongMs = 0;
