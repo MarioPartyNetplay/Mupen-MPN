@@ -263,6 +263,99 @@ static void configureMoltenVK(void)
 // Exported Functions
 //
 
+static bool isCliBoolToken(const QString& token)
+{
+    const QString value = token.trimmed().toLower();
+    return value == QStringLiteral("on") || value == QStringLiteral("off") ||
+           value == QStringLiteral("true") || value == QStringLiteral("false") ||
+           value == QStringLiteral("yes") || value == QStringLiteral("no") ||
+           value == QStringLiteral("1") || value == QStringLiteral("0");
+}
+
+static bool parseCliBool(const QString& text, bool* ok)
+{
+    const QString value = text.trimmed().toLower();
+    if (value == QStringLiteral("on") || value == QStringLiteral("true") ||
+        value == QStringLiteral("yes") || value == QStringLiteral("1"))
+    {
+        *ok = true;
+        return true;
+    }
+    if (value == QStringLiteral("off") || value == QStringLiteral("false") ||
+        value == QStringLiteral("no") || value == QStringLiteral("0"))
+    {
+        *ok = true;
+        return false;
+    }
+
+    *ok = false;
+    return false;
+}
+
+// Bare --netplay-host, --upnp, and --lobby keep their defaults
+// (traversal, on, on) without swallowing the following ROM path.
+static QStringList normalizeNetplayArguments(const QStringList& arguments)
+{
+    QStringList normalized;
+    normalized.reserve(arguments.size() + 3);
+    bool endOfOptions = false;
+
+    for (int i = 0; i < arguments.size(); ++i)
+    {
+        const QString argument = arguments.at(i);
+        if (!endOfOptions && argument == QStringLiteral("--"))
+        {
+            endOfOptions = true;
+            normalized << argument;
+            continue;
+        }
+        if (endOfOptions)
+        {
+            normalized << argument;
+            continue;
+        }
+
+        const auto rewriteBare = [&](const QString& name, const QString& fallback, auto acceptsValue) -> bool {
+            if (argument == name)
+            {
+                const bool hasValue = (i + 1) < arguments.size() && acceptsValue(arguments.at(i + 1));
+                normalized << (name + QLatin1Char('=') + (hasValue ? arguments.at(i + 1) : fallback));
+                if (hasValue)
+                {
+                    ++i;
+                }
+                return true;
+            }
+
+            const QString prefix = name + QLatin1Char('=');
+            if (argument.startsWith(prefix) && argument.mid(prefix.size()).trimmed().isEmpty())
+            {
+                normalized << (prefix + fallback);
+                return true;
+            }
+            return false;
+        };
+
+        if (rewriteBare(QStringLiteral("--netplay-host"), QStringLiteral("traversal"), [](const QString& token) {
+                const QString value = token.trimmed().toLower();
+                return value == QStringLiteral("direct") || value == QStringLiteral("traversal");
+            }) ||
+            rewriteBare(QStringLiteral("--upnp"), QStringLiteral("on"), [](const QString& token) {
+                return isCliBoolToken(token);
+            }) ||
+            rewriteBare(QStringLiteral("--lobby"), QStringLiteral("on"), [](const QString& token) {
+                return isCliBoolToken(token);
+            }))
+        {
+            continue;
+        }
+
+        normalized << argument;
+    }
+
+    return normalized;
+}
+
 int main(int argc, char **argv)
 {
     loadEnvironmentFile(QDir::current().filePath(QStringLiteral(".env")));
@@ -372,6 +465,29 @@ int main(int argc, char **argv)
     QCommandLineOption quitAfterEmulationOption({"q", "quit-after-emulation"}, "Quits RMG when emulation has finished");
     QCommandLineOption loadStateSlot("load-state-slot", "Loads save state slot when launching the ROM", "Slot Number");
     QCommandLineOption diskOption("disk", "64DD Disk to open ROM in combination with", "64DD Disk");
+#ifdef NETPLAY
+    QCommandLineOption netplayHostOption(
+        "netplay-host",
+        "Host a netplay room for the ROM and open the netplay window. "
+        "Mode is traversal (default) or direct.",
+        "traversal|direct");
+    QCommandLineOption netplayPortOption(
+        "netplay-port",
+        "Port to listen on when hosting. Defaults to 2626.",
+        "port");
+    QCommandLineOption upnpOption(
+        "upnp",
+        "Enable UPnP port mapping when hosting. Defaults to off. Value: on or off.",
+        "on|off");
+    QCommandLineOption lobbyOption(
+        "lobby",
+        "List the hosted room in the public browser. Defaults to on. Value: on or off.",
+        "on|off");
+    QCommandLineOption netplayJoinOption(
+        "netplay-join",
+        "Join a netplay room and open the netplay window. Accepts a traversal code or ip:port.",
+        "code|ip:port");
+#endif // NETPLAY
 #ifdef PORTABLE_INSTALL
     QCommandLineOption userDataDirOption(
         "user-data-dir",
@@ -392,13 +508,98 @@ int main(int argc, char **argv)
     parser.addOption(quitAfterEmulationOption);
     parser.addOption(loadStateSlot);
     parser.addOption(diskOption);
+#ifdef NETPLAY
+    parser.addOption(netplayHostOption);
+    parser.addOption(netplayPortOption);
+    parser.addOption(upnpOption);
+    parser.addOption(lobbyOption);
+    parser.addOption(netplayJoinOption);
+#endif // NETPLAY
 #ifdef PORTABLE_INSTALL
     parser.addOption(userDataDirOption);
 #endif // PORTABLE_INSTALL
     parser.addPositionalArgument("ROM", "ROM to open");
 
     // parse arguments
+#ifdef NETPLAY
+    parser.process(normalizeNetplayArguments(QCoreApplication::arguments()));
+#else
     parser.process(app);
+#endif // NETPLAY
+
+#ifdef NETPLAY
+    UserInterface::MainWindow::NetplayCliRequest netplayCli;
+    if (parser.isSet(netplayHostOption) && parser.isSet(netplayJoinOption))
+    {
+        std::cerr << "Use either --netplay-host or --netplay-join." << std::endl;
+        return 1;
+    }
+
+    if (parser.isSet(netplayHostOption))
+    {
+        const QString hostMode = parser.value(netplayHostOption).trimmed().toLower();
+        if (hostMode != QStringLiteral("direct") && hostMode != QStringLiteral("traversal"))
+        {
+            std::cerr << "--netplay-host must be 'direct' or 'traversal'." << std::endl;
+            return 1;
+        }
+        netplayCli.host = true;
+        netplayCli.traversal = hostMode != QStringLiteral("direct");
+    }
+
+    if (parser.isSet(netplayPortOption))
+    {
+        bool portOk = false;
+        const int port = parser.value(netplayPortOption).toInt(&portOk);
+        if (!portOk || port < 1024 || port > 65535)
+        {
+            std::cerr << "--netplay-port must be between 1024 and 65535." << std::endl;
+            return 1;
+        }
+        netplayCli.port = port;
+    }
+
+    if (parser.isSet(upnpOption))
+    {
+        bool upnpOk = false;
+        netplayCli.upnp = parseCliBool(parser.value(upnpOption), &upnpOk);
+        if (!upnpOk)
+        {
+            std::cerr << "--upnp must be on or off." << std::endl;
+            return 1;
+        }
+    }
+
+    if (parser.isSet(lobbyOption))
+    {
+        bool lobbyOk = false;
+        netplayCli.showInBrowser = parseCliBool(parser.value(lobbyOption), &lobbyOk);
+        if (!lobbyOk)
+        {
+            std::cerr << "--lobby must be on or off." << std::endl;
+            return 1;
+        }
+    }
+
+    if (parser.isSet(netplayJoinOption))
+    {
+        netplayCli.joinTarget = parser.value(netplayJoinOption).trimmed();
+        if (netplayCli.joinTarget.isEmpty())
+        {
+            std::cerr << "--netplay-join requires a traversal code or ip:port." << std::endl;
+            return 1;
+        }
+    }
+
+    const bool launchNetplay = netplayCli.host || !netplayCli.joinTarget.isEmpty();
+    if (netplayCli.host && parser.positionalArguments().isEmpty())
+    {
+        std::cerr << "--netplay-host requires a ROM path." << std::endl;
+        return 1;
+    }
+#else
+    const bool launchNetplay = false;
+#endif // NETPLAY
 
 #ifdef PORTABLE_INSTALL
     configurePortableMultiInstanceProfile(app);
@@ -449,21 +650,33 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (!args.empty())
+    bool parsedNumber = false;
+    int saveStateSlot = parser.value(loadStateSlot).toInt(&parsedNumber);
+    if (parser.value(loadStateSlot).isEmpty() || !parsedNumber ||
+        saveStateSlot < 0 || saveStateSlot > 9)
     {
-        bool parsedNumber = false;
-        int saveStateSlot = parser.value(loadStateSlot).toInt(&parsedNumber);
-        if (parser.value(loadStateSlot).isEmpty() || !parsedNumber ||
-            saveStateSlot < 0 || saveStateSlot > 9)
-        {
-            saveStateSlot = -1;
-        }
+        saveStateSlot = -1;
+    }
 
+    if (!launchNetplay && !args.empty())
+    {
         window.OpenROM(args.at(0), parser.value(diskOption), parser.isSet(fullscreenOption), parser.isSet(quitAfterEmulationOption), saveStateSlot);
     }
 
     // show window
     window.show();
+
+#ifdef NETPLAY
+    if (launchNetplay)
+    {
+        netplayCli.romFile = args.isEmpty() ? QString() : args.at(0);
+        netplayCli.diskFile = parser.value(diskOption);
+        netplayCli.fullscreen = parser.isSet(fullscreenOption);
+        netplayCli.quitAfterEmulation = parser.isSet(quitAfterEmulationOption);
+        netplayCli.stateSlot = saveStateSlot;
+        window.launchNetplayFromCli(netplayCli);
+    }
+#endif // NETPLAY
 
     return app.exec();
 }

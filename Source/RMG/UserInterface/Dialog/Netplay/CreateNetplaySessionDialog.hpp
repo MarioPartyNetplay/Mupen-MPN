@@ -47,6 +47,7 @@ class CreateNetplaySessionDialog : public QWidget, private Ui::CreateNetplaySess
     void setNickname(const QString& nickname);
     bool canSubmit(void) const;
     void submit(void);
+    bool hostFromCli(const QString& romFile, bool traversal, int port, bool upnp, bool showInBrowser);
 
   signals:
     void sessionAccepted(void);
@@ -69,6 +70,7 @@ class CreateNetplaySessionDialog : public QWidget, private Ui::CreateNetplaySess
     QString sessionFile;
     QString sessionMD5;
     QString sessionGoodName;
+    bool suppressHostOptionSave = false;
 
     QString dispatcherUrl;
 

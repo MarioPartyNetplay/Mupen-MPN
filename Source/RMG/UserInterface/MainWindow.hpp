@@ -38,8 +38,6 @@
 #include <QAction>
 #include <QWindow>
 
-class QScreen;
-
 #include <string>
 
 #include "ui_MainWindow.h"
@@ -105,7 +103,6 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     bool ui_HideCursorInFullscreenEmulation = false;
     bool ui_DedicatedRenderWindow = false;
     QRect ui_DedicatedRenderGeometry;
-    QScreen* ui_DedicatedRenderScreen = nullptr;
     bool ui_NoSwitchToRomBrowser = false;
     bool ui_VidExtForceSetMode   = false;
     bool ui_LaunchInFullscreen   = false;

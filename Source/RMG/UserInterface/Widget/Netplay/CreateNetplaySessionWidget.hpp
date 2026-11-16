@@ -37,6 +37,7 @@ class CreateNetplaySessionWidget : public QStackedWidget
     ~CreateNetplaySessionWidget(void);
 
     void AddRomData(QString goodName, QString md5, QString file);
+    bool SelectRomFile(const QString& file);
     void RefreshDone(void);
     void ShowLoading(void);
 

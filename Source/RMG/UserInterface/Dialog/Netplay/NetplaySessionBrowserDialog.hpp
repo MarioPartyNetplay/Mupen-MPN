@@ -43,6 +43,7 @@ class NetplaySessionBrowserDialog : public QWidget, private Ui::NetplaySessionBr
     void setNickname(const QString& nickname);
     bool canSubmit(void) const;
     void submit(void);
+    void joinFromCli(const QString& target);
     void refreshRoomList(void);
 
   signals:

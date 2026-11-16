@@ -27,6 +27,7 @@
 #include <QPushButton>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QLabel>
 #include <QVBoxLayout>
@@ -281,8 +282,50 @@ void CreateNetplaySessionDialog::updateConnectionModeUi(void)
     Q_UNUSED(this);
 }
 
+bool CreateNetplaySessionDialog::hostFromCli(const QString& romFile, bool traversal, int port, bool upnp, bool showInBrowser)
+{
+    // Command-line overrides apply to this launch only.
+    this->suppressHostOptionSave = true;
+
+    if (this->showInBrowserCheckBox != nullptr)
+    {
+        QSignalBlocker blocker(this->showInBrowserCheckBox);
+        this->showInBrowserCheckBox->setChecked(showInBrowser);
+    }
+    if (this->useNatTraversalCheckBox != nullptr)
+    {
+        QSignalBlocker blocker(this->useNatTraversalCheckBox);
+        this->useNatTraversalCheckBox->setChecked(traversal);
+    }
+    if (this->useUpnpCheckBox != nullptr)
+    {
+        QSignalBlocker blocker(this->useUpnpCheckBox);
+        this->useUpnpCheckBox->setChecked(upnp);
+    }
+    if (port > 0 && this->hostingPortSpinBox != nullptr)
+    {
+        QSignalBlocker blocker(this->hostingPortSpinBox);
+        this->hostingPortSpinBox->setValue(port);
+        this->hostingPort = port;
+    }
+
+    if (this->romListWidget == nullptr || !this->romListWidget->SelectRomFile(romFile))
+    {
+        QtMessageBox::Error(this, "Hosting Error", "Could not select the ROM for netplay.");
+        return false;
+    }
+
+    this->submit();
+    return !this->sessionJson.isEmpty();
+}
+
 void CreateNetplaySessionDialog::saveHostOptions(void)
 {
+    if (this->suppressHostOptionSave)
+    {
+        return;
+    }
+
     if (this->showInBrowserCheckBox != nullptr)
     {
         CoreSettingsSetValue(SettingsID::Netplay_ShowInBrowser, this->showInBrowserCheckBox->isChecked());

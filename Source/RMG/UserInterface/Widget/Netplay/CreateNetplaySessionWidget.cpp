@@ -59,6 +59,30 @@ void CreateNetplaySessionWidget::AddRomData(QString goodName, QString md5, QStri
     this->listWidget->addItem(item);
 }
 
+bool CreateNetplaySessionWidget::SelectRomFile(const QString& file)
+{
+    for (int index = 0; index < this->listWidget->count(); ++index)
+    {
+        QListWidgetItem* item = this->listWidget->item(index);
+        const NetplayRomData data = item->data(Qt::UserRole).value<NetplayRomData>();
+        if (data.File == file)
+        {
+            this->listWidget->setCurrentItem(item);
+            this->setCurrentWidget(this->listWidget);
+            return true;
+        }
+    }
+
+    if (this->listWidget->count() == 1)
+    {
+        this->listWidget->setCurrentRow(0);
+        this->setCurrentWidget(this->listWidget);
+        return true;
+    }
+
+    return false;
+}
+
 void CreateNetplaySessionWidget::RefreshDone(void)
 {
     if (this->listWidget->count() == 0)

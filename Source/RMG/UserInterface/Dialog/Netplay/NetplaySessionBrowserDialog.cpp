@@ -777,6 +777,12 @@ void NetplaySessionBrowserDialog::finishJoinFailure(const QString& error)
     QtMessageBox::Error(this, "Connection Failed", "Failed to connect to server: " + error);
 }
 
+void NetplaySessionBrowserDialog::joinFromCli(const QString& target)
+{
+    this->ipAddressLineEdit->setText(target.trimmed());
+    this->submit();
+}
+
 void NetplaySessionBrowserDialog::submit(void)
 {
     if (this->isTraversalBusy()) {

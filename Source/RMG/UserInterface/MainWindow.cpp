@@ -845,31 +845,27 @@ void MainWindow::enterDedicatedRenderFullscreen()
     QWindow* renderWindow = this->getActiveRenderWindow();
     if (renderWindow != nullptr && !(renderWindow->windowState() & Qt::WindowFullScreen))
     {
-        QScreen* screen = renderWindow->screen();
+        // screen() stays on the display where the window was created. Use the
+        // display under the window so fullscreen does not jump to the primary one.
+        // setScreen() recreates the native window and would drop the render context.
+        const QPoint center = renderWindow->frameGeometry().center();
+        QScreen* screen = QGuiApplication::screenAt(center);
         if (screen == nullptr)
         {
-            screen = QGuiApplication::screenAt(renderWindow->frameGeometry().center());
+            screen = renderWindow->screen();
         }
         if (screen == nullptr)
         {
             screen = QGuiApplication::primaryScreen();
         }
 
-        // Remember the windowed frame so leaving fullscreen does not keep the
-        // display-sized geometry. QWindow::showFullScreen() otherwise follows
-        // the primary display when the game window was moved to another one.
         if (renderWindow->geometry().isValid())
         {
             this->ui_DedicatedRenderGeometry = renderWindow->geometry();
         }
-        this->ui_DedicatedRenderScreen = screen;
 
         if (screen != nullptr)
         {
-            if (renderWindow->screen() != screen)
-            {
-                renderWindow->setScreen(screen);
-            }
             renderWindow->setGeometry(screen->geometry());
         }
         renderWindow->showFullScreen();
@@ -890,18 +886,12 @@ void MainWindow::leaveDedicatedRenderFullscreen()
     {
         renderWindow->showNormal();
 
-        if (this->ui_DedicatedRenderScreen != nullptr &&
-            renderWindow->screen() != this->ui_DedicatedRenderScreen)
-        {
-            renderWindow->setScreen(this->ui_DedicatedRenderScreen);
-        }
         if (this->ui_DedicatedRenderGeometry.isValid())
         {
             renderWindow->setGeometry(this->ui_DedicatedRenderGeometry);
         }
 
         this->ui_DedicatedRenderGeometry = QRect();
-        this->ui_DedicatedRenderScreen = nullptr;
     }
 
     if (!this->ui_HideCursorInEmulation && this->ui_HideCursorInFullscreenEmulation)
@@ -2975,6 +2965,18 @@ void MainWindow::on_NetplaySessionDialog_rejected()
         this->netplaySessionDialog->deleteLater();
         this->netplaySessionDialog = nullptr;
     }
+
+    if (this->cliCreateNetplayDialog != nullptr)
+    {
+        this->cliCreateNetplayDialog->deleteLater();
+        this->cliCreateNetplayDialog = nullptr;
+    }
+    if (this->cliJoinNetplayDialog != nullptr)
+    {
+        this->cliJoinNetplayDialog->deleteLater();
+        this->cliJoinNetplayDialog = nullptr;
+    }
+    this->ui_CliNetplayLaunch = false;
 
     // force refresh of actions
     this->updateActions(isRunning, isPaused);
