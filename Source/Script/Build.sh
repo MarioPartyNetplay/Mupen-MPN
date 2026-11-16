@@ -95,10 +95,14 @@ then
         cp "$libdatachannel_dll" "$target_bin_dir/"
         
         echo "==> Resolving and copying deep dependencies for libdatachannel..."
-        ldd "$libdatachannel_dll" | grep -i 'mingw' | awk '{print $3}' | while read -r dll_path; do
-            if [[ -f "$dll_path" ]]; then
-                cp -n "$dll_path" "$target_bin_dir/"
+        ldd "$libdatachannel_dll" | awk '/=>/ { print $3 }' | while read -r dll_path; do
+            if [[ -z "$dll_path" || ! -f "$dll_path" ]]; then
+                continue
             fi
+            case "$dll_path" in
+                /[cC]/[Ww][Ii][Nn][Dd][Oo][Ww][Ss]/*) continue ;;
+            esac
+            cp -n "$dll_path" "$target_bin_dir/"
         done
     fi
 
