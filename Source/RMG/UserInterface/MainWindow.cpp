@@ -1790,6 +1790,57 @@ void MainWindow::timerEvent(QTimerEvent *event)
     }
 }
 
+bool MainWindow::triggerHotkeyAction(QKeyEvent* event)
+{
+    if (event == nullptr || event->isAutoRepeat() || !CoreIsEmulationRunning())
+    {
+        return false;
+    }
+
+    // Fullscreen on the separate render window never delivers ShortcutOverride
+    // to the main window, so menu hotkeys would not run. Firing the matching
+    // action here covers that path. When the main window already handled the
+    // shortcut, Qt does not deliver the KeyPress and this is not called again.
+    const auto activate = [event](QAction* action) -> bool {
+        if (action == nullptr || !action->isEnabled() || action->shortcut().isEmpty())
+        {
+            return false;
+        }
+
+        const QString binding = action->shortcut().toString(QKeySequence::PortableText);
+        if (!Utilities::QtKeyEventMatchesBinding(event, binding))
+        {
+            return false;
+        }
+
+        action->trigger();
+        return true;
+    };
+
+    for (QAction* action : this->ui_Actions)
+    {
+        if (activate(action))
+        {
+            return true;
+        }
+    }
+
+    QAction* audioActions[] = {
+        this->action_Audio_IncreaseVolume,
+        this->action_Audio_DecreaseVolume,
+        this->action_Audio_ToggleVolumeMute,
+    };
+    for (QAction* action : audioActions)
+    {
+        if (activate(action))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void MainWindow::on_EventFilter_KeyPressed(QKeyEvent *event)
 {
     const QString fullscreenBinding = QString::fromStdString(
@@ -1800,6 +1851,11 @@ void MainWindow::on_EventFilter_KeyPressed(QKeyEvent *event)
         {
             this->on_Action_View_Fullscreen();
         }
+        return;
+    }
+
+    if (this->triggerHotkeyAction(event))
+    {
         return;
     }
 

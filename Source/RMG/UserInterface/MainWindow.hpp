@@ -131,6 +131,7 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     void configureDedicatedRenderSurface(QObject* renderSurface);
     void enterDedicatedRenderFullscreen();
     void leaveDedicatedRenderFullscreen();
+    bool triggerHotkeyAction(QKeyEvent* event);
 
     bool ui_ForceClose = false;
 
