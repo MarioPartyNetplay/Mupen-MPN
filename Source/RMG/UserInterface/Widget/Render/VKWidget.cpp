@@ -74,7 +74,24 @@ void VKWidget::ShowRenderSurface()
 {
     if (this->m_dedicatedWindow)
     {
-        this->show();
+        // QWindow::show() drops back to a normal window. Calling it after
+        // showFullScreen() left the separate render window windowed.
+        if (!this->isVisible())
+        {
+            const Qt::WindowStates state = this->windowState();
+            if (state & Qt::WindowFullScreen)
+            {
+                this->showFullScreen();
+            }
+            else if (state & Qt::WindowMaximized)
+            {
+                this->showMaximized();
+            }
+            else
+            {
+                this->show();
+            }
+        }
         this->raise();
         this->requestActivate();
         return;

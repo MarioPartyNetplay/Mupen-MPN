@@ -24,6 +24,9 @@
 #ifdef NETPLAY
 #include "Dialog/Netplay/NetplayLobbyDialog.hpp"
 #include "Dialog/Netplay/NetplaySessionDialog.hpp"
+#include "Dialog/Netplay/CreateNetplaySessionDialog.hpp"
+#include "Dialog/Netplay/NetplaySessionBrowserDialog.hpp"
+#include "Dialog/Netplay/NetplayCommon.hpp"
 #include "Netplay.hpp"
 #include "Netplay/NetplayCoordinator.hpp"
 #endif // NETPLAY
@@ -44,6 +47,7 @@
 #include <QDesktopServices>
 #include <QEventLoop>
 #include <QGuiApplication>
+#include <QScreen>
 #include <QStyleFactory>
 #include <QActionGroup> 
 #include <QFileDialog>
@@ -836,6 +840,76 @@ void MainWindow::setActiveRenderHideCursor(bool hide)
     }
 }
 
+void MainWindow::enterDedicatedRenderFullscreen()
+{
+    QWindow* renderWindow = this->getActiveRenderWindow();
+    if (renderWindow != nullptr && !(renderWindow->windowState() & Qt::WindowFullScreen))
+    {
+        QScreen* screen = renderWindow->screen();
+        if (screen == nullptr)
+        {
+            screen = QGuiApplication::screenAt(renderWindow->frameGeometry().center());
+        }
+        if (screen == nullptr)
+        {
+            screen = QGuiApplication::primaryScreen();
+        }
+
+        // Remember the windowed frame so leaving fullscreen does not keep the
+        // display-sized geometry. QWindow::showFullScreen() otherwise follows
+        // the primary display when the game window was moved to another one.
+        if (renderWindow->geometry().isValid())
+        {
+            this->ui_DedicatedRenderGeometry = renderWindow->geometry();
+        }
+        this->ui_DedicatedRenderScreen = screen;
+
+        if (screen != nullptr)
+        {
+            if (renderWindow->screen() != screen)
+            {
+                renderWindow->setScreen(screen);
+            }
+            renderWindow->setGeometry(screen->geometry());
+        }
+        renderWindow->showFullScreen();
+    }
+
+    if (!this->ui_HideCursorInEmulation && this->ui_HideCursorInFullscreenEmulation)
+    {
+        this->setActiveRenderHideCursor(true);
+    }
+
+    this->showActiveRenderSurface();
+}
+
+void MainWindow::leaveDedicatedRenderFullscreen()
+{
+    QWindow* renderWindow = this->getActiveRenderWindow();
+    if (renderWindow != nullptr && (renderWindow->windowState() & Qt::WindowFullScreen))
+    {
+        renderWindow->showNormal();
+
+        if (this->ui_DedicatedRenderScreen != nullptr &&
+            renderWindow->screen() != this->ui_DedicatedRenderScreen)
+        {
+            renderWindow->setScreen(this->ui_DedicatedRenderScreen);
+        }
+        if (this->ui_DedicatedRenderGeometry.isValid())
+        {
+            renderWindow->setGeometry(this->ui_DedicatedRenderGeometry);
+        }
+
+        this->ui_DedicatedRenderGeometry = QRect();
+        this->ui_DedicatedRenderScreen = nullptr;
+    }
+
+    if (!this->ui_HideCursorInEmulation && this->ui_HideCursorInFullscreenEmulation)
+    {
+        this->setActiveRenderHideCursor(false);
+    }
+}
+
 void MainWindow::configureDedicatedRenderSurface(QObject* renderSurface)
 {
     if (!this->ui_DedicatedRenderWindow || renderSurface == nullptr)
@@ -905,7 +979,21 @@ void MainWindow::launchEmulationThread(QString cartRom, QString address, int por
     }
 
     this->emulationThread->SetNetplay(address, port, player);
+#ifdef NETPLAY
+    QString disk;
+    int slot = -1;
+    if (this->ui_CliNetplayLaunch)
+    {
+        disk = this->ui_CliDisk;
+        slot = this->ui_CliStateSlot;
+        this->ui_CliDisk.clear();
+        this->ui_CliStateSlot = -1;
+        this->ui_CliNetplayLaunch = false;
+    }
+    this->launchEmulationThread(cartRom, disk, false, slot, true);
+#else
     this->launchEmulationThread(cartRom, "", false, -1, true);
+#endif // NETPLAY
 }
 
 void MainWindow::launchEmulationThread(QString cartRom, QString diskRom, bool refreshRomListAfterEmulation, int slot, bool netplay, bool dragdrop)
@@ -1552,9 +1640,94 @@ void MainWindow::showNetplaySessionDialog(QString sessionFile)
     connect(this->netplaySessionDialog, &Dialog::NetplaySessionDialog::OnPlayGame, this, &MainWindow::on_Netplay_PlayGame);
     connect(this->netplaySessionDialog, &Dialog::NetplaySessionDialog::rejected, this, &MainWindow::on_NetplaySessionDialog_rejected);
     this->netplaySessionDialog->show();
+    this->netplaySessionDialog->raise();
+    this->netplaySessionDialog->activateWindow();
 
     // force refresh of actions
     this->updateActions(false, false);
+}
+
+static CoreRomSettings cliRomSettings(const QString& file)
+{
+    CoreRomType type = CoreRomType::Cartridge;
+    CoreRomHeader header = {};
+    CoreRomSettings defaults = {};
+    CoreRomSettings settings = {};
+    if (!file.isEmpty())
+    {
+        CoreGetCachedRomHeaderAndSettings(std::filesystem::path(file.toStdU32String()),
+                                          &type, &header, &defaults, &settings);
+    }
+    return settings;
+}
+
+void MainWindow::launchNetplayFromCli(const NetplayCliRequest& request)
+{
+    this->ui_LaunchInFullscreen = request.fullscreen;
+    this->ui_QuitAfterEmulation = request.quitAfterEmulation;
+    this->ui_CliDisk = request.diskFile;
+    this->ui_CliStateSlot = request.stateSlot;
+    this->ui_CliNetplayLaunch = true;
+
+    const QString nickname = QString::fromStdString(CoreSettingsGetStringValue(SettingsID::Netplay_Nickname));
+    if (!NetplayCommon::IsValidNickname(nickname))
+    {
+        this->ui_CliNetplayLaunch = false;
+        this->showErrorMessage(
+            "Netplay nickname is not set",
+            "Set a nickname in Netplay before using --netplay-host or --netplay-join.");
+        return;
+    }
+
+    if (this->netplayCoordinator == nullptr)
+    {
+        this->netplayCoordinator = new Netplay::NetplayCoordinator(QStringLiteral("udp://localhost:2626"), this);
+    }
+
+    if (request.host)
+    {
+        QMap<QString, CoreRomSettings> roms;
+        roms.insert(request.romFile, cliRomSettings(request.romFile));
+
+        this->cliCreateNetplayDialog = new Dialog::CreateNetplaySessionDialog(this, this->netplayCoordinator, roms);
+        this->cliCreateNetplayDialog->hide();
+        connect(this->cliCreateNetplayDialog, &Dialog::CreateNetplaySessionDialog::sessionAccepted, this, [this]() {
+            if (this->cliCreateNetplayDialog == nullptr)
+            {
+                return;
+            }
+            this->showNetplaySessionDialog(this->cliCreateNetplayDialog->GetSessionFile());
+        });
+
+        if (!this->cliCreateNetplayDialog->hostFromCli(request.romFile, request.traversal, request.port,
+                                                       request.upnp, request.showInBrowser))
+        {
+            this->ui_CliNetplayLaunch = false;
+            this->cliCreateNetplayDialog->deleteLater();
+            this->cliCreateNetplayDialog = nullptr;
+        }
+        return;
+    }
+
+    QMap<QString, CoreRomSettings> roms = this->ui_Widget_RomBrowser->GetModelData();
+    if (!request.romFile.isEmpty() && !roms.contains(request.romFile))
+    {
+        roms.insert(request.romFile, cliRomSettings(request.romFile));
+    }
+
+    this->cliJoinNetplayDialog = new Dialog::NetplaySessionBrowserDialog(this, this->netplayCoordinator, roms);
+    this->cliJoinNetplayDialog->hide();
+    connect(this->cliJoinNetplayDialog, &Dialog::NetplaySessionBrowserDialog::sessionAccepted, this, [this]() {
+        if (this->cliJoinNetplayDialog == nullptr)
+        {
+            return;
+        }
+        const QString sessionFile = this->cliJoinNetplayDialog->GetSessionFile();
+        this->cliJoinNetplayDialog->deleteLater();
+        this->cliJoinNetplayDialog = nullptr;
+        this->showNetplaySessionDialog(sessionFile);
+    });
+    this->cliJoinNetplayDialog->joinFromCli(request.joinTarget);
 }
 #endif // NETPLAY
 
@@ -2918,16 +3091,7 @@ void MainWindow::on_VidExt_SetWindowedMode(int width, int height, int bps, int f
 {
     if (this->ui_DedicatedRenderWindow)
     {
-        QWindow* renderWindow = this->getActiveRenderWindow();
-        if (renderWindow != nullptr && (renderWindow->windowState() & Qt::WindowFullScreen))
-        {
-            renderWindow->showNormal();
-        }
-
-        if (!this->ui_HideCursorInEmulation && this->ui_HideCursorInFullscreenEmulation)
-        {
-            this->setActiveRenderHideCursor(false);
-        }
+        this->leaveDedicatedRenderFullscreen();
 
         if (!this->ui_VidExtForceSetMode)
         {
@@ -2992,18 +3156,7 @@ void MainWindow::on_VidExt_SetFullscreenMode(int width, int height, int bps, int
 {
     if (this->ui_DedicatedRenderWindow)
     {
-        QWindow* renderWindow = this->getActiveRenderWindow();
-        if (renderWindow != nullptr && !(renderWindow->windowState() & Qt::WindowFullScreen))
-        {
-            renderWindow->showFullScreen();
-        }
-
-        if (!this->ui_HideCursorInEmulation && this->ui_HideCursorInFullscreenEmulation)
-        {
-            this->setActiveRenderHideCursor(true);
-        }
-
-        this->showActiveRenderSurface();
+        this->enterDedicatedRenderFullscreen();
         return;
     }
 
@@ -3110,38 +3263,15 @@ void MainWindow::on_VidExt_ToggleFS(bool fullscreen)
 {
     if (this->ui_DedicatedRenderWindow)
     {
-        QWindow* renderWindow = this->getActiveRenderWindow();
-        if (renderWindow == nullptr)
-        {
-            return;
-        }
-
         if (fullscreen)
         {
-            if (!(renderWindow->windowState() & Qt::WindowFullScreen))
-            {
-                renderWindow->showFullScreen();
-            }
-
-            if (!this->ui_HideCursorInEmulation && this->ui_HideCursorInFullscreenEmulation)
-            {
-                this->setActiveRenderHideCursor(true);
-            }
+            this->enterDedicatedRenderFullscreen();
         }
         else
         {
-            if (renderWindow->windowState() & Qt::WindowFullScreen)
-            {
-                renderWindow->showNormal();
-            }
-
-            if (!this->ui_HideCursorInEmulation && this->ui_HideCursorInFullscreenEmulation)
-            {
-                this->setActiveRenderHideCursor(false);
-            }
+            this->leaveDedicatedRenderFullscreen();
+            this->showActiveRenderSurface();
         }
-
-        this->showActiveRenderSurface();
         return;
     }
 

@@ -38,12 +38,20 @@
 #include <QAction>
 #include <QWindow>
 
+class QScreen;
+
 #include <string>
 
 #include "ui_MainWindow.h"
 
 namespace UserInterface
 {
+namespace Dialog
+{
+class CreateNetplaySessionDialog;
+class NetplaySessionBrowserDialog;
+}
+
 class MainWindow : public QMainWindow, private Ui::MainWindow
 {
     Q_OBJECT
@@ -54,6 +62,25 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 
     bool Init(QApplication* app, bool showUI, bool launchROM);
     void OpenROM(QString file, QString disk, bool fullscreen, bool quitAfterEmulation, int stateSlot);
+
+#ifdef NETPLAY
+    struct NetplayCliRequest
+    {
+        bool host = false;
+        bool traversal = true;
+        int port = 0;
+        bool upnp = false;
+        bool showInBrowser = true;
+        QString joinTarget;
+        QString romFile;
+        QString diskFile;
+        bool fullscreen = false;
+        bool quitAfterEmulation = false;
+        int stateSlot = -1;
+    };
+
+    void launchNetplayFromCli(const NetplayCliRequest& request);
+#endif // NETPLAY
 
   private:
     Thread::EmulationThread *emulationThread = nullptr;
@@ -77,6 +104,8 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     bool ui_HideCursorInEmulation = false;
     bool ui_HideCursorInFullscreenEmulation = false;
     bool ui_DedicatedRenderWindow = false;
+    QRect ui_DedicatedRenderGeometry;
+    QScreen* ui_DedicatedRenderScreen = nullptr;
     bool ui_NoSwitchToRomBrowser = false;
     bool ui_VidExtForceSetMode   = false;
     bool ui_LaunchInFullscreen   = false;
@@ -103,6 +132,8 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
     void resizeActiveRenderWindow(int width, int height);
     void setActiveRenderHideCursor(bool hide);
     void configureDedicatedRenderSurface(QObject* renderSurface);
+    void enterDedicatedRenderFullscreen();
+    void leaveDedicatedRenderFullscreen();
 
     bool ui_ForceClose = false;
 
@@ -139,6 +170,11 @@ class MainWindow : public QMainWindow, private Ui::MainWindow
 #ifdef NETPLAY
     Netplay::NetplayCoordinator* netplayCoordinator = nullptr;
     Dialog::NetplaySessionDialog* netplaySessionDialog = nullptr;
+    Dialog::CreateNetplaySessionDialog* cliCreateNetplayDialog = nullptr;
+    Dialog::NetplaySessionBrowserDialog* cliJoinNetplayDialog = nullptr;
+    QString ui_CliDisk;
+    int ui_CliStateSlot = -1;
+    bool ui_CliNetplayLaunch = false;
 #endif // NETPLAY
 
     void closeEvent(QCloseEvent *) Q_DECL_OVERRIDE;
